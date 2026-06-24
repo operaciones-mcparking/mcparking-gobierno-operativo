@@ -1,6 +1,14 @@
 import { Building2, Network, Workflow } from "lucide-react";
 
 import { TypedBadge } from "@/components/dashboard/badge";
+import {
+  DataTable,
+  DataTableBody,
+  DataTableCell,
+  DataTableHead,
+  DataTableHeaderCell,
+  DataTableRow,
+} from "@/components/dashboard/data-table";
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
 import { getCompanyServiceNetwork } from "@/lib/dashboard/data";
 
@@ -29,16 +37,16 @@ export default async function EmpresasPage() {
       ) : null}
 
       <section className="mt-5 grid gap-4 lg:grid-cols-[1fr_2fr]">
-        <div className="rounded-lg border border-line bg-white p-5 shadow-sm">
+        <div className="rounded-xl border border-[#d6e1ea] bg-white p-5 shadow-[0_8px_18px_rgba(2,53,116,0.035)]">
           <div className="flex items-center gap-3">
             <span className="flex h-11 w-11 items-center justify-center rounded-md bg-ink text-white">
               <Building2 className="h-6 w-6" />
             </span>
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-sea">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-sea">
                 Empresa principal
               </p>
-              <h2 className="text-2xl font-semibold">{providerName}</h2>
+              <h2 className="text-xl font-medium text-navy">{providerName}</h2>
             </div>
           </div>
           <p className="mt-4 text-sm leading-6 text-slate-700">
@@ -48,58 +56,58 @@ export default async function EmpresasPage() {
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.035)]">
             <p className="text-sm font-medium text-slate-500">Empresas atendidas</p>
-            <p className="mt-2 text-3xl font-semibold">{servedCompanies.length}</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{servedCompanies.length}</p>
           </div>
-          <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.035)]">
             <p className="text-sm font-medium text-slate-500">Procesos vinculados</p>
-            <p className="mt-2 text-3xl font-semibold">{processTotal}</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{processTotal}</p>
           </div>
-          <div className="rounded-lg border border-line bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.035)]">
             <p className="text-sm font-medium text-slate-500">Modelo</p>
-            <p className="mt-2 text-lg font-semibold">Proveedor &gt; cliente</p>
+            <p className="mt-2 text-lg font-medium text-navy">Proveedor &gt; cliente</p>
           </div>
         </div>
       </section>
 
       <Panel count={`${servedCompanies.length} relaciones`} title="Red de empresas">
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-line text-slate-500">
-                <th className="py-3 pr-4 font-semibold">Empresa atendida</th>
-                <th className="py-3 pr-4 font-semibold">Relacion</th>
-                <th className="py-3 pr-4 font-semibold">Procesos asociados</th>
-                <th className="py-3 pr-4 font-semibold">Estado</th>
-                <th className="py-3 pr-4 font-semibold">Notas</th>
+        <div className="mt-4">
+          <DataTable minWidth="760px">
+            <DataTableHead>
+              <tr>
+                <DataTableHeaderCell>Empresa atendida</DataTableHeaderCell>
+                <DataTableHeaderCell>Relacion</DataTableHeaderCell>
+                <DataTableHeaderCell>Procesos asociados</DataTableHeaderCell>
+                <DataTableHeaderCell>Estado</DataTableHeaderCell>
+                <DataTableHeaderCell>Notas</DataTableHeaderCell>
               </tr>
-            </thead>
-            <tbody>
+            </DataTableHead>
+            <DataTableBody>
               {servedCompanies.map((relationship) => (
-                <tr className="border-b border-line align-top" key={relationship.client_company_id}>
-                  <td className="py-4 pr-4">
+                <DataTableRow key={relationship.client_company_id}>
+                  <DataTableCell>
                     <p className="font-semibold">{relationship.client_company_name}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       Atendida por {relationship.provider_company_name}
                     </p>
-                  </td>
-                  <td className="py-4 pr-4">
+                  </DataTableCell>
+                  <DataTableCell>
                     <TypedBadge type="relationship" value={relationship.relationship_type} />
-                  </td>
-                  <td className="py-4 pr-4">
+                  </DataTableCell>
+                  <DataTableCell>
                     <div className="flex items-start gap-2">
                       <Workflow className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                       <span>{relationship.processes ?? "Sin procesos vinculados"}</span>
                     </div>
-                  </td>
-                  <td className="py-4 pr-4">
+                  </DataTableCell>
+                  <DataTableCell>
                     <TypedBadge type="status" value={relationship.relationship_status} />
-                  </td>
-                  <td className="max-w-sm py-4 pr-4 text-slate-700">
+                  </DataTableCell>
+                  <DataTableCell>
                     {relationship.relationship_description ?? "Sin notas"}
-                  </td>
-                </tr>
+                  </DataTableCell>
+                </DataTableRow>
               ))}
               {servedCompanies.length === 0 ? (
                 <tr>
@@ -108,28 +116,28 @@ export default async function EmpresasPage() {
                   </td>
                 </tr>
               ) : null}
-            </tbody>
-          </table>
+            </DataTableBody>
+          </DataTable>
         </div>
       </Panel>
 
       <Panel title="Lectura operativa">
         <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-line p-4">
+          <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
             <Network className="h-5 w-5 text-sea" />
             <h3 className="mt-3 font-semibold">Empresa base</h3>
             <p className="mt-2 text-sm leading-6 text-slate-700">
               McParking concentra la estructura de roles, procesos, personas y sistemas.
             </p>
           </div>
-          <div className="rounded-lg border border-line p-4">
+          <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
             <Building2 className="h-5 w-5 text-sea" />
             <h3 className="mt-3 font-semibold">Empresas cliente</h3>
             <p className="mt-2 text-sm leading-6 text-slate-700">
               El Alba, Los Cumas y Rixtath EIRL quedan registradas como empresas atendidas.
             </p>
           </div>
-          <div className="rounded-lg border border-line p-4">
+          <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
             <Workflow className="h-5 w-5 text-sea" />
             <h3 className="mt-3 font-semibold">Procesos aplicables</h3>
             <p className="mt-2 text-sm leading-6 text-slate-700">

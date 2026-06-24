@@ -1,13 +1,54 @@
 import Link from "next/link";
-import { ChevronRight, FileText, Workflow } from "lucide-react";
+import { ChevronRight, FileText } from "lucide-react";
 
-import { TypedBadge } from "@/components/dashboard/badge";
+import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import { ProcessFilters } from "@/components/dashboard/process-filters";
-import { DashboardShell, Panel } from "@/components/dashboard/shell";
+import { DashboardShell } from "@/components/dashboard/shell";
 import { getProcessCatalog, getProcessMatrix } from "@/lib/dashboard/data";
 
 function TextValue({ value }: { value: string | null | undefined }) {
   return <span>{value && value.length > 0 ? value : "No definido"}</span>;
+}
+
+function AccordionPanel({
+  children,
+  count,
+  defaultOpen = false,
+  description,
+  title,
+}: {
+  children: React.ReactNode;
+  count?: string;
+  defaultOpen?: boolean;
+  description?: string;
+  title: string;
+}) {
+  return (
+    <details
+      className="group mt-4 border-b border-[#d6e1ea] bg-transparent pb-1"
+      open={defaultOpen}
+    >
+      <summary className="cursor-pointer list-none px-1 py-4 transition hover:bg-white/50">
+        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-medium text-sea transition group-open:rotate-90 group-hover:bg-[#eef7fb]">
+              &gt;
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-medium tracking-tight text-navy">{title}</h2>
+              {description ? (
+                <p className="mt-1 text-sm leading-5 text-slate-600">{description}</p>
+              ) : null}
+            </div>
+          </div>
+          {count ? (
+            <span className="w-fit text-xs font-medium text-slate-500">{count}</span>
+          ) : null}
+        </div>
+      </summary>
+      <div className="pb-5 pt-2">{children}</div>
+    </details>
+  );
 }
 
 function groupedByProcess<T extends { process_id: string; process_name: string }>(items: T[]) {
@@ -70,23 +111,25 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const groupedRows = groupedByProcess(
     matrixResult.data.filter((row) => filteredProcessIds.has(row.process_id)),
   );
+  const processCount =
+    filteredProcesses.length === catalogResult.data.length
+      ? `${catalogResult.data.length} procesos`
+      : `${filteredProcesses.length} de ${catalogResult.data.length} procesos`;
 
   return (
     <DashboardShell
-      description="Catálogo de procesos oficiales con vista rápida desplegable por proceso."
+      description="Catalogo de procesos oficiales con vista rapida desplegable por proceso."
       eyebrow={`${catalogResult.data.length} Procesos`}
       title="Procesos oficiales"
     >
-      <Panel
-        count={
-          filteredProcesses.length === catalogResult.data.length
-            ? `${catalogResult.data.length} procesos`
-            : `${filteredProcesses.length} de ${catalogResult.data.length} procesos`
-        }
-        title="Procesos modelo"
+      <AccordionPanel
+        count={processCount}
+        defaultOpen
+        description="Listado principal. Abre un proceso solo cuando necesites revisar sus etapas."
+        title="Diccionario de procesos oficiales"
       >
         {catalogResult.error || matrixResult.error ? (
-          <div className="mt-5 rounded-md border border-[#e6b8a6] bg-[#fff4ef] p-4 text-sm text-[#91472b]">
+          <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-medium text-[#86510d]">
             {catalogResult.error?.message ?? matrixResult.error?.message}
           </div>
         ) : (
@@ -100,100 +143,122 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
               visibleCount={filteredProcesses.length}
             />
 
-            <div className="mt-4 divide-y divide-[#d7e3ec] overflow-hidden rounded-2xl border border-[#d7e3ec] bg-white shadow-[0_12px_32px_rgba(0,59,92,0.05)]">
+            <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
+              <div className="hidden grid-cols-[1.7fr_160px_160px_100px_100px_100px] border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid">
+                <span>Proceso</span>
+                <span>Empresa duena</span>
+                <span>Operacion</span>
+                <span>Criticidad</span>
+                <span>Etapas</span>
+                <span className="text-right">Accion</span>
+              </div>
+
               {filteredProcesses.map((process) => {
                 const group = groupedRows.find((item) => item.processId === process.process_id);
                 const rows = group?.rows ?? [];
 
                 return (
-                  <details className="group" key={process.process_id}>
-                    <summary className="grid cursor-pointer list-none gap-4 px-4 py-4 transition hover:bg-[#f6f9fb] xl:grid-cols-[minmax(460px,1fr)_auto] xl:items-center">
-                      <div className="min-w-0">
-                        <div className="flex items-start gap-3">
-                          <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[#d7e3ec] bg-[#eef8fb] text-sea transition group-open:border-sea group-open:bg-white">
-                            <ChevronRight className="h-4 w-4 transition group-open:rotate-90" />
+                  <details
+                    className="group/process border-b border-line last:border-b-0"
+                    key={process.process_id}
+                  >
+                    <summary className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe]">
+                      <div className="grid gap-3 xl:grid-cols-[1.7fr_160px_160px_100px_100px_100px] xl:items-center">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-medium text-sea transition group-open/process:rotate-90 group-hover/process:bg-[#eef7fb]">
+                            <ChevronRight className="h-4 w-4" />
                           </span>
                           <div className="min-w-0">
-                            <h3 className="max-w-4xl text-base font-bold leading-6 text-navy">
+                            <h3 className="text-base font-medium text-navy">
                               {process.process_name}
                             </h3>
                             <p className="mt-1 line-clamp-1 text-sm text-slate-600">
-                              {process.definition ?? "Sin definición"}
+                              {process.definition ?? "Sin definicion"}
                             </p>
-                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                              <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-1 text-slate-600">
-                                Empresa dueña:{" "}
-                                <strong className="font-semibold text-navy">
-                                  {process.owner_company_name ?? process.company_name}
-                                </strong>
-                              </span>
-                              <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-1 text-slate-600">
-                                Operado por:{" "}
-                                <strong className="font-semibold text-navy">
-                                  {process.operating_company_name ?? process.company_name}
-                                </strong>
-                              </span>
-                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                        <TypedBadge type="criticality" value={process.criticality} />
-                        <TypedBadge type="status" value={process.status} />
-                        <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-sm text-slate-600">
-                          Etapas{" "}
-                          <strong className="font-bold text-navy">{process.subprocess_count}</strong>
-                        </span>
-                        <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-sm text-slate-600">
-                          Roles{" "}
-                          <strong className="font-bold text-navy">
-                            {process.responsibility_count}
-                          </strong>
-                        </span>
-                        <Link
-                          className="inline-flex items-center gap-2 rounded-xl border border-[#d7e3ec] bg-white px-3 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef8fb] hover:text-sea"
-                          href={`/procesos/${process.process_id}`}
-                          title="Ver ficha"
-                        >
-                          <FileText className="h-4 w-4" />
-                          Ver ficha
-                        </Link>
+                        <div>
+                          <p className="text-xs text-slate-500 xl:hidden">Empresa duena</p>
+                          <p className="text-sm font-medium text-navy">
+                            {process.owner_company_name ?? process.company_name ?? "Sin empresa"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-slate-500 xl:hidden">Operacion</p>
+                          <p className="text-sm text-slate-700">
+                            {process.area_name ?? "Sin tipo"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <TypedBadge type="criticality" value={process.criticality} />
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <ValueBadge tone="info">Etapas {process.subprocess_count}</ValueBadge>
+                          <ValueBadge tone="neutral">Roles {process.responsibility_count}</ValueBadge>
+                        </div>
+
+                        <div className="flex justify-start xl:justify-end">
+                          <Link
+                            className="inline-flex items-center gap-2 rounded-full bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea transition hover:bg-[#dff0f7]"
+                            href={`/procesos/${process.process_id}`}
+                            title="Ver ficha"
+                          >
+                            <FileText className="h-3.5 w-3.5" />
+                            Ver ficha
+                          </Link>
+                        </div>
                       </div>
                     </summary>
 
-                    <div className="min-w-0 border-t border-[#d7e3ec] bg-[#fbfcfd] px-4 py-4">
+                    <div className="bg-[#f8fafb] px-4 py-4">
                       {rows.length === 0 ? (
-                        <p className="text-sm text-slate-600">Este proceso aún no tiene etapas.</p>
+                        <p className="text-sm text-slate-600">Este proceso aun no tiene etapas.</p>
                       ) : (
-                        <div className="min-w-0 border-l border-[#d7e3ec] pl-4">
-                          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-600">
-                            <Workflow className="h-4 w-4 text-sea" />
-                            Vista rápida de etapas
+                        <div>
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-navy">Vista rapida de etapas</p>
+                              <p className="text-sm text-slate-600">
+                                Orden operativo, rol dueno e impacto dentro del proceso.
+                              </p>
+                            </div>
+                            <span className="text-xs font-medium text-slate-500">
+                              {rows.length} etapas
+                            </span>
                           </div>
-                          <div className="grid min-w-0 gap-2">
+
+                          <div className="overflow-hidden rounded-xl border border-line bg-white">
                             {rows.map((row, rowIndex) => (
                               <div
-                                className="grid min-w-0 gap-3 rounded-xl border border-[#d7e3ec] bg-white px-3 py-3 shadow-[0_1px_0_rgba(16,24,32,0.03)] md:grid-cols-[42px_minmax(220px,1.4fr)_minmax(160px,1fr)_92px] md:items-center"
+                                className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 md:grid-cols-[42px_minmax(220px,1.4fr)_minmax(160px,1fr)_120px] md:items-center"
                                 key={row.subprocess_id}
                               >
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#d7e3ec] bg-[#eef8fb] text-sm font-bold text-sea">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef7fb] text-sm font-medium text-sea">
                                   {row.sort_order ?? rowIndex + 1}
                                 </div>
                                 <div className="min-w-0">
-                                  <p className="break-words font-bold text-navy">
+                                  <p className="text-sm font-medium text-navy">
                                     {row.subprocess_name}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {row.owner_person_name
+                                      ? `Persona actual: ${row.owner_person_name}`
+                                      : "Sin persona duena"}
                                   </p>
                                 </div>
                                 <div className="min-w-0 text-sm">
-                                  <p className="text-slate-500">Rol dueño</p>
-                                  <p className="mt-1 break-words font-medium text-navy">
+                                  <p className="text-xs text-slate-500">Rol dueno</p>
+                                  <p className="mt-1 font-medium text-navy">
                                     <TextValue value={row.owner_role_name} />
                                   </p>
                                 </div>
                                 <div className="text-sm">
-                                  <p className="text-slate-500">Impacto</p>
-                                  <p className="mt-1 font-bold text-navy">
+                                  <p className="text-xs text-slate-500">Impacto</p>
+                                  <p className="mt-1 font-medium text-navy">
                                     {row.impact_percent === null ? "-" : `${row.impact_percent}%`}
                                   </p>
                                 </div>
@@ -215,7 +280,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
             </div>
           </>
         )}
-      </Panel>
+      </AccordionPanel>
     </DashboardShell>
   );
 }

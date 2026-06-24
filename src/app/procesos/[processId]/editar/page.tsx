@@ -10,7 +10,7 @@ import {
 import { DashboardShell } from "@/components/dashboard/shell";
 import { updateProcessBasics } from "@/app/admin/actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProcessCatalogItem, getProcessMatrix } from "@/lib/dashboard/data";
+import { getProcessCatalogItem, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
 import { StageEditor } from "./stage-editor";
 
 type Params = Promise<{
@@ -38,7 +38,7 @@ function Field({
 }
 
 const inputClass =
-  "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#dff4fc]";
+  "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
 
 function PrimaryButton({ children }: { children: React.ReactNode }) {
   return (
@@ -62,11 +62,12 @@ export default async function EditProcessPage({
   const { processId } = await params;
   const messages = await searchParams;
   const supabase = createSupabaseServerClient();
-  const [processResult, matrixResult, rolesResult, systemsResult] = await Promise.all([
+  const [processResult, matrixResult, rolesResult, systemsResult, roleDictionaryResult] = await Promise.all([
     getProcessCatalogItem(processId),
     getProcessMatrix(processId),
     supabase.from("roles").select("id,name").order("name"),
     supabase.from("systems").select("id,name").order("name"),
+    getRoleDictionary(),
   ]);
 
   if (!processResult.data) {
@@ -89,14 +90,14 @@ export default async function EditProcessPage({
     >
       <div className="mt-5 flex flex-wrap gap-2">
         <Link
-          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#edf8fd]"
+          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
           href={`/procesos/${process.process_id}`}
         >
           <ArrowLeft className="h-4 w-4" />
           Volver a la ficha
         </Link>
         <Link
-          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#edf8fd]"
+          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
           href="/procesos"
         >
           <FileText className="h-4 w-4" />
@@ -195,6 +196,7 @@ export default async function EditProcessPage({
         nextSortOrder={nextSortOrder}
         processId={process.process_id}
         roles={roles}
+        roleDictionary={roleDictionaryResult.data}
         systems={systems}
       />
     </DashboardShell>

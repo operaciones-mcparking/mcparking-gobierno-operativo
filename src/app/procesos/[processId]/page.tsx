@@ -49,7 +49,7 @@ function ChipList({ items }: { items: string[] }) {
     <div className="flex flex-wrap gap-2">
       {items.map((item) => (
         <span
-          className="rounded-md bg-[#edf8fd] px-2 py-1 text-xs font-semibold text-navy"
+          className="rounded-md bg-[#eef4f8] px-2 py-1 text-xs font-semibold text-navy"
           key={item}
         >
           {item}
@@ -288,7 +288,7 @@ export default async function ProcessDetailPage({ params }: { params: Params }) 
 
           <div className="flex flex-wrap gap-2">
             <Link
-              className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#edf8fd]"
+              className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
               href="/procesos"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -349,7 +349,7 @@ export default async function ProcessDetailPage({ params }: { params: Params }) 
                   {row.sort_order ?? index + 1}
                 </div>
 
-                <article className="cursor-pointer rounded-lg border border-line bg-mist p-4 transition hover:border-sea hover:bg-[#edf8fd]">
+                <article className="cursor-pointer rounded-lg border border-line bg-mist p-4 transition hover:border-sea hover:bg-[#eef4f8]">
                   <div className="grid gap-3 lg:grid-cols-[1fr_360px] lg:items-center">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">

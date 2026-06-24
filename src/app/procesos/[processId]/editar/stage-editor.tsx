@@ -10,7 +10,8 @@ import {
   updateSubprocessImpacts,
   updateSubprocessDetail,
 } from "@/app/admin/actions";
-import { criticalityOptions, TypedBadge } from "@/components/dashboard/badge";
+import { Badge, criticalityOptions, TypedBadge, ValueBadge } from "@/components/dashboard/badge";
+import type { RoleDictionaryItem } from "@/lib/dashboard/data";
 
 type StageRow = {
   process_id: string;
@@ -40,7 +41,7 @@ type System = {
 };
 
 const inputClass =
-  "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#dff4fc]";
+  "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
 
 const roleHelp = {
   owner: "Rol responsable de que la etapa exista, funcione y tenga seguimiento.",
@@ -115,6 +116,125 @@ function RoleSelect({
         </option>
       ))}
     </select>
+  );
+}
+
+function roleTone(level: string | null) {
+  if (level === "executive" || level === "board") return "info";
+  if (level === "strategic" || level === "tactical") return "warning";
+  return "success";
+}
+
+function normalizeRoleName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function hasMatchingSystemRole(dictionaryRole: RoleDictionaryItem, roles: Role[]) {
+  const title = normalizeRoleName(dictionaryRole.role_name);
+  const area = normalizeRoleName(dictionaryRole.area_name ?? "");
+
+  return roles.some((role) => {
+    const roleName = normalizeRoleName(role.name);
+    return roleName.includes(title) || title.includes(roleName) || roleName.includes(area);
+  });
+}
+
+function roleLevelLabel(level: string | null) {
+  if (level === "executive") return "Ejecutivo";
+  if (level === "strategic") return "Estrategico";
+  if (level === "tactical") return "Tactico";
+  if (level === "board") return "Directorio";
+  return "Operativo";
+}
+
+function RoleDictionary({
+  dictionary,
+  roles,
+}: {
+  dictionary: RoleDictionaryItem[];
+  roles: Role[];
+}) {
+  return (
+    <section className="rounded-xl border border-line bg-white">
+      <div className="flex flex-col justify-between gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center">
+        <div>
+          <h3 className="text-sm font-medium text-navy">Diccionario de roles operativo</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-600">
+            Usalo como guia para elegir rol dueno, usuario, apoyo o respaldo al construir etapas.
+          </p>
+        </div>
+        <span className="text-xs text-slate-500">{dictionary.length} roles base</span>
+      </div>
+
+      {dictionary.length === 0 ? (
+        <div className="p-4 text-sm text-slate-600">
+          Todavia no hay diccionario cargado. Crealo o editalo desde Roles y personas.
+        </div>
+      ) : (
+        <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-4">
+        {dictionary.map((role) => {
+          const available = hasMatchingSystemRole(role, roles);
+
+          return (
+            <details
+              className="group rounded-lg border border-line bg-[#fbfcfd] p-3 transition open:bg-white"
+              key={role.role_id}
+            >
+              <summary className="cursor-pointer list-none">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="truncate text-sm font-medium text-navy">{role.role_name}</p>
+                      <Badge tone={roleTone(role.role_level)}>{roleLevelLabel(role.role_level)}</Badge>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-600">
+                      Persona actual:{" "}
+                      <span className="font-medium text-navy">
+                        {role.current_person_name ?? "Sin persona"}
+                      </span>
+                    </p>
+                  </div>
+                  <ValueBadge tone={available ? "success" : "neutral"}>
+                    {role.role_code ?? "Sin codigo"}
+                  </ValueBadge>
+                </div>
+              </summary>
+
+              <div className="mt-3 border-t border-line pt-3">
+                <p className="text-xs leading-5 text-slate-700">
+                  {role.role_description ?? "Sin descripcion registrada."}
+                </p>
+                <div className="mt-3">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">
+                    Responsabilidades
+                  </p>
+                  <ul className="mt-2 space-y-1.5 text-xs leading-5 text-slate-700">
+                    {(role.responsibilities ?? []).slice(0, 3).map((responsibility) => (
+                      <li className="flex gap-2" key={responsibility}>
+                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sea" />
+                        <span>{responsibility}</span>
+                      </li>
+                    ))}
+                    {(role.responsibilities ?? []).length === 0 ? (
+                      <li className="text-slate-500">Sin responsabilidades registradas.</li>
+                    ) : null}
+                  </ul>
+                </div>
+                <p className="mt-3 text-[11px] leading-5 text-slate-500">
+                  {available
+                    ? "Existe una referencia similar entre los roles cargados."
+                    : "Si este rol no aparece en los selectores, revisa su creacion en Roles y personas."}
+                </p>
+              </div>
+            </details>
+          );
+        })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -280,12 +400,14 @@ export function StageEditor({
   nextSortOrder,
   processId,
   roles,
+  roleDictionary,
   systems,
 }: {
   initialRows: StageRow[];
   nextSortOrder: number;
   processId: string;
   roles: Role[];
+  roleDictionary: RoleDictionaryItem[];
   systems: System[];
 }) {
   const [rows, setRows] = useState(normalizeImpacts(initialRows));
@@ -363,6 +485,8 @@ export function StageEditor({
       </div>
 
       <div className="space-y-3 px-5 py-5">
+        <RoleDictionary dictionary={roleDictionary} roles={roles} />
+
         <details className="rounded-lg border border-line bg-white">
           <summary className="cursor-pointer list-none px-4 py-3">
             <div className="flex items-center gap-2 font-bold text-navy">
@@ -480,7 +604,7 @@ export function StageEditor({
             onDrop={() => handleDrop(index)}
           >
             <details>
-              <summary className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#edf8fd]">
+              <summary className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#eef4f8]">
                 <div className="grid gap-2 md:grid-cols-[38px_90px_1fr_120px_120px] md:items-center">
                   <span
                     className="inline-flex h-8 w-8 cursor-grab items-center justify-center rounded-md border border-line bg-white text-slate-500 active:cursor-grabbing"

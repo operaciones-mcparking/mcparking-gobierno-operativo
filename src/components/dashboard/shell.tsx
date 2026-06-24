@@ -5,20 +5,36 @@ import {
   Building2,
   Database,
   GitBranch,
-  LayoutDashboard,
+  Network,
   PlusCircle,
   Settings,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 
 const modules = [
-  { href: "/", icon: LayoutDashboard, label: "Resumen", helper: "Vista general" },
-  { href: "/empresas", icon: Building2, label: "Empresas", helper: "McParking y clientes" },
-  { href: "/procesos", icon: GitBranch, label: "Procesos", helper: "Modelo operativo" },
-  { href: "/roles-personas", icon: Users, label: "Roles y personas", helper: "Responsabilidades" },
-  { href: "/sistemas", icon: Database, label: "Sistemas", helper: "Herramientas" },
-  { href: "/brechas", icon: AlertTriangle, label: "Brechas", helper: "Alertas y riesgos" },
+  {
+    items: [
+      { href: "/empresas", icon: Building2, label: "Empresas", helper: "McParking y clientes" },
+      { href: "/estructura", icon: Network, label: "Estructura", helper: "Gobierno operativo" },
+      { href: "/procesos", icon: GitBranch, label: "Procesos", helper: "Modelo operativo" },
+    ],
+    label: "Gobierno operativo",
+  },
+  {
+    items: [
+      { href: "/roles-personas", icon: Users, label: "Roles y personas", helper: "Diccionario vivo" },
+      { href: "/sistemas", icon: Database, label: "Sistemas", helper: "Herramientas" },
+    ],
+    label: "Diccionarios",
+  },
+  {
+    items: [{ href: "/brechas", icon: AlertTriangle, label: "Brechas", helper: "Alertas y riesgos" }],
+    label: "Control",
+  },
 ];
+
+const flatModules = modules.flatMap((group) => group.items);
 
 function BrandLogo({ compact = false }: { compact?: boolean }) {
   return (
@@ -46,54 +62,69 @@ export function DashboardShell({
   description: string;
 }) {
   return (
-    <main className={`min-h-screen text-ink ${background === "white" ? "bg-white" : "bg-[#eef4f7]"}`}>
+    <main
+      className={`min-h-screen text-ink ${
+        background === "white"
+          ? "bg-white"
+          : "bg-[#f6f8fa]"
+      }`}
+    >
       <div className="flex min-h-screen">
-        <aside className="hidden w-76 shrink-0 border-r border-[#d7e3ec] bg-white/95 shadow-[8px_0_30px_rgba(0,59,92,0.06)] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-80 lg:flex-col">
+        <aside className="hidden w-76 shrink-0 border-r border-[#cbd8e3] bg-white/95 shadow-[10px_0_28px_rgba(2,53,116,0.06)] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-80 lg:flex-col">
           <div className="bg-navy px-6 py-7">
             <Link className="inline-flex items-center" href="/">
               <BrandLogo />
             </Link>
           </div>
 
-          <nav className="flex-1 space-y-2 p-5">
-            {modules.map((module) => {
-              const Icon = module.icon;
+          <nav className="flex-1 space-y-5 overflow-y-auto p-5">
+            {modules.map((group) => (
+              <div key={group.label}>
+                <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                  {group.label}
+                </p>
+                <div className="space-y-1">
+                  {group.items.map((module) => {
+                    const Icon = module.icon;
 
-              return (
-                <Link
-                  className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-sm font-semibold text-slate-700 transition hover:border-[#d7e3ec] hover:bg-[#f5f9fb] hover:text-navy hover:shadow-[0_8px_20px_rgba(0,59,92,0.05)]"
-                  href={module.href}
-                  key={module.href}
-                >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#d7e3ec] bg-[#eef8fb] text-sea transition group-hover:border-sea group-hover:bg-white">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block leading-5">{module.label}</span>
-                    <span className="block truncate text-xs font-medium text-slate-500">
-                      {module.helper}
-                    </span>
-                  </span>
-                  <span className="h-8 w-1 rounded-full bg-transparent transition group-hover:bg-clay" />
-                </Link>
-              );
-            })}
+                    return (
+                      <Link
+                        className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:border-[#cbd8e3] hover:bg-[#f6f8fa] hover:text-navy"
+                        href={module.href}
+                        key={module.href}
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#cbd8e3] bg-[#eef4f8] text-sea transition group-hover:border-sea group-hover:bg-white">
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block leading-5">{module.label}</span>
+                          <span className="block truncate text-xs font-normal text-slate-500">
+                            {module.helper}
+                          </span>
+                        </span>
+                        <span className="h-8 w-1 rounded-full bg-transparent transition group-hover:bg-clay" />
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
-          <div className="border-t border-[#d7e3ec] bg-[#fbfdfe] p-5">
+          <div className="border-t border-[#cbd8e3] bg-[#fbfdfe] p-5">
             <Link
-              className="flex items-center gap-3 rounded-xl bg-navy px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(0,59,92,0.16)] transition hover:bg-[#075077]"
+              className="flex items-center gap-3 rounded-xl bg-navy px-4 py-3 text-sm font-medium text-white shadow-[0_10px_22px_rgba(2,53,116,0.16)] transition hover:bg-[#034982]"
               href="/admin"
             >
               <PlusCircle className="h-5 w-5 text-clay" />
               <span className="flex-1">Cargar datos</span>
             </Link>
-            <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#d7e3ec] bg-white px-3 py-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef8fb] text-sea">
+            <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#cbd8e3] bg-white px-3 py-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef4f8] text-sea">
                 <Settings className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-navy">MVP interno</p>
+                <p className="text-sm font-medium text-navy">MVP interno</p>
                 <p className="text-xs text-slate-500">Sin autenticación</p>
               </div>
             </div>
@@ -101,12 +132,12 @@ export function DashboardShell({
         </aside>
 
         <div className="min-w-0 flex-1">
-          <div className="border-b border-[#d7e3ec] bg-navy px-4 py-3 lg:hidden">
+          <div className="border-b border-[#cbd8e3] bg-navy px-4 py-3 lg:hidden">
             <Link className="inline-flex items-center" href="/">
               <BrandLogo compact />
             </Link>
             <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {modules.map((module) => (
+              {flatModules.map((module) => (
                 <Link
                   className="whitespace-nowrap rounded-lg border border-line bg-mist px-3 py-2 text-sm font-semibold text-slate-700"
                   href={module.href}
@@ -125,15 +156,15 @@ export function DashboardShell({
           </div>
 
           <div className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
-            <header className="rounded-2xl border border-[#d7e3ec] bg-white px-5 py-6 shadow-[0_14px_40px_rgba(0,59,92,0.06)]">
-              <div className="max-w-3xl">
-                <p className="mb-2 text-xs font-black uppercase tracking-[0.18em] text-sea">
+            <header className="border-b border-[#cbd8e3] bg-transparent pb-5">
+              <div className="border-l-4 border-clay px-5 py-1 sm:px-6">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-sea">
                   {eyebrow}
                 </p>
-                <h1 className="text-3xl font-black leading-tight tracking-tight text-navy sm:text-4xl">
+                <h1 className="max-w-4xl text-2xl font-medium leading-tight tracking-tight text-navy sm:text-[1.9rem]">
                   {title}
                 </h1>
-                <p className="mt-3 max-w-2xl text-base leading-7 text-slate-700">
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
                   {description}
                 </p>
               </div>
@@ -150,24 +181,75 @@ export function DashboardShell({
 export function Panel({
   children,
   count,
+  description,
   title,
 }: {
   children: React.ReactNode;
   count?: string;
+  description?: string;
   title: string;
 }) {
   return (
-    <section className="mt-5 rounded-2xl border border-[#d7e3ec] bg-white p-5 shadow-[0_14px_40px_rgba(0,59,92,0.06)]">
+    <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-        <h2 className="text-xl font-black tracking-tight text-navy">{title}</h2>
+        <div className="px-5 pt-5">
+          <h2 className="text-base font-medium tracking-tight text-navy">{title}</h2>
+          {description ? (
+            <p className="mt-1 text-sm leading-5 text-slate-600">{description}</p>
+          ) : null}
+        </div>
         {count ? (
-          <span className="rounded-full border border-[#d7e3ec] bg-[#f5f9fb] px-3 py-1 text-sm font-semibold text-slate-600">
+          <span className="mx-5 mt-5 w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600 sm:ml-0">
             {count}
           </span>
         ) : null}
       </div>
-      {children}
+      <div className="px-5 pb-5">{children}</div>
     </section>
+  );
+}
+
+export function KpiCard({
+  icon: Icon,
+  label,
+  status,
+  tone = "neutral",
+  value,
+  variation,
+}: {
+  icon: LucideIcon;
+  label: string;
+  status?: string;
+  tone?: "success" | "info" | "warning" | "danger" | "neutral";
+  value: number | string;
+  variation?: string;
+}) {
+  const toneClasses = {
+    danger: "border-[#ffd4a3] bg-[#fff8ef] text-[#8a4a00]",
+    info: "border-[#c9d8e4] bg-[#eef4f8] text-[#023574]",
+    neutral: "border-[#d7e3ec] bg-[#f8fbfd] text-slate-600",
+    success: "border-[#cfeeda] bg-[#f1fbf4] text-[#22613b]",
+    warning: "border-[#ffe699] bg-[#fffaf0] text-[#765900]",
+  };
+
+  return (
+    <div className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.035)] transition hover:border-[#9bcbdc] hover:shadow-[0_12px_24px_rgba(2,53,116,0.06)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-[#f3f8fb] text-sea">
+          <Icon className="h-4 w-4" />
+        </div>
+        {status ? (
+          <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}>
+            {status}
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-4 text-sm leading-5 text-slate-600">{label}</p>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <p className="text-lg font-medium tracking-tight text-navy">{value}</p>
+        {variation ? <p className="text-xs font-semibold text-slate-500">{variation}</p> : null}
+      </div>
+    </div>
   );
 }
 

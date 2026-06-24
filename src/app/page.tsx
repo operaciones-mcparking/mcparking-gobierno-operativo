@@ -1,5 +1,16 @@
 import Link from "next/link";
-import { DashboardShell, Panel } from "@/components/dashboard/shell";
+import {
+  AlertTriangle,
+  Building2,
+  Database,
+  GitBranch,
+  ShieldCheck,
+  UserRoundCheck,
+  Users,
+  Workflow,
+} from "lucide-react";
+
+import { DashboardShell, KpiCard, Panel } from "@/components/dashboard/shell";
 import {
   getPersonBottlenecks,
   getProcessGaps,
@@ -11,33 +22,38 @@ import {
 const moduleCards = [
   {
     href: "/empresas",
-    number: "2",
+    icon: Building2,
+    number: "1",
     title: "Empresas",
     text: "McParking como empresa principal, empresas atendidas y procesos asociados.",
   },
   {
     href: "/brechas",
-    number: "3",
+    icon: AlertTriangle,
+    number: "2",
     title: "Brechas",
-    text: "Procesos sin dueño, sin persona asignada, sin respaldo o con documentación pendiente.",
+    text: "Procesos sin dueno, sin persona asignada, sin respaldo o con documentacion pendiente.",
   },
   {
     href: "/procesos",
-    number: "4",
+    icon: GitBranch,
+    number: "3",
     title: "Procesos",
     text: "Relacion proceso, subproceso, responsabilidad, rol y persona actual.",
   },
   {
     href: "/roles-personas",
-    number: "5",
+    icon: Users,
+    number: "4",
     title: "Roles y personas",
-    text: "Carga por rol y concentración de responsabilidades por persona.",
+    text: "Carga por rol y concentracion de responsabilidades por persona.",
   },
   {
     href: "/sistemas",
-    number: "6",
+    icon: Database,
+    number: "5",
     title: "Sistemas",
-    text: "Sistemas asociados a procesos, roles dueños y personas responsables.",
+    text: "Sistemas asociados a procesos, roles duenos y personas responsables.",
   },
 ];
 
@@ -52,26 +68,31 @@ export default async function Home() {
 
   const alerts = [
     {
-      label: "Procesos sin dueño",
+      icon: ShieldCheck,
+      label: "Procesos sin dueno",
       value: gaps.data.filter((gap) => gap.missing_owner_role).length,
       tone: "risk",
     },
     {
+      icon: ShieldCheck,
       label: "Procesos sin respaldo",
       value: gaps.data.filter((gap) => gap.missing_backup_role).length,
       tone: "risk",
     },
     {
+      icon: UserRoundCheck,
       label: "Roles sin persona de respaldo",
       value: roles.data.filter((role) => role.missing_backup_person).length,
       tone: "risk",
     },
     {
+      icon: Users,
       label: "Personas con mas de 1 rol",
       value: people.data.filter((person) => person.role_count > 1).length,
       tone: "watch",
     },
     {
+      icon: Workflow,
       label: "Procesos criticos",
       value: gaps.data.filter((gap) =>
         ["high", "critical"].includes(gap.criticality.toLowerCase()),
@@ -82,79 +103,100 @@ export default async function Home() {
 
   return (
     <DashboardShell
-      description="Portada ejecutiva para revisar salud operacional y navegar por módulos de detalle."
-      eyebrow="1 Resumen"
-      title="Red de Roles, Procesos, Áreas y Responsables"
+      description="Portada ejecutiva para revisar salud operacional y navegar por modulos de detalle."
+      eyebrow="Gobierno operativo"
+      title="Red de Roles, Procesos, Areas y Responsables"
     >
       <Panel
         count={`${alerts.reduce((total, alert) => total + alert.value, 0)} senales`}
         title="Alertas ejecutivas"
       >
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {alerts.map((alert) => (
-            <div className="rounded-xl border border-[#d7e3ec] bg-[#f6f9fb] p-4 transition hover:bg-white hover:shadow-[0_10px_24px_rgba(0,59,92,0.05)]" key={alert.label}>
-              <p className="text-sm font-medium leading-5 text-slate-600">{alert.label}</p>
-              <div className="mt-4 flex items-end justify-between gap-3">
-                <span className="text-3xl font-bold text-navy">{alert.value}</span>
-                <span
-                  className={`rounded px-2 py-1 text-xs font-semibold ${
-                    alert.tone === "risk"
-                      ? "bg-[#ffe6ca] text-[#86510d]"
-                      : alert.tone === "watch"
-                        ? "bg-[#fff2c9] text-[#755300]"
-                        : "bg-[#e4f4ea] text-[#24613d]"
-                  }`}
-                >
-                  {alert.value === 0
-                    ? "OK"
-                    : alert.tone === "monitor"
-                      ? "Monitorear"
-                      : "Revisar"}
-                </span>
-              </div>
-            </div>
-          ))}
+          {alerts.map((alert) => {
+            const status =
+              alert.value === 0 ? "OK" : alert.tone === "monitor" ? "Monitorear" : "Revisar";
+            const tone =
+              alert.value === 0
+                ? "success"
+                : alert.tone === "risk"
+                  ? "danger"
+                  : alert.tone === "watch"
+                    ? "warning"
+                    : "info";
+
+            return (
+              <KpiCard
+                icon={alert.icon}
+                key={alert.label}
+                label={alert.label}
+                status={status}
+                tone={tone}
+                value={alert.value}
+                variation="Estado actual"
+              />
+            );
+          })}
         </div>
       </Panel>
 
       <section className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {moduleCards.map((card) => (
           <Link
-            className="rounded-2xl border border-[#d7e3ec] bg-white p-5 shadow-[0_12px_32px_rgba(0,59,92,0.05)] transition hover:-translate-y-0.5 hover:border-sea hover:shadow-[0_18px_40px_rgba(0,59,92,0.09)]"
+            className="group rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.035)] transition hover:border-[#9bcbdc] hover:shadow-[0_12px_24px_rgba(2,53,116,0.06)]"
             href={card.href}
             key={card.href}
           >
-            <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-xl bg-[#fff1dc] px-2 text-sm font-black text-[#86510d]">
-              {card.number}
-            </span>
-            <h2 className="mt-3 text-lg font-bold text-navy">{card.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{card.text}</p>
+            <div className="flex items-center justify-between gap-3">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-[#f3f8fb] text-sea transition group-hover:border-sea group-hover:bg-white">
+                <card.icon className="h-4 w-4" />
+              </span>
+              <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-md bg-[#fff8db] px-2 text-xs font-medium text-[#765900]">
+                {card.number}
+              </span>
+            </div>
+            <h2 className="mt-3 text-sm font-medium text-navy">{card.title}</h2>
+            <p className="mt-2 text-sm leading-5 text-slate-600">{card.text}</p>
           </Link>
         ))}
       </section>
 
       <Panel title="Estado del modelo">
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="rounded-xl border border-[#d7e3ec] bg-[#f6f9fb] p-4">
-            <p className="text-sm text-slate-600">Procesos</p>
-            <p className="mt-2 text-2xl font-bold text-navy">{gaps.data.length}</p>
-          </div>
-          <div className="rounded-xl border border-[#d7e3ec] bg-[#f6f9fb] p-4">
-            <p className="text-sm text-slate-600">Responsabilidades</p>
-            <p className="mt-2 text-2xl font-bold text-navy">{responsibilities.data.length}</p>
-          </div>
-          <div className="rounded-xl border border-[#d7e3ec] bg-[#f6f9fb] p-4">
-            <p className="text-sm text-slate-600">Roles</p>
-            <p className="mt-2 text-2xl font-bold text-navy">{roles.data.length}</p>
-          </div>
-          <div className="rounded-xl border border-[#d7e3ec] bg-[#f6f9fb] p-4">
-            <p className="text-sm text-slate-600">Personas</p>
-            <p className="mt-2 text-2xl font-bold text-navy">{people.data.length}</p>
-          </div>
-          <div className="rounded-xl border border-[#d7e3ec] bg-[#f6f9fb] p-4">
-            <p className="text-sm text-slate-600">Sistemas asociados</p>
-            <p className="mt-2 text-2xl font-bold text-navy">{systems.data.length}</p>
-          </div>
+          <KpiCard
+            icon={GitBranch}
+            label="Procesos"
+            status="Modelo"
+            tone="info"
+            value={gaps.data.length}
+          />
+          <KpiCard
+            icon={Workflow}
+            label="Responsabilidades"
+            status="Roles"
+            tone="info"
+            value={responsibilities.data.length}
+          />
+          <KpiCard
+            icon={Users}
+            label="Roles"
+            status="Activos"
+            tone="success"
+            value={roles.data.length}
+          />
+          <KpiCard
+            icon={UserRoundCheck}
+            label="Personas"
+            status="Actuales"
+            tone="success"
+            value={people.data.length}
+          />
+          <KpiCard
+            icon={Database}
+            label="Sistemas asociados"
+            status="Soporte"
+            tone="info"
+            value={systems.data.length}
+          />
         </div>
       </Panel>
     </DashboardShell>

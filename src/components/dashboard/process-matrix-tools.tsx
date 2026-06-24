@@ -78,7 +78,7 @@ function ChipList({ items }: { items: string[] }) {
     <div className="flex flex-wrap gap-1.5">
       {items.map((item) => (
         <span
-          className="rounded-md bg-[#edf8fd] px-2 py-1 text-xs font-semibold text-navy"
+          className="rounded-md bg-[#eef4f8] px-2 py-1 text-xs font-semibold text-navy"
           key={item}
         >
           {item}
@@ -245,7 +245,7 @@ export function ProcessMatrixTools({ rows }: { rows: ProcessMatrixRow[] }) {
 
   return (
     <div className="border-t border-line px-5 pb-5">
-      <div className="mt-5 rounded-lg border border-line bg-mist p-4">
+      <div className="mt-5 rounded-2xl border border-line bg-[#f8fbfd] p-4 shadow-[0_10px_24px_rgba(2,53,116,0.04)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm font-bold text-navy">
@@ -271,7 +271,7 @@ export function ProcessMatrixTools({ rows }: { rows: ProcessMatrixRow[] }) {
             <div className="flex gap-2 self-end">
               {hasFilters ? (
                 <button
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-white"
+                  className="inline-flex h-10 items-center justify-center rounded-xl border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-white"
                   onClick={clearFilters}
                   title="Limpiar filtros"
                   type="button"
@@ -280,7 +280,7 @@ export function ProcessMatrixTools({ rows }: { rows: ProcessMatrixRow[] }) {
                 </button>
               ) : null}
               <button
-                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-navy px-3 text-sm font-bold text-white transition hover:bg-sea"
+                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-navy px-3 text-sm font-bold text-white shadow-[0_10px_22px_rgba(2,53,116,0.16)] transition hover:bg-sea"
                 onClick={downloadExcel}
                 type="button"
               >
@@ -296,8 +296,8 @@ export function ProcessMatrixTools({ rows }: { rows: ProcessMatrixRow[] }) {
         {filteredRows.length === 0 ? (
           <EmptyState description="Prueba limpiando filtros o seleccionando otro criterio." />
         ) : (
-          <section className="overflow-hidden rounded-lg border border-line bg-white">
-            <div className="hidden grid-cols-[minmax(220px,1.5fr)_minmax(190px,1.1fr)_150px_96px_110px_82px] gap-4 border-b border-line bg-[#f6f9fb] px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-slate-500 lg:grid">
+          <section className="overflow-hidden rounded-2xl border border-line bg-white shadow-[0_12px_30px_rgba(2,53,116,0.05)]">
+            <div className="hidden grid-cols-[minmax(220px,1.5fr)_minmax(190px,1.1fr)_150px_96px_110px_82px] gap-4 border-b border-line bg-[#f6f9fb] px-4 py-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 lg:grid">
               <span>Etapa</span>
               <span>Responsable</span>
               <span>Respaldo</span>
@@ -321,9 +321,9 @@ export function ProcessMatrixTools({ rows }: { rows: ProcessMatrixRow[] }) {
 function MatrixRowCard({ row }: { row: ProcessMatrixRow }) {
   return (
     <details className="group bg-white transition open:bg-[#fbfcfd]">
-      <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 hover:bg-[#f6f9fb] lg:grid-cols-[minmax(220px,1.5fr)_minmax(190px,1.1fr)_150px_96px_110px_82px] lg:items-center">
+      <summary className="grid cursor-pointer list-none gap-3 px-4 py-4 hover:bg-[#f6fafc] lg:grid-cols-[minmax(220px,1.5fr)_minmax(190px,1.1fr)_150px_96px_110px_82px] lg:items-center">
         <div>
-          <p className="font-bold leading-5 text-navy">{row.subprocess_name}</p>
+          <p className="font-semibold leading-5 text-navy">{row.subprocess_name}</p>
           <p className="mt-1 text-xs text-slate-500">Empresa: {value(row.owner_company_name)}</p>
         </div>
 
@@ -342,13 +342,13 @@ function MatrixRowCard({ row }: { row: ProcessMatrixRow }) {
 
         <TypedBadge type="criticality" value={row.criticality} />
 
-        <div className="flex items-center gap-2 text-sm font-bold text-sea lg:justify-end">
+        <div className="flex items-center gap-2 text-sm font-semibold text-sea lg:justify-end">
           Ver
           <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
         </div>
       </summary>
 
-      <div className="border-t border-line bg-mist px-4 py-4">
+      <div className="border-t border-line bg-[#f8fbfd] px-4 py-4">
         <div className="grid gap-3 lg:grid-cols-3">
           <DetailBlock title="Roles relacionados">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -381,7 +381,7 @@ function MatrixRowCard({ row }: { row: ProcessMatrixRow }) {
 
 function DetailBlock({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <section className="rounded-lg border border-line bg-white p-3">
+    <section className="rounded-2xl border border-line bg-white p-3">
       <h3 className="mb-3 text-xs font-bold uppercase tracking-[0.1em] text-slate-500">{title}</h3>
       {children}
     </section>
@@ -432,7 +432,7 @@ function MatrixSelect({
     <label className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
       {label}
       <select
-        className="mt-1 h-10 w-full rounded-md border border-line bg-white px-3 text-sm font-semibold normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:ring-2 focus:ring-[#d8eef4]"
+        className="mt-1 h-10 w-full rounded-xl border border-line bg-white px-3 text-sm font-semibold normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]"
         onChange={(event) => onChange(event.target.value)}
         value={selectedValue}
       >

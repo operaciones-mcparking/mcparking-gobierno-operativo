@@ -6,13 +6,17 @@
   color-scheme: light;
 }
 
+html {
+  font-size: 15px;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: #eef4f7;
+  background: #f6f8fa;
   font-family:
     ui-sans-serif,
     system-ui,
@@ -21,9 +25,21 @@ body {
     "Segoe UI",
     sans-serif,
     sans-serif;
-  color: #101820;
+  color: #132333;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+body .font-bold {
+  font-weight: 600;
+}
+
+body .font-semibold {
+  font-weight: 550;
+}
+
+body .font-medium {
+  font-weight: 500;
 }
 
 ::selection {

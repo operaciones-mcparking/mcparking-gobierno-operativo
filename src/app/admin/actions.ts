@@ -41,6 +41,12 @@ function fail(message: string, path = "/admin"): never {
   redirect(`${path}?error=${encodeURIComponent(message)}`);
 }
 
+function revalidateRoleDirectory() {
+  revalidatePath("/roles-personas");
+  revalidatePath("/estructura");
+  revalidatePath("/procesos");
+}
+
 async function runInsert(
   table: string,
   payload: Record<string, unknown>,
@@ -214,6 +220,63 @@ export async function addPerson(formData: FormData) {
   );
 }
 
+export async function createRoleDictionaryEntry(formData: FormData) {
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const personId = optionalValue(formData, "person_id");
+  const areaId = value(formData, "area_id");
+  const responsibilities = value(formData, "responsibilities")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const supabase = createSupabaseServerClient();
+
+  const { data: roleData, error: roleError } = await supabase
+    .from("roles")
+    .insert({
+      area_id: areaId,
+      description: optionalValue(formData, "description"),
+      is_corporate: checkbox(formData, "is_corporate"),
+      is_local: checkbox(formData, "is_local"),
+      level: value(formData, "level"),
+      name: value(formData, "name"),
+      org_column: numberValue(formData, "org_column"),
+      org_parent_role_id: optionalValue(formData, "org_parent_role_id"),
+      org_row: numberValue(formData, "org_row"),
+      responsibilities,
+      role_code: optionalValue(formData, "role_code"),
+      sort_order: numberValue(formData, "sort_order"),
+      status: "active",
+    })
+    .select("id, areas(company_id)")
+    .single();
+
+  if (roleError) {
+    fail(roleError.message, returnTo);
+  }
+
+  const area = Array.isArray(roleData?.areas) ? roleData?.areas[0] : roleData?.areas;
+  const companyId = area?.company_id ?? null;
+
+  if (personId) {
+    const { error: assignmentError } = await supabase.from("person_roles").insert({
+      company_id: companyId,
+      is_backup: false,
+      is_primary: true,
+      person_id: personId,
+      role_id: roleData.id,
+      start_date: new Date().toISOString().slice(0, 10),
+      status: "active",
+    });
+
+    if (assignmentError) {
+      fail(assignmentError.message, returnTo);
+    }
+  }
+
+  revalidateRoleDirectory();
+  redirect(`${returnTo}?ok=${encodeURIComponent("Rol creado")}`);
+}
+
 export async function assignPersonRole(formData: FormData) {
   await runInsert(
     "person_roles",
@@ -228,6 +291,253 @@ export async function assignPersonRole(formData: FormData) {
     },
     "Persona asignada a rol",
   );
+}
+
+export async function updatePersonBasic(formData: FormData) {
+  const personId = value(formData, "person_id");
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const supabase = createSupabaseServerClient();
+  const { error } = await supabase
+    .from("people")
+    .update({
+      email: optionalValue(formData, "email"),
+      name: value(formData, "name"),
+      phone: optionalValue(formData, "phone"),
+    })
+    .eq("id", personId);
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  revalidateRoleDirectory();
+  redirect(`${returnTo}?ok=${encodeURIComponent("Persona actualizada")}`);
+}
+
+export async function archivePerson(formData: FormData) {
+  const personId = value(formData, "person_id");
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const supabase = createSupabaseServerClient();
+
+  const { error: assignmentError } = await supabase
+    .from("person_roles")
+    .update({
+      end_date: new Date().toISOString().slice(0, 10),
+      is_primary: false,
+      status: "inactive",
+    })
+    .eq("person_id", personId)
+    .eq("status", "active");
+
+  if (assignmentError) {
+    fail(assignmentError.message, returnTo);
+  }
+
+  const { error } = await supabase
+    .from("people")
+    .update({ status: "archived" })
+    .eq("id", personId);
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  revalidateRoleDirectory();
+  redirect(`${returnTo}?ok=${encodeURIComponent("Persona archivada")}`);
+}
+
+export async function updateRoleDictionaryEntry(formData: FormData) {
+  const roleId = value(formData, "role_id");
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const personId = optionalValue(formData, "person_id");
+  const areaId = value(formData, "area_id");
+  const responsibilities = value(formData, "responsibilities")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const supabase = createSupabaseServerClient();
+
+  const { data: areaData, error: areaDataError } = await supabase
+    .from("areas")
+    .select("company_id")
+    .eq("id", areaId)
+    .maybeSingle();
+
+  if (areaDataError) {
+    fail(areaDataError.message, returnTo);
+  }
+
+  const { error: roleError } = await supabase
+    .from("roles")
+    .update({
+      area_id: areaId,
+      description: optionalValue(formData, "description"),
+      is_corporate: checkbox(formData, "is_corporate"),
+      is_local: checkbox(formData, "is_local"),
+      level: value(formData, "level"),
+      name: value(formData, "name"),
+      org_column: numberValue(formData, "org_column"),
+      org_parent_role_id: optionalValue(formData, "org_parent_role_id"),
+      org_row: numberValue(formData, "org_row"),
+      responsibilities,
+      role_code: optionalValue(formData, "role_code"),
+      sort_order: numberValue(formData, "sort_order"),
+    })
+    .eq("id", roleId);
+
+  if (roleError) {
+    fail(roleError.message, returnTo);
+  }
+
+  const companyId = optionalValue(formData, "company_id") ?? areaData?.company_id ?? null;
+
+  const { error: deactivateError } = await supabase
+    .from("person_roles")
+    .update({
+      end_date: new Date().toISOString().slice(0, 10),
+      is_primary: false,
+      status: "inactive",
+    })
+    .eq("role_id", roleId)
+    .eq("is_primary", true)
+    .eq("status", "active");
+
+  if (deactivateError) {
+    fail(deactivateError.message, returnTo);
+  }
+
+  if (personId) {
+    const { error: assignmentError } = await supabase.from("person_roles").insert({
+      company_id: companyId,
+      is_backup: false,
+      is_primary: true,
+      person_id: personId,
+      role_id: roleId,
+      start_date: new Date().toISOString().slice(0, 10),
+      status: "active",
+    });
+
+    if (assignmentError) {
+      fail(assignmentError.message, returnTo);
+    }
+  }
+
+  revalidateRoleDirectory();
+  redirect(`${returnTo}?ok=${encodeURIComponent("Rol actualizado")}`);
+}
+
+export async function archiveRole(formData: FormData) {
+  const roleId = value(formData, "role_id");
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const supabase = createSupabaseServerClient();
+
+  const { error: assignmentError } = await supabase
+    .from("person_roles")
+    .update({
+      end_date: new Date().toISOString().slice(0, 10),
+      is_primary: false,
+      status: "inactive",
+    })
+    .eq("role_id", roleId)
+    .eq("status", "active");
+
+  if (assignmentError) {
+    fail(assignmentError.message, returnTo);
+  }
+
+  const { error } = await supabase
+    .from("roles")
+    .update({ status: "archived" })
+    .eq("id", roleId);
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  revalidateRoleDirectory();
+  redirect(`${returnTo}?ok=${encodeURIComponent("Rol archivado")}`);
+}
+
+export async function deleteRole(formData: FormData) {
+  const roleId = value(formData, "role_id");
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const supabase = createSupabaseServerClient();
+
+  if (!roleId) {
+    fail("No se recibio el identificador del rol. Refresca la pagina e intenta nuevamente.", returnTo);
+  }
+
+  const { data, error } = await supabase.rpc("delete_role_for_mvp", {
+    target_role_id: roleId,
+  });
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  if (data !== true) {
+    fail("No se pudo eliminar el rol. Puede que ya no exista o que falte ejecutar la migracion de permisos.", returnTo);
+  }
+
+  revalidateRoleDirectory();
+  redirect(`${returnTo}?ok=${encodeURIComponent("Rol eliminado")}`);
+}
+
+export async function toggleRoleGovernanceProcess(formData: FormData) {
+  const roleId = value(formData, "role_id");
+  const processKey = value(formData, "process_key");
+  const active = checkbox(formData, "active");
+  const returnTo = value(formData, "return_to") || "/estructura";
+  const supabase = createSupabaseServerClient();
+
+  const { error } = await supabase
+    .from("role_governance_processes")
+    .upsert(
+      {
+        process_key: processKey,
+        role_id: roleId,
+        status: active ? "inactive" : "active",
+      },
+      { onConflict: "role_id,process_key" },
+    );
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  revalidatePath("/estructura");
+  redirect(returnTo);
+}
+
+export async function toggleRoleGovernanceProcessInline(
+  roleId: string,
+  processKey: string,
+  currentlyActive: boolean,
+) {
+  const supabase = createSupabaseServerClient();
+
+  if (!roleId || !processKey) {
+    return { error: "Falta el rol o el proceso para guardar el cambio." };
+  }
+
+  const { error } = await supabase
+    .from("role_governance_processes")
+    .upsert(
+      {
+        process_key: processKey,
+        role_id: roleId,
+        status: currentlyActive ? "inactive" : "active",
+      },
+      { onConflict: "role_id,process_key" },
+    );
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  revalidatePath("/estructura");
+
+  return { error: null };
 }
 
 export async function addSystem(formData: FormData) {

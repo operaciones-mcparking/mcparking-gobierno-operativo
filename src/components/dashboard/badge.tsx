@@ -1,11 +1,11 @@
 export type BadgeTone = "success" | "info" | "warning" | "danger" | "neutral";
 
 const toneClasses: Record<BadgeTone, string> = {
-  danger: "bg-[#ffe6ca] text-[#86510d]",
-  info: "bg-[#e8f4f7] text-sea",
-  neutral: "bg-mist text-slate-600",
-  success: "bg-[#e4f4ea] text-[#24613d]",
-  warning: "bg-[#fff2c9] text-[#755300]",
+  danger: "border border-[#f2b66d] bg-[#fff0dc] text-[#7a3f00]",
+  info: "border border-[#c9d8e4] bg-[#eef4f8] text-[#023574]",
+  neutral: "border border-[#cbd8e3] bg-[#f3f6f8] text-slate-700",
+  success: "border border-[#a9ddbc] bg-[#e8f7ed] text-[#175a33]",
+  warning: "border border-[#e8cb65] bg-[#fff6cf] text-[#6b5200]",
 };
 
 const criticalityLabels: Record<string, { label: string; tone: BadgeTone }> = {
@@ -78,7 +78,9 @@ export function Badge({
   tone?: BadgeTone;
 }) {
   return (
-    <span className={`inline-flex rounded-md px-2 py-1 text-xs font-bold ${toneClasses[tone]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}
+    >
       {children}
     </span>
   );
@@ -104,7 +106,9 @@ export function ValueBadge({
   tone?: BadgeTone;
 }) {
   return (
-    <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-bold ${toneClasses[tone]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium ${toneClasses[tone]}`}
+    >
       {children}
     </span>
   );

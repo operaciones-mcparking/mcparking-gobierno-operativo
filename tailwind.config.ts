@@ -9,13 +9,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#101820",
-        line: "#dde5ec",
+        ink: "#132333",
+        line: "#cbd8e3",
         moss: "#66785f",
-        clay: "#f59f22",
-        sea: "#087c9f",
-        navy: "#003b5c",
-        mist: "#f7f9fb",
+        clay: "#FFC107",
+        sea: "#25677a",
+        navy: "#023574",
+        mist: "#f6f8fa",
       },
     },
   },

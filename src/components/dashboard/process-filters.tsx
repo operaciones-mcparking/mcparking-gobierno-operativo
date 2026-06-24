@@ -1,8 +1,8 @@
 "use client";
 
+import { X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
-import { Filter, X } from "lucide-react";
 
 type ProcessFiltersProps = {
   companyOptions: string[];
@@ -48,25 +48,20 @@ export function ProcessFilters({
   }
 
   return (
-    <section className="mt-5 rounded-2xl border border-[#d7e3ec] bg-[#f8fbfd] px-4 py-3 shadow-[0_1px_0_rgba(16,24,32,0.03)]">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#eef8fb] text-sea">
-            <Filter className="h-4 w-4" />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-navy">Filtros</p>
-            <p className="mt-1 text-sm text-slate-600">
-              {visibleCount} de {totalCount} procesos visibles. Se actualiza al cambiar una opción.
-            </p>
-          </div>
+    <section className="mt-2 border-b border-[#d6e1ea] pb-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-sm font-medium text-navy">Filtros</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {visibleCount} de {totalCount} procesos visibles. Se actualiza al cambiar una opcion.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <label className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+          <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
             Empresa
             <select
-              className="mt-1 h-10 min-w-[210px] rounded-xl border border-[#d7e3ec] bg-white px-3 text-sm font-semibold normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#d8eef4]"
+              className="mt-1 h-10 min-w-[210px] rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
               disabled={isPending}
               onChange={(event) => updateFilter("empresa", event.target.value)}
               value={selectedCompany}
@@ -80,10 +75,10 @@ export function ProcessFilters({
             </select>
           </label>
 
-          <label className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Tipo de operación
+          <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
+            Tipo de operacion
             <select
-              className="mt-1 h-10 min-w-[210px] rounded-xl border border-[#d7e3ec] bg-white px-3 text-sm font-semibold normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#d8eef4]"
+              className="mt-1 h-10 min-w-[210px] rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
               disabled={isPending}
               onChange={(event) => updateFilter("tipo", event.target.value)}
               value={selectedType}
@@ -99,7 +94,7 @@ export function ProcessFilters({
 
           {hasFilters ? (
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#d7e3ec] bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef8fb]"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-line bg-white px-3 text-sm font-medium text-navy transition hover:border-sea hover:bg-[#eef4f8]"
               disabled={isPending}
               onClick={clearFilters}
               type="button"

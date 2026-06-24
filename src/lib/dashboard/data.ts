@@ -127,6 +127,51 @@ export type CompanyServiceNetworkRow = {
   processes: string | null;
 };
 
+export type RoleDictionaryItem = {
+  role_id: string;
+  role_code: string | null;
+  role_name: string;
+  role_description: string | null;
+  role_level: string;
+  responsibilities: string[] | null;
+  is_corporate: boolean;
+  is_local: boolean;
+  sort_order: number | null;
+  org_parent_role_id: string | null;
+  org_parent_role_name: string | null;
+  org_parent_role_code: string | null;
+  org_column: number | null;
+  org_row: number | null;
+  role_status: string;
+  area_id: string | null;
+  area_name: string | null;
+  company_id: string | null;
+  company_name: string | null;
+  current_person_id: string | null;
+  current_person_name: string | null;
+};
+
+export type AreaDirectoryItem = {
+  id: string;
+  name: string;
+  company_id: string | null;
+  company_name: string | null;
+};
+
+export type PersonDirectoryItem = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  status: string;
+};
+
+export type RoleGovernanceProcessItem = {
+  role_id: string;
+  process_key: string;
+  status: string;
+};
+
 export async function getProcessCatalog() {
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
@@ -253,4 +298,55 @@ export async function getCompanyServiceNetwork() {
     .order("client_company_name");
 
   return { data: (data ?? []) as CompanyServiceNetworkRow[], error };
+}
+
+export async function getRoleDictionary() {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("v_role_dictionary")
+    .select("*")
+    .order("sort_order", { nullsFirst: false })
+    .order("role_name");
+
+  return { data: (data ?? []) as RoleDictionaryItem[], error };
+}
+
+export async function getAreaDirectory() {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("areas")
+    .select("id,name,company_id,companies(name)")
+    .order("name");
+
+  const mapped = (data ?? []).map((area) => {
+    const company = Array.isArray(area.companies) ? area.companies[0] : area.companies;
+    return {
+      company_id: area.company_id ?? null,
+      company_name: company?.name ?? null,
+      id: area.id,
+      name: area.name,
+    };
+  }) as AreaDirectoryItem[];
+
+  return { data: mapped, error };
+}
+
+export async function getPersonDirectory() {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("people")
+    .select("id,name,email,phone,status")
+    .order("name");
+
+  return { data: (data ?? []) as PersonDirectoryItem[], error };
+}
+
+export async function getRoleGovernanceProcesses() {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("role_governance_processes")
+    .select("role_id,process_key,status")
+    .eq("status", "active");
+
+  return { data: (data ?? []) as RoleGovernanceProcessItem[], error };
 }
