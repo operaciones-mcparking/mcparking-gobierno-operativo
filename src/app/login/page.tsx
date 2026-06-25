@@ -15,6 +15,8 @@ export default async function LoginPage({
         ? "No pudimos iniciar sesion. Revisa el correo o la clave."
         : params.error === "google"
           ? "No pudimos conectar con Google. Intenta nuevamente."
+          : params.error === "config"
+            ? "La configuracion de acceso no esta completa. Revisa las variables de Supabase en Vercel."
           : params.error === "not_allowed"
             ? "Tu correo no esta autorizado para entrar. Pide acceso a un administrador."
         : null;

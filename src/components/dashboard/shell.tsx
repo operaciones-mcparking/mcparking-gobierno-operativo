@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { redirect } from "next/navigation";
 import {
   AlertTriangle,
   Building2,
@@ -71,6 +72,11 @@ export async function DashboardShell({
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
   const { data: profile } = user
     ? await supabase
         .from("user_profiles")
@@ -78,6 +84,11 @@ export async function DashboardShell({
         .eq("user_id", user.id)
         .maybeSingle()
     : { data: null };
+
+  if (!profile || profile.status !== "active") {
+    redirect("/login?error=not_allowed");
+  }
+
   const contextOptions = await getOperationalContextOptions();
   const userLabel = user?.email ?? "Usuario interno";
   const isAdmin = profile?.app_role === "admin" && profile.status === "active";

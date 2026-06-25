@@ -24,6 +24,15 @@ export async function signIn(formData: FormData) {
     redirect("/login?error=invalid");
   }
 
+  const { data: allowed, error: allowError } = await supabase.rpc(
+    "ensure_user_profile_from_allowlist",
+  );
+
+  if (allowError || allowed !== true) {
+    await supabase.auth.signOut();
+    redirect("/login?error=not_allowed");
+  }
+
   const safeNext = next.startsWith("/") ? next : "/";
   redirect(`/contexto?next=${encodeURIComponent(safeNext)}`);
 }

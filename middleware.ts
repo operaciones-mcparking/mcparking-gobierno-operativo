@@ -5,11 +5,20 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export async function middleware(request: NextRequest) {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return NextResponse.next();
-  }
-
   let response = NextResponse.next({ request });
+  const isLoginPage = request.nextUrl.pathname === "/login";
+  const isAuthCallback = request.nextUrl.pathname === "/auth/callback";
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    if (isLoginPage || isAuthCallback) {
+      return response;
+    }
+
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("error", "config");
+    return NextResponse.redirect(url);
+  }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
@@ -29,9 +38,6 @@ export async function middleware(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const isLoginPage = request.nextUrl.pathname === "/login";
-  const isAuthCallback = request.nextUrl.pathname === "/auth/callback";
 
   if (!user && !isLoginPage && !isAuthCallback) {
     const url = request.nextUrl.clone();
