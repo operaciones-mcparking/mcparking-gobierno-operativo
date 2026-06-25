@@ -135,6 +135,10 @@ export const documentationOptions = [
 ];
 
 export const roleLevelOptions = [
+  { value: "directivo", label: "Directivo" },
+  { value: "gerencial", label: "Gerencial" },
+  { value: "jefatura", label: "Jefatura" },
+  { value: "analista", label: "Analista" },
   { value: "operational", label: "Operativo" },
   { value: "tactical", label: "Táctico" },
   { value: "strategic", label: "Estratégico" },

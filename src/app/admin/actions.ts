@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function value(formData: FormData, key: string) {
@@ -23,6 +25,25 @@ function numberValue(formData: FormData, key: string) {
   return raw.length > 0 ? Number(raw) : null;
 }
 
+function generateRoleCode(name: string) {
+  const words = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9\s]/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+
+  if (words.length === 0) {
+    return null;
+  }
+
+  const initials = words.map((word) => word[0]).join("").toUpperCase();
+  const compact = words.join("").slice(0, 5).toUpperCase();
+
+  return (initials.length >= 2 ? initials : compact).slice(0, 8);
+}
+
 function values(formData: FormData, key: string) {
   return formData
     .getAll(key)
@@ -31,20 +52,186 @@ function values(formData: FormData, key: string) {
     .filter(Boolean);
 }
 
+function withMessage(path: string, key: "error" | "ok", message: string) {
+  const [base, query = ""] = path.split("?");
+  const params = new URLSearchParams(query);
+  params.set(key, message);
+
+  return `${base}?${params.toString()}`;
+}
+
+function pathWithoutQuery(path: string) {
+  return path.split("?")[0] || path;
+}
+
 function done(message: string, path = "/admin"): never {
   revalidatePath("/");
   revalidatePath("/admin");
-  redirect(`${path}?ok=${encodeURIComponent(message)}`);
+  revalidatePath(pathWithoutQuery(path));
+  redirect(withMessage(path, "ok", message));
 }
 
 function fail(message: string, path = "/admin"): never {
-  redirect(`${path}?error=${encodeURIComponent(message)}`);
+  redirect(withMessage(path, "error", message));
 }
 
 function revalidateRoleDirectory() {
   revalidatePath("/roles-personas");
   revalidatePath("/estructura");
   revalidatePath("/procesos");
+}
+
+function adminDone(message: string): never {
+  revalidatePath("/admin");
+  redirect(withMessage("/admin", "ok", message));
+}
+
+async function requireAdminClient() {
+  const supabase = await createSupabaseAuthServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const { data: profile, error } = await supabase
+    .from("user_profiles")
+    .select("app_role,status")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    fail(error.message);
+  }
+
+  if (!profile || profile.app_role !== "admin" || profile.status !== "active") {
+    fail("No tienes permisos para administrar accesos.");
+  }
+
+  return supabase;
+}
+
+export async function authorizeEmailAccess(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const email = value(formData, "email").toLowerCase();
+
+  if (!email.includes("@")) {
+    fail("Ingresa un correo valido.");
+  }
+
+  const { error } = await supabase.from("auth_email_allowlist").upsert(
+    {
+      app_role: value(formData, "app_role"),
+      default_country_id: optionalValue(formData, "default_country_id"),
+      default_site_id: optionalValue(formData, "default_site_id"),
+      display_name: optionalValue(formData, "display_name"),
+      email,
+      status: value(formData, "status") || "active",
+    },
+    { onConflict: "email" },
+  );
+
+  if (error) {
+    fail(error.message);
+  }
+
+  adminDone("Correo autorizado");
+}
+
+export async function authorizeDomainAccess(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const domain = value(formData, "domain").toLowerCase().replace(/^@/, "");
+
+  if (!domain.includes(".")) {
+    fail("Ingresa un dominio valido, por ejemplo mcparking.cl.");
+  }
+
+  const { error } = await supabase.from("auth_domain_allowlist").upsert(
+    {
+      app_role: value(formData, "app_role"),
+      default_country_id: optionalValue(formData, "default_country_id"),
+      default_site_id: optionalValue(formData, "default_site_id"),
+      domain,
+      status: value(formData, "status") || "active",
+    },
+    { onConflict: "domain" },
+  );
+
+  if (error) {
+    fail(error.message);
+  }
+
+  adminDone("Dominio autorizado");
+}
+
+export async function updateUserAccessProfile(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const userId = value(formData, "user_id");
+
+  const { error } = await supabase
+    .from("user_profiles")
+    .update({
+      app_role: value(formData, "app_role"),
+      default_country_id: optionalValue(formData, "default_country_id"),
+      default_site_id: optionalValue(formData, "default_site_id"),
+      display_name: value(formData, "display_name"),
+      status: value(formData, "status"),
+    })
+    .eq("user_id", userId);
+
+  if (error) {
+    fail(error.message);
+  }
+
+  adminDone("Usuario actualizado");
+}
+
+export async function grantSiteAccess(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const siteId = value(formData, "site_id");
+
+  const { data: site, error: siteError } = await supabase
+    .from("sites")
+    .select("country_id")
+    .eq("id", siteId)
+    .maybeSingle();
+
+  if (siteError) {
+    fail(siteError.message);
+  }
+
+  const { error } = await supabase.from("user_site_access").upsert(
+    {
+      access_level: value(formData, "access_level"),
+      country_id: site?.country_id ?? optionalValue(formData, "country_id"),
+      site_id: siteId,
+      status: value(formData, "status") || "active",
+      user_id: value(formData, "user_id"),
+    },
+    { onConflict: "user_id,site_id" },
+  );
+
+  if (error) {
+    fail(error.message);
+  }
+
+  adminDone("Permiso de sede actualizado");
+}
+
+export async function archiveSiteAccess(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const { error } = await supabase
+    .from("user_site_access")
+    .update({ status: "archived" })
+    .eq("id", value(formData, "access_id"));
+
+  if (error) {
+    fail(error.message);
+  }
+
+  adminDone("Permiso archivado");
 }
 
 async function runInsert(
@@ -66,6 +253,154 @@ async function runInsert(
   done(message);
 }
 
+async function firstActiveSiteForCompany(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  companyId: string | null,
+  countryId: string | null,
+) {
+  if (!companyId) {
+    return null;
+  }
+
+  let query = supabase
+    .from("sites")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .order("name")
+    .limit(1);
+
+  if (countryId) {
+    query = query.eq("country_id", countryId);
+  }
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data?.id ?? null;
+}
+
+async function companyOperationalContext(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  companyId: string | null,
+) {
+  if (!companyId) {
+    return { companyId: null, countryId: null, siteId: null };
+  }
+
+  const { data, error } = await supabase
+    .from("companies")
+    .select("country_id")
+    .eq("id", companyId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const countryId = data?.country_id ?? null;
+  const siteId = await firstActiveSiteForCompany(supabase, companyId, countryId);
+
+  return { companyId, countryId, siteId };
+}
+
+async function areaOperationalContext(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  areaId: string | null,
+) {
+  if (!areaId) {
+    return { companyId: null, countryId: null, siteId: null };
+  }
+
+  const { data, error } = await supabase
+    .from("areas")
+    .select("company_id")
+    .eq("id", areaId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return companyOperationalContext(supabase, data?.company_id ?? null);
+}
+
+async function roleOperationalContext(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  roleId: string | null,
+) {
+  if (!roleId) {
+    return { companyId: null, countryId: null, siteId: null };
+  }
+
+  const { data, error } = await supabase
+    .from("roles")
+    .select("country_id,site_id,areas(company_id)")
+    .eq("id", roleId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const area = Array.isArray(data?.areas) ? data?.areas[0] : data?.areas;
+  const companyContext = await companyOperationalContext(supabase, area?.company_id ?? null);
+
+  return {
+    companyId: companyContext.companyId,
+    countryId: data?.country_id ?? companyContext.countryId,
+    siteId: data?.site_id ?? companyContext.siteId,
+  };
+}
+
+async function siteOperationalContext(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  siteId: string | null,
+) {
+  if (!siteId) {
+    return { companyId: null, countryId: null, siteId: null };
+  }
+
+  const { data, error } = await supabase
+    .from("sites")
+    .select("company_id,country_id")
+    .eq("id", siteId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    companyId: data?.company_id ?? null,
+    countryId: data?.country_id ?? null,
+    siteId,
+  };
+}
+
+async function requestOperationalContext() {
+  const headersList = await headers();
+  const referer = headersList.get("referer");
+
+  if (!referer) {
+    return { countryId: null, siteId: null };
+  }
+
+  try {
+    const url = new URL(referer);
+
+    return {
+      countryId: url.searchParams.get("country_id"),
+      siteId: url.searchParams.get("site_id"),
+    };
+  } catch {
+    return { countryId: null, siteId: null };
+  }
+}
+
 export async function addArea(formData: FormData) {
   await runInsert(
     "areas",
@@ -80,11 +415,32 @@ export async function addArea(formData: FormData) {
 }
 
 export async function addProcess(formData: FormData) {
-  await runInsert(
-    "processes",
+  const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
+  const companyId = value(formData, "company_id");
+  const explicitSiteId =
+    optionalValue(formData, "operating_site_id") ??
+    optionalValue(formData, "owner_site_id") ??
+    optionalValue(formData, "site_id") ??
+    requestContext.siteId;
+  const explicitContext = await siteOperationalContext(supabase, explicitSiteId);
+  const companyContext = await companyOperationalContext(supabase, companyId);
+  const countryId =
+    optionalValue(formData, "country_id") ??
+    requestContext.countryId ??
+    explicitContext.countryId ??
+    companyContext.countryId;
+  const defaultSiteId = explicitSiteId ?? companyContext.siteId;
+
+  const { error } = await supabase.from("processes").upsert(
     {
-      company_id: value(formData, "company_id"),
+      company_id: companyId,
       area_id: optionalValue(formData, "area_id"),
+      country_id: countryId,
+      owner_company_id: optionalValue(formData, "owner_company_id") ?? companyId,
+      operating_company_id: optionalValue(formData, "operating_company_id") ?? companyId,
+      owner_site_id: optionalValue(formData, "owner_site_id") ?? defaultSiteId,
+      operating_site_id: optionalValue(formData, "operating_site_id") ?? defaultSiteId,
       name: value(formData, "name"),
       description: optionalValue(formData, "description"),
       objective: optionalValue(formData, "objective"),
@@ -94,9 +450,14 @@ export async function addProcess(formData: FormData) {
       is_replicable: checkbox(formData, "is_replicable"),
       is_global: checkbox(formData, "is_global"),
     },
-    "Proceso guardado",
-    "company_id,name",
+    { onConflict: "company_id,name" },
   );
+
+  if (error) {
+    fail(error.message);
+  }
+
+  done("Proceso guardado");
 }
 
 export async function addSubprocess(formData: FormData) {
@@ -193,15 +554,22 @@ export async function addSubprocessToProcess(formData: FormData) {
 }
 
 export async function addRole(formData: FormData) {
+  const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
+  const areaId = optionalValue(formData, "area_id");
+  const areaContext = await areaOperationalContext(supabase, areaId);
+
   await runInsert(
     "roles",
     {
-      area_id: optionalValue(formData, "area_id"),
+      area_id: areaId,
+      country_id: requestContext.countryId ?? areaContext.countryId,
       name: value(formData, "name"),
       description: optionalValue(formData, "description"),
       level: value(formData, "level"),
       is_corporate: checkbox(formData, "is_corporate"),
       is_local: checkbox(formData, "is_local"),
+      site_id: requestContext.siteId ?? areaContext.siteId,
     },
     "Rol guardado",
     "area_id,name",
@@ -209,12 +577,16 @@ export async function addRole(formData: FormData) {
 }
 
 export async function addPerson(formData: FormData) {
+  const requestContext = await requestOperationalContext();
+
   await runInsert(
     "people",
     {
       name: value(formData, "name"),
       email: optionalValue(formData, "email"),
       phone: optionalValue(formData, "phone"),
+      country_id: requestContext.countryId,
+      site_id: requestContext.siteId,
     },
     "Persona guardada",
   );
@@ -224,27 +596,34 @@ export async function createRoleDictionaryEntry(formData: FormData) {
   const returnTo = value(formData, "return_to") || "/roles-personas";
   const personId = optionalValue(formData, "person_id");
   const areaId = value(formData, "area_id");
+  const roleName = value(formData, "name");
   const responsibilities = value(formData, "responsibilities")
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
   const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
+  const roleContext = await areaOperationalContext(supabase, areaId);
+  const currentSiteId = requestContext.siteId ?? roleContext.siteId;
+  const currentCountryId = requestContext.countryId ?? roleContext.countryId;
 
   const { data: roleData, error: roleError } = await supabase
     .from("roles")
     .insert({
       area_id: areaId,
+      country_id: currentCountryId,
       description: optionalValue(formData, "description"),
       is_corporate: checkbox(formData, "is_corporate"),
       is_local: checkbox(formData, "is_local"),
       level: value(formData, "level"),
-      name: value(formData, "name"),
+      name: roleName,
       org_column: numberValue(formData, "org_column"),
       org_parent_role_id: optionalValue(formData, "org_parent_role_id"),
       org_row: numberValue(formData, "org_row"),
       responsibilities,
-      role_code: optionalValue(formData, "role_code"),
-      sort_order: numberValue(formData, "sort_order"),
+      role_code: generateRoleCode(roleName),
+      site_id: currentSiteId,
+      sort_order: null,
       status: "active",
     })
     .select("id, areas(company_id)")
@@ -260,10 +639,12 @@ export async function createRoleDictionaryEntry(formData: FormData) {
   if (personId) {
     const { error: assignmentError } = await supabase.from("person_roles").insert({
       company_id: companyId,
+      country_id: currentCountryId,
       is_backup: false,
       is_primary: true,
       person_id: personId,
       role_id: roleData.id,
+      site_id: currentSiteId,
       start_date: new Date().toISOString().slice(0, 10),
       status: "active",
     });
@@ -274,36 +655,66 @@ export async function createRoleDictionaryEntry(formData: FormData) {
   }
 
   revalidateRoleDirectory();
-  redirect(`${returnTo}?ok=${encodeURIComponent("Rol creado")}`);
+  redirect(withMessage(returnTo, "ok", "Rol creado"));
 }
 
 export async function assignPersonRole(formData: FormData) {
-  await runInsert(
-    "person_roles",
-    {
-      person_id: value(formData, "person_id"),
-      role_id: value(formData, "role_id"),
-      company_id: value(formData, "company_id"),
-      site_id: optionalValue(formData, "site_id"),
-      is_primary: checkbox(formData, "is_primary"),
-      is_backup: checkbox(formData, "is_backup"),
-      start_date: value(formData, "start_date") || new Date().toISOString().slice(0, 10),
-    },
-    "Persona asignada a rol",
+  const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
+  const explicitSiteId = optionalValue(formData, "site_id") ?? requestContext.siteId;
+  const companyId = value(formData, "company_id");
+  const siteContext = await siteOperationalContext(supabase, explicitSiteId);
+  const companyContext = await companyOperationalContext(
+    supabase,
+    siteContext.companyId ?? companyId,
   );
+
+  const { error } = await supabase.from("person_roles").insert({
+    person_id: value(formData, "person_id"),
+    role_id: value(formData, "role_id"),
+    company_id: siteContext.companyId ?? companyId,
+    country_id: requestContext.countryId ?? siteContext.countryId ?? companyContext.countryId,
+    site_id: explicitSiteId ?? companyContext.siteId,
+    is_primary: checkbox(formData, "is_primary"),
+    is_backup: checkbox(formData, "is_backup"),
+    start_date: value(formData, "start_date") || new Date().toISOString().slice(0, 10),
+  });
+
+  if (error) {
+    fail(error.message);
+  }
+
+  done("Persona asignada a rol");
 }
 
 export async function updatePersonBasic(formData: FormData) {
   const personId = value(formData, "person_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";
   const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
+  const personUpdate: {
+    country_id?: string | null;
+    email: string | null;
+    name: string;
+    phone: string | null;
+    site_id?: string | null;
+  } = {
+    email: optionalValue(formData, "email"),
+    name: value(formData, "name"),
+    phone: optionalValue(formData, "phone"),
+  };
+
+  if (requestContext.countryId) {
+    personUpdate.country_id = requestContext.countryId;
+  }
+
+  if (requestContext.siteId) {
+    personUpdate.site_id = requestContext.siteId;
+  }
+
   const { error } = await supabase
     .from("people")
-    .update({
-      email: optionalValue(formData, "email"),
-      name: value(formData, "name"),
-      phone: optionalValue(formData, "phone"),
-    })
+    .update(personUpdate)
     .eq("id", personId);
 
   if (error) {
@@ -311,7 +722,7 @@ export async function updatePersonBasic(formData: FormData) {
   }
 
   revalidateRoleDirectory();
-  redirect(`${returnTo}?ok=${encodeURIComponent("Persona actualizada")}`);
+  redirect(withMessage(returnTo, "ok", "Persona actualizada"));
 }
 
 export async function archivePerson(formData: FormData) {
@@ -343,7 +754,7 @@ export async function archivePerson(formData: FormData) {
   }
 
   revalidateRoleDirectory();
-  redirect(`${returnTo}?ok=${encodeURIComponent("Persona archivada")}`);
+  redirect(withMessage(returnTo, "ok", "Persona archivada"));
 }
 
 export async function updateRoleDictionaryEntry(formData: FormData) {
@@ -351,11 +762,13 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
   const returnTo = value(formData, "return_to") || "/roles-personas";
   const personId = optionalValue(formData, "person_id");
   const areaId = value(formData, "area_id");
+  const roleName = value(formData, "name");
   const responsibilities = value(formData, "responsibilities")
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
   const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
 
   const { data: areaData, error: areaDataError } = await supabase
     .from("areas")
@@ -367,29 +780,33 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
     fail(areaDataError.message, returnTo);
   }
 
+  const companyId = optionalValue(formData, "company_id") ?? areaData?.company_id ?? null;
+  const roleContext = await companyOperationalContext(supabase, companyId);
+  const currentSiteId = requestContext.siteId ?? roleContext.siteId;
+  const currentCountryId = requestContext.countryId ?? roleContext.countryId;
+
   const { error: roleError } = await supabase
     .from("roles")
     .update({
       area_id: areaId,
+      country_id: currentCountryId,
       description: optionalValue(formData, "description"),
       is_corporate: checkbox(formData, "is_corporate"),
       is_local: checkbox(formData, "is_local"),
       level: value(formData, "level"),
-      name: value(formData, "name"),
+      name: roleName,
       org_column: numberValue(formData, "org_column"),
       org_parent_role_id: optionalValue(formData, "org_parent_role_id"),
       org_row: numberValue(formData, "org_row"),
       responsibilities,
-      role_code: optionalValue(formData, "role_code"),
-      sort_order: numberValue(formData, "sort_order"),
+      role_code: generateRoleCode(roleName),
+      site_id: currentSiteId,
     })
     .eq("id", roleId);
 
   if (roleError) {
     fail(roleError.message, returnTo);
   }
-
-  const companyId = optionalValue(formData, "company_id") ?? areaData?.company_id ?? null;
 
   const { error: deactivateError } = await supabase
     .from("person_roles")
@@ -409,10 +826,12 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
   if (personId) {
     const { error: assignmentError } = await supabase.from("person_roles").insert({
       company_id: companyId,
+      country_id: currentCountryId,
       is_backup: false,
       is_primary: true,
       person_id: personId,
       role_id: roleId,
+      site_id: currentSiteId,
       start_date: new Date().toISOString().slice(0, 10),
       status: "active",
     });
@@ -423,7 +842,7 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
   }
 
   revalidateRoleDirectory();
-  redirect(`${returnTo}?ok=${encodeURIComponent("Rol actualizado")}`);
+  redirect(withMessage(returnTo, "ok", "Rol actualizado"));
 }
 
 export async function archiveRole(formData: FormData) {
@@ -455,7 +874,7 @@ export async function archiveRole(formData: FormData) {
   }
 
   revalidateRoleDirectory();
-  redirect(`${returnTo}?ok=${encodeURIComponent("Rol archivado")}`);
+  redirect(withMessage(returnTo, "ok", "Rol archivado"));
 }
 
 export async function deleteRole(formData: FormData) {
@@ -480,7 +899,7 @@ export async function deleteRole(formData: FormData) {
   }
 
   revalidateRoleDirectory();
-  redirect(`${returnTo}?ok=${encodeURIComponent("Rol eliminado")}`);
+  redirect(withMessage(returnTo, "ok", "Rol eliminado"));
 }
 
 export async function toggleRoleGovernanceProcess(formData: FormData) {
@@ -541,16 +960,28 @@ export async function toggleRoleGovernanceProcessInline(
 }
 
 export async function addSystem(formData: FormData) {
-  await runInsert(
-    "systems",
+  const supabase = createSupabaseServerClient();
+  const requestContext = await requestOperationalContext();
+  const ownerRoleId = optionalValue(formData, "owner_role_id");
+  const roleContext = await roleOperationalContext(supabase, ownerRoleId);
+
+  const { error } = await supabase.from("systems").upsert(
     {
-      name: value(formData, "name"),
+      company_id: roleContext.companyId,
+      country_id: requestContext.countryId ?? roleContext.countryId,
       description: optionalValue(formData, "description"),
-      owner_role_id: optionalValue(formData, "owner_role_id"),
+      name: value(formData, "name"),
+      owner_role_id: ownerRoleId,
+      site_id: requestContext.siteId ?? roleContext.siteId,
     },
-    "Sistema guardado",
-    "name",
+    { onConflict: "name" },
   );
+
+  if (error) {
+    fail(error.message);
+  }
+
+  done("Sistema guardado");
 }
 
 export async function assignProcessRole(formData: FormData) {

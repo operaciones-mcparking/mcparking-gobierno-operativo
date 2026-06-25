@@ -46,3 +46,169 @@ body .font-medium {
   background: #d8f1fb;
   color: #003b5c;
 }
+
+.login-network {
+  position: absolute;
+  border: 1px solid rgba(23, 162, 184, 0.16);
+  border-radius: 999px;
+  filter: blur(0.2px);
+  opacity: 0.75;
+  transform-origin: center;
+  animation: login-network-drift 18s ease-in-out infinite alternate;
+}
+
+.login-network::before,
+.login-network::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(23, 162, 184, 0.35);
+  box-shadow: 0 0 0 8px rgba(23, 162, 184, 0.07);
+}
+
+.login-network::before {
+  left: 18%;
+  top: 16%;
+}
+
+.login-network::after {
+  bottom: 20%;
+  right: 15%;
+}
+
+.login-network-a {
+  width: 520px;
+  height: 520px;
+  left: max(-180px, calc(50% - 760px));
+  top: 14%;
+  background:
+    radial-gradient(circle at 34% 24%, rgba(255, 193, 7, 0.12), transparent 16%),
+    radial-gradient(circle at 70% 68%, rgba(2, 53, 116, 0.08), transparent 20%);
+}
+
+.login-network-b {
+  width: 620px;
+  height: 620px;
+  right: max(-220px, calc(50% - 820px));
+  bottom: 8%;
+  animation-delay: -7s;
+  background:
+    radial-gradient(circle at 32% 68%, rgba(23, 162, 184, 0.1), transparent 18%),
+    radial-gradient(circle at 72% 28%, rgba(2, 53, 116, 0.07), transparent 22%);
+}
+
+.login-network-line {
+  position: absolute;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(23, 162, 184, 0.18), transparent);
+  transform-origin: center;
+  animation: login-network-pulse 8s ease-in-out infinite;
+}
+
+.login-network-line-a {
+  width: 360px;
+  left: calc(50% - 650px);
+  top: 32%;
+  rotate: -18deg;
+}
+
+.login-network-line-b {
+  width: 420px;
+  right: calc(50% - 690px);
+  top: 48%;
+  rotate: 16deg;
+  animation-delay: -3s;
+}
+
+.login-network-line-c {
+  width: 320px;
+  left: calc(50% + 210px);
+  bottom: 26%;
+  rotate: -24deg;
+  animation-delay: -5s;
+}
+
+.login-network-node {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid rgba(23, 162, 184, 0.34);
+  border-radius: 999px;
+  background: rgba(244, 247, 250, 0.9);
+  box-shadow: 0 0 0 9px rgba(23, 162, 184, 0.06);
+  animation: login-network-pulse 7s ease-in-out infinite;
+}
+
+.login-network-node-a {
+  left: calc(50% - 540px);
+  top: 28%;
+}
+
+.login-network-node-b {
+  right: calc(50% - 560px);
+  top: 38%;
+  animation-delay: -2s;
+}
+
+.login-network-node-c {
+  left: calc(50% - 420px);
+  bottom: 22%;
+  animation-delay: -4s;
+}
+
+.login-network-node-d {
+  right: calc(50% - 460px);
+  bottom: 28%;
+  animation-delay: -1s;
+}
+
+@keyframes login-network-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    transform: translate3d(14px, -18px, 0) scale(1.03);
+  }
+}
+
+@keyframes login-network-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 0.95;
+  }
+}
+
+@media (max-width: 900px) {
+  .login-network-a {
+    left: -280px;
+    top: 8%;
+  }
+
+  .login-network-b {
+    right: -330px;
+    bottom: 0;
+  }
+
+  .login-network-line,
+  .login-network-node {
+    display: none;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-network,
+  .login-network-line,
+  .login-network-node {
+    animation: none;
+    transition: none;
+  }
+}

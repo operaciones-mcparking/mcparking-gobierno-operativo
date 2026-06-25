@@ -5,6 +5,7 @@ import {
   Building2,
   Database,
   GitBranch,
+  LogOut,
   Network,
   PlusCircle,
   Settings,
@@ -12,21 +13,26 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { signOut } from "@/app/auth/actions";
+import { ContextSelector } from "@/components/dashboard/context-selector";
+import { getOperationalContextOptions } from "@/lib/dashboard/data";
+import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
+
 const modules = [
   {
     items: [
-      { href: "/empresas", icon: Building2, label: "Empresas", helper: "McParking y clientes" },
       { href: "/estructura", icon: Network, label: "Estructura", helper: "Gobierno operativo" },
-      { href: "/procesos", icon: GitBranch, label: "Procesos", helper: "Modelo operativo" },
+      { href: "/empresas", icon: Building2, label: "Empresas", helper: "McParking y clientes" },
+      { href: "/roles-personas", icon: Users, label: "Roles y personas", helper: "Diccionario vivo" },
     ],
-    label: "Gobierno operativo",
+    label: "Estructura",
   },
   {
     items: [
-      { href: "/roles-personas", icon: Users, label: "Roles y personas", helper: "Diccionario vivo" },
+      { href: "/procesos", icon: GitBranch, label: "Procesos", helper: "Modelo operativo" },
       { href: "/sistemas", icon: Database, label: "Sistemas", helper: "Herramientas" },
     ],
-    label: "Diccionarios",
+    label: "Operacion",
   },
   {
     items: [{ href: "/brechas", icon: AlertTriangle, label: "Brechas", helper: "Alertas y riesgos" }],
@@ -48,7 +54,7 @@ function BrandLogo({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function DashboardShell({
+export async function DashboardShell({
   background = "mist",
   children,
   eyebrow,
@@ -61,6 +67,21 @@ export function DashboardShell({
   title: string;
   description: string;
 }) {
+  const supabase = await createSupabaseAuthServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = user
+    ? await supabase
+        .from("user_profiles")
+        .select("app_role,status")
+        .eq("user_id", user.id)
+        .maybeSingle()
+    : { data: null };
+  const contextOptions = await getOperationalContextOptions();
+  const userLabel = user?.email ?? "Usuario interno";
+  const isAdmin = profile?.app_role === "admin" && profile.status === "active";
+
   return (
     <main
       className={`min-h-screen text-ink ${
@@ -112,22 +133,33 @@ export function DashboardShell({
           </nav>
 
           <div className="border-t border-[#cbd8e3] bg-[#fbfdfe] p-5">
-            <Link
-              className="flex items-center gap-3 rounded-xl bg-navy px-4 py-3 text-sm font-medium text-white shadow-[0_10px_22px_rgba(2,53,116,0.16)] transition hover:bg-[#034982]"
-              href="/admin"
-            >
-              <PlusCircle className="h-5 w-5 text-clay" />
-              <span className="flex-1">Cargar datos</span>
-            </Link>
+            {isAdmin ? (
+              <Link
+                className="flex items-center gap-3 rounded-xl bg-navy px-4 py-3 text-sm font-medium text-white shadow-[0_10px_22px_rgba(2,53,116,0.16)] transition hover:bg-[#034982]"
+                href="/admin"
+              >
+                <PlusCircle className="h-5 w-5 text-clay" />
+                <span className="flex-1">Administracion</span>
+              </Link>
+            ) : null}
             <div className="mt-3 flex items-center gap-3 rounded-xl border border-[#cbd8e3] bg-white px-3 py-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#eef4f8] text-sea">
                 <Settings className="h-5 w-5" />
               </span>
               <div>
                 <p className="text-sm font-medium text-navy">MVP interno</p>
-                <p className="text-xs text-slate-500">Sin autenticación</p>
+                <p className="max-w-40 truncate text-xs text-slate-500">{userLabel}</p>
               </div>
             </div>
+            <form action={signOut}>
+              <button
+                className="mt-3 flex w-full items-center gap-3 rounded-xl border border-[#cbd8e3] bg-white px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:border-[#9bcbdc] hover:text-navy"
+                type="submit"
+              >
+                <LogOut className="h-4 w-4 text-sea" />
+                Cerrar sesion
+              </button>
+            </form>
           </div>
         </aside>
 
@@ -146,12 +178,14 @@ export function DashboardShell({
                   {module.label}
                 </Link>
               ))}
-              <Link
-                className="whitespace-nowrap rounded-lg border border-navy bg-navy px-3 py-2 text-sm font-semibold text-white"
-                href="/admin"
-              >
-                Cargar datos
-              </Link>
+              {isAdmin ? (
+                <Link
+                  className="whitespace-nowrap rounded-lg border border-navy bg-navy px-3 py-2 text-sm font-semibold text-white"
+                  href="/admin"
+                >
+                  Administracion
+                </Link>
+              ) : null}
             </nav>
           </div>
 
@@ -168,6 +202,12 @@ export function DashboardShell({
                   {description}
                 </p>
               </div>
+              {contextOptions.error ? null : (
+                <ContextSelector
+                  countries={contextOptions.countries}
+                  sites={contextOptions.sites}
+                />
+              )}
             </header>
 
             {children}
@@ -179,11 +219,13 @@ export function DashboardShell({
 }
 
 export function Panel({
+  action,
   children,
   count,
   description,
   title,
 }: {
+  action?: React.ReactNode;
   children: React.ReactNode;
   count?: string;
   description?: string;
@@ -198,11 +240,14 @@ export function Panel({
             <p className="mt-1 text-sm leading-5 text-slate-600">{description}</p>
           ) : null}
         </div>
-        {count ? (
-          <span className="mx-5 mt-5 w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600 sm:ml-0">
-            {count}
-          </span>
-        ) : null}
+        <div className="mx-5 mt-5 flex flex-wrap items-center gap-2 sm:ml-0">
+          {count ? (
+            <span className="w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+              {count}
+            </span>
+          ) : null}
+          {action}
+        </div>
       </div>
       <div className="px-5 pb-5">{children}</div>
     </section>

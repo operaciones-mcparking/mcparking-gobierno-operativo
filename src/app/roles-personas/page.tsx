@@ -5,7 +5,6 @@ import {
   updatePersonBasic,
   updateRoleDictionaryEntry,
 } from "@/app/admin/actions";
-import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
 import { optionLabel, roleLevelOptions, ValueBadge } from "@/components/dashboard/badge";
 import { ConfirmSubmitButton } from "@/components/dashboard/confirm-submit-button";
 import {
@@ -26,8 +25,10 @@ import {
 } from "@/lib/dashboard/data";
 
 type SearchParams = Promise<{
+  country_id?: string;
   error?: string;
   ok?: string;
+  site_id?: string;
 }>;
 
 const inputClass =
@@ -153,6 +154,14 @@ function personSelectValue(
   return "";
 }
 
+function areaLabel(area: { company_name?: string | null; name: string }) {
+  if (!area.company_name || area.company_name.toLowerCase() === "mcparking") {
+    return area.name;
+  }
+
+  return `${area.name} / ${area.company_name}`;
+}
+
 function RoleLocationFields({
   currentRoleId,
   defaultParentRoleId,
@@ -204,12 +213,20 @@ export default async function RolesPersonasPage({
   searchParams: SearchParams;
 }) {
   const messages = await searchParams;
+  const context = {
+    countryId: messages.country_id ?? null,
+    siteId: messages.site_id ?? null,
+  };
+  const contextParams = new URLSearchParams();
+  if (context.countryId) contextParams.set("country_id", context.countryId);
+  if (context.siteId) contextParams.set("site_id", context.siteId);
+  const returnTo = `/roles-personas${contextParams.size ? `?${contextParams.toString()}` : ""}`;
   const [dictionaryResult, directoryResult, rolesResult, peopleResult, areasResult] = await Promise.all([
-    getRoleDictionary(),
-    getPersonDirectory(),
+    getRoleDictionary(context),
+    getPersonDirectory(context),
     getRoleBottlenecks(),
     getPersonBottlenecks(),
-    getAreaDirectory(),
+    getAreaDirectory(context),
   ]);
 
   const assignedPeople = dictionaryResult.data
@@ -220,6 +237,8 @@ export default async function RolesPersonasPage({
       name: role.current_person_name as string,
       phone: null,
       status: "active",
+      country_id: role.country_id,
+      site_id: role.site_id,
     }));
   const people = Array.from(
     new Map(
@@ -235,6 +254,7 @@ export default async function RolesPersonasPage({
           .map((role) => ({
             company_id: role.company_id,
             company_name: role.company_name,
+            country_id: role.country_id,
             id: role.area_id as string,
             name: role.area_name as string,
           })),
@@ -283,14 +303,9 @@ export default async function RolesPersonasPage({
               <div>
                 <p className="text-sm font-medium text-navy">Roles activos del modelo operativo</p>
                 <p className="text-sm text-slate-600">
-                  Crea cargos nuevos desde aqui y luego editalos dentro del listado.
+                  Edita cargos existentes. Los cargos nuevos se crean desde el organigrama.
                 </p>
               </div>
-              <CreateRoleModal
-                areas={areas}
-                people={people}
-                roles={dictionaryResult.data}
-              />
             </div>
             <div className="mt-2 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
               <div className="hidden grid-cols-[1.7fr_170px_150px_120px_80px] border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 lg:grid">
@@ -345,15 +360,15 @@ export default async function RolesPersonasPage({
                 >
                   <input name="role_id" type="hidden" value={role.role_id} />
                   <input name="company_id" type="hidden" value={role.company_id ?? ""} />
-                  <input name="return_to" type="hidden" value="/roles-personas" />
+                  <input name="return_to" type="hidden" value={returnTo} />
 
                   <div className="rounded-2xl border border-line bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
                     <SectionHeader
-                      description="Nombre, area, codigo interno y nivel del cargo."
+                      description="Nombre, area y nivel del cargo. El codigo interno lo propone el sistema."
                       number="1"
                       title="Identidad del rol"
                     />
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1.2fr_1.1fr_120px_170px_110px]">
+                    <div className="grid gap-3">
                       <Field label="Nombre del rol">
                         <input
                           className={inputClass}
@@ -362,6 +377,8 @@ export default async function RolesPersonasPage({
                           defaultValue={role.role_name}
                         />
                       </Field>
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
                       <Field label="Area">
                         <select
                           className={inputClass}
@@ -372,18 +389,10 @@ export default async function RolesPersonasPage({
                           <option value="">Selecciona area</option>
                           {areas.map((area) => (
                             <option key={area.id} value={area.id}>
-                              {area.name}
-                              {area.company_name ? ` / ${area.company_name}` : ""}
+                              {areaLabel(area)}
                             </option>
                           ))}
                         </select>
-                      </Field>
-                      <Field label="Codigo">
-                        <input
-                          className={inputClass}
-                          name="role_code"
-                          defaultValue={role.role_code ?? ""}
-                        />
                       </Field>
                       <Field label="Nivel">
                         <select className={inputClass} name="level" defaultValue={role.role_level}>
@@ -394,15 +403,11 @@ export default async function RolesPersonasPage({
                           ))}
                         </select>
                       </Field>
-                      <Field label="Orden">
-                        <input
-                          className={inputClass}
-                          name="sort_order"
-                          type="number"
-                          defaultValue={role.sort_order ?? ""}
-                        />
-                      </Field>
                     </div>
+                    <p className="mt-3 text-xs leading-5 text-slate-500">
+                      Codigo actual: {role.role_code ?? "se generara al guardar"}. No necesitas
+                      mantenerlo manualmente.
+                    </p>
                   </div>
 
                   <div className="rounded-2xl border border-line bg-white p-4 shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
@@ -515,7 +520,7 @@ export default async function RolesPersonasPage({
                   <div className="flex flex-wrap gap-2">
                     <form action={archiveRole}>
                       <input name="role_id" type="hidden" value={role.role_id} />
-                      <input name="return_to" type="hidden" value="/roles-personas" />
+                      <input name="return_to" type="hidden" value={returnTo} />
                       <ConfirmSubmitButton
                         className={archiveButtonClass}
                         message={`Vas a archivar el rol "${role.role_name}". Se ocultara del diccionario activo, pero conservara historial. Deseas continuar?`}
@@ -526,7 +531,7 @@ export default async function RolesPersonasPage({
                     </form>
                     <form action={deleteRole}>
                       <input name="role_id" type="hidden" value={role.role_id} />
-                      <input name="return_to" type="hidden" value="/roles-personas" />
+                      <input name="return_to" type="hidden" value={returnTo} />
                       <ConfirmSubmitButton
                         className={dangerButtonClass}
                         message={`Vas a eliminar definitivamente el rol "${role.role_name}". Esta accion puede borrar relaciones asociadas y no se puede deshacer desde la web. Deseas continuar?`}
@@ -582,7 +587,7 @@ export default async function RolesPersonasPage({
 
                 <form action={updatePersonBasic} className="grid gap-3 border-t border-line bg-[#f8fafb] p-4">
                   <input name="person_id" type="hidden" value={person.id} />
-                  <input name="return_to" type="hidden" value="/roles-personas" />
+                  <input name="return_to" type="hidden" value={returnTo} />
                   <div className="rounded-xl border border-line bg-white p-4">
                     <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
                     <Field label="Nombre">
@@ -603,7 +608,7 @@ export default async function RolesPersonasPage({
                   className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-white px-4 py-3"
                 >
                   <input name="person_id" type="hidden" value={person.id} />
-                  <input name="return_to" type="hidden" value="/roles-personas" />
+                  <input name="return_to" type="hidden" value={returnTo} />
                   <p className="text-xs text-slate-500">
                     Archivar desasigna sus roles activos y la oculta de las listas.
                   </p>

@@ -120,8 +120,8 @@ function RoleSelect({
 }
 
 function roleTone(level: string | null) {
-  if (level === "executive" || level === "board") return "info";
-  if (level === "strategic" || level === "tactical") return "warning";
+  if (level === "directivo" || level === "executive" || level === "board") return "info";
+  if (level === "gerencial" || level === "jefatura" || level === "strategic" || level === "tactical") return "warning";
   return "success";
 }
 
@@ -143,6 +143,10 @@ function hasMatchingSystemRole(dictionaryRole: RoleDictionaryItem, roles: Role[]
 }
 
 function roleLevelLabel(level: string | null) {
+  if (level === "directivo") return "Directivo";
+  if (level === "gerencial") return "Gerencial";
+  if (level === "jefatura") return "Jefatura";
+  if (level === "analista") return "Analista";
   if (level === "executive") return "Ejecutivo";
   if (level === "strategic") return "Estrategico";
   if (level === "tactical") return "Tactico";

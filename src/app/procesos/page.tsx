@@ -74,7 +74,9 @@ function groupedByProcess<T extends { process_id: string; process_name: string }
 
 type ProcesosPageProps = {
   searchParams?: Promise<{
+    country_id?: string;
     empresa?: string;
+    site_id?: string;
     tipo?: string;
   }>;
 };
@@ -83,8 +85,12 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const params = searchParams ? await searchParams : {};
   const selectedCompany = params.empresa ?? "todas";
   const selectedType = params.tipo ?? "todos";
+  const context = {
+    countryId: params.country_id ?? null,
+    siteId: params.site_id ?? null,
+  };
   const [catalogResult, matrixResult] = await Promise.all([
-    getProcessCatalog(),
+    getProcessCatalog(context),
     getProcessMatrix(),
   ]);
 

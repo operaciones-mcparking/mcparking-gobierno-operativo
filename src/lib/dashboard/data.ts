@@ -1,4 +1,15 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { unstable_noStore as noStore } from "next/cache";
+import type {
+  CountryContextOption,
+  SiteContextOption,
+} from "@/components/dashboard/context-selector";
+import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
+
+export type DashboardContext = {
+  countryId?: string | null;
+  siteId?: string | null;
+};
 
 export type ProcessGap = {
   process_id: string;
@@ -71,8 +82,19 @@ export type ProcessCatalogItem = {
   is_global: boolean;
   area_name: string | null;
   company_name: string;
+  owner_company_id: string | null;
   owner_company_name: string;
+  operating_company_id: string | null;
   operating_company_name: string | null;
+  country_id: string | null;
+  country_name: string | null;
+  country_code: string | null;
+  owner_site_id: string | null;
+  owner_site_name: string | null;
+  operating_site_id: string | null;
+  operating_site_name: string | null;
+  owner_company_type: string | null;
+  operating_company_type: string | null;
   subprocess_count: number;
   responsibility_count: number;
   system_count: number;
@@ -125,6 +147,12 @@ export type CompanyServiceNetworkRow = {
   relationship_status: string;
   process_count: number;
   processes: string | null;
+  provider_company_type: string | null;
+  client_company_type: string | null;
+  provider_country_name: string | null;
+  provider_country_code: string | null;
+  client_country_name: string | null;
+  client_country_code: string | null;
 };
 
 export type RoleDictionaryItem = {
@@ -147,6 +175,11 @@ export type RoleDictionaryItem = {
   area_name: string | null;
   company_id: string | null;
   company_name: string | null;
+  country_id: string | null;
+  country_name: string | null;
+  country_code: string | null;
+  site_id: string | null;
+  site_name: string | null;
   current_person_id: string | null;
   current_person_name: string | null;
 };
@@ -156,6 +189,7 @@ export type AreaDirectoryItem = {
   name: string;
   company_id: string | null;
   company_name: string | null;
+  country_id: string | null;
 };
 
 export type PersonDirectoryItem = {
@@ -164,6 +198,8 @@ export type PersonDirectoryItem = {
   email: string | null;
   phone: string | null;
   status: string;
+  country_id: string | null;
+  site_id: string | null;
 };
 
 export type RoleGovernanceProcessItem = {
@@ -172,13 +208,90 @@ export type RoleGovernanceProcessItem = {
   status: string;
 };
 
-export async function getProcessCatalog() {
+export async function getOperationalContextOptions() {
+  noStore();
+
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  const authSupabase = await createSupabaseAuthServerClient();
+  const {
+    data: { user },
+  } = await authSupabase.auth.getUser();
+
+  const [countries, sites] = await Promise.all([
+    supabase.from("countries").select("id,name,code").order("name"),
+    supabase
+      .from("sites")
+      .select("id,name,city,site_type,country_id,companies(name)")
+      .neq("site_type", "client_site")
+      .order("name"),
+  ]);
+
+  let allowedSiteIds: Set<string> | null = null;
+
+  if (user) {
+    const { data: profile } = await authSupabase
+      .from("user_profiles")
+      .select("app_role,status")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (!profile || profile.status !== "active") {
+      allowedSiteIds = new Set();
+    } else if (profile.app_role !== "admin") {
+      const { data: accessRows } = await authSupabase
+        .from("user_site_access")
+        .select("site_id")
+        .eq("user_id", user.id)
+        .eq("status", "active");
+
+      allowedSiteIds = new Set((accessRows ?? []).map((row) => row.site_id).filter(Boolean));
+    }
+  }
+
+  const mappedSites = (sites.data ?? [])
+    .filter((site) => !allowedSiteIds || allowedSiteIds.has(site.id))
+    .map((site) => {
+      const company = Array.isArray(site.companies) ? site.companies[0] : site.companies;
+
+      return {
+        city: site.city ?? null,
+        company_name: company?.name ?? null,
+        country_id: site.country_id ?? null,
+        id: site.id,
+        name: site.name,
+        site_type: site.site_type ?? null,
+      };
+    });
+
+  const visibleCountryIds = new Set(mappedSites.map((site) => site.country_id).filter(Boolean));
+  const mappedCountries = allowedSiteIds
+    ? (countries.data ?? []).filter((country) => visibleCountryIds.has(country.id))
+    : (countries.data ?? []);
+
+  return {
+    countries: mappedCountries as CountryContextOption[],
+    error: countries.error ?? sites.error,
+    sites: mappedSites as SiteContextOption[],
+  };
+}
+
+export async function getProcessCatalog(context: DashboardContext = {}) {
+  const supabase = createSupabaseServerClient();
+  let query = supabase
     .from("v_process_catalog")
     .select("*")
     .order("criticality", { ascending: true })
     .order("process_name");
+
+  if (context.countryId) {
+    query = query.eq("country_id", context.countryId);
+  }
+
+  if (context.siteId) {
+    query = query.or(`owner_site_id.eq.${context.siteId},operating_site_id.eq.${context.siteId}`);
+  }
+
+  const { data, error } = await query;
 
   return { data: (data ?? []) as ProcessCatalogItem[], error };
 }
@@ -300,28 +413,62 @@ export async function getCompanyServiceNetwork() {
   return { data: (data ?? []) as CompanyServiceNetworkRow[], error };
 }
 
-export async function getRoleDictionary() {
+export async function getRoleDictionary(context: DashboardContext = {}) {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("v_role_dictionary")
     .select("*")
     .order("sort_order", { nullsFirst: false })
     .order("role_name");
 
+  if (context.countryId) {
+    query = query.or(`country_id.is.null,country_id.eq.${context.countryId}`);
+  }
+
+  if (context.siteId) {
+    query = query.or(`site_id.is.null,site_id.eq.${context.siteId}`);
+  }
+
+  const { data, error } = await query;
+
   return { data: (data ?? []) as RoleDictionaryItem[], error };
 }
 
-export async function getAreaDirectory() {
+export async function getAreaDirectory(context: DashboardContext = {}) {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+
+  let siteCompanyId: string | null = null;
+
+  if (context.siteId) {
+    const { data: site } = await supabase
+      .from("sites")
+      .select("company_id")
+      .eq("id", context.siteId)
+      .maybeSingle();
+
+    siteCompanyId = site?.company_id ?? null;
+  }
+
+  let query = supabase
     .from("areas")
-    .select("id,name,company_id,companies(name)")
+    .select("id,name,company_id,companies!inner(name,country_id)")
     .order("name");
+
+  if (context.countryId) {
+    query = query.eq("companies.country_id", context.countryId);
+  }
+
+  if (siteCompanyId) {
+    query = query.eq("company_id", siteCompanyId);
+  }
+
+  const { data, error } = await query;
 
   const mapped = (data ?? []).map((area) => {
     const company = Array.isArray(area.companies) ? area.companies[0] : area.companies;
     return {
       company_id: area.company_id ?? null,
+      country_id: company?.country_id ?? null,
       company_name: company?.name ?? null,
       id: area.id,
       name: area.name,
@@ -331,12 +478,23 @@ export async function getAreaDirectory() {
   return { data: mapped, error };
 }
 
-export async function getPersonDirectory() {
+export async function getPersonDirectory(context: DashboardContext = {}) {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
+
+  let query = supabase
     .from("people")
-    .select("id,name,email,phone,status")
+    .select("id,name,email,phone,status,country_id,site_id")
     .order("name");
+
+  if (context.countryId) {
+    query = query.or(`country_id.is.null,country_id.eq.${context.countryId}`);
+  }
+
+  if (context.siteId) {
+    query = query.or(`site_id.is.null,site_id.eq.${context.siteId}`);
+  }
+
+  const { data, error } = await query;
 
   return { data: (data ?? []) as PersonDirectoryItem[], error };
 }

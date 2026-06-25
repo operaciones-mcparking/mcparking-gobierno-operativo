@@ -27,6 +27,14 @@ type RoleOption = {
 const inputClass =
   "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
 
+function areaLabel(area: AreaOption) {
+  if (!area.company_name || area.company_name.toLowerCase() === "mcparking") {
+    return area.name;
+  }
+
+  return `${area.name} / ${area.company_name}`;
+}
+
 function Field({
   children,
   label,
@@ -88,10 +96,12 @@ function LocationFields({ roles }: { roles: RoleOption[] }) {
 export function CreateRoleModal({
   areas,
   people,
+  returnTo,
   roles,
 }: {
   areas: AreaOption[];
   people: PersonOption[];
+  returnTo: string;
   roles: RoleOption[];
 }) {
   const [open, setOpen] = useState(false);
@@ -140,24 +150,30 @@ export function CreateRoleModal({
             </div>
 
             <form action={createRoleDictionaryEntry} className="grid gap-4 bg-[#f8fafb] p-5">
-              <input name="return_to" type="hidden" value="/roles-personas" />
+              <input name="return_to" type="hidden" value={returnTo} />
 
               <div className="rounded-xl border border-line bg-white p-4">
                 <h4 className="mb-4 text-sm font-medium text-navy">Datos del cargo</h4>
-                <div className="grid gap-3 lg:grid-cols-[1fr_120px_180px_140px]">
+                <div className="grid gap-3">
+                  <Field label="Nombre del rol">
+                    <input
+                      className={inputClass}
+                      name="name"
+                      placeholder="Ej: Coordinador de operaciones"
+                      required
+                    />
+                  </Field>
+                </div>
+                <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_220px]">
                   <Field label="Area">
                     <select className={inputClass} name="area_id" required>
                       <option value="">Selecciona area</option>
                       {areas.map((area) => (
                         <option key={area.id} value={area.id}>
-                          {area.name}
-                          {area.company_name ? ` / ${area.company_name}` : ""}
+                          {areaLabel(area)}
                         </option>
                       ))}
                     </select>
-                  </Field>
-                  <Field label="Codigo">
-                    <input className={inputClass} name="role_code" placeholder="Ej: OPS" />
                   </Field>
                   <Field label="Nivel">
                     <select className={inputClass} name="level" defaultValue="operational">
@@ -168,20 +184,10 @@ export function CreateRoleModal({
                       ))}
                     </select>
                   </Field>
-                  <Field label="Orden">
-                    <input className={inputClass} name="sort_order" type="number" placeholder="1" />
-                  </Field>
                 </div>
-                <div className="mt-3">
-                  <Field label="Nombre del rol">
-                    <input
-                      className={inputClass}
-                      name="name"
-                      placeholder="Ej: Coordinador de operaciones"
-                      required
-                    />
-                  </Field>
-                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-500">
+                  El codigo interno se genera automaticamente desde el nombre del rol.
+                </p>
               </div>
 
               <div className="grid gap-4 lg:grid-cols-[1fr_320px]">

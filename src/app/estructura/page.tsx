@@ -1,15 +1,23 @@
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
 import {
+  getAreaDirectory,
+  getPersonDirectory,
   getRoleDictionary,
   getRoleGovernanceProcesses,
   type RoleDictionaryItem,
 } from "@/lib/dashboard/data";
 import { governanceProcesses, orgRoles, type OrgRole } from "@/lib/dashboard/organization";
+import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
 import { StructureExplorer } from "./structure-explorer";
 
+type SearchParams = Promise<{
+  country_id?: string;
+  site_id?: string;
+}>;
+
 function toOrgLevel(level: string): OrgRole["level"] {
-  if (level === "executive" || level === "board") return "Direccion";
-  if (level === "strategic" || level === "tactical") return "Gestion";
+  if (level === "directivo" || level === "executive" || level === "board") return "Direccion";
+  if (level === "gerencial" || level === "jefatura" || level === "strategic" || level === "tactical") return "Gestion";
   return "Ejecucion";
 }
 
@@ -508,13 +516,62 @@ function OrgChart({ roles }: { roles: OrgRole[] }) {
   );
 }
 
-export default async function EstructuraPage() {
-  const [roleDictionaryResult, roleGovernanceResult] = await Promise.all([
-    getRoleDictionary(),
+export default async function EstructuraPage({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = await searchParams;
+  const context = {
+    countryId: params.country_id ?? null,
+    siteId: params.site_id ?? null,
+  };
+  const contextParams = new URLSearchParams();
+  if (context.countryId) contextParams.set("country_id", context.countryId);
+  if (context.siteId) contextParams.set("site_id", context.siteId);
+  const returnTo = `/estructura${contextParams.size ? `?${contextParams.toString()}` : ""}`;
+
+  const [roleDictionaryResult, roleGovernanceResult, peopleResult, areasResult] = await Promise.all([
+    getRoleDictionary(context),
     getRoleGovernanceProcesses(),
+    getPersonDirectory(context),
+    getAreaDirectory(context),
   ]);
   const dynamicRoles =
     roleDictionaryResult.data.length > 0 ? roleDictionaryToOrgRoles(roleDictionaryResult.data) : orgRoles;
+  const assignedPeople = roleDictionaryResult.data
+    .filter((role) => role.current_person_id && role.current_person_name)
+    .map((role) => ({
+      id: role.current_person_id as string,
+      name: role.current_person_name as string,
+    }));
+  const people = Array.from(
+    new Map(
+      [
+        ...peopleResult.data.map((person) => ({ id: person.id, name: person.name })),
+        ...assignedPeople,
+      ].map((person) => [person.id, person]),
+    ).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
+  const areas = Array.from(
+    new Map(
+      [
+        ...areasResult.data,
+        ...roleDictionaryResult.data
+          .filter((role) => role.area_id && role.area_name)
+          .map((role) => ({
+            company_id: role.company_id,
+            company_name: role.company_name,
+            country_id: role.country_id,
+            id: role.area_id as string,
+            name: role.area_name as string,
+          })),
+      ].map((area) => [area.id, area]),
+    ).values(),
+  ).sort((a, b) => {
+    const companyCompare = (a.company_name ?? "").localeCompare(b.company_name ?? "");
+    return companyCompare || a.name.localeCompare(b.name);
+  });
 
   return (
     <DashboardShell
@@ -522,10 +579,26 @@ export default async function EstructuraPage() {
       eyebrow="Estructura"
       title="Gobierno operativo McParking"
     >
-      <Panel count={`${dynamicRoles.length} cargos`} title="Organigrama operativo">
+      <Panel
+        action={
+          <CreateRoleModal
+            areas={areas}
+            people={people}
+            returnTo={returnTo}
+            roles={roleDictionaryResult.data}
+          />
+        }
+        count={`${dynamicRoles.length} cargos`}
+        title="Organigrama operativo"
+      >
         {roleDictionaryResult.error ? (
           <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
             {roleDictionaryResult.error.message}
+          </div>
+        ) : null}
+        {areasResult.error || peopleResult.error ? (
+          <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
+            No se pudieron cargar todas las opciones para crear roles en este contexto.
           </div>
         ) : null}
         <OrgChart roles={dynamicRoles} />
