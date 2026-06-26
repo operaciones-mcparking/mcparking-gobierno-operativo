@@ -208,6 +208,24 @@ export type RoleGovernanceProcessItem = {
   status: string;
 };
 
+export type RoleAccessSuggestion = {
+  id: string;
+  role_id: string;
+  role_name: string;
+  role_code: string | null;
+  area_id: string | null;
+  company_id: string | null;
+  company_name: string | null;
+  role_country_id: string | null;
+  role_site_id: string | null;
+  access_role_id: string;
+  access_role_name: string;
+  access_role_code: string;
+  scope_type: "global" | "country" | "company" | "site";
+  notes: string | null;
+  status: string;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -432,6 +450,28 @@ export async function getRoleDictionary(context: DashboardContext = {}) {
   const { data, error } = await query;
 
   return { data: (data ?? []) as RoleDictionaryItem[], error };
+}
+
+export async function getRoleAccessSuggestions(context: DashboardContext = {}) {
+  const supabase = createSupabaseServerClient();
+  let query = supabase
+    .from("v_functional_role_access_suggestions")
+    .select("*")
+    .eq("status", "active")
+    .order("role_name")
+    .order("access_role_name");
+
+  if (context.countryId) {
+    query = query.or(`role_country_id.is.null,role_country_id.eq.${context.countryId}`);
+  }
+
+  if (context.siteId) {
+    query = query.or(`role_site_id.is.null,role_site_id.eq.${context.siteId}`);
+  }
+
+  const { data, error } = await query;
+
+  return { data: (data ?? []) as RoleAccessSuggestion[], error };
 }
 
 export async function getAreaDirectory(context: DashboardContext = {}) {

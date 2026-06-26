@@ -15,13 +15,16 @@ import {
   addRole,
   addSubprocess,
   addSystem,
+  archiveAccessAssignment,
   archiveSiteAccess,
   assignPersonRole,
+  assignAccessRole,
   assignProcessRole,
   assignProcessSystem,
   authorizeDomainAccess,
   authorizeEmailAccess,
   grantSiteAccess,
+  updateAccessRolePermissions,
   updateUserAccessProfile,
 } from "./actions";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
@@ -82,6 +85,54 @@ type SiteAccessItem = {
   status: string;
 };
 
+type PermissionItem = {
+  id: string;
+  code: string;
+  name: string;
+  module: string;
+  status: string;
+};
+
+type AccessRoleItem = {
+  id: string;
+  role_code: string;
+  name: string;
+  description: string | null;
+  status: string;
+};
+
+type AccessRolePermissionItem = {
+  access_role_id: string;
+  permission_id: string;
+  status: string;
+};
+
+type UserAccessAssignmentItem = {
+  id: string;
+  person_id: string;
+  access_role_id: string;
+  scope_type: string;
+  country_id: string | null;
+  company_id: string | null;
+  site_id: string | null;
+  status: string;
+  start_date: string;
+  end_date: string | null;
+};
+
+type PermissionOverrideItem = {
+  id: string;
+  person_id: string;
+  permission_id: string;
+  effect: string;
+  scope_type: string;
+  country_id: string | null;
+  company_id: string | null;
+  site_id: string | null;
+  status: string;
+  reason: string | null;
+};
+
 const appRoleOptions = [
   { label: "Administrador", value: "admin" },
   { label: "Gestion", value: "manager" },
@@ -140,6 +191,11 @@ async function getAdminOptions() {
     emailAllowlist,
     domainAllowlist,
     siteAccess,
+    permissions,
+    accessRoles,
+    accessRolePermissions,
+    userAccessAssignments,
+    permissionOverrides,
   ] = await Promise.all([
     supabase.from("companies").select("id,name").order("name"),
     supabase.from("areas").select("id,name").order("name"),
@@ -166,6 +222,22 @@ async function getAdminOptions() {
       .from("user_site_access")
       .select("id,user_id,country_id,site_id,access_level,status")
       .order("created_at", { ascending: false }),
+    supabase.from("permissions").select("id,code,name,module,status").order("module").order("code"),
+    supabase
+      .from("access_roles")
+      .select("id,role_code,name,description,status")
+      .order("name"),
+    supabase
+      .from("access_role_permissions")
+      .select("access_role_id,permission_id,status"),
+    supabase
+      .from("user_access_assignments")
+      .select("id,person_id,access_role_id,scope_type,country_id,company_id,site_id,status,start_date,end_date")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("permission_overrides")
+      .select("id,person_id,permission_id,effect,scope_type,country_id,company_id,site_id,status,reason")
+      .order("created_at", { ascending: false }),
   ]);
 
   const firstError = [
@@ -182,6 +254,11 @@ async function getAdminOptions() {
     emailAllowlist.error,
     domainAllowlist.error,
     siteAccess.error,
+    permissions.error,
+    accessRoles.error,
+    accessRolePermissions.error,
+    userAccessAssignments.error,
+    permissionOverrides.error,
   ].find(Boolean);
 
   if (firstError) {
@@ -202,6 +279,11 @@ async function getAdminOptions() {
     emailAllowlist: (emailAllowlist.data ?? []) as EmailAllowlistItem[],
     domainAllowlist: (domainAllowlist.data ?? []) as DomainAllowlistItem[],
     siteAccess: (siteAccess.data ?? []) as SiteAccessItem[],
+    permissions: (permissions.data ?? []) as PermissionItem[],
+    accessRoles: (accessRoles.data ?? []) as AccessRoleItem[],
+    accessRolePermissions: (accessRolePermissions.data ?? []) as AccessRolePermissionItem[],
+    userAccessAssignments: (userAccessAssignments.data ?? []) as UserAccessAssignmentItem[],
+    permissionOverrides: (permissionOverrides.data ?? []) as PermissionOverrideItem[],
   };
 }
 
@@ -352,6 +434,14 @@ function AccessPill({ children, tone = "neutral" }: { children: React.ReactNode;
   );
 }
 
+function roleLabel(role: string) {
+  return appRoleOptions.find((option) => option.value === role)?.label ?? role;
+}
+
+function statusLabel(status: string) {
+  return recordStatusOptions.find((option) => option.value === status)?.label ?? status;
+}
+
 function ChevronMark() {
   return (
     <span className="flex size-8 items-center justify-center rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] text-sm text-sea transition group-open:rotate-90">
@@ -397,6 +487,375 @@ function AccordionPanel({
       </summary>
       <div className="border-t border-[#d6e1ea] px-5 pb-5 pt-4">{children}</div>
     </details>
+  );
+}
+
+function scopeLabel(assignment: UserAccessAssignmentItem, options: Awaited<ReturnType<typeof getAdminOptions>>) {
+  const country = options.countries.find((item) => item.id === assignment.country_id)?.name;
+  const company = options.companies.find((item) => item.id === assignment.company_id)?.name;
+  const site = options.sites.find((item) => item.id === assignment.site_id)?.name;
+
+  if (assignment.scope_type === "global") return "Global";
+  if (assignment.scope_type === "country") return country ? `Pais: ${country}` : "Pais sin definir";
+  if (assignment.scope_type === "company") {
+    return [country, company].filter(Boolean).join(" / ") || "Empresa sin definir";
+  }
+  if (assignment.scope_type === "site") {
+    return [country, company, site].filter(Boolean).join(" / ") || "Sede sin definir";
+  }
+  return assignment.scope_type;
+}
+
+function scopeTypeLabel(scopeType: string) {
+  const labels: Record<string, string> = {
+    global: "Global",
+    country: "Pais",
+    company: "Empresa",
+    site: "Sede",
+  };
+
+  return labels[scopeType] ?? scopeType;
+}
+
+function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAdminOptions>> }) {
+  const personById = new Map(options.people.map((person) => [person.id, person.name]));
+  const permissionById = new Map(options.permissions.map((permission) => [permission.id, permission]));
+  const roleById = new Map(options.accessRoles.map((role) => [role.id, role]));
+  const permissionsByRole = new Map<string, PermissionItem[]>();
+
+  for (const relation of options.accessRolePermissions) {
+    if (relation.status !== "active") continue;
+    const permission = permissionById.get(relation.permission_id);
+    if (!permission) continue;
+    const list = permissionsByRole.get(relation.access_role_id) ?? [];
+    list.push(permission);
+    permissionsByRole.set(relation.access_role_id, list);
+  }
+
+  const assignmentsByPerson = new Map<string, UserAccessAssignmentItem[]>();
+  for (const assignment of options.userAccessAssignments) {
+    const list = assignmentsByPerson.get(assignment.person_id) ?? [];
+    list.push(assignment);
+    assignmentsByPerson.set(assignment.person_id, list);
+  }
+
+  const scopeCounts = options.userAccessAssignments.reduce<Record<string, number>>((acc, assignment) => {
+    if (assignment.status !== "active") return acc;
+    acc[assignment.scope_type] = (acc[assignment.scope_type] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const adminAssignments = options.userAccessAssignments.filter((assignment) => {
+    const role = roleById.get(assignment.access_role_id);
+    return assignment.status === "active" && role?.role_code.startsWith("ADMIN_");
+  });
+
+  return (
+    <section className="mt-8">
+      <AccordionPanel
+        count={`${options.accessRoles.length} roles`}
+        defaultOpen
+        description="Modelo RBAC con roles de acceso reutilizables y alcance global, pais, empresa o sede."
+        eyebrow="Permisos RBAC"
+        title="Administracion de Accesos"
+      >
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Permisos</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{options.permissions.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Roles de acceso</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{options.accessRoles.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Asignaciones</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{options.userAccessAssignments.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Excepciones</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{options.permissionOverrides.length}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <AccordionPanel
+            count={`${assignmentsByPerson.size} usuarios`}
+            description="Personas con uno o mas roles de acceso asignados."
+            title="Usuarios"
+          >
+            <form action={assignAccessRole} className="mb-4 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-base font-medium text-navy">Asignar rol de acceso</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Elige una persona, un rol de acceso y el alcance donde aplica.
+                  </p>
+                </div>
+                <AccessPill tone="good">RBAC</AccessPill>
+              </div>
+              <div className="mt-4 grid gap-3 lg:grid-cols-4">
+                <Field label="Persona">
+                  <Select name="person_id" required>
+                    <option value="">Selecciona persona</option>
+                    {options.people.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Rol de acceso">
+                  <Select name="access_role_id" required>
+                    <option value="">Selecciona rol</option>
+                    {options.accessRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Alcance">
+                  <Select name="scope_type" required>
+                    <option value="global">Global</option>
+                    <option value="country">Pais</option>
+                    <option value="company">Empresa</option>
+                    <option value="site">Sede</option>
+                  </Select>
+                </Field>
+                <Field label="Estado">
+                  <StatusSelect />
+                </Field>
+              </div>
+              <div className="mt-3 grid gap-3 lg:grid-cols-4">
+                <Field label="Pais">
+                  <Select name="country_id">
+                    <option value="">Sin pais</option>
+                    {options.countries.map((country) => (
+                      <option key={country.id} value={country.id}>
+                        {country.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Empresa">
+                  <Select name="company_id">
+                    <option value="">Sin empresa</option>
+                    {options.companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Sede">
+                  <Select name="site_id">
+                    <option value="">Sin sede</option>
+                    {options.sites.map((site) => (
+                      <option key={site.id} value={site.id}>
+                        {site.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Inicio">
+                  <Input name="start_date" type="date" />
+                </Field>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-4">
+                <p className="text-sm text-slate-600">
+                  Si eliges sede, el pais y la empresa se completan desde esa sede.
+                </p>
+                <Submit>Asignar acceso</Submit>
+              </div>
+            </form>
+            <div className="overflow-hidden rounded-xl border border-[#d6e1ea]">
+              <div className="grid grid-cols-[1fr_1.1fr_1.2fr_0.7fr] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <span>Persona</span>
+                <span>Rol de acceso</span>
+                <span>Alcance</span>
+                <span>Estado</span>
+              </div>
+              <div className="divide-y divide-[#d6e1ea] bg-white">
+                {options.userAccessAssignments.map((assignment) => {
+                  const role = roleById.get(assignment.access_role_id);
+                  return (
+                    <div
+                      className="grid gap-3 px-4 py-3 text-sm lg:grid-cols-[1fr_1.1fr_1.2fr_0.7fr_auto]"
+                      key={assignment.id}
+                    >
+                      <span className="font-medium text-navy">
+                        {personById.get(assignment.person_id) ?? "Persona sin nombre"}
+                      </span>
+                      <span>{role?.name ?? "Rol no encontrado"}</span>
+                      <span className="text-slate-600">{scopeLabel(assignment, options)}</span>
+                      <AccessPill tone={assignment.status === "active" ? "good" : "warn"}>
+                        {statusLabel(assignment.status)}
+                      </AccessPill>
+                      {assignment.status === "active" ? (
+                        <form action={archiveAccessAssignment}>
+                          <input name="assignment_id" type="hidden" value={assignment.id} />
+                          <button
+                            className="rounded-lg border border-[#ffd8a8] px-3 py-1.5 text-xs font-medium text-[#8a4a00] transition hover:bg-[#fff4e8]"
+                            type="submit"
+                          >
+                            Archivar
+                          </button>
+                        </form>
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {options.userAccessAssignments.length === 0 ? (
+                  <p className="px-4 py-5 text-sm text-slate-600">
+                    Aun no hay asignaciones de acceso RBAC.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </AccordionPanel>
+
+          <AccordionPanel
+            count={`${options.accessRoles.length} roles`}
+            description="Roles de permisos del sistema. No son cargos funcionales."
+            title="Roles de acceso"
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              {options.accessRoles.map((role) => (
+                <div className="rounded-xl border border-[#d6e1ea] bg-white p-4" key={role.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-medium text-navy">{role.name}</h3>
+                      <p className="mt-1 text-sm text-slate-600">{role.description}</p>
+                    </div>
+                    <AccessPill>{role.role_code}</AccessPill>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-500">
+                    {permissionsByRole.get(role.id)?.length ?? 0} permisos activos
+                  </p>
+                </div>
+              ))}
+            </div>
+          </AccordionPanel>
+
+          <AccordionPanel
+            count={`${options.accessRolePermissions.length} relaciones`}
+            description="Permisos internos incluidos en cada rol de acceso."
+            title="Permisos por rol"
+          >
+            <div className="grid gap-3">
+              {options.accessRoles.map((role) => {
+                const rolePermissions = permissionsByRole.get(role.id) ?? [];
+                const activePermissionIds = new Set(rolePermissions.map((permission) => permission.id));
+                return (
+                  <form
+                    action={updateAccessRolePermissions}
+                    className="rounded-xl border border-[#d6e1ea] bg-white p-4"
+                    key={role.id}
+                  >
+                    <input name="access_role_id" type="hidden" value={role.id} />
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-navy">{role.name}</h3>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {rolePermissions.length} permisos activos
+                        </p>
+                      </div>
+                      <button
+                        className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white transition hover:bg-[#034982]"
+                        type="submit"
+                      >
+                        Guardar permisos
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                      {options.permissions.map((permission) => (
+                        <label
+                          className="flex items-start gap-2 rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] px-3 py-2 text-sm"
+                          key={permission.id}
+                        >
+                          <input
+                            className="mt-1"
+                            defaultChecked={activePermissionIds.has(permission.id)}
+                            name="permission_ids"
+                            type="checkbox"
+                            value={permission.id}
+                          />
+                          <span>
+                            <span className="block font-medium text-navy">{permission.code}</span>
+                            <span className="text-xs text-slate-500">{permission.name}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </form>
+                );
+              })}
+            </div>
+          </AccordionPanel>
+
+          <AccordionPanel
+            count={`${options.userAccessAssignments.length} asignaciones`}
+            description="Resumen de alcance operativo para evitar mezclar paises, empresas y sedes."
+            title="Alcances"
+          >
+            <div className="grid gap-3 md:grid-cols-4">
+              {["global", "country", "company", "site"].map((scopeType) => (
+                <div className="rounded-xl border border-[#d6e1ea] bg-white p-4" key={scopeType}>
+                  <p className="text-sm text-slate-500">{scopeTypeLabel(scopeType)}</p>
+                  <p className="mt-2 text-2xl font-medium text-navy">{scopeCounts[scopeType] ?? 0}</p>
+                </div>
+              ))}
+            </div>
+          </AccordionPanel>
+
+          <AccordionPanel
+            count={`${adminAssignments.length} admins`}
+            description="Lectura inicial para revisar usuarios con permisos altos y excepciones puntuales."
+            title="Auditoria de permisos"
+          >
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
+                <h3 className="text-sm font-semibold text-navy">Usuarios administradores</h3>
+                <div className="mt-3 grid gap-2">
+                  {adminAssignments.map((assignment) => (
+                    <div className="flex items-center justify-between gap-3 rounded-lg bg-[#f8fbfd] px-3 py-2 text-sm" key={assignment.id}>
+                      <span>{personById.get(assignment.person_id) ?? "Persona sin nombre"}</span>
+                      <AccessPill>{roleById.get(assignment.access_role_id)?.name ?? "Admin"}</AccessPill>
+                    </div>
+                  ))}
+                  {adminAssignments.length === 0 ? (
+                    <p className="text-sm text-slate-600">Sin administradores RBAC asignados.</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
+                <h3 className="text-sm font-semibold text-navy">Excepciones</h3>
+                <div className="mt-3 grid gap-2">
+                  {options.permissionOverrides.map((override) => (
+                    <div className="rounded-lg bg-[#f8fbfd] px-3 py-2 text-sm" key={override.id}>
+                      <p className="font-medium text-navy">
+                        {personById.get(override.person_id) ?? "Persona sin nombre"} /{" "}
+                        {permissionById.get(override.permission_id)?.code ?? "permiso"}
+                      </p>
+                      <p className="text-slate-600">
+                        {override.effect === "allow" ? "Permitir" : "Denegar"} -{" "}
+                        {scopeTypeLabel(override.scope_type)}
+                      </p>
+                    </div>
+                  ))}
+                  {options.permissionOverrides.length === 0 ? (
+                    <p className="text-sm text-slate-600">
+                      Sin excepciones. Bien: la regla principal sigue siendo por rol de acceso.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </AccordionPanel>
+        </div>
+      </AccordionPanel>
+    </section>
   );
 }
 
@@ -591,35 +1050,88 @@ function AccessPanel({ options }: { options: Awaited<ReturnType<typeof getAdminO
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
-          <h3 className="text-sm font-medium text-navy">Correos autorizados</h3>
-          <div className="mt-3 space-y-2">
+        <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+          <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-medium text-navy">Correos autorizados</h3>
+              <AccessPill>{`${options.emailAllowlist.length} correos`}</AccessPill>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Correos especificos que pueden entrar, aunque su dominio no este abierto.
+            </p>
+          </div>
+          <div className="divide-y divide-[#d6e1ea]">
             {options.emailAllowlist.map((item) => (
-              <div className="flex items-center justify-between gap-3 text-sm" key={item.id}>
-                <span>{item.email}</span>
-                <AccessPill tone={item.status === "active" ? "good" : "warn"}>
-                  {item.app_role}
-                </AccessPill>
-              </div>
+              <form action={authorizeEmailAccess} className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_auto]" key={item.id}>
+                <div>
+                  <input name="email" type="hidden" value={item.email} />
+                  <p className="text-sm font-medium text-navy">{item.email}</p>
+                  <p className="text-xs text-slate-500">{item.display_name || "Sin nombre visible"}</p>
+                </div>
+                <Input name="display_name" defaultValue={item.display_name ?? ""} placeholder="Nombre visible" />
+                <AppRoleSelect defaultValue={item.app_role} />
+                <StatusSelect defaultValue={item.status} />
+                <button className="rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-4 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-white" type="submit">
+                  Guardar
+                </button>
+                <div className="xl:col-span-5 grid gap-3 sm:grid-cols-2">
+                  <Field label="Pais por defecto">
+                    <CountrySelect
+                      countries={options.countries}
+                      defaultValue={item.default_country_id}
+                    />
+                  </Field>
+                  <Field label="Sede por defecto">
+                    <SiteSelect sites={options.sites} defaultValue={item.default_site_id} />
+                  </Field>
+                </div>
+              </form>
             ))}
             {options.emailAllowlist.length === 0 ? (
-              <p className="text-sm text-slate-600">Sin correos autorizados.</p>
+              <p className="px-4 py-5 text-sm text-slate-600">Sin correos autorizados.</p>
             ) : null}
           </div>
         </div>
-        <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
-          <h3 className="text-sm font-medium text-navy">Dominios autorizados</h3>
-          <div className="mt-3 space-y-2">
+        <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+          <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-medium text-navy">Dominios autorizados</h3>
+              <AccessPill>{`${options.domainAllowlist.length} dominios`}</AccessPill>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Permiten entrar a usuarios de una organizacion completa.
+            </p>
+          </div>
+          <div className="divide-y divide-[#d6e1ea]">
             {options.domainAllowlist.map((item) => (
-              <div className="flex items-center justify-between gap-3 text-sm" key={item.id}>
-                <span>@{item.domain}</span>
-                <AccessPill tone={item.status === "active" ? "good" : "warn"}>
-                  {item.app_role}
-                </AccessPill>
-              </div>
+              <form action={authorizeDomainAccess} className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_0.8fr_0.8fr_auto]" key={item.id}>
+                <div>
+                  <input name="domain" type="hidden" value={item.domain} />
+                  <p className="text-sm font-medium text-navy">@{item.domain}</p>
+                  <p className="text-xs text-slate-500">
+                    {roleLabel(item.app_role)} / {statusLabel(item.status)}
+                  </p>
+                </div>
+                <AppRoleSelect defaultValue={item.app_role} />
+                <StatusSelect defaultValue={item.status} />
+                <button className="rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-4 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-white" type="submit">
+                  Guardar
+                </button>
+                <div className="xl:col-span-4 grid gap-3 sm:grid-cols-2">
+                  <Field label="Pais por defecto">
+                    <CountrySelect
+                      countries={options.countries}
+                      defaultValue={item.default_country_id}
+                    />
+                  </Field>
+                  <Field label="Sede por defecto">
+                    <SiteSelect sites={options.sites} defaultValue={item.default_site_id} />
+                  </Field>
+                </div>
+              </form>
             ))}
             {options.domainAllowlist.length === 0 ? (
-              <p className="text-sm text-slate-600">Sin dominios autorizados.</p>
+              <p className="px-4 py-5 text-sm text-slate-600">Sin dominios autorizados.</p>
             ) : null}
           </div>
         </div>
@@ -734,23 +1246,23 @@ export default async function AdminPage({
           </div>
         ) : null}
 
+        <AccessRbacPanel options={options} />
         <AccessPanel options={options} />
 
         <div className="mt-8 border-l-4 border-clay pl-5">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sea">
             Carga base
           </p>
-          <h2 className="mt-2 text-xl font-medium text-navy">Entidades del modelo</h2>
+          <h2 className="mt-2 text-xl font-medium text-navy">Carga operativa avanzada</h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-            Formularios minimos para crear areas, procesos, roles, personas y
-            relaciones operativas.
+            Formularios minimos para crear piezas base. Usalo solo cuando una entidad
+            todavia no tenga pantalla propia.
           </p>
         </div>
 
         <section className="mt-5 space-y-4">
           <AccordionPanel
             count="6 formularios"
-            defaultOpen
             description="Crea las piezas base del modelo: areas, personas, procesos, etapas, roles y sistemas."
             title="Entidades principales"
           >

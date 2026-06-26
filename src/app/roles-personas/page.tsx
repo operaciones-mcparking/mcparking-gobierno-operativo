@@ -1,4 +1,5 @@
 import {
+  assignSuggestedAccessRole,
   archivePerson,
   archiveRole,
   deleteRole,
@@ -20,12 +21,14 @@ import {
   getAreaDirectory,
   getPersonBottlenecks,
   getPersonDirectory,
+  getRoleAccessSuggestions,
   getRoleBottlenecks,
   getRoleDictionary,
 } from "@/lib/dashboard/data";
 
 type SearchParams = Promise<{
   country_id?: string;
+  edit_role?: string;
   error?: string;
   ok?: string;
   site_id?: string;
@@ -138,6 +141,14 @@ function roleType(isCorporate: boolean, isLocal: boolean) {
   return "Sin tipo";
 }
 
+function scopeLabel(scopeType: string) {
+  if (scopeType === "global") return "Global";
+  if (scopeType === "country") return "Pais";
+  if (scopeType === "company") return "Empresa";
+  if (scopeType === "site") return "Sede";
+  return "Sin alcance";
+}
+
 function personSelectValue(
   rolePersonId: string | null,
   rolePersonName: string | null,
@@ -213,6 +224,7 @@ export default async function RolesPersonasPage({
   searchParams: SearchParams;
 }) {
   const messages = await searchParams;
+  const editRoleId = messages.edit_role ?? "";
   const context = {
     countryId: messages.country_id ?? null,
     siteId: messages.site_id ?? null,
@@ -220,13 +232,22 @@ export default async function RolesPersonasPage({
   const contextParams = new URLSearchParams();
   if (context.countryId) contextParams.set("country_id", context.countryId);
   if (context.siteId) contextParams.set("site_id", context.siteId);
+  if (editRoleId) contextParams.set("edit_role", editRoleId);
   const returnTo = `/roles-personas${contextParams.size ? `?${contextParams.toString()}` : ""}`;
-  const [dictionaryResult, directoryResult, rolesResult, peopleResult, areasResult] = await Promise.all([
+  const [
+    dictionaryResult,
+    directoryResult,
+    rolesResult,
+    peopleResult,
+    areasResult,
+    suggestionsResult,
+  ] = await Promise.all([
     getRoleDictionary(context),
     getPersonDirectory(context),
     getRoleBottlenecks(),
     getPersonBottlenecks(),
     getAreaDirectory(context),
+    getRoleAccessSuggestions(context),
   ]);
 
   const assignedPeople = dictionaryResult.data
@@ -264,6 +285,12 @@ export default async function RolesPersonasPage({
     const companyCompare = (a.company_name ?? "").localeCompare(b.company_name ?? "");
     return companyCompare || a.name.localeCompare(b.name);
   });
+  const suggestionsByRoleId = new Map<string, typeof suggestionsResult.data>();
+  for (const suggestion of suggestionsResult.data) {
+    const roleSuggestions = suggestionsByRoleId.get(suggestion.role_id) ?? [];
+    roleSuggestions.push(suggestion);
+    suggestionsByRoleId.set(suggestion.role_id, roleSuggestions);
+  }
 
   return (
     <DashboardShell
@@ -299,6 +326,11 @@ export default async function RolesPersonasPage({
                 {areasResult.error.message}
               </div>
             ) : null}
+            {suggestionsResult.error ? (
+              <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
+                {suggestionsResult.error.message}
+              </div>
+            ) : null}
             <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
               <div>
                 <p className="text-sm font-medium text-navy">Roles activos del modelo operativo</p>
@@ -315,11 +347,19 @@ export default async function RolesPersonasPage({
                 <span>Alcance</span>
                 <span className="text-right">Accion</span>
               </div>
-              {dictionaryResult.data.map((role) => (
-                <details
-                  className="group border-b border-line last:border-b-0"
-                  key={role.role_id}
-                >
+              {dictionaryResult.data.map((role) => {
+                const roleSuggestions = suggestionsByRoleId.get(role.role_id) ?? [];
+                const roleCountryId = role.country_id ?? context.countryId ?? "";
+                const roleCompanyId = role.company_id ?? "";
+                const roleSiteId = role.site_id ?? context.siteId ?? "";
+
+                return (
+                  <details
+                    className="group scroll-mt-24 border-b border-line last:border-b-0"
+                    id={`role-${role.role_id}`}
+                    key={role.role_id}
+                    open={role.role_id === editRoleId}
+                  >
                 <summary className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] group-open:border-b group-open:border-line group-open:bg-[#fbfdfe]">
                   <div className="grid gap-3 lg:grid-cols-[1.7fr_170px_150px_120px_80px] lg:items-center">
                     <div>
@@ -513,6 +553,83 @@ export default async function RolesPersonasPage({
                   </div>
                 </form>
 
+                {roleSuggestions.length > 0 ? (
+                  <div className="border-t border-line bg-white px-4 py-4">
+                    <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fafb] p-4">
+                      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-[0.08em] text-sea">
+                            Acceso sugerido
+                          </p>
+                          <p className="mt-1 text-sm text-slate-600">
+                            Primero guarda la persona actual del rol. Luego confirma el acceso de
+                            plataforma que corresponda.
+                          </p>
+                        </div>
+                        {!role.current_person_id ? (
+                          <span className="rounded-full bg-[#fff3cf] px-3 py-1 text-xs font-medium text-[#7a5400]">
+                            Falta persona
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {roleSuggestions.map((suggestion) => {
+                          const hasScope =
+                            suggestion.scope_type === "global" ||
+                            (suggestion.scope_type === "country" && roleCountryId) ||
+                            (suggestion.scope_type === "company" && roleCompanyId) ||
+                            (suggestion.scope_type === "site" && roleSiteId);
+                          const disabled = !role.current_person_id || !hasScope;
+
+                          return (
+                            <form
+                              action={assignSuggestedAccessRole}
+                              className="flex flex-col gap-3 rounded-lg border border-line bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
+                              key={suggestion.id}
+                            >
+                              <input name="return_to" type="hidden" value={returnTo} />
+                              <input
+                                name="person_id"
+                                type="hidden"
+                                value={role.current_person_id ?? ""}
+                              />
+                              <input
+                                name="access_role_id"
+                                type="hidden"
+                                value={suggestion.access_role_id}
+                              />
+                              <input
+                                name="scope_type"
+                                type="hidden"
+                                value={suggestion.scope_type}
+                              />
+                              <input name="country_id" type="hidden" value={roleCountryId} />
+                              <input name="company_id" type="hidden" value={roleCompanyId} />
+                              <input name="site_id" type="hidden" value={roleSiteId} />
+                              <div>
+                                <p className="text-sm font-medium text-navy">
+                                  {suggestion.access_role_name}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  Alcance: {scopeLabel(suggestion.scope_type)}
+                                  {suggestion.notes ? ` · ${suggestion.notes}` : ""}
+                                </p>
+                              </div>
+                              <button
+                                className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#052a5a] disabled:cursor-not-allowed disabled:bg-slate-300"
+                                disabled={disabled}
+                                type="submit"
+                              >
+                                Crear acceso
+                              </button>
+                            </form>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#fffdfb] px-4 py-3">
                   <p className="text-xs text-slate-500">
                     Archivar conserva historial. Eliminar borra el rol durante desarrollo.
@@ -543,7 +660,8 @@ export default async function RolesPersonasPage({
                   </div>
                 </div>
               </details>
-            ))}
+                );
+              })}
             </div>
           </>
         )}

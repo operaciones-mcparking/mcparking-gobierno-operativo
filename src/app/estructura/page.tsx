@@ -1,4 +1,5 @@
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
+import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 import {
   getAreaDirectory,
   getPersonDirectory,
@@ -8,6 +9,8 @@ import {
 } from "@/lib/dashboard/data";
 import { governanceProcesses, orgRoles, type OrgRole } from "@/lib/dashboard/organization";
 import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
+import { RoleDictionaryModal } from "./role-dictionary-modal";
+import { RoleDetailButton } from "./role-detail-modal";
 import { StructureExplorer } from "./structure-explorer";
 
 type SearchParams = Promise<{
@@ -163,10 +166,12 @@ function withFallbackHierarchy(roles: OrgRole[]) {
 
 function OrgNode({
   accent = "navy",
+  canEdit = false,
   role,
   size = "normal",
 }: {
   accent?: "clay" | "navy" | "sea";
+  canEdit?: boolean;
   role: OrgRole;
   size?: "large" | "normal" | "small";
 }) {
@@ -179,10 +184,17 @@ function OrgNode({
 
   return (
     <div
-      className={`mx-auto rounded-xl border px-3 py-2 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${accentClasses[accent]} ${
+      className={`relative mx-auto rounded-xl border px-3 py-2 pr-9 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${accentClasses[accent]} ${
         size === "large" ? "w-full max-w-[360px]" : size === "small" ? "w-full max-w-[180px]" : "w-full max-w-[200px]"
       }`}
     >
+      <div className="absolute right-2 top-2">
+        <RoleDetailButton
+          canEdit={canEdit}
+          role={role}
+          variant={accent === "navy" ? "dark" : "light"}
+        />
+      </div>
       <p
         className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
           accent === "navy" ? "text-white/70" : "text-slate-500"
@@ -304,15 +316,18 @@ function buildSvgOrgChart(roots: OrgRole[], childrenByParent: Map<string, OrgRol
   return { height, lines, nodes, width };
 }
 
-function SvgOrgCard({ node }: { node: OrgPoint }) {
+function SvgOrgCard({ canEdit = false, node }: { canEdit?: boolean; node: OrgPoint }) {
   const isRoot = node.accent === "navy";
 
   return (
     <div
-      className={`flex h-full w-full flex-col items-center justify-center rounded-xl border px-3 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${
+      className={`relative flex h-full w-full flex-col items-center justify-center rounded-xl border px-3 pr-9 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${
         isRoot ? "border-navy bg-navy text-white" : "border-[#8bb4c0] bg-white text-navy"
       }`}
     >
+      <div className="absolute right-2 top-2">
+        <RoleDetailButton canEdit={canEdit} role={node.role} variant={isRoot ? "dark" : "light"} />
+      </div>
       <p
         className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
           isRoot ? "text-white/70" : "text-slate-500"
@@ -332,9 +347,11 @@ function SvgOrgCard({ node }: { node: OrgPoint }) {
 
 function SvgOrgChart({
   childrenByParent,
+  canEdit = false,
   roots,
 }: {
   childrenByParent: Map<string, OrgRole[]>;
+  canEdit?: boolean;
   roots: OrgRole[];
 }) {
   const chart = buildSvgOrgChart(roots, childrenByParent);
@@ -367,7 +384,7 @@ function SvgOrgChart({
             x={node.x}
             y={node.y}
           >
-            <SvgOrgCard node={node} />
+            <SvgOrgCard canEdit={canEdit} node={node} />
           </foreignObject>
         ))}
       </svg>
@@ -377,16 +394,23 @@ function SvgOrgChart({
 
 function OrgTree({
   childrenByParent,
+  canEdit = false,
   role,
 }: {
   childrenByParent: Map<string, OrgRole[]>;
+  canEdit?: boolean;
   role: OrgRole;
 }) {
   const children = childrenByParent.get(roleKey(role)) ?? [];
 
   return (
     <div className="flex w-full flex-col items-center">
-      <OrgNode accent={role.orgParentRoleId ? "sea" : "navy"} role={role} size={role.orgParentRoleId ? "normal" : "large"} />
+      <OrgNode
+        accent={role.orgParentRoleId ? "sea" : "navy"}
+        canEdit={canEdit}
+        role={role}
+        size={role.orgParentRoleId ? "normal" : "large"}
+      />
       {children.length > 0 ? (
         <>
           <div className="hidden h-5 w-px bg-navy/55 lg:block" />
@@ -408,7 +432,7 @@ function OrgTree({
                   key={roleKey(child)}
                 >
                   <div className="hidden h-3.5 w-px bg-navy/30 lg:block" />
-                  <OrgTree childrenByParent={childrenByParent} role={child} />
+                  <OrgTree childrenByParent={childrenByParent} canEdit={canEdit} role={child} />
                 </div>
               ))}
             </div>
@@ -421,26 +445,28 @@ function OrgTree({
 
 function OrgBranch({
   child,
+  canEdit = false,
   parent,
 }: {
   child?: OrgRole;
+  canEdit?: boolean;
   parent: OrgRole;
 }) {
   return (
     <div className="relative flex flex-col items-center">
       <div className="hidden h-7 w-px bg-navy/70 lg:block" />
-      <OrgNode role={parent} />
+      <OrgNode canEdit={canEdit} role={parent} />
       {child ? (
         <>
           <div className="hidden h-9 w-px bg-navy/40 lg:block" />
-          <OrgNode accent="sea" role={child} size="small" />
+          <OrgNode accent="sea" canEdit={canEdit} role={child} size="small" />
         </>
       ) : null}
     </div>
   );
 }
 
-function OrgChart({ roles }: { roles: OrgRole[] }) {
+function OrgChart({ canEdit = false, roles }: { canEdit?: boolean; roles: OrgRole[] }) {
   const hasEditableHierarchy = roles.some((role) => role.orgParentRoleId);
 
   if (hasEditableHierarchy) {
@@ -462,7 +488,7 @@ function OrgChart({ roles }: { roles: OrgRole[] }) {
     const roots = positionedRoles
       .filter((role) => !role.orgParentRoleId || !byId.has(role.orgParentRoleId))
       .sort(compareOrgRoles);
-    return <SvgOrgChart childrenByParent={childrenByParent} roots={roots} />;
+    return <SvgOrgChart childrenByParent={childrenByParent} canEdit={canEdit} roots={roots} />;
   }
 
   const general = findRole(roles, ["GG", "Gerente General"]) ?? roles[0];
@@ -491,12 +517,17 @@ function OrgChart({ roles }: { roles: OrgRole[] }) {
   return (
     <div className="mt-5 rounded-2xl bg-[#f6f8fa] px-3 py-6">
       <div className="mx-auto w-full max-w-6xl">
-        <OrgNode accent="navy" role={general} size="large" />
+        <OrgNode accent="navy" canEdit={canEdit} role={general} size="large" />
         <div className="mx-auto hidden h-7 w-px bg-navy/70 lg:block" />
         <div className="mx-auto hidden h-px max-w-5xl bg-navy/70 lg:block" />
         <div className="grid gap-3 pt-0 md:grid-cols-2 xl:grid-cols-4">
           {branches.map((role) => (
-            <OrgBranch child={childrenByBranch.get(role.code)} key={`${role.code}-${role.title}`} parent={role} />
+            <OrgBranch
+              canEdit={canEdit}
+              child={childrenByBranch.get(role.code)}
+              key={`${role.code}-${role.title}`}
+              parent={role}
+            />
           ))}
         </div>
         {otherRoles.length > 0 ? (
@@ -506,7 +537,13 @@ function OrgChart({ roles }: { roles: OrgRole[] }) {
             </p>
             <div className="grid gap-3 lg:grid-cols-4">
               {otherRoles.map((role) => (
-                <OrgNode accent="sea" key={`${role.code}-${role.title}`} role={role} size="small" />
+                <OrgNode
+                  accent="sea"
+                  canEdit={canEdit}
+                  key={`${role.code}-${role.title}`}
+                  role={role}
+                  size="small"
+                />
               ))}
             </div>
           </div>
@@ -530,6 +567,23 @@ export default async function EstructuraPage({
   if (context.countryId) contextParams.set("country_id", context.countryId);
   if (context.siteId) contextParams.set("site_id", context.siteId);
   const returnTo = `/estructura${contextParams.size ? `?${contextParams.toString()}` : ""}`;
+
+  const authSupabase = await createSupabaseAuthServerClient();
+  const {
+    data: { user },
+  } = await authSupabase.auth.getUser();
+
+  let canManageRoles = false;
+
+  if (user) {
+    const { data: profile } = await authSupabase
+      .from("user_profiles")
+      .select("app_role,status")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    canManageRoles = profile?.app_role === "admin" && profile.status === "active";
+  }
 
   const [roleDictionaryResult, roleGovernanceResult, peopleResult, areasResult] = await Promise.all([
     getRoleDictionary(context),
@@ -581,12 +635,15 @@ export default async function EstructuraPage({
     >
       <Panel
         action={
-          <CreateRoleModal
-            areas={areas}
-            people={people}
-            returnTo={returnTo}
-            roles={roleDictionaryResult.data}
-          />
+          <>
+            <RoleDictionaryModal roles={dynamicRoles} />
+            <CreateRoleModal
+              areas={areas}
+              people={people}
+              returnTo={returnTo}
+              roles={roleDictionaryResult.data}
+            />
+          </>
         }
         count={`${dynamicRoles.length} cargos`}
         title="Organigrama operativo"
@@ -601,7 +658,7 @@ export default async function EstructuraPage({
             No se pudieron cargar todas las opciones para crear roles en este contexto.
           </div>
         ) : null}
-        <OrgChart roles={dynamicRoles} />
+        <OrgChart canEdit={canManageRoles} roles={dynamicRoles} />
       </Panel>
 
       <Panel count={`${governanceProcesses.length} procesos`} title="Matriz web de procesos por rol">

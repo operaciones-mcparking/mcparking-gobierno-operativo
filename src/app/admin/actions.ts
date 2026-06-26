@@ -234,6 +234,195 @@ export async function archiveSiteAccess(formData: FormData) {
   adminDone("Permiso archivado");
 }
 
+async function scopePayload(
+  supabase: Awaited<ReturnType<typeof requireAdminClient>>,
+  formData: FormData,
+) {
+  const scopeType = value(formData, "scope_type") || "global";
+
+  if (scopeType === "global") {
+    return {
+      scope_type: "global",
+      country_id: null,
+      company_id: null,
+      site_id: null,
+    };
+  }
+
+  if (scopeType === "country") {
+    return {
+      scope_type: "country",
+      country_id: value(formData, "country_id"),
+      company_id: null,
+      site_id: null,
+    };
+  }
+
+  if (scopeType === "company") {
+    const companyId = value(formData, "company_id");
+    const { data: company, error } = await supabase
+      .from("companies")
+      .select("country_id")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    if (error) {
+      fail(error.message);
+    }
+
+    return {
+      scope_type: "company",
+      country_id: value(formData, "country_id") || company?.country_id,
+      company_id: companyId,
+      site_id: null,
+    };
+  }
+
+  const siteId = value(formData, "site_id");
+  const { data: site, error } = await supabase
+    .from("sites")
+    .select("company_id,country_id")
+    .eq("id", siteId)
+    .maybeSingle();
+
+  if (error) {
+    fail(error.message);
+  }
+
+  return {
+    scope_type: "site",
+    country_id: value(formData, "country_id") || site?.country_id,
+    company_id: value(formData, "company_id") || site?.company_id,
+    site_id: siteId,
+  };
+}
+
+export async function assignAccessRole(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const payload = await scopePayload(supabase, formData);
+
+  const { error } = await supabase.from("user_access_assignments").insert({
+    ...payload,
+    access_role_id: value(formData, "access_role_id"),
+    end_date: optionalValue(formData, "end_date"),
+    person_id: value(formData, "person_id"),
+    start_date: value(formData, "start_date") || new Date().toISOString().slice(0, 10),
+    status: value(formData, "status") || "active",
+  });
+
+  if (error) {
+    fail(error.code === "23505" ? "Esa asignacion de acceso ya existe activa." : error.message);
+  }
+
+  adminDone("Acceso asignado");
+}
+
+export async function assignSuggestedAccessRole(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const returnTo = value(formData, "return_to") || "/roles-personas";
+  const payload = await scopePayload(supabase, formData);
+
+  const { error } = await supabase.from("user_access_assignments").insert({
+    ...payload,
+    access_role_id: value(formData, "access_role_id"),
+    end_date: null,
+    person_id: value(formData, "person_id"),
+    start_date: new Date().toISOString().slice(0, 10),
+    status: "active",
+  });
+
+  if (error) {
+    fail(
+      error.code === "23505"
+        ? "Ese acceso sugerido ya existe activo para esta persona."
+        : error.message,
+      returnTo,
+    );
+  }
+
+  revalidatePath("/admin");
+  revalidateRoleDirectory();
+  redirect(withMessage(returnTo, "ok", "Acceso sugerido asignado"));
+}
+
+export async function archiveAccessAssignment(formData: FormData) {
+  const supabase = await requireAdminClient();
+
+  const { error } = await supabase
+    .from("user_access_assignments")
+    .update({
+      end_date: new Date().toISOString().slice(0, 10),
+      status: "archived",
+    })
+    .eq("id", value(formData, "assignment_id"));
+
+  if (error) {
+    fail(error.message);
+  }
+
+  adminDone("Asignacion archivada");
+}
+
+export async function updateAccessRolePermissions(formData: FormData) {
+  const supabase = await requireAdminClient();
+  const accessRoleId = value(formData, "access_role_id");
+  const permissionIds = new Set(values(formData, "permission_ids"));
+
+  const { data: existing, error: existingError } = await supabase
+    .from("access_role_permissions")
+    .select("permission_id")
+    .eq("access_role_id", accessRoleId);
+
+  if (existingError) {
+    fail(existingError.message);
+  }
+
+  const existingIds = new Set((existing ?? []).map((item) => item.permission_id as string));
+  const toActivate = [...permissionIds].filter((permissionId) => existingIds.has(permissionId));
+  const toInsert = [...permissionIds].filter((permissionId) => !existingIds.has(permissionId));
+  const toArchive = [...existingIds].filter((permissionId) => !permissionIds.has(permissionId));
+
+  if (toArchive.length > 0) {
+    const { error } = await supabase
+      .from("access_role_permissions")
+      .update({ status: "archived" })
+      .eq("access_role_id", accessRoleId)
+      .in("permission_id", toArchive);
+
+    if (error) {
+      fail(error.message);
+    }
+  }
+
+  if (toActivate.length > 0) {
+    const { error } = await supabase
+      .from("access_role_permissions")
+      .update({ status: "active" })
+      .eq("access_role_id", accessRoleId)
+      .in("permission_id", toActivate);
+
+    if (error) {
+      fail(error.message);
+    }
+  }
+
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from("access_role_permissions").insert(
+      toInsert.map((permissionId) => ({
+        access_role_id: accessRoleId,
+        permission_id: permissionId,
+        status: "active",
+      })),
+    );
+
+    if (error) {
+      fail(error.message);
+    }
+  }
+
+  adminDone("Permisos del rol actualizados");
+}
+
 async function runInsert(
   table: string,
   payload: Record<string, unknown>,

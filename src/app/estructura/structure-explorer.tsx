@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Check, ChevronDown, Filter, Search, X } from "lucide-react";
+import { Check, Filter, Search, X } from "lucide-react";
 
 import { toggleRoleGovernanceProcessInline } from "@/app/admin/actions";
-import { Badge, ValueBadge } from "@/components/dashboard/badge";
+import { ValueBadge } from "@/components/dashboard/badge";
 import type { GovernanceProcess, OrgRole } from "@/lib/dashboard/organization";
 
 const allOption = "todos";
@@ -20,12 +20,6 @@ function normalize(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-}
-
-function roleTone(level: OrgRole["level"]) {
-  if (level === "Direccion") return "info";
-  if (level === "Gestion") return "warning";
-  return "success";
 }
 
 export function StructureExplorer({
@@ -126,12 +120,6 @@ export function StructureExplorer({
     return matchesArea && matchesRole && matchesQuery;
   });
 
-  const activeRoleCodes = new Set(
-    filteredProcesses.flatMap((process) =>
-      roles.filter((item) => isRoleActive(process, item)).map((item) => item.code),
-    ),
-  );
-  const visibleRoles = roles.filter((item) => role === allOption || item.code === role);
   const matrixTemplate = {
     gridTemplateColumns: `270px repeat(${roles.length}, 74px)`,
   };
@@ -277,49 +265,6 @@ export function StructureExplorer({
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-[#cbd8e3] bg-white">
-        <div className="flex items-center justify-between border-b border-[#cbd8e3] px-4 py-3">
-          <h3 className="text-sm font-medium text-navy">Diccionario de roles</h3>
-          <span className="text-sm text-slate-500">{visibleRoles.length} roles</span>
-        </div>
-        <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-4">
-        {visibleRoles.map((item, index) => (
-          <details
-            className="group rounded-lg border border-[#cbd8e3] bg-[#fbfcfd] p-3 transition open:bg-white"
-            key={`${item.code}-${index}`}
-          >
-            <summary className="cursor-pointer list-none">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-navy">{item.title}</p>
-                  <p className="mt-1 truncate text-xs text-slate-600">
-                    Persona: <span className="font-medium text-navy">{item.person}</span>
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <ValueBadge tone={activeRoleCodes.has(item.code) ? "success" : "neutral"}>
-                    {item.code}
-                  </ValueBadge>
-                  <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
-                </div>
-              </div>
-            </summary>
-            <div className="mt-4 border-t border-[#cbd8e3] pt-4">
-              <Badge tone={roleTone(item.level)}>{item.level}</Badge>
-              <p className="text-sm leading-6 text-slate-700">{item.objective}</p>
-              <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                {item.responsibilities.map((responsibility) => (
-                  <li className="flex gap-2" key={responsibility}>
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sea" />
-                    <span>{responsibility}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </details>
-        ))}
-        </div>
-      </div>
     </div>
   );
 }
