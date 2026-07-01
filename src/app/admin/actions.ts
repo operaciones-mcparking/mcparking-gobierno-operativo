@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { requireAdminAccess } from "@/lib/auth/admin";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+
+type AdminSupabaseClient = Awaited<ReturnType<typeof requireAdminAccess>>["supabase"];
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -424,12 +426,12 @@ export async function updateAccessRolePermissions(formData: FormData) {
 }
 
 async function runInsert(
+  supabase: AdminSupabaseClient,
   table: string,
   payload: Record<string, unknown>,
   message: string,
   onConflict?: string,
 ) {
-  const supabase = createSupabaseServerClient();
   const query = onConflict
     ? supabase.from(table).upsert(payload, { onConflict })
     : supabase.from(table).insert(payload);
@@ -443,7 +445,7 @@ async function runInsert(
 }
 
 async function firstActiveSiteForCompany(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: AdminSupabaseClient,
   companyId: string | null,
   countryId: string | null,
 ) {
@@ -473,7 +475,7 @@ async function firstActiveSiteForCompany(
 }
 
 async function companyOperationalContext(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: AdminSupabaseClient,
   companyId: string | null,
 ) {
   if (!companyId) {
@@ -497,7 +499,7 @@ async function companyOperationalContext(
 }
 
 async function areaOperationalContext(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: AdminSupabaseClient,
   areaId: string | null,
 ) {
   if (!areaId) {
@@ -518,7 +520,7 @@ async function areaOperationalContext(
 }
 
 async function roleOperationalContext(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: AdminSupabaseClient,
   roleId: string | null,
 ) {
   if (!roleId) {
@@ -546,7 +548,7 @@ async function roleOperationalContext(
 }
 
 async function siteOperationalContext(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
+  supabase: AdminSupabaseClient,
   siteId: string | null,
 ) {
   if (!siteId) {
@@ -591,7 +593,10 @@ async function requestOperationalContext() {
 }
 
 export async function addArea(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
+
   await runInsert(
+    supabase,
     "areas",
     {
       company_id: value(formData, "company_id"),
@@ -604,7 +609,7 @@ export async function addArea(formData: FormData) {
 }
 
 export async function addProcess(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
   const companyId = value(formData, "company_id");
   const explicitSiteId =
@@ -650,7 +655,10 @@ export async function addProcess(formData: FormData) {
 }
 
 export async function addSubprocess(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
+
   await runInsert(
+    supabase,
     "subprocesses",
     {
       process_id: value(formData, "process_id"),
@@ -667,7 +675,7 @@ export async function addSubprocess(formData: FormData) {
 export async function addSubprocessToProcess(formData: FormData) {
   const processId = value(formData, "process_id");
   const returnTo = `/procesos/${processId}/editar`;
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const criticality = value(formData, "criticality");
   const impactPercent = numberValue(formData, "impact_percent");
   const { data, error } = await supabase
@@ -713,6 +721,7 @@ export async function addSubprocessToProcess(formData: FormData) {
 
   for (const update of roleUpdates) {
     const roleError = await replaceProcessRole({
+      supabase,
       criticality,
       impactPercent: update.impactPercent,
       processId,
@@ -727,6 +736,7 @@ export async function addSubprocessToProcess(formData: FormData) {
   }
 
   const supportError = await replaceSubprocessSupport({
+    supabase,
     controlName: optionalValue(formData, "control_name"),
     processId,
     riskName: optionalValue(formData, "risk_name"),
@@ -743,12 +753,13 @@ export async function addSubprocessToProcess(formData: FormData) {
 }
 
 export async function addRole(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
   const areaId = optionalValue(formData, "area_id");
   const areaContext = await areaOperationalContext(supabase, areaId);
 
   await runInsert(
+    supabase,
     "roles",
     {
       area_id: areaId,
@@ -766,9 +777,11 @@ export async function addRole(formData: FormData) {
 }
 
 export async function addPerson(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
 
   await runInsert(
+    supabase,
     "people",
     {
       name: value(formData, "name"),
@@ -790,7 +803,7 @@ export async function createRoleDictionaryEntry(formData: FormData) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
   const roleContext = await areaOperationalContext(supabase, areaId);
   const currentSiteId = requestContext.siteId ?? roleContext.siteId;
@@ -848,7 +861,7 @@ export async function createRoleDictionaryEntry(formData: FormData) {
 }
 
 export async function assignPersonRole(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
   const explicitSiteId = optionalValue(formData, "site_id") ?? requestContext.siteId;
   const companyId = value(formData, "company_id");
@@ -879,7 +892,7 @@ export async function assignPersonRole(formData: FormData) {
 export async function updatePersonBasic(formData: FormData) {
   const personId = value(formData, "person_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
   const personUpdate: {
     country_id?: string | null;
@@ -917,7 +930,7 @@ export async function updatePersonBasic(formData: FormData) {
 export async function archivePerson(formData: FormData) {
   const personId = value(formData, "person_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   const { error: assignmentError } = await supabase
     .from("person_roles")
@@ -956,7 +969,7 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
     .split(/\r?\n/)
     .map((item) => item.trim())
     .filter(Boolean);
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
 
   const { data: areaData, error: areaDataError } = await supabase
@@ -1037,7 +1050,7 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
 export async function archiveRole(formData: FormData) {
   const roleId = value(formData, "role_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   const { error: assignmentError } = await supabase
     .from("person_roles")
@@ -1069,7 +1082,7 @@ export async function archiveRole(formData: FormData) {
 export async function deleteRole(formData: FormData) {
   const roleId = value(formData, "role_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   if (!roleId) {
     fail("No se recibio el identificador del rol. Refresca la pagina e intenta nuevamente.", returnTo);
@@ -1096,7 +1109,7 @@ export async function toggleRoleGovernanceProcess(formData: FormData) {
   const processKey = value(formData, "process_key");
   const active = checkbox(formData, "active");
   const returnTo = value(formData, "return_to") || "/estructura";
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   const { error } = await supabase
     .from("role_governance_processes")
@@ -1122,7 +1135,7 @@ export async function toggleRoleGovernanceProcessInline(
   processKey: string,
   currentlyActive: boolean,
 ) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   if (!roleId || !processKey) {
     return { error: "Falta el rol o el proceso para guardar el cambio." };
@@ -1149,7 +1162,7 @@ export async function toggleRoleGovernanceProcessInline(
 }
 
 export async function addSystem(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
   const ownerRoleId = optionalValue(formData, "owner_role_id");
   const roleContext = await roleOperationalContext(supabase, ownerRoleId);
@@ -1174,7 +1187,10 @@ export async function addSystem(formData: FormData) {
 }
 
 export async function assignProcessRole(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
+
   await runInsert(
+    supabase,
     "process_roles",
     {
       process_id: value(formData, "process_id"),
@@ -1191,7 +1207,10 @@ export async function assignProcessRole(formData: FormData) {
 }
 
 export async function assignProcessSystem(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
+
   await runInsert(
+    supabase,
     "process_systems",
     {
       process_id: value(formData, "process_id"),
@@ -1206,7 +1225,7 @@ export async function assignProcessSystem(formData: FormData) {
 export async function updateProcessBasics(formData: FormData) {
   const processId = value(formData, "process_id");
   const returnTo = `/procesos/${processId}/editar`;
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const { error } = await supabase
     .from("processes")
     .update({
@@ -1228,7 +1247,7 @@ export async function updateProcessBasics(formData: FormData) {
 }
 
 export async function reorderSubprocesses(processId: string, orderedIds: string[]) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   for (const [index, subprocessId] of orderedIds.entries()) {
     const { error } = await supabase
@@ -1253,7 +1272,7 @@ export async function updateSubprocessImpacts(
   processId: string,
   impacts: Array<{ subprocessId: string; impactPercent: number }>,
 ) {
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
 
   for (const impact of impacts) {
     const { error: subprocessError } = await supabase
@@ -1286,6 +1305,7 @@ export async function updateSubprocessImpacts(
 }
 
 async function replaceProcessRole({
+  supabase,
   criticality,
   impactPercent,
   processId,
@@ -1293,6 +1313,7 @@ async function replaceProcessRole({
   roleId,
   subprocessId,
 }: {
+  supabase: AdminSupabaseClient;
   criticality: string;
   impactPercent: number | null;
   processId: string;
@@ -1300,7 +1321,6 @@ async function replaceProcessRole({
   roleId: string | null;
   subprocessId: string;
 }) {
-  const supabase = createSupabaseServerClient();
   const { error: deleteError } = await supabase
     .from("process_roles")
     .delete()
@@ -1358,6 +1378,7 @@ async function replaceProcessRole({
 }
 
 async function replaceSubprocessSupport({
+  supabase,
   controlName,
   processId,
   riskName,
@@ -1365,6 +1386,7 @@ async function replaceSubprocessSupport({
   subprocessId,
   systemIds,
 }: {
+  supabase: AdminSupabaseClient;
   controlName: string | null;
   processId: string;
   riskName: string | null;
@@ -1372,7 +1394,6 @@ async function replaceSubprocessSupport({
   subprocessId: string;
   systemIds: string[];
 }) {
-  const supabase = createSupabaseServerClient();
   const { error: deleteSystemError } = await supabase
     .from("process_systems")
     .delete()
@@ -1466,7 +1487,7 @@ export async function updateSubprocessDetail(formData: FormData) {
   const processId = value(formData, "process_id");
   const subprocessId = value(formData, "subprocess_id");
   const returnTo = `/procesos/${processId}/editar`;
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const criticality = value(formData, "criticality");
   const impactPercent = numberValue(formData, "impact_percent");
   const allImpacts = Array.from(formData.entries())
@@ -1541,6 +1562,7 @@ export async function updateSubprocessDetail(formData: FormData) {
 
   for (const update of roleUpdates) {
     const error = await replaceProcessRole({
+      supabase,
       criticality,
       impactPercent: update.impactPercent,
       processId,
@@ -1555,6 +1577,7 @@ export async function updateSubprocessDetail(formData: FormData) {
   }
 
   const supportError = await replaceSubprocessSupport({
+    supabase,
     controlName: optionalValue(formData, "control_name"),
     processId,
     riskName: optionalValue(formData, "risk_name"),
@@ -1574,7 +1597,7 @@ export async function deleteSubprocess(formData: FormData) {
   const processId = value(formData, "process_id");
   const subprocessId = value(formData, "subprocess_id");
   const returnTo = `/procesos/${processId}/editar`;
-  const supabase = createSupabaseServerClient();
+  const { supabase } = await requireAdminAccess();
   const { error } = await supabase
     .from("subprocesses")
     .delete()
