@@ -513,22 +513,32 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
     permissionsByRole.set(relation.access_role_id, list);
   }
 
-  const assignmentsByPerson = new Map<string, UserAccessAssignmentItem[]>();
-  for (const assignment of options.userAccessAssignments) {
-    const list = assignmentsByPerson.get(assignment.person_id) ?? [];
+  const activeAssignments = options.userAccessAssignments.filter(
+    (assignment) => assignment.status === "active",
+  );
+  const archivedAssignments = options.userAccessAssignments.filter(
+    (assignment) => assignment.status !== "active",
+  );
+  const activeAssignmentsByPerson = new Map<string, UserAccessAssignmentItem[]>();
+  for (const assignment of activeAssignments) {
+    const list = activeAssignmentsByPerson.get(assignment.person_id) ?? [];
     list.push(assignment);
-    assignmentsByPerson.set(assignment.person_id, list);
+    activeAssignmentsByPerson.set(assignment.person_id, list);
   }
+  const peopleWithMultipleActiveAssignments = new Set(
+    [...activeAssignmentsByPerson.entries()]
+      .filter(([, assignments]) => assignments.length > 1)
+      .map(([personId]) => personId),
+  );
 
-  const scopeCounts = options.userAccessAssignments.reduce<Record<string, number>>((acc, assignment) => {
-    if (assignment.status !== "active") return acc;
+  const scopeCounts = activeAssignments.reduce<Record<string, number>>((acc, assignment) => {
     acc[assignment.scope_type] = (acc[assignment.scope_type] ?? 0) + 1;
     return acc;
   }, {});
 
-  const adminAssignments = options.userAccessAssignments.filter((assignment) => {
+  const adminAssignments = activeAssignments.filter((assignment) => {
     const role = roleById.get(assignment.access_role_id);
-    return assignment.status === "active" && role?.role_code.startsWith("ADMIN_");
+    return role?.role_code.startsWith("ADMIN_");
   });
 
   return (
@@ -540,7 +550,7 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
         eyebrow="Permisos RBAC"
         title="Administracion de Accesos"
       >
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
             <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Permisos</p>
             <p className="mt-2 text-2xl font-medium text-navy">{options.permissions.length}</p>
@@ -550,8 +560,12 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
             <p className="mt-2 text-2xl font-medium text-navy">{options.accessRoles.length}</p>
           </div>
           <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
-            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Asignaciones</p>
-            <p className="mt-2 text-2xl font-medium text-navy">{options.userAccessAssignments.length}</p>
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Accesos activos</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{activeAssignments.length}</p>
+          </div>
+          <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Accesos archivados</p>
+            <p className="mt-2 text-2xl font-medium text-navy">{archivedAssignments.length}</p>
           </div>
           <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
             <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Excepciones</p>
@@ -561,8 +575,8 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
 
         <div className="mt-5 grid gap-4">
           <AccordionPanel
-            count={`${assignmentsByPerson.size} usuarios`}
-            description="Personas con uno o mas roles de acceso asignados."
+            count={`${activeAssignmentsByPerson.size} usuarios activos`}
+            description="Personas con uno o mas roles de acceso activos."
             title="Usuarios"
           >
             <form action={assignAccessRole} className="mb-4 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
@@ -658,11 +672,66 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
                 <span>Estado</span>
               </div>
               <div className="divide-y divide-[#d6e1ea] bg-white">
-                {options.userAccessAssignments.map((assignment) => {
+                {activeAssignments.map((assignment) => {
                   const role = roleById.get(assignment.access_role_id);
                   return (
                     <div
                       className="grid gap-3 px-4 py-3 text-sm lg:grid-cols-[1fr_1.1fr_1.2fr_0.7fr_auto]"
+                      key={assignment.id}
+                    >
+                      <div>
+                        <span className="font-medium text-navy">
+                          {personById.get(assignment.person_id) ?? "Persona sin nombre"}
+                        </span>
+                        {peopleWithMultipleActiveAssignments.has(assignment.person_id) ? (
+                          <p className="mt-1 rounded-md border border-[#ffd8a8] bg-[#fff8ee] px-2 py-1 text-xs leading-5 text-[#8a4a00]">
+                            Esta persona tiene múltiples accesos activos. Revisar si corresponde.
+                          </p>
+                        ) : null}
+                      </div>
+                      <span>{role?.name ?? "Rol no encontrado"}</span>
+                      <span className="text-slate-600">{scopeLabel(assignment, options)}</span>
+                      <AccessPill tone="good">
+                        {statusLabel(assignment.status)}
+                      </AccessPill>
+                      <form action={archiveAccessAssignment}>
+                        <input name="assignment_id" type="hidden" value={assignment.id} />
+                        <button
+                          className="rounded-lg border border-[#ffd8a8] px-3 py-1.5 text-xs font-medium text-[#8a4a00] transition hover:bg-[#fff4e8]"
+                          type="submit"
+                        >
+                          Archivar
+                        </button>
+                      </form>
+                    </div>
+                  );
+                })}
+                {activeAssignments.length === 0 ? (
+                  <p className="px-4 py-5 text-sm text-slate-600">
+                    Aun no hay accesos activos RBAC.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea]">
+              <div className="flex flex-col gap-1 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
+                <h3 className="text-sm font-semibold text-navy">Historial de accesos</h3>
+                <p className="text-xs text-slate-500">
+                  Accesos archivados o inactivos. No otorgan permisos actuales.
+                </p>
+              </div>
+              <div className="grid grid-cols-[1fr_1.1fr_1.2fr_0.7fr] gap-3 border-b border-[#d6e1ea] bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <span>Persona</span>
+                <span>Rol de acceso</span>
+                <span>Alcance</span>
+                <span>Estado</span>
+              </div>
+              <div className="divide-y divide-[#d6e1ea] bg-white">
+                {archivedAssignments.map((assignment) => {
+                  const role = roleById.get(assignment.access_role_id);
+                  return (
+                    <div
+                      className="grid gap-3 px-4 py-3 text-sm lg:grid-cols-[1fr_1.1fr_1.2fr_0.7fr]"
                       key={assignment.id}
                     >
                       <span className="font-medium text-navy">
@@ -670,26 +739,13 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
                       </span>
                       <span>{role?.name ?? "Rol no encontrado"}</span>
                       <span className="text-slate-600">{scopeLabel(assignment, options)}</span>
-                      <AccessPill tone={assignment.status === "active" ? "good" : "warn"}>
-                        {statusLabel(assignment.status)}
-                      </AccessPill>
-                      {assignment.status === "active" ? (
-                        <form action={archiveAccessAssignment}>
-                          <input name="assignment_id" type="hidden" value={assignment.id} />
-                          <button
-                            className="rounded-lg border border-[#ffd8a8] px-3 py-1.5 text-xs font-medium text-[#8a4a00] transition hover:bg-[#fff4e8]"
-                            type="submit"
-                          >
-                            Archivar
-                          </button>
-                        </form>
-                      ) : null}
+                      <AccessPill tone="warn">{statusLabel(assignment.status)}</AccessPill>
                     </div>
                   );
                 })}
-                {options.userAccessAssignments.length === 0 ? (
+                {archivedAssignments.length === 0 ? (
                   <p className="px-4 py-5 text-sm text-slate-600">
-                    Aun no hay asignaciones de acceso RBAC.
+                    No hay accesos archivados.
                   </p>
                 ) : null}
               </div>
