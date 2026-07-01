@@ -1,5 +1,4 @@
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
-import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 import {
   getAreaDirectory,
   getPersonDirectory,
@@ -12,6 +11,7 @@ import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
 import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
 import { StructureExplorer } from "./structure-explorer";
+import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
 
 type SearchParams = Promise<{
   country_id?: string;
@@ -568,22 +568,7 @@ export default async function EstructuraPage({
   if (context.siteId) contextParams.set("site_id", context.siteId);
   const returnTo = `/estructura${contextParams.size ? `?${contextParams.toString()}` : ""}`;
 
-  const authSupabase = await createSupabaseAuthServerClient();
-  const {
-    data: { user },
-  } = await authSupabase.auth.getUser();
-
-  let canManageRoles = false;
-
-  if (user) {
-    const { data: profile } = await authSupabase
-      .from("user_profiles")
-      .select("app_role,status")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    canManageRoles = profile?.app_role === "admin" && profile.status === "active";
-  }
+  const capabilities = await getRolePersonUiCapabilities();
 
   const [roleDictionaryResult, roleGovernanceResult, peopleResult, areasResult] = await Promise.all([
     getRoleDictionary(context),
@@ -639,6 +624,7 @@ export default async function EstructuraPage({
             <RoleDictionaryModal roles={dynamicRoles} />
             <CreateRoleModal
               areas={areas}
+              canCreate={capabilities.canCreateRoles}
               people={people}
               returnTo={returnTo}
               roles={roleDictionaryResult.data}
@@ -658,7 +644,7 @@ export default async function EstructuraPage({
             No se pudieron cargar todas las opciones para crear roles en este contexto.
           </div>
         ) : null}
-        <OrgChart canEdit={canManageRoles} roles={dynamicRoles} />
+        <OrgChart canEdit={capabilities.canEditRoles} roles={dynamicRoles} />
       </Panel>
 
       <Panel count={`${governanceProcesses.length} procesos`} title="Matriz web de procesos por rol">

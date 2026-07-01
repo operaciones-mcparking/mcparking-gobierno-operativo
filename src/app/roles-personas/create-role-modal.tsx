@@ -119,11 +119,13 @@ function RolePreviewCard({
 
 export function CreateRoleModal({
   areas,
+  canCreate = true,
   people,
   returnTo,
   roles,
 }: {
   areas: AreaOption[];
+  canCreate?: boolean;
   people: PersonOption[];
   returnTo: string;
   roles: RoleOption[];
@@ -145,6 +147,10 @@ export function CreateRoleModal({
     : "Nivel superior";
   const previewPersonName = selectedPerson?.name || "Sin persona asignada";
   const previewRoleName = roleName.trim() || "Nombre del rol";
+
+  if (!canCreate) {
+    return null;
+  }
 
   return (
     <>

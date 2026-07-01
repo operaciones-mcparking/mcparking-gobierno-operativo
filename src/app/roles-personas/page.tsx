@@ -25,6 +25,7 @@ import {
   getRoleBottlenecks,
   getRoleDictionary,
 } from "@/lib/dashboard/data";
+import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
 
 type SearchParams = Promise<{
   country_id?: string;
@@ -235,6 +236,7 @@ export default async function RolesPersonasPage({
   if (editRoleId) contextParams.set("edit_role", editRoleId);
   const returnTo = `/roles-personas${contextParams.size ? `?${contextParams.toString()}` : ""}`;
   const [
+    capabilities,
     dictionaryResult,
     directoryResult,
     rolesResult,
@@ -242,6 +244,7 @@ export default async function RolesPersonasPage({
     areasResult,
     suggestionsResult,
   ] = await Promise.all([
+    getRolePersonUiCapabilities(),
     getRoleDictionary(context),
     getPersonDirectory(context),
     getRoleBottlenecks(),
@@ -387,17 +390,20 @@ export default async function RolesPersonasPage({
                       <span>{roleType(role.is_corporate, role.is_local)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-3 text-sm text-slate-600 lg:justify-end">
-                      <span className="rounded-full bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea">
-                        Editar
-                      </span>
+                      {capabilities.canEditRoles ? (
+                        <span className="rounded-full bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea">
+                          Editar
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </summary>
 
-                <form
-                  action={updateRoleDictionaryEntry}
-                  className="grid gap-4 bg-[#f8fafb] p-4"
-                >
+                {capabilities.canEditRoles ? (
+                  <form
+                    action={updateRoleDictionaryEntry}
+                    className="grid gap-4 bg-[#f8fafb] p-4"
+                  >
                   <input name="role_id" type="hidden" value={role.role_id} />
                   <input name="company_id" type="hidden" value={role.company_id ?? ""} />
                   <input name="return_to" type="hidden" value={returnTo} />
@@ -551,9 +557,10 @@ export default async function RolesPersonasPage({
                       </div>
                     </div>
                   </div>
-                </form>
+                  </form>
+                ) : null}
 
-                {roleSuggestions.length > 0 ? (
+                {capabilities.canEditRoles && roleSuggestions.length > 0 ? (
                   <div className="border-t border-line bg-white px-4 py-4">
                     <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fafb] p-4">
                       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
@@ -630,35 +637,37 @@ export default async function RolesPersonasPage({
                   </div>
                 ) : null}
 
-                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#fffdfb] px-4 py-3">
-                  <p className="text-xs text-slate-500">
-                    Archivar conserva historial. Eliminar borra el rol durante desarrollo.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <form action={archiveRole}>
-                      <input name="role_id" type="hidden" value={role.role_id} />
-                      <input name="return_to" type="hidden" value={returnTo} />
-                      <ConfirmSubmitButton
-                        className={archiveButtonClass}
-                        message={`Vas a archivar el rol "${role.role_name}". Se ocultara del diccionario activo, pero conservara historial. Deseas continuar?`}
-                        title="Archivar rol"
-                      >
-                        Archivar rol
-                      </ConfirmSubmitButton>
-                    </form>
-                    <form action={deleteRole}>
-                      <input name="role_id" type="hidden" value={role.role_id} />
-                      <input name="return_to" type="hidden" value={returnTo} />
-                      <ConfirmSubmitButton
-                        className={dangerButtonClass}
-                        message={`Vas a eliminar definitivamente el rol "${role.role_name}". Esta accion puede borrar relaciones asociadas y no se puede deshacer desde la web. Deseas continuar?`}
-                        title="Eliminar rol"
-                      >
-                        Eliminar rol
-                      </ConfirmSubmitButton>
-                    </form>
+                {capabilities.canArchiveRoles ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-[#fffdfb] px-4 py-3">
+                    <p className="text-xs text-slate-500">
+                      Archivar conserva historial. Eliminar borra el rol durante desarrollo.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <form action={archiveRole}>
+                        <input name="role_id" type="hidden" value={role.role_id} />
+                        <input name="return_to" type="hidden" value={returnTo} />
+                        <ConfirmSubmitButton
+                          className={archiveButtonClass}
+                          message={`Vas a archivar el rol "${role.role_name}". Se ocultara del diccionario activo, pero conservara historial. Deseas continuar?`}
+                          title="Archivar rol"
+                        >
+                          Archivar rol
+                        </ConfirmSubmitButton>
+                      </form>
+                      <form action={deleteRole}>
+                        <input name="role_id" type="hidden" value={role.role_id} />
+                        <input name="return_to" type="hidden" value={returnTo} />
+                        <ConfirmSubmitButton
+                          className={dangerButtonClass}
+                          message={`Vas a eliminar definitivamente el rol "${role.role_name}". Esta accion puede borrar relaciones asociadas y no se puede deshacer desde la web. Deseas continuar?`}
+                          title="Eliminar rol"
+                        >
+                          Eliminar rol
+                        </ConfirmSubmitButton>
+                      </form>
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </details>
                 );
               })}
@@ -699,45 +708,51 @@ export default async function RolesPersonasPage({
                         {person.phone ?? "Sin telefono"}
                       </p>
                     </div>
-                    <div className="text-sm text-slate-500">Editar datos</div>
+                    <div className="text-sm text-slate-500">
+                      {capabilities.canEditPeople ? "Editar datos" : null}
+                    </div>
                   </div>
                 </summary>
 
-                <form action={updatePersonBasic} className="grid gap-3 border-t border-line bg-[#f8fafb] p-4">
-                  <input name="person_id" type="hidden" value={person.id} />
-                  <input name="return_to" type="hidden" value={returnTo} />
-                  <div className="rounded-xl border border-line bg-white p-4">
-                    <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
-                    <Field label="Nombre">
-                      <input className={inputClass} name="name" required defaultValue={person.name} />
-                    </Field>
-                    <Field label="Email">
-                      <input className={inputClass} name="email" defaultValue={person.email ?? ""} />
-                    </Field>
-                    <Field label="Telefono">
-                      <input className={inputClass} name="phone" defaultValue={person.phone ?? ""} />
-                    </Field>
-                    <SaveButton>Guardar persona</SaveButton>
+                {capabilities.canEditPeople ? (
+                  <form action={updatePersonBasic} className="grid gap-3 border-t border-line bg-[#f8fafb] p-4">
+                    <input name="person_id" type="hidden" value={person.id} />
+                    <input name="return_to" type="hidden" value={returnTo} />
+                    <div className="rounded-xl border border-line bg-white p-4">
+                      <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+                      <Field label="Nombre">
+                        <input className={inputClass} name="name" required defaultValue={person.name} />
+                      </Field>
+                      <Field label="Email">
+                        <input className={inputClass} name="email" defaultValue={person.email ?? ""} />
+                      </Field>
+                      <Field label="Telefono">
+                        <input className={inputClass} name="phone" defaultValue={person.phone ?? ""} />
+                      </Field>
+                      <SaveButton>Guardar persona</SaveButton>
+                      </div>
                     </div>
-                  </div>
-                </form>
-                <form
-                  action={archivePerson}
-                  className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-white px-4 py-3"
-                >
-                  <input name="person_id" type="hidden" value={person.id} />
-                  <input name="return_to" type="hidden" value={returnTo} />
-                  <p className="text-xs text-slate-500">
-                    Archivar desasigna sus roles activos y la oculta de las listas.
-                  </p>
-                  <ConfirmSubmitButton
-                    className={archiveButtonClass}
-                    message={`Vas a archivar a "${person.name}". Se desasignaran sus roles activos y se ocultara de las listas. Deseas continuar?`}
-                    title="Archivar persona"
+                  </form>
+                ) : null}
+                {capabilities.canArchivePeople ? (
+                  <form
+                    action={archivePerson}
+                    className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-white px-4 py-3"
                   >
-                    Archivar persona
-                  </ConfirmSubmitButton>
-                </form>
+                    <input name="person_id" type="hidden" value={person.id} />
+                    <input name="return_to" type="hidden" value={returnTo} />
+                    <p className="text-xs text-slate-500">
+                      Archivar desasigna sus roles activos y la oculta de las listas.
+                    </p>
+                    <ConfirmSubmitButton
+                      className={archiveButtonClass}
+                      message={`Vas a archivar a "${person.name}". Se desasignaran sus roles activos y se ocultara de las listas. Deseas continuar?`}
+                      title="Archivar persona"
+                    >
+                      Archivar persona
+                    </ConfirmSubmitButton>
+                  </form>
+                ) : null}
               </details>
             ))}
           </div>
