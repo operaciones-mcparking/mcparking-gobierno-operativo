@@ -8,6 +8,7 @@ import {
 } from "@/components/dashboard/badge";
 import { requireAdminAccess } from "@/lib/auth/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { AssignAccessModal } from "./assign-access-modal";
 import {
   addArea,
   addPerson,
@@ -18,7 +19,6 @@ import {
   archiveAccessAssignment,
   archiveSiteAccess,
   assignPersonRole,
-  assignAccessRole,
   assignProcessRole,
   assignProcessSystem,
   authorizeDomainAccess,
@@ -579,91 +579,13 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
             description="Personas con uno o mas roles de acceso activos."
             title="Usuarios"
           >
-            <form action={assignAccessRole} className="mb-4 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-medium text-navy">Asignar rol de acceso</h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Elige una persona, un rol de acceso y el alcance donde aplica.
-                  </p>
-                </div>
-                <AccessPill tone="good">RBAC</AccessPill>
-              </div>
-              <div className="mt-4 grid gap-3 lg:grid-cols-4">
-                <Field label="Persona">
-                  <Select name="person_id" required>
-                    <option value="">Selecciona persona</option>
-                    {options.people.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Rol de acceso">
-                  <Select name="access_role_id" required>
-                    <option value="">Selecciona rol</option>
-                    {options.accessRoles.map((role) => (
-                      <option key={role.id} value={role.id}>
-                        {role.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Alcance">
-                  <Select name="scope_type" required>
-                    <option value="global">Global</option>
-                    <option value="country">Pais</option>
-                    <option value="company">Empresa</option>
-                    <option value="site">Sede</option>
-                  </Select>
-                </Field>
-                <Field label="Estado">
-                  <StatusSelect />
-                </Field>
-              </div>
-              <div className="mt-3 grid gap-3 lg:grid-cols-4">
-                <Field label="Pais">
-                  <Select name="country_id">
-                    <option value="">Sin pais</option>
-                    {options.countries.map((country) => (
-                      <option key={country.id} value={country.id}>
-                        {country.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Empresa">
-                  <Select name="company_id">
-                    <option value="">Sin empresa</option>
-                    {options.companies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Sede">
-                  <Select name="site_id">
-                    <option value="">Sin sede</option>
-                    {options.sites.map((site) => (
-                      <option key={site.id} value={site.id}>
-                        {site.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Inicio">
-                  <Input name="start_date" type="date" />
-                </Field>
-              </div>
-              <div className="mt-4 flex items-center justify-between gap-4">
-                <p className="text-sm text-slate-600">
-                  Si eliges sede, el pais y la empresa se completan desde esa sede.
-                </p>
-                <Submit>Asignar acceso</Submit>
-              </div>
-            </form>
+            <AssignAccessModal
+              accessRoles={options.accessRoles}
+              companies={options.companies}
+              countries={options.countries}
+              people={options.people}
+              sites={options.sites}
+            />
             <div className="overflow-hidden rounded-xl border border-[#d6e1ea]">
               <div className="grid grid-cols-[1fr_1.1fr_1.2fr_0.7fr] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 <span>Persona</span>
