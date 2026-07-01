@@ -501,7 +501,10 @@ function scopeTypeLabel(scopeType: string) {
 function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAdminOptions>> }) {
   const personById = new Map(options.people.map((person) => [person.id, person.name]));
   const permissionById = new Map(options.permissions.map((permission) => [permission.id, permission]));
+  const profileById = new Map(options.userProfiles.map((profile) => [profile.user_id, profile]));
   const roleById = new Map(options.accessRoles.map((role) => [role.id, role]));
+  const countryById = new Map(options.countries.map((country) => [country.id, country.name]));
+  const siteById = new Map(options.sites.map((site) => [site.id, site.name]));
   const permissionsByRole = new Map<string, PermissionItem[]>();
 
   for (const relation of options.accessRolePermissions) {
@@ -546,10 +549,28 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
       <AccordionPanel
         count={`${options.accessRoles.length} roles`}
         defaultOpen
-        description="Modelo RBAC con roles de acceso reutilizables y alcance global, pais, empresa o sede."
-        eyebrow="Permisos RBAC"
+        description="Gestiona quien puede entrar, que perfil tiene, que rol de acceso usa y donde aplica."
+        eyebrow="Accesos"
         title="Administracion de Accesos"
       >
+        <div className="mb-5 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+          <h3 className="text-sm font-semibold text-navy">Como funciona</h3>
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            {[
+              ["1", "Usuario de plataforma", "Puede iniciar sesion."],
+              ["2", "Perfil del sistema", "Admin, manager, operator o viewer."],
+              ["3", "Rol de acceso RBAC", "Define que puede hacer."],
+              ["4", "Alcance", "Define donde aplica el permiso."],
+            ].map(([step, title, description]) => (
+              <div className="rounded-lg border border-[#d6e1ea] bg-white p-3" key={step}>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sea">Paso {step}</p>
+                <p className="mt-2 text-sm font-semibold text-navy">{title}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">{description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-5">
           <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
             <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Permisos</p>
@@ -575,9 +596,127 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
 
         <div className="mt-5 grid gap-4">
           <AccordionPanel
+            count={`${options.userProfiles.length} usuarios`}
+            defaultOpen
+            description="Usuarios que pueden iniciar sesion y su perfil base dentro del sistema."
+            title="Usuarios de plataforma"
+          >
+            <p className="mb-4 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] px-4 py-3 text-sm leading-6 text-slate-600">
+              Estos usuarios pueden iniciar sesion en la plataforma. Se crean cuando un correo autorizado o un dominio permitido inicia sesion por primera vez. El perfil del sistema define el nivel base de acceso.
+            </p>
+            <div className="grid gap-3">
+                {options.userProfiles.map((profile) => {
+                  const defaultCountry = countryById.get(profile.default_country_id ?? "") ?? "Sin pais";
+                  const defaultSite = siteById.get(profile.default_site_id ?? "") ?? "Sin sede";
+
+                  return (
+                    <details
+                      className="group rounded-xl border border-[#d6e1ea] bg-white p-4 transition hover:border-[#b7c9d9] open:bg-[#fbfdff]"
+                      key={profile.user_id}
+                    >
+                      <summary className="flex cursor-pointer list-none flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <p className="break-words text-base font-medium text-navy">
+                            {profile.display_name || "Usuario sin nombre"}
+                          </p>
+                          <p className="mt-1 break-all text-sm text-slate-500">{profile.email}</p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-3 lg:w-[58%]">
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Perfil
+                            </p>
+                            <p className="mt-1 text-sm font-medium text-navy">{roleLabel(profile.app_role)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                              Contexto
+                            </p>
+                            <p className="mt-1 break-words text-sm text-slate-700">
+                              {defaultCountry} · {defaultSite}
+                            </p>
+                          </div>
+                          <div className="flex items-start justify-between gap-3 sm:block">
+                            <div>
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                Estado
+                              </p>
+                              <div className="mt-1">
+                                <AccessPill tone={profile.status === "active" ? "good" : "warn"}>
+                                  {statusLabel(profile.status)}
+                                </AccessPill>
+                              </div>
+                            </div>
+                            <span className="inline-flex rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-3 py-1.5 text-xs font-medium text-navy transition group-open:bg-white">
+                              Editar
+                            </span>
+                          </div>
+                        </div>
+                      </summary>
+                      <form
+                        action={updateUserAccessProfile}
+                        className="mt-4 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4"
+                      >
+                        <input name="user_id" type="hidden" value={profile.user_id} />
+                        <div className="grid gap-3 lg:grid-cols-2">
+                          <Field label="Nombre visible">
+                            <Input name="display_name" defaultValue={profile.display_name} />
+                          </Field>
+                          <Field label="Perfil del sistema">
+                            <AppRoleSelect defaultValue={profile.app_role} />
+                          </Field>
+                          <Field label="Estado">
+                            <StatusSelect defaultValue={profile.status} />
+                          </Field>
+                          <div className="rounded-lg border border-[#d6e1ea] bg-white p-3 lg:col-span-2">
+                        <p className="mb-2 text-xs font-medium text-slate-600">
+                          {defaultCountry} · {defaultSite}
+                        </p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+                            Pais
+                            <CountrySelect
+                              countries={options.countries}
+                              defaultValue={profile.default_country_id}
+                            />
+                          </label>
+                          <label className="grid gap-1 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
+                            Sede
+                            <SiteSelect sites={options.sites} defaultValue={profile.default_site_id} />
+                          </label>
+                        </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex justify-end gap-2">
+                          <button
+                            className="rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-xs font-medium text-navy transition hover:bg-[#f8fafb]"
+                            type="reset"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white transition hover:bg-[#034982]"
+                            type="submit"
+                          >
+                            Guardar cambios
+                          </button>
+                        </div>
+                      </form>
+                    </details>
+                  );
+                })}
+                {options.userProfiles.length === 0 ? (
+                  <div className="px-4 py-5 text-sm text-slate-600">
+                    Aun no hay usuarios con perfil creado. El perfil aparece despues del primer login autorizado.
+                  </div>
+                ) : null}
+            </div>
+          </AccordionPanel>
+
+          <AccordionPanel
             count={`${activeAssignmentsByPerson.size} usuarios activos`}
-            description="Personas con uno o mas roles de acceso activos."
-            title="Usuarios"
+            description="Roles de acceso RBAC actualmente vigentes para cada persona."
+            title="Accesos activos"
           >
             <AssignAccessModal
               accessRoles={options.accessRoles}
@@ -635,7 +774,14 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
                 ) : null}
               </div>
             </div>
-            <div className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea]">
+          </AccordionPanel>
+
+          <AccordionPanel
+            count={`${archivedAssignments.length} archivados`}
+            description="Asignaciones archivadas o inactivas. No otorgan permisos actuales."
+            title="Historial de accesos"
+          >
+            <div className="overflow-hidden rounded-xl border border-[#d6e1ea]">
               <div className="flex flex-col gap-1 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
                 <h3 className="text-sm font-semibold text-navy">Historial de accesos</h3>
                 <p className="text-xs text-slate-500">
@@ -673,6 +819,14 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
               </div>
             </div>
           </AccordionPanel>
+
+          <AccordionPanel
+            count="8 bloques"
+            description="Configuracion tecnica para autorizaciones, sedes, roles, permisos, alcances y auditoria."
+            title="Configuracion avanzada"
+          >
+            <div className="grid gap-4">
+              <AccessPanel options={options} />
 
           <AccordionPanel
             count={`${options.accessRoles.length} roles`}
@@ -812,6 +966,8 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
               </div>
             </div>
           </AccordionPanel>
+            </div>
+          </AccordionPanel>
         </div>
       </AccordionPanel>
     </section>
@@ -824,16 +980,15 @@ function AccessPanel({ options }: { options: Awaited<ReturnType<typeof getAdminO
   const siteById = new Map(options.sites.map((site) => [site.id, site.name]));
 
   return (
-    <section className="mt-8">
-      <AccordionPanel
-        count={`${options.userProfiles.length} usuarios`}
-        defaultOpen
-        description="Autoriza correos, dominios y sedes operativas para cada usuario."
-        eyebrow="Acceso y permisos"
-        title="Administracion de usuarios"
-      >
+    <div className="grid gap-4">
+      <div>
+        <h3 className="text-base font-semibold text-navy">Autorizacion de login</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Correos y dominios autorizados para crear o actualizar perfiles de plataforma.
+        </p>
+      </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <form action={authorizeEmailAccess} className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
           <h3 className="text-base font-medium text-navy">Autorizar correo</h3>
           <div className="mt-4 grid gap-3">
@@ -891,47 +1046,6 @@ function AccessPanel({ options }: { options: Awaited<ReturnType<typeof getAdminO
             <Submit>Autorizar dominio</Submit>
           </div>
         </form>
-      </div>
-
-      <div className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea]">
-        <div className="grid grid-cols-[1.3fr_0.9fr_0.9fr_0.8fr] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-          <span>Usuario</span>
-          <span>Rol</span>
-          <span>Contexto</span>
-          <span>Estado</span>
-        </div>
-        <div className="divide-y divide-[#d6e1ea]">
-          {options.userProfiles.map((profile) => (
-            <form
-              action={updateUserAccessProfile}
-              className="grid gap-3 bg-white px-4 py-4 transition hover:bg-[#fbfdff] lg:grid-cols-[1.3fr_0.9fr_0.9fr_0.8fr_auto]"
-              key={profile.user_id}
-            >
-              <input name="user_id" type="hidden" value={profile.user_id} />
-              <div>
-                <Input name="display_name" defaultValue={profile.display_name} />
-                <p className="mt-1 text-xs text-slate-500">{profile.email}</p>
-              </div>
-              <AppRoleSelect defaultValue={profile.app_role} />
-              <div className="grid gap-2">
-                <CountrySelect
-                  countries={options.countries}
-                  defaultValue={profile.default_country_id}
-                />
-                <SiteSelect sites={options.sites} defaultValue={profile.default_site_id} />
-              </div>
-              <StatusSelect defaultValue={profile.status} />
-              <button className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white" type="submit">
-                Guardar
-              </button>
-            </form>
-          ))}
-          {options.userProfiles.length === 0 ? (
-            <div className="px-4 py-5 text-sm text-slate-600">
-              Aun no hay usuarios con perfil creado. El perfil aparece despues del primer login autorizado.
-            </div>
-          ) : null}
-        </div>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
@@ -1095,8 +1209,7 @@ function AccessPanel({ options }: { options: Awaited<ReturnType<typeof getAdminO
           </div>
         </div>
       </div>
-      </AccordionPanel>
-    </section>
+    </div>
   );
 }
 
@@ -1206,7 +1319,6 @@ export default async function AdminPage({
         ) : null}
 
         <AccessRbacPanel options={options} />
-        <AccessPanel options={options} />
 
         <div className="mt-8 border-l-4 border-clay pl-5">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sea">
