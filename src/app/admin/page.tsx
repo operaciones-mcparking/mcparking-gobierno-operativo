@@ -1,12 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import {
   criticalityOptions,
   documentationOptions,
   responsibilityOptions,
   roleLevelOptions,
 } from "@/components/dashboard/badge";
+import { requireAdminAccess } from "@/lib/auth/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   addArea,
@@ -27,7 +27,6 @@ import {
   updateAccessRolePermissions,
   updateUserAccessProfile,
 } from "./actions";
-import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 type SearchParams = Promise<{
   ok?: string;
@@ -153,29 +152,7 @@ const recordStatusOptions = [
 
 async function getAdminOptions() {
   const supabase = createSupabaseServerClient();
-  const authSupabase = await createSupabaseAuthServerClient();
-  const {
-    data: { user },
-  } = await authSupabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data: currentProfile, error: currentProfileError } = await authSupabase
-    .from("user_profiles")
-    .select("app_role,status")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (
-    currentProfileError ||
-    !currentProfile ||
-    currentProfile.app_role !== "admin" ||
-    currentProfile.status !== "active"
-  ) {
-    redirect("/");
-  }
+  const { supabase: authSupabase } = await requireAdminAccess();
 
   const [
     companies,
@@ -222,19 +199,23 @@ async function getAdminOptions() {
       .from("user_site_access")
       .select("id,user_id,country_id,site_id,access_level,status")
       .order("created_at", { ascending: false }),
-    supabase.from("permissions").select("id,code,name,module,status").order("module").order("code"),
-    supabase
+    authSupabase
+      .from("permissions")
+      .select("id,code,name,module,status")
+      .order("module")
+      .order("code"),
+    authSupabase
       .from("access_roles")
       .select("id,role_code,name,description,status")
       .order("name"),
-    supabase
+    authSupabase
       .from("access_role_permissions")
       .select("access_role_id,permission_id,status"),
-    supabase
+    authSupabase
       .from("user_access_assignments")
       .select("id,person_id,access_role_id,scope_type,country_id,company_id,site_id,status,start_date,end_date")
       .order("created_at", { ascending: false }),
-    supabase
+    authSupabase
       .from("permission_overrides")
       .select("id,person_id,permission_id,effect,scope_type,country_id,company_id,site_id,status,reason")
       .order("created_at", { ascending: false }),
