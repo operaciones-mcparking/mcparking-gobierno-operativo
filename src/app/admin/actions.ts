@@ -806,6 +806,27 @@ export async function addPerson(formData: FormData) {
   done("Persona guardada", returnTo);
 }
 
+export async function createPersonFromStructure(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
+  const requestContext = await requestOperationalContext();
+
+  const { error } = await supabase.from("people").insert({
+    name: value(formData, "name"),
+    email: optionalValue(formData, "email"),
+    phone: optionalValue(formData, "phone"),
+    country_id: requestContext.countryId,
+    site_id: requestContext.siteId,
+  });
+
+  if (error) {
+    return { error: error.message, ok: false };
+  }
+
+  revalidatePath("/estructura");
+
+  return { error: null, ok: true };
+}
+
 export async function createRoleDictionaryEntry(formData: FormData) {
   const returnTo = value(formData, "return_to") || "/roles-personas";
   const personId = optionalValue(formData, "person_id");

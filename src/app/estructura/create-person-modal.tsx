@@ -2,10 +2,10 @@
 
 import { PlusCircle, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
-import { addPerson } from "@/app/admin/actions";
+import { createPersonFromStructure } from "@/app/admin/actions";
 
 const inputClass =
   "w-full rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
@@ -30,28 +30,54 @@ function Field({
   );
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-
-  return (
-    <button
-      className="inline-flex items-center justify-center rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#01295b] disabled:cursor-not-allowed disabled:opacity-60"
-      disabled={pending}
-      type="submit"
-    >
-      {pending ? "Guardando..." : "Crear persona"}
-    </button>
-  );
-}
-
 export function CreatePersonModal({
   canCreate = true,
-  returnTo,
 }: {
   canCreate?: boolean;
   returnTo: string;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!notice) return;
+
+    const timeout = window.setTimeout(() => setNotice(null), 3200);
+
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  function closeModal() {
+    if (isPending) return;
+    setError(null);
+    setOpen(false);
+  }
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+
+    setError(null);
+    setNotice(null);
+
+    startTransition(async () => {
+      const result = await createPersonFromStructure(formData);
+
+      if (!result.ok) {
+        setError(result.error || "No se pudo crear la persona.");
+        return;
+      }
+
+      formRef.current?.reset();
+      setOpen(false);
+      setNotice("Persona creada");
+      router.refresh();
+    });
+  }
 
   if (!canCreate) {
     return null;
@@ -68,12 +94,18 @@ export function CreatePersonModal({
         Nueva persona
       </button>
 
+      {notice ? (
+        <span className="fixed right-5 top-5 z-[60] inline-flex items-center rounded-lg border border-[#c9ead7] bg-[#f0fbf4] px-3 py-2 text-sm font-medium text-[#167344] shadow-[0_16px_32px_rgba(2,53,116,0.14)]">
+          {notice}
+        </span>
+      ) : null}
+
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
           <button
             aria-label="Cerrar formulario"
             className="absolute inset-0 bg-navy/45 backdrop-blur-[1px]"
-            onClick={() => setOpen(false)}
+            onClick={closeModal}
             type="button"
           />
           <section
@@ -97,16 +129,15 @@ export function CreatePersonModal({
               <button
                 aria-label="Cerrar"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-slate-600 transition hover:bg-[#f8fafb]"
-                onClick={() => setOpen(false)}
+                disabled={isPending}
+                onClick={closeModal}
                 type="button"
               >
                 <X className="h-4 w-4" />
               </button>
             </header>
 
-            <form action={addPerson} className="grid gap-4 bg-[#f8fafb] p-5">
-              <input name="return_to" type="hidden" value={returnTo} />
-
+            <form className="grid gap-4 bg-[#f8fafb] p-5" onSubmit={handleSubmit} ref={formRef}>
               <div className="rounded-xl border border-line bg-white p-4">
                 <div className="grid gap-3">
                   <Field label="Nombre" required>
@@ -131,15 +162,28 @@ export function CreatePersonModal({
                 </div>
               </div>
 
+              {error ? (
+                <p className="rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
+                  {error}
+                </p>
+              ) : null}
+
               <div className="flex flex-wrap justify-end gap-2 rounded-xl border border-line bg-white p-4">
                 <button
                   className="inline-flex items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-[#f8fafb]"
-                  onClick={() => setOpen(false)}
+                  disabled={isPending}
+                  onClick={closeModal}
                   type="button"
                 >
                   Cancelar
                 </button>
-                <SubmitButton />
+                <button
+                  className="inline-flex items-center justify-center rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#01295b] disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isPending}
+                  type="submit"
+                >
+                  {isPending ? "Creando..." : "Crear persona"}
+                </button>
               </div>
             </form>
           </section>
