@@ -151,20 +151,21 @@ export function RoleDictionaryModal({
                                 <span className="font-medium text-navy">{role.person}</span>
                               </p>
                             </div>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <Badge tone={roleTone(role.level)}>{role.level}</Badge>
-                              <ValueBadge tone="neutral">
-                                {role.code}
-                              </ValueBadge>
-                              <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+                            <div className="flex justify-end">
+                              <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
                             </div>
                           </div>
                         </summary>
 
                         <div className="mt-4 border-t border-[#d6e1ea] pt-4">
-                          <div className="mb-3 flex items-center gap-2">
-                            <ValueBadge tone="neutral">{role.code}</ValueBadge>
-                            <span className="text-xs text-slate-500">{role.area}</span>
+                          <div className="mb-3 flex flex-wrap items-center gap-2">
+                            {role.code ? <ValueBadge tone="neutral">{role.code}</ValueBadge> : null}
+                            {role.area ? (
+                              <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2 py-1 text-xs font-medium text-slate-600">
+                                {role.area}
+                              </span>
+                            ) : null}
+                            {role.level ? <Badge tone={roleTone(role.level)}>{role.level}</Badge> : null}
                           </div>
                           <p className="text-sm leading-6 text-slate-700">{role.objective}</p>
                           {role.responsibilities.length > 0 ? (
