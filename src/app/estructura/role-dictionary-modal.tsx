@@ -4,7 +4,9 @@ import { useState } from "react";
 import { BookOpen, ChevronDown, X } from "lucide-react";
 
 import { Badge, ValueBadge } from "@/components/dashboard/badge";
+import type { PersonDirectoryItem } from "@/lib/dashboard/data";
 import type { OrgRole } from "@/lib/dashboard/organization";
+import { PersonDetailModal } from "./person-detail-modal";
 
 function roleTone(level: OrgRole["level"]) {
   if (level === "Direccion") return "info";
@@ -12,8 +14,24 @@ function roleTone(level: OrgRole["level"]) {
   return "success";
 }
 
-export function RoleDictionaryModal({ roles }: { roles: OrgRole[] }) {
+export function RoleDictionaryModal({
+  activePeople,
+  archivedPeople,
+  canArchivePeople,
+  canEditPeople,
+  returnTo,
+  roles,
+}: {
+  activePeople: PersonDirectoryItem[];
+  archivedPeople: PersonDirectoryItem[];
+  canArchivePeople: boolean;
+  canEditPeople: boolean;
+  returnTo: string;
+  roles: OrgRole[];
+}) {
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"roles" | "people">("roles");
+  const totalPeople = activePeople.length + archivedPeople.length;
 
   return (
     <>
@@ -47,15 +65,18 @@ export function RoleDictionaryModal({ roles }: { roles: OrgRole[] }) {
                   Consulta rapida
                 </p>
                 <h2 id="role-dictionary-title" className="mt-1 text-lg font-medium text-navy">
-                  Diccionario de roles
+                  Diccionario operativo
                 </h2>
                 <p className="mt-1 text-sm leading-5 text-slate-600">
-                  Cargos activos, persona actual y detalle operativo de cada rol.
+                  Consulta roles, cargos y personas activas del modelo operativo.
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
                   {roles.length} roles
+                </span>
+                <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+                  {totalPeople} personas
                 </span>
                 <button
                   aria-label="Cerrar"
@@ -69,11 +90,38 @@ export function RoleDictionaryModal({ roles }: { roles: OrgRole[] }) {
             </header>
 
             <div className="max-h-[70vh] overflow-y-auto p-5">
-              {roles.length === 0 ? (
+              <div className="mb-5 flex flex-wrap gap-2 rounded-xl border border-[#d6e1ea] bg-[#f8fafb] p-1">
+                <button
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    activeTab === "roles"
+                      ? "bg-white text-navy shadow-sm"
+                      : "text-slate-600 hover:bg-white/70 hover:text-navy"
+                  }`}
+                  onClick={() => setActiveTab("roles")}
+                  type="button"
+                >
+                  Roles / cargos
+                </button>
+                <button
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+                    activeTab === "people"
+                      ? "bg-white text-navy shadow-sm"
+                      : "text-slate-600 hover:bg-white/70 hover:text-navy"
+                  }`}
+                  onClick={() => setActiveTab("people")}
+                  type="button"
+                >
+                  Personas
+                </button>
+              </div>
+
+              {activeTab === "roles" && roles.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-8 text-center text-sm text-slate-600">
                   No hay roles para mostrar en este contexto.
                 </div>
-              ) : (
+              ) : null}
+
+              {activeTab === "roles" && roles.length > 0 ? (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                   {roles.map((role, index) => {
                     return (
@@ -127,7 +175,101 @@ export function RoleDictionaryModal({ roles }: { roles: OrgRole[] }) {
                     );
                   })}
                 </div>
-              )}
+              ) : null}
+
+              {activeTab === "people" && totalPeople === 0 ? (
+                <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-8 text-center text-sm text-slate-600">
+                  No hay personas activas para mostrar en este contexto.
+                </div>
+              ) : null}
+
+              {activeTab === "people" && totalPeople > 0 ? (
+                <div className="grid gap-5">
+                  <section>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-medium text-navy">Personas activas</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Personas disponibles para responsabilidades actuales.
+                        </p>
+                      </div>
+                      <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+                        {activePeople.length} activas
+                      </span>
+                    </div>
+
+                    {activePeople.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-5 text-sm text-slate-600">
+                        No hay personas activas para este contexto.
+                      </div>
+                    ) : (
+                      <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+                        <div className="hidden grid-cols-[1.2fr_1fr_0.8fr_auto] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 md:grid">
+                          <span>Nombre</span>
+                          <span>Email</span>
+                          <span>Telefono</span>
+                          <span className="text-right">Accion</span>
+                        </div>
+                        <div className="divide-y divide-[#edf2f6]">
+                          {activePeople.map((person) => (
+                            <PersonDetailModal
+                              canArchive={canArchivePeople}
+                              canEdit={canEditPeople}
+                              key={person.id}
+                              person={person}
+                              returnTo={returnTo}
+                              variant="compact"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-medium text-navy">Personas archivadas</h3>
+                        <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                          Las personas archivadas no aparecen como activas ni otorgan responsabilidades actuales. Se conservan como historial.
+                        </p>
+                      </div>
+                      <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+                        {archivedPeople.length} archivadas
+                      </span>
+                    </div>
+
+                    {archivedPeople.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-5 text-sm text-slate-600">
+                        No hay personas archivadas para este contexto.
+                      </div>
+                    ) : (
+                      <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+                        <div className="hidden grid-cols-[1.2fr_1fr_0.8fr_0.7fr_auto] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 md:grid">
+                          <span>Nombre</span>
+                          <span>Email</span>
+                          <span>Telefono</span>
+                          <span>Estado</span>
+                          <span className="text-right">Accion</span>
+                        </div>
+                        <div className="divide-y divide-[#edf2f6]">
+                          {archivedPeople.map((person) => (
+                            <PersonDetailModal
+                              canArchive={canArchivePeople}
+                              canEdit={canEditPeople}
+                              key={person.id}
+                              person={person}
+                              returnTo={returnTo}
+                              showStatusInCompact
+                              variant="compact"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              ) : null}
             </div>
           </section>
         </div>

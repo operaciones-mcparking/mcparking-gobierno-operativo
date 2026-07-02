@@ -72,15 +72,20 @@ export function PersonDetailModal({
   canEdit,
   person,
   returnTo,
+  showStatusInCompact = false,
+  variant = "card",
 }: {
   canArchive: boolean;
   canEdit: boolean;
   person: PersonDirectoryItem;
   returnTo: string;
+  showStatusInCompact?: boolean;
+  variant?: "card" | "compact";
 }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const canArchiveCurrentPerson = canArchive && person.status === "active";
 
   useEffect(() => {
     setMounted(true);
@@ -88,39 +93,75 @@ export function PersonDetailModal({
 
   return (
     <>
-      <button
-        aria-label={`Ver detalle de ${person.name}`}
-        className="group w-full rounded-xl border border-line bg-white p-4 text-left shadow-sm transition hover:border-sea hover:bg-[#f8fafb]"
-        onClick={() => setOpen(true)}
-        type="button"
-      >
-        <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_0.9fr_auto] md:items-center">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.14em] text-sea">
-              Persona
-            </p>
-            <h3 className="mt-1 text-base font-semibold text-navy">{person.name}</h3>
-            <p className="mt-1 break-words text-sm text-slate-600">
-              {person.email ?? "Sin email"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Telefono</p>
-            <p className="mt-1 text-sm font-medium text-navy">
-              {person.phone ?? "Sin telefono"}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Estado</p>
-            <span className="mt-2 inline-flex rounded-full border border-[#d9e7ef] bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea">
-              {statusLabel(person.status)}
+      {variant === "compact" ? (
+        <button
+          aria-label={`Ver detalle de ${person.name}`}
+          className="group w-full px-4 py-3 text-left transition hover:bg-[#f8fafb]"
+          onClick={() => setOpen(true)}
+          type="button"
+        >
+          <div
+            className={`grid gap-3 md:items-center ${
+              showStatusInCompact
+                ? "md:grid-cols-[1.2fr_1fr_0.8fr_0.7fr_auto]"
+                : "md:grid-cols-[1.2fr_1fr_0.8fr_auto]"
+            }`}
+          >
+            <div>
+              <p className="text-sm font-medium text-navy">{person.name}</p>
+              {showStatusInCompact ? (
+                <p className="mt-1 text-xs text-slate-500 md:hidden">
+                  {statusLabel(person.status)}
+                </p>
+              ) : null}
+            </div>
+            <p className="break-words text-sm text-slate-600">{person.email ?? "Sin email"}</p>
+            <p className="text-sm text-slate-600">{person.phone ?? "Sin telefono"}</p>
+            {showStatusInCompact ? (
+              <span className="hidden rounded-full border border-[#d9e7ef] bg-[#eef7fb] px-3 py-1 text-center text-xs font-medium text-sea md:inline-flex md:justify-center">
+                {statusLabel(person.status)}
+              </span>
+            ) : null}
+            <span className="inline-flex items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy transition group-hover:border-sea group-hover:bg-[#eef4f8]">
+              {canEdit || canArchiveCurrentPerson ? "Administrar" : "Ver detalle"}
             </span>
           </div>
-          <span className="inline-flex items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy transition group-hover:border-sea group-hover:bg-[#eef4f8]">
-            {canEdit || canArchive ? "Administrar" : "Ver detalle"}
-          </span>
-        </div>
-      </button>
+        </button>
+      ) : (
+        <button
+          aria-label={`Ver detalle de ${person.name}`}
+          className="group w-full rounded-xl border border-line bg-white p-4 text-left shadow-sm transition hover:border-sea hover:bg-[#f8fafb]"
+          onClick={() => setOpen(true)}
+          type="button"
+        >
+          <div className="grid gap-4 md:grid-cols-[1.2fr_1fr_0.9fr_auto] md:items-center">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-sea">
+                Persona
+              </p>
+              <h3 className="mt-1 text-base font-semibold text-navy">{person.name}</h3>
+              <p className="mt-1 break-words text-sm text-slate-600">
+                {person.email ?? "Sin email"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Telefono</p>
+              <p className="mt-1 text-sm font-medium text-navy">
+                {person.phone ?? "Sin telefono"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">Estado</p>
+              <span className="mt-2 inline-flex rounded-full border border-[#d9e7ef] bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea">
+                {statusLabel(person.status)}
+              </span>
+            </div>
+            <span className="inline-flex items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy transition group-hover:border-sea group-hover:bg-[#eef4f8]">
+              {canEdit || canArchiveCurrentPerson ? "Administrar" : "Ver detalle"}
+            </span>
+          </div>
+        </button>
+      )}
 
       {open && mounted
         ? createPortal(
@@ -219,7 +260,7 @@ export function PersonDetailModal({
                     </form>
                   ) : null}
 
-                  {canArchive ? (
+                  {canArchiveCurrentPerson ? (
                     <form
                       action={archivePerson}
                       className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f0d2b8] bg-[#fff7ed] p-4"

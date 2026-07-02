@@ -1,4 +1,5 @@
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
+import { PlusCircle } from "lucide-react";
 import {
   getAreaDirectory,
   getPersonDirectory,
@@ -10,7 +11,6 @@ import { governanceProcesses, orgRoles, type OrgRole } from "@/lib/dashboard/org
 import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
 import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
-import { PeopleSection } from "./people-section";
 import { StructureExplorer } from "./structure-explorer";
 import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
 
@@ -594,6 +594,7 @@ export default async function EstructuraPage({
     ).values(),
   ).sort((a, b) => a.name.localeCompare(b.name));
   const activePeople = peopleResult.data.filter((person) => person.status === "active");
+  const archivedPeople = peopleResult.data.filter((person) => person.status !== "active");
   const areas = Array.from(
     new Map(
       [
@@ -623,13 +624,29 @@ export default async function EstructuraPage({
       <Panel
         action={
           <>
-            <RoleDictionaryModal roles={dynamicRoles} />
             <CreateRoleModal
               areas={areas}
               canCreate={capabilities.canCreateRoles}
               people={people}
               returnTo={returnTo}
               roles={roleDictionaryResult.data}
+            />
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white opacity-55"
+              disabled
+              title="Nueva persona estara disponible en la siguiente etapa."
+              type="button"
+            >
+              <PlusCircle className="h-4 w-4" />
+              Nueva persona
+            </button>
+            <RoleDictionaryModal
+              activePeople={activePeople}
+              archivedPeople={archivedPeople}
+              canArchivePeople={capabilities.canArchivePeople}
+              canEditPeople={capabilities.canEditPeople}
+              returnTo={returnTo}
+              roles={dynamicRoles}
             />
           </>
         }
@@ -659,21 +676,6 @@ export default async function EstructuraPage({
           assignments={roleGovernanceResult.data}
           processes={governanceProcesses}
           roles={dynamicRoles}
-        />
-      </Panel>
-
-      <Panel count={`${activePeople.length} personas`} title="Personas">
-        {peopleResult.error ? (
-          <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
-            No se pudieron cargar las personas para este contexto.
-          </div>
-        ) : null}
-        <PeopleSection
-          canArchive={capabilities.canArchivePeople}
-          canCreate={capabilities.canCreatePeople}
-          canEdit={capabilities.canEditPeople}
-          people={activePeople}
-          returnTo={returnTo}
         />
       </Panel>
     </DashboardShell>
