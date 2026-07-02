@@ -1,11 +1,11 @@
 "use client";
 
-import { PencilLine, X } from "lucide-react";
+import { Archive, PencilLine, X } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import { updateRoleDictionaryEntryInline } from "@/app/admin/actions";
+import { archiveRoleInline, updateRoleDictionaryEntryInline } from "@/app/admin/actions";
 import { roleLevelOptions } from "@/components/dashboard/badge";
 import type { PersonDirectoryItem } from "@/lib/dashboard/data";
 import type { OrgRole } from "@/lib/dashboard/organization";
@@ -58,7 +58,10 @@ export function RoleEditModal({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [isArchivePending, startArchiveTransition] = useTransition();
 
   useEffect(() => {
     if (!notice) return;
@@ -69,8 +72,10 @@ export function RoleEditModal({
   }, [notice]);
 
   function closeModal() {
-    if (isPending) return;
+    if (isPending || isArchivePending) return;
     setError(null);
+    setArchiveError(null);
+    setConfirmArchiveOpen(false);
     setOpen(false);
   }
 
@@ -91,6 +96,30 @@ export function RoleEditModal({
 
       setOpen(false);
       setNotice("Cargo actualizado");
+      router.refresh();
+    });
+  }
+
+  function handleArchive() {
+    if (!role.id) return;
+
+    const formData = new FormData();
+    formData.set("role_id", role.id);
+
+    setArchiveError(null);
+    setNotice(null);
+
+    startArchiveTransition(async () => {
+      const result = await archiveRoleInline(formData);
+
+      if (!result.ok) {
+        setArchiveError(result.error || "No se pudo archivar el cargo.");
+        return;
+      }
+
+      setOpen(false);
+      setConfirmArchiveOpen(false);
+      setNotice("Cargo archivado");
       router.refresh();
     });
   }
@@ -260,6 +289,32 @@ export function RoleEditModal({
                   </p>
                 </div>
 
+                <div className="rounded-xl border border-[#e5d2bf] bg-white p-4">
+                  <h3 className="text-sm font-medium text-navy">Zona administrativa</h3>
+                  <p className="mt-2 text-sm leading-5 text-slate-600">
+                    Archivar este cargo lo quitara de los cargos activos y lo conservara como historial.
+                  </p>
+                  <div className="mt-3">
+                    <button
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#e5d2bf] bg-[#fff8ef] px-3 py-2 text-sm font-medium text-[#8a5b2d] transition hover:border-[#d9b98f] hover:bg-[#fff3e2] disabled:cursor-wait disabled:opacity-70"
+                      disabled={isPending || isArchivePending}
+                      onClick={() => {
+                        setArchiveError(null);
+                        setConfirmArchiveOpen(true);
+                      }}
+                      type="button"
+                    >
+                      <Archive className="h-4 w-4" />
+                      Archivar cargo
+                    </button>
+                  </div>
+                  {archiveError ? (
+                    <p className="mt-3 rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
+                      {archiveError}
+                    </p>
+                  ) : null}
+                </div>
+
                 {error ? (
                   <p className="rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
                     {error}
@@ -269,7 +324,7 @@ export function RoleEditModal({
                 <div className="flex flex-wrap justify-end gap-2 rounded-xl border border-[#d6e1ea] bg-white p-4">
                   <button
                     className="rounded-lg border border-[#cbd8e3] bg-white px-4 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
-                    disabled={isPending}
+                    disabled={isPending || isArchivePending}
                     onClick={closeModal}
                     type="button"
                   >
@@ -277,7 +332,7 @@ export function RoleEditModal({
                   </button>
                   <button
                     className="rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#052a5a] disabled:cursor-wait disabled:opacity-70"
-                    disabled={isPending}
+                    disabled={isPending || isArchivePending}
                     type="submit"
                   >
                     {isPending ? "Guardando..." : "Guardar cargo"}
@@ -285,6 +340,58 @@ export function RoleEditModal({
                 </div>
               </div>
             </form>
+
+            {confirmArchiveOpen ? (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#032b4f]/30 px-4 py-6 backdrop-blur-sm">
+                <section
+                  aria-labelledby={`role-archive-confirm-${role.id}`}
+                  aria-modal="true"
+                  className="w-full max-w-md rounded-2xl border border-[#cbd8e3] bg-white shadow-[0_24px_70px_rgba(2,53,116,0.20)]"
+                  role="dialog"
+                >
+                  <header className="border-b border-[#d6e1ea] px-5 py-4">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#8a5b2d]">
+                      Zona administrativa
+                    </p>
+                    <h3
+                      className="mt-1 text-lg font-medium text-navy"
+                      id={`role-archive-confirm-${role.id}`}
+                    >
+                      Archivar cargo
+                    </h3>
+                  </header>
+                  <div className="grid gap-4 p-5">
+                    <p className="text-sm leading-6 text-slate-700">
+                      Este cargo dejara de aparecer como activo en el organigrama y en la lista de cargos activos. Se conservara como historial en Roles / cargos archivados. Esta accion no elimina definitivamente el cargo.
+                    </p>
+                    {archiveError ? (
+                      <p className="rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
+                        {archiveError}
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        className="rounded-lg border border-[#cbd8e3] bg-white px-4 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
+                        disabled={isArchivePending}
+                        onClick={() => setConfirmArchiveOpen(false)}
+                        type="button"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#e5d2bf] bg-[#fff8ef] px-4 py-2 text-sm font-medium text-[#8a5b2d] transition hover:border-[#d9b98f] hover:bg-[#fff3e2] disabled:cursor-wait disabled:opacity-70"
+                        disabled={isArchivePending}
+                        onClick={handleArchive}
+                        type="button"
+                      >
+                        <Archive className="h-4 w-4" />
+                        {isArchivePending ? "Archivando..." : "Archivar cargo"}
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

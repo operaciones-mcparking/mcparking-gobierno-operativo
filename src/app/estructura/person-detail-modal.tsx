@@ -6,7 +6,6 @@ import { createPortal } from "react-dom";
 import { PencilLine, X } from "lucide-react";
 
 import { archivePerson, updatePersonBasic } from "@/app/admin/actions";
-import { ConfirmSubmitButton } from "@/components/dashboard/confirm-submit-button";
 import type { PersonDirectoryItem } from "@/lib/dashboard/data";
 
 const inputClass =
@@ -67,6 +66,20 @@ function SavePersonButton() {
   );
 }
 
+function ArchivePersonButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button
+      className={archiveButtonClass}
+      disabled={pending}
+      type="submit"
+    >
+      {pending ? "Archivando..." : "Archivar persona"}
+    </button>
+  );
+}
+
 export function PersonDetailModal({
   canArchive,
   canEdit,
@@ -85,6 +98,7 @@ export function PersonDetailModal({
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
   const canArchiveCurrentPerson = canArchive && person.status === "active";
 
   useEffect(() => {
@@ -172,6 +186,7 @@ export function PersonDetailModal({
                 onClick={() => {
                   setOpen(false);
                   setEditing(false);
+                  setConfirmArchiveOpen(false);
                 }}
                 type="button"
               />
@@ -215,6 +230,7 @@ export function PersonDetailModal({
                       onClick={() => {
                         setOpen(false);
                         setEditing(false);
+                        setConfirmArchiveOpen(false);
                       }}
                       type="button"
                     >
@@ -233,55 +249,92 @@ export function PersonDetailModal({
                   </div>
 
                   {editing && canEdit ? (
-                    <form action={updatePersonBasic} className="mt-4 rounded-xl border border-[#d6e1ea] bg-[#f8fafb] p-4">
-                      <input name="person_id" type="hidden" value={person.id} />
-                      <input name="return_to" type="hidden" value={returnTo} />
-                      <h3 className="text-sm font-medium text-navy">Editar persona</h3>
-                      <div className="mt-4 grid gap-3">
-                        <Field label="Nombre">
-                          <input className={inputClass} name="name" required defaultValue={person.name} />
-                        </Field>
-                        <Field label="Email">
-                          <input className={inputClass} name="email" defaultValue={person.email ?? ""} />
-                        </Field>
-                        <Field label="Telefono">
-                          <input className={inputClass} name="phone" defaultValue={person.phone ?? ""} />
-                        </Field>
-                      </div>
-                      <div className="mt-4 flex flex-wrap justify-end gap-2">
-                        <button
-                          className="rounded-lg border border-[#cbd8e3] bg-white px-4 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
-                          onClick={() => setEditing(false)}
-                          type="button"
-                        >
-                          Cancelar
-                        </button>
-                        <SavePersonButton />
-                      </div>
-                    </form>
+                    <div className="mt-4 grid gap-4">
+                      <form action={updatePersonBasic} className="rounded-xl border border-[#d6e1ea] bg-[#f8fafb] p-4">
+                        <input name="person_id" type="hidden" value={person.id} />
+                        <input name="return_to" type="hidden" value={returnTo} />
+                        <h3 className="text-sm font-medium text-navy">Editar persona</h3>
+                        <div className="mt-4 grid gap-3">
+                          <Field label="Nombre">
+                            <input className={inputClass} name="name" required defaultValue={person.name} />
+                          </Field>
+                          <Field label="Email">
+                            <input className={inputClass} name="email" defaultValue={person.email ?? ""} />
+                          </Field>
+                          <Field label="Telefono">
+                            <input className={inputClass} name="phone" defaultValue={person.phone ?? ""} />
+                          </Field>
+                        </div>
+                        <div className="mt-4 flex flex-wrap justify-end gap-2">
+                          <button
+                            className="rounded-lg border border-[#cbd8e3] bg-white px-4 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
+                            onClick={() => setEditing(false)}
+                            type="button"
+                          >
+                            Cancelar
+                          </button>
+                          <SavePersonButton />
+                        </div>
+                      </form>
+
+                      {canArchiveCurrentPerson ? (
+                        <div className="rounded-xl border border-[#f0d2b8] bg-[#fff7ed] p-4">
+                          <h3 className="text-sm font-medium text-[#9a4a16]">Zona administrativa</h3>
+                          <p className="mt-1 text-xs leading-5 text-[#9a4a16]">
+                            Archivar esta persona la ocultara de las listas activas y conservara su informacion como historial.
+                          </p>
+                          <div className="mt-3">
+                            <button
+                              className={archiveButtonClass}
+                              onClick={() => setConfirmArchiveOpen(true)}
+                              type="button"
+                            >
+                              Archivar persona
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   ) : null}
 
-                  {canArchiveCurrentPerson ? (
-                    <form
-                      action={archivePerson}
-                      className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#f0d2b8] bg-[#fff7ed] p-4"
-                    >
-                      <input name="person_id" type="hidden" value={person.id} />
-                      <input name="return_to" type="hidden" value={returnTo} />
-                      <div>
-                        <h3 className="text-sm font-medium text-[#9a4a16]">Archivar persona</h3>
-                        <p className="mt-1 text-xs leading-5 text-[#9a4a16]">
-                          Archivar desasigna sus roles activos y la oculta de las listas.
-                        </p>
-                      </div>
-                      <ConfirmSubmitButton
-                        className={archiveButtonClass}
-                        message={`Vas a archivar a "${person.name}". Se desasignaran sus roles activos y se ocultara de las listas. Deseas continuar?`}
-                        title="Archivar persona"
+                  {confirmArchiveOpen && editing && canArchiveCurrentPerson ? (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#032b4f]/30 px-4 py-6 backdrop-blur-sm">
+                      <section
+                        aria-labelledby={`person-archive-confirm-${person.id}`}
+                        aria-modal="true"
+                        className="w-full max-w-md rounded-2xl border border-[#cbd8e3] bg-white shadow-[0_24px_70px_rgba(2,53,116,0.20)]"
+                        role="dialog"
                       >
-                        Archivar persona
-                      </ConfirmSubmitButton>
-                    </form>
+                        <header className="border-b border-[#d6e1ea] px-5 py-4">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[#9a4a16]">
+                            Zona administrativa
+                          </p>
+                          <h3
+                            className="mt-1 text-lg font-medium text-navy"
+                            id={`person-archive-confirm-${person.id}`}
+                          >
+                            Archivar persona
+                          </h3>
+                        </header>
+                        <form action={archivePerson} className="grid gap-4 p-5">
+                          <input name="person_id" type="hidden" value={person.id} />
+                          <input name="return_to" type="hidden" value={returnTo} />
+                          <p className="text-sm leading-6 text-slate-700">
+                            Esta persona dejara de aparecer como activa y se conservara como historial. Esta accion no elimina definitivamente a la persona.
+                          </p>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <button
+                              className="rounded-lg border border-[#cbd8e3] bg-white px-4 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
+                              onClick={() => setConfirmArchiveOpen(false)}
+                              type="button"
+                            >
+                              Cancelar
+                            </button>
+                            <ArchivePersonButton />
+                          </div>
+                        </form>
+                      </section>
+                    </div>
                   ) : null}
                 </div>
               </section>

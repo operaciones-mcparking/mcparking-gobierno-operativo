@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Archive, Info, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Info, X } from "lucide-react";
 
-import { archiveRoleInline } from "@/app/admin/actions";
 import { Badge, ValueBadge } from "@/components/dashboard/badge";
 import type { OrgRole } from "@/lib/dashboard/organization";
 import { RoleEditModal } from "./role-edit-modal";
@@ -14,87 +12,6 @@ function roleTone(level: OrgRole["level"]) {
   if (level === "Direccion") return "info";
   if (level === "Gestion") return "warning";
   return "success";
-}
-
-export function ArchiveRoleButton({
-  canArchive = false,
-  onArchived,
-  role,
-}: {
-  canArchive?: boolean;
-  onArchived?: (message: string) => void;
-  role: OrgRole;
-}) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (!notice) return;
-
-    const timeout = window.setTimeout(() => setNotice(null), 3200);
-
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
-
-  if (!canArchive || !role.id) {
-    return null;
-  }
-
-  function handleArchive() {
-    const confirmed = window.confirm(
-      "Archivar este cargo? El cargo dejara de aparecer como activo y se conservara como historial.",
-    );
-
-    if (!confirmed || !role.id) return;
-
-    const formData = new FormData();
-    formData.set("role_id", role.id);
-
-    setError(null);
-    setNotice(null);
-
-    startTransition(async () => {
-      const result = await archiveRoleInline(formData);
-
-      if (!result.ok) {
-        setError(result.error || "No se pudo archivar el cargo.");
-        return;
-      }
-
-      if (onArchived) {
-        onArchived("Cargo archivado");
-      } else {
-        setNotice("Cargo archivado");
-      }
-      router.refresh();
-    });
-  }
-
-  return (
-    <div className="grid gap-2">
-      <button
-        className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#e5d2bf] bg-[#fff8ef] px-3 py-2 text-sm font-medium text-[#8a5b2d] transition hover:border-[#d9b98f] hover:bg-[#fff3e2] disabled:cursor-wait disabled:opacity-70"
-        disabled={isPending}
-        onClick={handleArchive}
-        type="button"
-      >
-        <Archive className="h-4 w-4" />
-        {isPending ? "Archivando..." : "Archivar cargo"}
-      </button>
-      {error ? (
-        <p className="rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
-          {error}
-        </p>
-      ) : null}
-      {notice ? (
-        <span className="fixed right-5 top-5 z-[70] inline-flex items-center rounded-lg border border-[#c9ead7] bg-[#f0fbf4] px-3 py-2 text-sm font-medium text-[#167344] shadow-[0_16px_32px_rgba(2,53,116,0.14)]">
-          {notice}
-        </span>
-      ) : null}
-    </div>
-  );
 }
 
 export function RoleDetailButton({
@@ -108,20 +25,11 @@ export function RoleDetailButton({
 }) {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
   const hasPerson = role.person !== "Sin persona asignada";
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    if (!notice) return;
-
-    const timeout = window.setTimeout(() => setNotice(null), 3200);
-
-    return () => window.clearTimeout(timeout);
-  }, [notice]);
 
   return (
     <>
@@ -175,14 +83,6 @@ export function RoleDetailButton({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    <ArchiveRoleButton
-                      canArchive={canEdit}
-                      onArchived={(message) => {
-                        setOpen(false);
-                        setNotice(message);
-                      }}
-                      role={role}
-                    />
                     <RoleEditModal canEdit={canEdit} role={role} />
                     <button
                       aria-label="Cerrar"
@@ -243,11 +143,6 @@ export function RoleDetailButton({
             document.body,
           )
         : null}
-      {notice ? (
-        <span className="fixed right-5 top-5 z-[70] inline-flex items-center rounded-lg border border-[#c9ead7] bg-[#f0fbf4] px-3 py-2 text-sm font-medium text-[#167344] shadow-[0_16px_32px_rgba(2,53,116,0.14)]">
-          {notice}
-        </span>
-      ) : null}
     </>
   );
 }
