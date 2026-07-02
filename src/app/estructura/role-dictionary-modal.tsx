@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, ChevronDown, X } from "lucide-react";
+import { BookOpen, ChevronDown, PencilLine, X } from "lucide-react";
+import Link from "next/link";
 
 import { Badge, ValueBadge } from "@/components/dashboard/badge";
 import type { PersonDirectoryItem } from "@/lib/dashboard/data";
@@ -12,6 +13,11 @@ function roleTone(level: OrgRole["level"]) {
   if (level === "Direccion") return "info";
   if (level === "Gestion") return "warning";
   return "success";
+}
+
+function roleEditHref(roleId: string) {
+  const encodedRoleId = encodeURIComponent(roleId);
+  return `/roles-personas?edit_role=${encodedRoleId}#role-${encodedRoleId}`;
 }
 
 export function RoleDictionaryModal({
@@ -41,7 +47,7 @@ export function RoleDictionaryModal({
         type="button"
       >
         <BookOpen className="h-4 w-4 text-sea" />
-        Diccionario
+        Roles y personas
       </button>
 
       {open ? (
@@ -65,10 +71,10 @@ export function RoleDictionaryModal({
                   Consulta rapida
                 </p>
                 <h2 id="role-dictionary-title" className="mt-1 text-lg font-medium text-navy">
-                  Diccionario operativo
+                  Roles y personas
                 </h2>
                 <p className="mt-1 text-sm leading-5 text-slate-600">
-                  Consulta roles, cargos y personas activas del modelo operativo.
+                  Consulta y administra cargos, roles funcionales y personas del modelo operativo.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -122,30 +128,41 @@ export function RoleDictionaryModal({
               ) : null}
 
               {activeTab === "roles" && roles.length > 0 ? (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                   {roles.map((role, index) => {
                     return (
                       <details
-                        className="group rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-3 transition open:bg-white open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
+                        className="group relative min-h-[132px] rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-4 transition open:bg-white open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
                         key={role.id ?? `${role.code}-${index}`}
                       >
+                        {role.id ? (
+                          <Link
+                            aria-label={`Editar cargo ${role.title}`}
+                            className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white text-slate-500 transition hover:border-sea hover:bg-[#eef4f8] hover:text-navy"
+                            href={roleEditHref(role.id)}
+                            onClick={() => setOpen(false)}
+                            title="Editar cargo"
+                          >
+                            <PencilLine className="h-4 w-4 text-sea" />
+                          </Link>
+                        ) : null}
                         <summary className="cursor-pointer list-none">
-                          <div className="flex items-start justify-between gap-3">
+                          <div className="grid gap-3 pr-10">
                             <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-navy">
+                              <p className="line-clamp-2 text-sm font-medium leading-5 text-navy">
                                 {role.title}
                               </p>
-                              <p className="mt-1 truncate text-xs text-slate-600">
+                              <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">
                                 Persona:{" "}
                                 <span className="font-medium text-navy">{role.person}</span>
                               </p>
                             </div>
-                            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <Badge tone={roleTone(role.level)}>{role.level}</Badge>
                               <ValueBadge tone="neutral">
                                 {role.code}
                               </ValueBadge>
-                              <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+                              <ChevronDown className="ml-auto h-4 w-4 text-slate-400 transition group-open:rotate-180" />
                             </div>
                           </div>
                         </summary>

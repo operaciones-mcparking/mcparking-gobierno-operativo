@@ -650,9 +650,17 @@ export default async function EstructuraPage({
             />
           </>
         }
-        count={`${dynamicRoles.length} cargos`}
+        description="Cargos, responsables actuales y relaciones jerarquicas del modelo operativo."
         title="Organigrama operativo"
       >
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+            {dynamicRoles.length} cargos
+          </span>
+          <span className="w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+            {activePeople.length + archivedPeople.length} personas
+          </span>
+        </div>
         {roleDictionaryResult.error ? (
           <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
             {roleDictionaryResult.error.message}
