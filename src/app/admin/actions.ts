@@ -893,6 +893,89 @@ export async function createRoleDictionaryEntry(formData: FormData) {
   redirect(withMessage(returnTo, "ok", "Rol creado"));
 }
 
+export async function createRoleDictionaryEntryInline(formData: FormData) {
+  const personId = optionalValue(formData, "person_id");
+  const areaId = value(formData, "area_id");
+  const roleName = value(formData, "name");
+
+  if (!areaId) {
+    return { error: "Selecciona un area para crear el rol.", ok: false };
+  }
+
+  if (!roleName) {
+    return { error: "Ingresa el nombre del rol.", ok: false };
+  }
+
+  const responsibilities = value(formData, "responsibilities")
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const { supabase } = await requireAdminAccess();
+
+  try {
+    const requestContext = await requestOperationalContext();
+    const roleContext = await areaOperationalContext(supabase, areaId);
+    const currentSiteId = requestContext.siteId ?? roleContext.siteId;
+    const currentCountryId = requestContext.countryId ?? roleContext.countryId;
+
+    const { data: roleData, error: roleError } = await supabase
+      .from("roles")
+      .insert({
+        area_id: areaId,
+        country_id: currentCountryId,
+        description: optionalValue(formData, "description"),
+        is_corporate: checkbox(formData, "is_corporate"),
+        is_local: checkbox(formData, "is_local"),
+        level: value(formData, "level"),
+        name: roleName,
+        org_column: numberValue(formData, "org_column"),
+        org_parent_role_id: optionalValue(formData, "org_parent_role_id"),
+        org_row: numberValue(formData, "org_row"),
+        responsibilities,
+        role_code: generateRoleCode(roleName),
+        site_id: currentSiteId,
+        sort_order: null,
+        status: "active",
+      })
+      .select("id, areas(company_id)")
+      .single();
+
+    if (roleError) {
+      return { error: roleError.message, ok: false };
+    }
+
+    const area = Array.isArray(roleData?.areas) ? roleData?.areas[0] : roleData?.areas;
+    const companyId = area?.company_id ?? null;
+
+    if (personId) {
+      const { error: assignmentError } = await supabase.from("person_roles").insert({
+        company_id: companyId,
+        country_id: currentCountryId,
+        is_backup: false,
+        is_primary: true,
+        person_id: personId,
+        role_id: roleData.id,
+        site_id: currentSiteId,
+        start_date: new Date().toISOString().slice(0, 10),
+        status: "active",
+      });
+
+      if (assignmentError) {
+        return { error: assignmentError.message, ok: false };
+      }
+    }
+
+    revalidateRoleDirectory();
+
+    return { error: null, ok: true };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No se pudo crear el rol.",
+      ok: false,
+    };
+  }
+}
+
 export async function assignPersonRole(formData: FormData) {
   const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();

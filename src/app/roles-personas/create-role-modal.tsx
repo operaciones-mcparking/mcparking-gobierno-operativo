@@ -1,10 +1,10 @@
 "use client";
 
 import { PlusCircle, X } from "lucide-react";
-import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
-import { createRoleDictionaryEntry } from "@/app/admin/actions";
+import { createRoleDictionaryEntryInline } from "@/app/admin/actions";
 import { roleLevelOptions } from "@/components/dashboard/badge";
 
 type AreaOption = {
@@ -63,21 +63,6 @@ function HelpTooltip({ text }: { text: string }) {
   );
 }
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-
-  return (
-    <button
-      className="inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#01295b] disabled:cursor-wait disabled:opacity-70"
-      disabled={pending}
-      type="submit"
-    >
-      <PlusCircle className="h-4 w-4" />
-      {pending ? "Creando..." : "Crear rol"}
-    </button>
-  );
-}
-
 function RolePreviewCard({
   areaName,
   parentName,
@@ -130,11 +115,16 @@ export function CreateRoleModal({
   returnTo: string;
   roles: RoleOption[];
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [areaId, setAreaId] = useState("");
   const [parentRoleId, setParentRoleId] = useState("");
   const [personId, setPersonId] = useState("");
   const [roleName, setRoleName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const selectedArea = areas.find((area) => area.id === areaId);
   const selectedParent = roles.find((role) => role.role_id === parentRoleId);
@@ -147,6 +137,50 @@ export function CreateRoleModal({
     : "Nivel superior";
   const previewPersonName = selectedPerson?.name || "Sin persona asignada";
   const previewRoleName = roleName.trim() || "Nombre del rol";
+
+  useEffect(() => {
+    if (!notice) return;
+
+    const timeout = window.setTimeout(() => setNotice(null), 3200);
+
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
+
+  function resetFormState() {
+    formRef.current?.reset();
+    setAreaId("");
+    setParentRoleId("");
+    setPersonId("");
+    setRoleName("");
+  }
+
+  function closeModal() {
+    if (isPending) return;
+    setError(null);
+    setOpen(false);
+  }
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+
+    setError(null);
+    setNotice(null);
+
+    startTransition(async () => {
+      const result = await createRoleDictionaryEntryInline(formData);
+
+      if (!result.ok) {
+        setError(result.error || "No se pudo crear el rol.");
+        return;
+      }
+
+      resetFormState();
+      setOpen(false);
+      setNotice("Rol creado");
+      router.refresh();
+    });
+  }
 
   if (!canCreate) {
     return null;
@@ -163,12 +197,18 @@ export function CreateRoleModal({
         Nuevo rol
       </button>
 
+      {notice ? (
+        <span className="fixed right-5 top-5 z-[60] inline-flex items-center rounded-lg border border-[#c9ead7] bg-[#f0fbf4] px-3 py-2 text-sm font-medium text-[#167344] shadow-[0_16px_32px_rgba(2,53,116,0.14)]">
+          {notice}
+        </span>
+      ) : null}
+
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
           <button
             aria-label="Cerrar formulario"
             className="absolute inset-0 bg-navy/45 backdrop-blur-[1px]"
-            onClick={() => setOpen(false)}
+            onClick={closeModal}
             type="button"
           />
           <div
@@ -188,14 +228,15 @@ export function CreateRoleModal({
               </div>
               <button
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line text-slate-600 transition hover:bg-[#f8fafb]"
-                onClick={() => setOpen(false)}
+                disabled={isPending}
+                onClick={closeModal}
                 type="button"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form action={createRoleDictionaryEntry} className="grid gap-4 bg-[#f8fafb] p-5">
+            <form className="grid gap-4 bg-[#f8fafb] p-5" onSubmit={handleSubmit} ref={formRef}>
               <input name="return_to" type="hidden" value={returnTo} />
 
               <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -344,8 +385,21 @@ export function CreateRoleModal({
                 </div>
               </div>
 
+              {error ? (
+                <p className="rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
+                  {error}
+                </p>
+              ) : null}
+
               <div className="flex justify-end rounded-xl border border-line bg-white p-4">
-                <SubmitButton />
+                <button
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#01295b] disabled:cursor-wait disabled:opacity-70"
+                  disabled={isPending}
+                  type="submit"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  {isPending ? "Creando..." : "Crear rol"}
+                </button>
               </div>
             </form>
           </div>
