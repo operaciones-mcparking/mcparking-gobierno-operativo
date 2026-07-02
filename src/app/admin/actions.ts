@@ -66,6 +66,16 @@ function pathWithoutQuery(path: string) {
   return path.split("?")[0] || path;
 }
 
+function internalReturnTo(formData: FormData, fallback: string) {
+  const returnTo = value(formData, "return_to");
+
+  if (returnTo.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("://")) {
+    return returnTo;
+  }
+
+  return fallback;
+}
+
 function done(message: string, path = "/admin"): never {
   revalidatePath("/");
   revalidatePath("/admin");
@@ -779,19 +789,21 @@ export async function addRole(formData: FormData) {
 export async function addPerson(formData: FormData) {
   const { supabase } = await requireAdminAccess();
   const requestContext = await requestOperationalContext();
+  const returnTo = internalReturnTo(formData, "/admin");
 
-  await runInsert(
-    supabase,
-    "people",
-    {
-      name: value(formData, "name"),
-      email: optionalValue(formData, "email"),
-      phone: optionalValue(formData, "phone"),
-      country_id: requestContext.countryId,
-      site_id: requestContext.siteId,
-    },
-    "Persona guardada",
-  );
+  const { error } = await supabase.from("people").insert({
+    name: value(formData, "name"),
+    email: optionalValue(formData, "email"),
+    phone: optionalValue(formData, "phone"),
+    country_id: requestContext.countryId,
+    site_id: requestContext.siteId,
+  });
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  done("Persona guardada", returnTo);
 }
 
 export async function createRoleDictionaryEntry(formData: FormData) {

@@ -1,5 +1,4 @@
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
-import { PlusCircle } from "lucide-react";
 import {
   getAreaDirectory,
   getPersonDirectory,
@@ -9,6 +8,7 @@ import {
 } from "@/lib/dashboard/data";
 import { governanceProcesses, orgRoles, type OrgRole } from "@/lib/dashboard/organization";
 import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
+import { CreatePersonModal } from "./create-person-modal";
 import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
 import { StructureExplorer } from "./structure-explorer";
@@ -663,15 +663,7 @@ export default async function EstructuraPage({
               returnTo={returnTo}
               roles={roleDictionaryResult.data}
             />
-            <button
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white opacity-55"
-              disabled
-              title="Nueva persona estara disponible en la siguiente etapa."
-              type="button"
-            >
-              <PlusCircle className="h-4 w-4" />
-              Nueva persona
-            </button>
+            <CreatePersonModal canCreate={capabilities.canCreatePeople} returnTo={returnTo} />
             <RoleDictionaryModal
               activePeople={activePeople}
               archivedPeople={archivedPeople}
