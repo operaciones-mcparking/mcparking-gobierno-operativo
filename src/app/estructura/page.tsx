@@ -649,6 +649,19 @@ export default async function EstructuraPage({
         <OrgChart canEdit={capabilities.canEditRoles} roles={dynamicRoles} />
       </Panel>
 
+      <Panel count={`${governanceProcesses.length} procesos`} title="Matriz web de procesos por rol">
+        {roleGovernanceResult.error ? (
+          <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
+            Ejecuta la migracion de asignaciones para activar la edicion de esta matriz.
+          </div>
+        ) : null}
+        <StructureExplorer
+          assignments={roleGovernanceResult.data}
+          processes={governanceProcesses}
+          roles={dynamicRoles}
+        />
+      </Panel>
+
       <Panel count={`${activePeople.length} personas`} title="Personas">
         {peopleResult.error ? (
           <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
@@ -661,19 +674,6 @@ export default async function EstructuraPage({
           canEdit={capabilities.canEditPeople}
           people={activePeople}
           returnTo={returnTo}
-        />
-      </Panel>
-
-      <Panel count={`${governanceProcesses.length} procesos`} title="Matriz web de procesos por rol">
-        {roleGovernanceResult.error ? (
-          <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
-            Ejecuta la migracion de asignaciones para activar la edicion de esta matriz.
-          </div>
-        ) : null}
-        <StructureExplorer
-          assignments={roleGovernanceResult.data}
-          processes={governanceProcesses}
-          roles={dynamicRoles}
         />
       </Panel>
     </DashboardShell>
