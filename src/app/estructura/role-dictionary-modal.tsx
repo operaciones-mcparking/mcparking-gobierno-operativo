@@ -226,48 +226,57 @@ export function RoleDictionaryModal({
                     )}
                   </section>
 
-                  <section>
-                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <h3 className="text-sm font-medium text-navy">Personas archivadas</h3>
-                        <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
-                          Las personas archivadas no aparecen como activas ni otorgan responsabilidades actuales. Se conservan como historial.
-                        </p>
+                  <details className="group rounded-xl border border-[#d6e1ea] bg-white">
+                    <summary className="cursor-pointer list-none px-4 py-4 transition hover:bg-[#f8fafb]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-medium text-navy">Personas archivadas</h3>
+                          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                            Las personas archivadas no aparecen como activas ni otorgan responsabilidades actuales. Se conservan como historial.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+                            {archivedPeople.length === 1 ? "1 archivada" : `${archivedPeople.length} archivadas`}
+                          </span>
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#d6e1ea] bg-[#f8fafb] text-slate-500 transition group-open:rotate-180 group-hover:border-sea group-hover:text-navy">
+                            <ChevronDown className="h-4 w-4" />
+                          </span>
+                        </div>
                       </div>
-                      <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-                        {archivedPeople.length} archivadas
-                      </span>
-                    </div>
+                    </summary>
 
-                    {archivedPeople.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-5 text-sm text-slate-600">
-                        No hay personas archivadas para este contexto.
-                      </div>
-                    ) : (
-                      <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
-                        <div className="hidden grid-cols-[1.2fr_1fr_0.8fr_0.7fr_auto] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 md:grid">
-                          <span>Nombre</span>
-                          <span>Email</span>
-                          <span>Telefono</span>
-                          <span>Estado</span>
-                          <span className="text-right">Accion</span>
+                    <div className="border-t border-[#d6e1ea] p-4">
+                      {archivedPeople.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-5 text-sm text-slate-600">
+                          No hay personas archivadas para este contexto.
                         </div>
-                        <div className="divide-y divide-[#edf2f6]">
-                          {archivedPeople.map((person) => (
-                            <PersonDetailModal
-                              canArchive={canArchivePeople}
-                              canEdit={canEditPeople}
-                              key={person.id}
-                              person={person}
-                              returnTo={returnTo}
-                              showStatusInCompact
-                              variant="compact"
-                            />
-                          ))}
+                      ) : (
+                        <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+                          <div className="hidden grid-cols-[1.2fr_1fr_0.8fr_0.7fr_auto] gap-3 border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3 text-xs font-medium uppercase tracking-[0.12em] text-slate-500 md:grid">
+                            <span>Nombre</span>
+                            <span>Email</span>
+                            <span>Telefono</span>
+                            <span>Estado</span>
+                            <span className="text-right">Accion</span>
+                          </div>
+                          <div className="divide-y divide-[#edf2f6]">
+                            {archivedPeople.map((person) => (
+                              <PersonDetailModal
+                                canArchive={canArchivePeople}
+                                canEdit={canEditPeople}
+                                key={person.id}
+                                person={person}
+                                returnTo={returnTo}
+                                showStatusInCompact
+                                variant="compact"
+                              />
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </section>
+                      )}
+                    </div>
+                  </details>
                 </div>
               ) : null}
             </div>

@@ -229,6 +229,7 @@ export function PersonDetailModal({
                     <DetailCard label="Estado" value={statusLabel(person.status)} />
                     <DetailCard label="Email" value={person.email ?? "Sin email"} />
                     <DetailCard label="Telefono" value={person.phone ?? "Sin telefono"} />
+                    <DetailCard label="Tiempo en empresa" value="No definido" />
                   </div>
 
                   {editing && canEdit ? (
