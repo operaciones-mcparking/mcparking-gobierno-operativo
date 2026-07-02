@@ -10,6 +10,7 @@ import { governanceProcesses, orgRoles, type OrgRole } from "@/lib/dashboard/org
 import { CreateRoleModal } from "@/app/roles-personas/create-role-modal";
 import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
+import { PeopleSection } from "./people-section";
 import { StructureExplorer } from "./structure-explorer";
 import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
 
@@ -592,6 +593,7 @@ export default async function EstructuraPage({
       ].map((person) => [person.id, person]),
     ).values(),
   ).sort((a, b) => a.name.localeCompare(b.name));
+  const activePeople = peopleResult.data.filter((person) => person.status === "active");
   const areas = Array.from(
     new Map(
       [
@@ -645,6 +647,21 @@ export default async function EstructuraPage({
           </div>
         ) : null}
         <OrgChart canEdit={capabilities.canEditRoles} roles={dynamicRoles} />
+      </Panel>
+
+      <Panel count={`${activePeople.length} personas`} title="Personas">
+        {peopleResult.error ? (
+          <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
+            No se pudieron cargar las personas para este contexto.
+          </div>
+        ) : null}
+        <PeopleSection
+          canArchive={capabilities.canArchivePeople}
+          canCreate={capabilities.canCreatePeople}
+          canEdit={capabilities.canEditPeople}
+          people={activePeople}
+          returnTo={returnTo}
+        />
       </Panel>
 
       <Panel count={`${governanceProcesses.length} procesos`} title="Matriz web de procesos por rol">
