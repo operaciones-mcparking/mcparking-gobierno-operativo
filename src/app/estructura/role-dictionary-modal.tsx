@@ -17,6 +17,7 @@ function roleTone(level: OrgRole["level"]) {
 
 export function RoleDictionaryModal({
   activePeople,
+  archivedRoles,
   archivedPeople,
   canArchivePeople,
   canEditPeople,
@@ -24,6 +25,7 @@ export function RoleDictionaryModal({
   roles,
 }: {
   activePeople: PersonDirectoryItem[];
+  archivedRoles: OrgRole[];
   archivedPeople: PersonDirectoryItem[];
   canArchivePeople: boolean;
   canEditPeople: boolean;
@@ -33,6 +35,7 @@ export function RoleDictionaryModal({
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"roles" | "people">("roles");
   const totalPeople = activePeople.length + archivedPeople.length;
+  const totalRoles = roles.length + archivedRoles.length;
   const people = [...activePeople, ...archivedPeople];
 
   return (
@@ -75,7 +78,7 @@ export function RoleDictionaryModal({
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-                  {roles.length} roles
+                  {totalRoles} roles
                 </span>
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
                   {totalPeople} personas
@@ -117,75 +120,164 @@ export function RoleDictionaryModal({
                 </button>
               </div>
 
-              {activeTab === "roles" && roles.length === 0 ? (
+              {activeTab === "roles" && totalRoles === 0 ? (
                 <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-8 text-center text-sm text-slate-600">
                   No hay roles para mostrar en este contexto.
                 </div>
               ) : null}
 
-              {activeTab === "roles" && roles.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {roles.map((role, index) => {
-                    return (
-                      <details
-                        className="group relative rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-3 transition open:bg-white open:p-4 open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
-                        key={role.id ?? `${role.code}-${index}`}
-                      >
-                        <div className="absolute right-3 top-3">
-                          <RoleEditModal
-                            canEdit={Boolean(role.id)}
-                            people={people}
-                            role={role}
-                            roles={roles}
-                            trigger="icon"
-                          />
-                        </div>
-                        <summary className="cursor-pointer list-none pr-20">
-                          <div className="min-w-0">
-                            <div className="min-w-0">
-                              <p className="line-clamp-2 text-sm font-medium leading-5 text-navy">
-                                {role.title}
-                              </p>
-                              <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">
-                                Persona:{" "}
-                                <span className="font-medium text-navy">{role.person}</span>
-                              </p>
+              {activeTab === "roles" && totalRoles > 0 ? (
+                <div className="grid gap-5">
+                  <section>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-medium text-navy">Roles / cargos activos</h3>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Cargos disponibles para responsabilidades actuales.
+                        </p>
+                      </div>
+                      <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+                        {roles.length} activos
+                      </span>
+                    </div>
+
+                    {roles.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-5 text-sm text-slate-600">
+                        No hay roles activos para este contexto.
+                      </div>
+                    ) : (
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        {roles.map((role, index) => (
+                          <details
+                            className="group relative rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-3 transition open:bg-white open:p-4 open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
+                            key={role.id ?? `${role.code}-${index}`}
+                          >
+                            <div className="absolute right-3 top-3">
+                              <RoleEditModal
+                                canEdit={Boolean(role.id)}
+                                people={people}
+                                role={role}
+                                roles={roles}
+                                trigger="icon"
+                              />
                             </div>
-                          </div>
-                          <span className="absolute right-14 top-3 inline-flex h-8 w-8 items-center justify-center text-slate-400 transition group-open:rotate-180">
+                            <summary className="cursor-pointer list-none pr-20">
+                              <div className="min-w-0">
+                                <div className="min-w-0">
+                                  <p className="line-clamp-2 text-sm font-medium leading-5 text-navy">
+                                    {role.title}
+                                  </p>
+                                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">
+                                    Persona:{" "}
+                                    <span className="font-medium text-navy">{role.person}</span>
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="absolute right-14 top-3 inline-flex h-8 w-8 items-center justify-center text-slate-400 transition group-open:rotate-180">
+                                <ChevronDown className="h-4 w-4" />
+                              </span>
+                            </summary>
+
+                            <div className="mt-4 border-t border-[#d6e1ea] pt-4">
+                              <div className="mb-3 flex flex-wrap items-center gap-2">
+                                {role.code ? <ValueBadge tone="neutral">{role.code}</ValueBadge> : null}
+                                {role.area ? (
+                                  <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2 py-1 text-xs font-medium text-slate-600">
+                                    {role.area}
+                                  </span>
+                                ) : null}
+                                {role.level ? <Badge tone={roleTone(role.level)}>{role.level}</Badge> : null}
+                              </div>
+                              <p className="text-sm leading-6 text-slate-700">{role.objective}</p>
+                              {role.responsibilities.length > 0 ? (
+                                <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                                  {role.responsibilities.map((responsibility) => (
+                                    <li className="flex gap-2" key={responsibility}>
+                                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sea" />
+                                      <span>{responsibility}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="mt-3 text-sm text-slate-500">
+                                  Sin responsabilidades registradas.
+                                </p>
+                              )}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <details className="group rounded-xl border border-[#d6e1ea] bg-white">
+                    <summary className="cursor-pointer list-none px-4 py-4 transition hover:bg-[#f8fafb]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-medium text-navy">Roles / cargos archivados</h3>
+                          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
+                            Los cargos archivados no aparecen como activos ni otorgan responsabilidades actuales. Se conservan como historial.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
+                            {archivedRoles.length === 1 ? "1 archivado" : `${archivedRoles.length} archivados`}
+                          </span>
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#d6e1ea] bg-[#f8fafb] text-slate-500 transition group-open:rotate-180 group-hover:border-sea group-hover:text-navy">
                             <ChevronDown className="h-4 w-4" />
                           </span>
-                        </summary>
-
-                        <div className="mt-4 border-t border-[#d6e1ea] pt-4">
-                          <div className="mb-3 flex flex-wrap items-center gap-2">
-                            {role.code ? <ValueBadge tone="neutral">{role.code}</ValueBadge> : null}
-                            {role.area ? (
-                              <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2 py-1 text-xs font-medium text-slate-600">
-                                {role.area}
-                              </span>
-                            ) : null}
-                            {role.level ? <Badge tone={roleTone(role.level)}>{role.level}</Badge> : null}
-                          </div>
-                          <p className="text-sm leading-6 text-slate-700">{role.objective}</p>
-                          {role.responsibilities.length > 0 ? (
-                            <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                              {role.responsibilities.map((responsibility) => (
-                                <li className="flex gap-2" key={responsibility}>
-                                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sea" />
-                                  <span>{responsibility}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="mt-3 text-sm text-slate-500">
-                              Sin responsabilidades registradas.
-                            </p>
-                          )}
                         </div>
-                      </details>
-                    );
-                  })}
+                      </div>
+                    </summary>
+
+                    <div className="border-t border-[#d6e1ea] p-4">
+                      {archivedRoles.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-[#cbd8e3] bg-[#f8fafb] p-5 text-sm text-slate-600">
+                          No hay roles archivados para este contexto.
+                        </div>
+                      ) : (
+                        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                          {archivedRoles.map((role, index) => (
+                            <details
+                              className="group/archived rounded-xl border border-[#d6e1ea] bg-[#fbfcfd] p-3 transition open:bg-white"
+                              key={role.id ?? `${role.code}-${index}`}
+                            >
+                              <summary className="cursor-pointer list-none">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="line-clamp-2 text-sm font-medium leading-5 text-navy">
+                                      {role.title}
+                                    </p>
+                                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">
+                                      Persona:{" "}
+                                      <span className="font-medium text-navy">{role.person}</span>
+                                    </p>
+                                  </div>
+                                  <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-slate-400 transition group-open/archived:rotate-180" />
+                                </div>
+                              </summary>
+
+                              <div className="mt-4 border-t border-[#d6e1ea] pt-4">
+                                <div className="mb-3 flex flex-wrap items-center gap-2">
+                                  {role.code ? <ValueBadge tone="neutral">{role.code}</ValueBadge> : null}
+                                  {role.area ? (
+                                    <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2 py-1 text-xs font-medium text-slate-600">
+                                      {role.area}
+                                    </span>
+                                  ) : null}
+                                  {role.level ? <Badge tone={roleTone(role.level)}>{role.level}</Badge> : null}
+                                  <span className="rounded-md border border-[#e5d2bf] bg-[#fff8ef] px-2 py-1 text-xs font-medium text-[#8a5b2d]">
+                                    Archivado
+                                  </span>
+                                </div>
+                                <p className="text-sm leading-6 text-slate-700">{role.objective}</p>
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 </div>
               ) : null}
 

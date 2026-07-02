@@ -452,6 +452,113 @@ export async function getRoleDictionary(context: DashboardContext = {}) {
   return { data: (data ?? []) as RoleDictionaryItem[], error };
 }
 
+export async function getArchivedRoleDictionary(context: DashboardContext = {}) {
+  const supabase = createSupabaseServerClient();
+  const { data: roles, error } = await supabase
+    .from("roles")
+    .select(
+      "id,role_code,name,description,level,responsibilities,is_corporate,is_local,sort_order,org_parent_role_id,org_column,org_row,status,area_id,country_id,site_id",
+    )
+    .eq("status", "archived")
+    .order("sort_order", { nullsFirst: false })
+    .order("name");
+
+  if (error) {
+    return { data: [] as RoleDictionaryItem[], error };
+  }
+
+  const roleRows = roles ?? [];
+  const areaIds = Array.from(
+    new Set(roleRows.map((role) => role.area_id).filter((id): id is string => Boolean(id))),
+  );
+  const siteIds = Array.from(
+    new Set(roleRows.map((role) => role.site_id).filter((id): id is string => Boolean(id))),
+  );
+  const roleIds = roleRows.map((role) => role.id);
+
+  const [areasResult, sitesResult, assignmentsResult] = await Promise.all([
+    areaIds.length > 0
+      ? supabase
+          .from("areas")
+          .select("id,name,company_id,companies(id,name,country_id)")
+          .in("id", areaIds)
+      : Promise.resolve({ data: [], error: null }),
+    siteIds.length > 0
+      ? supabase.from("sites").select("id,name").in("id", siteIds)
+      : Promise.resolve({ data: [], error: null }),
+    roleIds.length > 0
+      ? supabase
+          .from("person_roles")
+          .select("role_id,person_id,created_at,people(id,name)")
+          .in("role_id", roleIds)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+
+  if (areasResult.error) return { data: [] as RoleDictionaryItem[], error: areasResult.error };
+  if (sitesResult.error) return { data: [] as RoleDictionaryItem[], error: sitesResult.error };
+  if (assignmentsResult.error) return { data: [] as RoleDictionaryItem[], error: assignmentsResult.error };
+
+  const areaMap = new Map((areasResult.data ?? []).map((area) => [area.id, area]));
+  const siteMap = new Map((sitesResult.data ?? []).map((site) => [site.id, site]));
+  const assignmentMap = new Map<string, { person_id: string | null; person_name: string | null }>();
+
+  for (const assignment of assignmentsResult.data ?? []) {
+    if (!assignment.role_id || assignmentMap.has(assignment.role_id)) continue;
+
+    const person = Array.isArray(assignment.people) ? assignment.people[0] : assignment.people;
+    assignmentMap.set(assignment.role_id, {
+      person_id: assignment.person_id ?? null,
+      person_name: person?.name ?? null,
+    });
+  }
+
+  const mapped = roleRows
+    .map((role) => {
+      const area = role.area_id ? areaMap.get(role.area_id) : null;
+      const company = Array.isArray(area?.companies) ? area?.companies[0] : area?.companies;
+      const site = role.site_id ? siteMap.get(role.site_id) : null;
+      const assignment = assignmentMap.get(role.id);
+      const countryId = role.country_id ?? company?.country_id ?? null;
+
+      return {
+        area_id: role.area_id,
+        area_name: area?.name ?? null,
+        company_id: company?.id ?? null,
+        company_name: company?.name ?? null,
+        country_code: null,
+        country_id: countryId,
+        country_name: null,
+        current_person_id: assignment?.person_id ?? null,
+        current_person_name: assignment?.person_name ?? null,
+        is_corporate: Boolean(role.is_corporate),
+        is_local: Boolean(role.is_local),
+        org_column: role.org_column,
+        org_parent_role_code: null,
+        org_parent_role_id: role.org_parent_role_id,
+        org_parent_role_name: null,
+        org_row: role.org_row,
+        responsibilities: role.responsibilities ?? [],
+        role_code: role.role_code,
+        role_description: role.description,
+        role_id: role.id,
+        role_level: role.level,
+        role_name: role.name,
+        role_status: role.status,
+        site_id: role.site_id,
+        site_name: site?.name ?? null,
+        sort_order: role.sort_order,
+      } satisfies RoleDictionaryItem;
+    })
+    .filter((role) => {
+      if (context.countryId && role.country_id && role.country_id !== context.countryId) return false;
+      if (context.siteId && role.site_id && role.site_id !== context.siteId) return false;
+      return true;
+    });
+
+  return { data: mapped, error: null };
+}
+
 export async function getRoleAccessSuggestions(context: DashboardContext = {}) {
   const supabase = createSupabaseServerClient();
   let query = supabase

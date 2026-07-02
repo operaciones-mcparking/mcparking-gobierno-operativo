@@ -1,6 +1,7 @@
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
 import {
   getAreaDirectory,
+  getArchivedRoleDictionary,
   getPersonDirectory,
   getRoleDictionary,
   getRoleGovernanceProcesses,
@@ -603,14 +604,22 @@ export default async function EstructuraPage({
 
   const capabilities = await getRolePersonUiCapabilities();
 
-  const [roleDictionaryResult, roleGovernanceResult, peopleResult, areasResult] = await Promise.all([
+  const [
+    roleDictionaryResult,
+    archivedRoleDictionaryResult,
+    roleGovernanceResult,
+    peopleResult,
+    areasResult,
+  ] = await Promise.all([
     getRoleDictionary(context),
+    getArchivedRoleDictionary(context),
     getRoleGovernanceProcesses(),
     getPersonDirectory(context),
     getAreaDirectory(context),
   ]);
   const dynamicRoles =
     roleDictionaryResult.data.length > 0 ? roleDictionaryToOrgRoles(roleDictionaryResult.data) : orgRoles;
+  const archivedRoles = roleDictionaryToOrgRoles(archivedRoleDictionaryResult.data);
   const assignedPeople = roleDictionaryResult.data
     .filter((role) => role.current_person_id && role.current_person_name)
     .map((role) => ({
@@ -666,6 +675,7 @@ export default async function EstructuraPage({
             <CreatePersonModal canCreate={capabilities.canCreatePeople} returnTo={returnTo} />
             <RoleDictionaryModal
               activePeople={activePeople}
+              archivedRoles={archivedRoles}
               archivedPeople={archivedPeople}
               canArchivePeople={capabilities.canArchivePeople}
               canEditPeople={capabilities.canEditPeople}
