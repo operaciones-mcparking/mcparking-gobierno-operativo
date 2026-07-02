@@ -679,6 +679,7 @@ export default async function EstructuraPage({
               archivedPeople={archivedPeople}
               canArchivePeople={capabilities.canArchivePeople}
               canEditPeople={capabilities.canEditPeople}
+              canEditRoles={capabilities.canEditRoles}
               returnTo={returnTo}
               roles={dynamicRoles}
             />

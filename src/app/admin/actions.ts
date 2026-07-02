@@ -1320,6 +1320,49 @@ export async function archiveRole(formData: FormData) {
   redirect(withMessage(returnTo, "ok", "Rol archivado"));
 }
 
+export async function archiveRoleInline(formData: FormData) {
+  const roleId = value(formData, "role_id");
+  const { supabase } = await requireAdminAccess();
+
+  if (!roleId) {
+    return { error: "No se recibio el identificador del rol.", ok: false };
+  }
+
+  try {
+    const { error: assignmentError } = await supabase
+      .from("person_roles")
+      .update({
+        end_date: new Date().toISOString().slice(0, 10),
+        is_primary: false,
+        status: "inactive",
+      })
+      .eq("role_id", roleId)
+      .eq("status", "active");
+
+    if (assignmentError) {
+      return { error: assignmentError.message, ok: false };
+    }
+
+    const { error } = await supabase
+      .from("roles")
+      .update({ status: "archived" })
+      .eq("id", roleId);
+
+    if (error) {
+      return { error: error.message, ok: false };
+    }
+
+    revalidateRoleDirectory();
+
+    return { error: null, ok: true };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No se pudo archivar el rol.",
+      ok: false,
+    };
+  }
+}
+
 export async function deleteRole(formData: FormData) {
   const roleId = value(formData, "role_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";
