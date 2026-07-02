@@ -1163,6 +1163,131 @@ export async function updateRoleDictionaryEntry(formData: FormData) {
   redirect(withMessage(returnTo, "ok", "Rol actualizado"));
 }
 
+export async function updateRoleDictionaryEntryInline(formData: FormData) {
+  const roleId = value(formData, "role_id");
+  const roleName = value(formData, "name");
+  const { supabase } = await requireAdminAccess();
+
+  if (!roleId) {
+    return { error: "No se recibio el identificador del rol.", ok: false };
+  }
+
+  if (!roleName) {
+    return { error: "Ingresa el nombre del rol.", ok: false };
+  }
+
+  try {
+    const { data: currentRole, error: currentRoleError } = await supabase
+      .from("roles")
+      .select("area_id,country_id,site_id,areas(company_id)")
+      .eq("id", roleId)
+      .maybeSingle();
+
+    if (currentRoleError) {
+      return { error: currentRoleError.message, ok: false };
+    }
+
+    if (!currentRole) {
+      return { error: "No se encontro el rol para actualizar.", ok: false };
+    }
+
+    const requestContext = await requestOperationalContext();
+    const areaId = optionalValue(formData, "area_id") ?? currentRole.area_id;
+    const roleContext = await areaOperationalContext(supabase, areaId);
+    const currentSiteId = requestContext.siteId ?? roleContext.siteId ?? currentRole.site_id;
+    const currentCountryId =
+      requestContext.countryId ?? roleContext.countryId ?? currentRole.country_id;
+    const responsibilities = value(formData, "responsibilities")
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const roleUpdate: Record<string, unknown> = {
+      area_id: areaId,
+      country_id: currentCountryId,
+      description: optionalValue(formData, "description"),
+      level: value(formData, "level"),
+      name: roleName,
+      responsibilities,
+      role_code: generateRoleCode(roleName),
+      site_id: currentSiteId,
+    };
+
+    if (formData.has("is_corporate")) {
+      roleUpdate.is_corporate = checkbox(formData, "is_corporate");
+    }
+
+    if (formData.has("is_local")) {
+      roleUpdate.is_local = checkbox(formData, "is_local");
+    }
+
+    if (formData.has("org_parent_role_id")) {
+      roleUpdate.org_parent_role_id = optionalValue(formData, "org_parent_role_id");
+    }
+
+    const { error: roleError } = await supabase
+      .from("roles")
+      .update(roleUpdate)
+      .eq("id", roleId);
+
+    if (roleError) {
+      return { error: roleError.message, ok: false };
+    }
+
+    if (formData.has("person_id")) {
+      const personId = optionalValue(formData, "person_id");
+
+      const { error: deactivateError } = await supabase
+        .from("person_roles")
+        .update({
+          end_date: new Date().toISOString().slice(0, 10),
+          is_primary: false,
+          status: "inactive",
+        })
+        .eq("role_id", roleId)
+        .eq("is_primary", true)
+        .eq("status", "active");
+
+      if (deactivateError) {
+        return { error: deactivateError.message, ok: false };
+      }
+
+      if (personId) {
+        const area = Array.isArray(currentRole.areas) ? currentRole.areas[0] : currentRole.areas;
+        const roleCompanyContext = await companyOperationalContext(
+          supabase,
+          area?.company_id ?? null,
+        );
+        const companyId = roleCompanyContext.companyId;
+
+        const { error: assignmentError } = await supabase.from("person_roles").insert({
+          company_id: companyId,
+          country_id: currentCountryId,
+          is_backup: false,
+          is_primary: true,
+          person_id: personId,
+          role_id: roleId,
+          site_id: currentSiteId,
+          start_date: new Date().toISOString().slice(0, 10),
+          status: "active",
+        });
+
+        if (assignmentError) {
+          return { error: assignmentError.message, ok: false };
+        }
+      }
+    }
+
+    revalidateRoleDirectory();
+
+    return { error: null, ok: true };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "No se pudo actualizar el rol.",
+      ok: false,
+    };
+  }
+}
+
 export async function archiveRole(formData: FormData) {
   const roleId = value(formData, "role_id");
   const returnTo = value(formData, "return_to") || "/roles-personas";

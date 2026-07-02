@@ -2,21 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Info, PencilLine, X } from "lucide-react";
-import Link from "next/link";
+import { Info, X } from "lucide-react";
 
 import { Badge, ValueBadge } from "@/components/dashboard/badge";
 import type { OrgRole } from "@/lib/dashboard/organization";
+import { RoleEditModal } from "./role-edit-modal";
 
 function roleTone(level: OrgRole["level"]) {
   if (level === "Direccion") return "info";
   if (level === "Gestion") return "warning";
   return "success";
-}
-
-function roleEditHref(roleId: string) {
-  const encodedRoleId = encodeURIComponent(roleId);
-  return `/roles-personas?edit_role=${encodedRoleId}#role-${encodedRoleId}`;
 }
 
 export function RoleDetailButton({
@@ -88,16 +83,7 @@ export function RoleDetailButton({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    {canEdit && role.id ? (
-                      <Link
-                        className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-[#eef4f8]"
-                        href={roleEditHref(role.id)}
-                        onClick={() => setOpen(false)}
-                      >
-                        <PencilLine className="h-4 w-4 text-sea" />
-                        Editar cargo
-                      </Link>
-                    ) : null}
+                    <RoleEditModal canEdit={canEdit} role={role} />
                     <button
                       aria-label="Cerrar"
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white text-slate-500 transition hover:border-sea hover:text-navy"

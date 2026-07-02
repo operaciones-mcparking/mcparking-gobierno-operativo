@@ -1,23 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, ChevronDown, PencilLine, X } from "lucide-react";
-import Link from "next/link";
+import { BookOpen, ChevronDown, X } from "lucide-react";
 
 import { Badge, ValueBadge } from "@/components/dashboard/badge";
 import type { PersonDirectoryItem } from "@/lib/dashboard/data";
 import type { OrgRole } from "@/lib/dashboard/organization";
 import { PersonDetailModal } from "./person-detail-modal";
+import { RoleEditModal } from "./role-edit-modal";
 
 function roleTone(level: OrgRole["level"]) {
   if (level === "Direccion") return "info";
   if (level === "Gestion") return "warning";
   return "success";
-}
-
-function roleEditHref(roleId: string) {
-  const encodedRoleId = encodeURIComponent(roleId);
-  return `/roles-personas?edit_role=${encodedRoleId}#role-${encodedRoleId}`;
 }
 
 export function RoleDictionaryModal({
@@ -38,6 +33,7 @@ export function RoleDictionaryModal({
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"roles" | "people">("roles");
   const totalPeople = activePeople.length + archivedPeople.length;
+  const people = [...activePeople, ...archivedPeople];
 
   return (
     <>
@@ -135,17 +131,15 @@ export function RoleDictionaryModal({
                         className="group relative min-h-[132px] rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-4 transition open:bg-white open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
                         key={role.id ?? `${role.code}-${index}`}
                       >
-                        {role.id ? (
-                          <Link
-                            aria-label={`Editar cargo ${role.title}`}
-                            className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white text-slate-500 transition hover:border-sea hover:bg-[#eef4f8] hover:text-navy"
-                            href={roleEditHref(role.id)}
-                            onClick={() => setOpen(false)}
-                            title="Editar cargo"
-                          >
-                            <PencilLine className="h-4 w-4 text-sea" />
-                          </Link>
-                        ) : null}
+                        <div className="absolute right-3 top-3">
+                          <RoleEditModal
+                            canEdit={Boolean(role.id)}
+                            people={people}
+                            role={role}
+                            roles={roles}
+                            trigger="icon"
+                          />
+                        </div>
                         <summary className="cursor-pointer list-none">
                           <div className="grid gap-3 pr-10">
                             <div className="min-w-0">
