@@ -128,7 +128,7 @@ export function RoleDictionaryModal({
                   {roles.map((role, index) => {
                     return (
                       <details
-                        className="group relative min-h-[132px] rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-4 transition open:bg-white open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
+                        className="group relative rounded-xl border border-[#cbd8e3] bg-[#fbfcfd] p-3 transition open:bg-white open:p-4 open:shadow-[0_12px_28px_rgba(2,53,116,0.07)]"
                         key={role.id ?? `${role.code}-${index}`}
                       >
                         <div className="absolute right-3 top-3">
@@ -140,8 +140,8 @@ export function RoleDictionaryModal({
                             trigger="icon"
                           />
                         </div>
-                        <summary className="cursor-pointer list-none">
-                          <div className="grid gap-3 pr-10">
+                        <summary className="cursor-pointer list-none pr-20">
+                          <div className="min-w-0">
                             <div className="min-w-0">
                               <p className="line-clamp-2 text-sm font-medium leading-5 text-navy">
                                 {role.title}
@@ -151,10 +151,10 @@ export function RoleDictionaryModal({
                                 <span className="font-medium text-navy">{role.person}</span>
                               </p>
                             </div>
-                            <div className="flex justify-end">
-                              <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
-                            </div>
                           </div>
+                          <span className="absolute right-14 top-3 inline-flex h-8 w-8 items-center justify-center text-slate-400 transition group-open:rotate-180">
+                            <ChevronDown className="h-4 w-4" />
+                          </span>
                         </summary>
 
                         <div className="mt-4 border-t border-[#d6e1ea] pt-4">
