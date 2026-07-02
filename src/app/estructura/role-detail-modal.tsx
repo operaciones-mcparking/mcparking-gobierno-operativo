@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Info, X } from "lucide-react";
 
 import { Badge, ValueBadge } from "@/components/dashboard/badge";
+import type { PersonDirectoryItem } from "@/lib/dashboard/data";
 import type { OrgRole } from "@/lib/dashboard/organization";
 import { RoleEditModal } from "./role-edit-modal";
 
@@ -16,11 +17,15 @@ function roleTone(level: OrgRole["level"]) {
 
 export function RoleDetailButton({
   canEdit = false,
+  people = [],
   role,
+  roles = [],
   variant = "light",
 }: {
   canEdit?: boolean;
+  people?: PersonDirectoryItem[];
   role: OrgRole;
+  roles?: OrgRole[];
   variant?: "dark" | "light";
 }) {
   const [mounted, setMounted] = useState(false);
@@ -83,7 +88,7 @@ export function RoleDetailButton({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    <RoleEditModal canEdit={canEdit} role={role} />
+                    <RoleEditModal canEdit={canEdit} people={people} role={role} roles={roles} />
                     <button
                       aria-label="Cerrar"
                       className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white text-slate-500 transition hover:border-sea hover:text-navy"

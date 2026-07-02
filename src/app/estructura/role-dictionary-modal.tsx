@@ -40,7 +40,6 @@ export function RoleDictionaryModal({
   const totalRoles = roles.length + archivedRoles.length;
   const activeRoleCount = roles.length;
   const activePeopleCount = activePeople.length;
-  const people = [...activePeople, ...archivedPeople];
 
   return (
     <>
@@ -159,7 +158,7 @@ export function RoleDictionaryModal({
                             <div className="absolute right-3 top-3">
                               <RoleEditModal
                                 canEdit={canEditRoles && Boolean(role.id)}
-                                people={people}
+                                people={activePeople}
                                 role={role}
                                 roles={roles}
                                 trigger="icon"

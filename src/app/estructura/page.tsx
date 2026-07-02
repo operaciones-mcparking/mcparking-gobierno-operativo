@@ -5,6 +5,7 @@ import {
   getPersonDirectory,
   getRoleDictionary,
   getRoleGovernanceProcesses,
+  type PersonDirectoryItem,
   type RoleDictionaryItem,
 } from "@/lib/dashboard/data";
 import { governanceProcesses, orgRoles, type OrgRole } from "@/lib/dashboard/organization";
@@ -14,6 +15,7 @@ import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
 import { StructureExplorer } from "./structure-explorer";
 import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
+import { AlertTriangle } from "lucide-react";
 
 type SearchParams = Promise<{
   country_id?: string;
@@ -99,6 +101,10 @@ function roleKey(role: OrgRole) {
   return role.id ?? `${role.code}-${role.title}`;
 }
 
+function roleHasAssignedPerson(role: OrgRole) {
+  return role.person !== "Sin persona asignada";
+}
+
 function compareOrgRoles(a: OrgRole, b: OrgRole) {
   return (
     (a.sortOrder ?? 999) - (b.sortOrder ?? 999) ||
@@ -174,12 +180,16 @@ function withFallbackHierarchy(roles: OrgRole[]) {
 function OrgNode({
   accent = "navy",
   canEdit = false,
+  people = [],
   role,
+  roles = [],
   size = "normal",
 }: {
   accent?: "clay" | "navy" | "sea";
   canEdit?: boolean;
+  people?: PersonDirectoryItem[];
   role: OrgRole;
+  roles?: OrgRole[];
   size?: "large" | "normal" | "small";
 }) {
   const accentClasses = {
@@ -187,18 +197,26 @@ function OrgNode({
     navy: "border-navy bg-navy text-white",
     sea: "border-[#8bb4c0] bg-white",
   };
-  const personClasses = accent === "navy" ? "text-clay" : "text-sea";
+  const hasPerson = roleHasAssignedPerson(role);
+  const nodeAccentClass = !hasPerson && accent !== "navy"
+    ? "border-[#f0c6a4] bg-[#fff7ed]"
+    : accentClasses[accent];
+  const personClasses = !hasPerson && accent !== "navy"
+    ? "text-[#9a4a16]"
+    : accent === "navy" ? "text-clay" : "text-sea";
 
   return (
     <div
-      className={`relative mx-auto rounded-xl border px-3 py-2 pr-9 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${accentClasses[accent]} ${
+      className={`relative mx-auto rounded-xl border px-3 py-2 pr-9 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${nodeAccentClass} ${
         size === "large" ? "w-full max-w-[360px]" : size === "small" ? "w-full max-w-[180px]" : "w-full max-w-[200px]"
       }`}
     >
       <div className="absolute right-2 top-2">
         <RoleDetailButton
           canEdit={canEdit}
+          people={people}
           role={role}
+          roles={roles}
           variant={accent === "navy" ? "dark" : "light"}
         />
       </div>
@@ -214,7 +232,10 @@ function OrgNode({
       }`}>
         {role.title}
       </h3>
-      <p className={`mt-1.5 text-xs font-medium ${personClasses}`}>{role.person}</p>
+      <p className={`mt-1.5 inline-flex items-center justify-center gap-1 text-xs font-medium ${personClasses}`}>
+        {!hasPerson ? <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" /> : null}
+        {role.person}
+      </p>
     </div>
   );
 }
@@ -323,17 +344,38 @@ function buildSvgOrgChart(roots: OrgRole[], childrenByParent: Map<string, OrgRol
   return { height, lines, nodes, width };
 }
 
-function SvgOrgCard({ canEdit = false, node }: { canEdit?: boolean; node: OrgPoint }) {
+function SvgOrgCard({
+  canEdit = false,
+  node,
+  people = [],
+  roles = [],
+}: {
+  canEdit?: boolean;
+  node: OrgPoint;
+  people?: PersonDirectoryItem[];
+  roles?: OrgRole[];
+}) {
   const isRoot = node.accent === "navy";
+  const hasPerson = roleHasAssignedPerson(node.role);
+  const cardClass = !hasPerson && !isRoot
+    ? "border-[#f0c6a4] bg-[#fff7ed] text-navy"
+    : isRoot ? "border-navy bg-navy text-white" : "border-[#8bb4c0] bg-white text-navy";
+  const personClass = !hasPerson && !isRoot ? "text-[#9a4a16]" : isRoot ? "text-clay" : "text-sea";
 
   return (
     <div
       className={`relative flex h-full w-full flex-col items-center justify-center rounded-xl border px-3 pr-9 text-center shadow-[0_8px_18px_rgba(2,53,116,0.04)] ${
-        isRoot ? "border-navy bg-navy text-white" : "border-[#8bb4c0] bg-white text-navy"
+        cardClass
       }`}
     >
       <div className="absolute right-2 top-2">
-        <RoleDetailButton canEdit={canEdit} role={node.role} variant={isRoot ? "dark" : "light"} />
+        <RoleDetailButton
+          canEdit={canEdit}
+          people={people}
+          role={node.role}
+          roles={roles}
+          variant={isRoot ? "dark" : "light"}
+        />
       </div>
       <p
         className={`text-[11px] font-medium uppercase tracking-[0.12em] ${
@@ -345,7 +387,8 @@ function SvgOrgCard({ canEdit = false, node }: { canEdit?: boolean; node: OrgPoi
       <h3 className={`${isRoot ? "text-lg" : "text-sm"} mt-1 font-medium leading-tight`}>
         {node.role.title}
       </h3>
-      <p className={`${isRoot ? "text-clay" : "text-sea"} mt-1.5 text-xs font-medium`}>
+      <p className={`${personClass} mt-1.5 inline-flex items-center justify-center gap-1 text-xs font-medium`}>
+        {!hasPerson ? <AlertTriangle aria-hidden="true" className="h-3.5 w-3.5" /> : null}
         {node.role.person}
       </p>
     </div>
@@ -356,12 +399,16 @@ function SvgOrgChart({
   childrenByParent,
   canEdit = false,
   metrics,
+  people = [],
   roots,
+  roles,
 }: {
   childrenByParent: Map<string, OrgRole[]>;
   canEdit?: boolean;
   metrics: OrgMetric[];
+  people?: PersonDirectoryItem[];
   roots: OrgRole[];
+  roles: OrgRole[];
 }) {
   const chart = buildSvgOrgChart(roots, childrenByParent);
 
@@ -394,7 +441,7 @@ function SvgOrgChart({
             x={node.x}
             y={node.y}
           >
-            <SvgOrgCard canEdit={canEdit} node={node} />
+            <SvgOrgCard canEdit={canEdit} node={node} people={people} roles={roles} />
           </foreignObject>
         ))}
       </svg>
@@ -420,11 +467,15 @@ function OrgChartMetrics({ metrics }: { metrics: OrgMetric[] }) {
 function OrgTree({
   childrenByParent,
   canEdit = false,
+  people = [],
   role,
+  roles = [],
 }: {
   childrenByParent: Map<string, OrgRole[]>;
   canEdit?: boolean;
+  people?: PersonDirectoryItem[];
   role: OrgRole;
+  roles?: OrgRole[];
 }) {
   const children = childrenByParent.get(roleKey(role)) ?? [];
 
@@ -433,7 +484,9 @@ function OrgTree({
       <OrgNode
         accent={role.orgParentRoleId ? "sea" : "navy"}
         canEdit={canEdit}
+        people={people}
         role={role}
+        roles={roles}
         size={role.orgParentRoleId ? "normal" : "large"}
       />
       {children.length > 0 ? (
@@ -457,7 +510,13 @@ function OrgTree({
                   key={roleKey(child)}
                 >
                   <div className="hidden h-3.5 w-px bg-navy/30 lg:block" />
-                  <OrgTree childrenByParent={childrenByParent} canEdit={canEdit} role={child} />
+                  <OrgTree
+                    childrenByParent={childrenByParent}
+                    canEdit={canEdit}
+                    people={people}
+                    role={child}
+                    roles={roles}
+                  />
                 </div>
               ))}
             </div>
@@ -472,19 +531,23 @@ function OrgBranch({
   child,
   canEdit = false,
   parent,
+  people = [],
+  roles = [],
 }: {
   child?: OrgRole;
   canEdit?: boolean;
   parent: OrgRole;
+  people?: PersonDirectoryItem[];
+  roles?: OrgRole[];
 }) {
   return (
     <div className="relative flex flex-col items-center">
       <div className="hidden h-7 w-px bg-navy/70 lg:block" />
-      <OrgNode canEdit={canEdit} role={parent} />
+      <OrgNode canEdit={canEdit} people={people} role={parent} roles={roles} />
       {child ? (
         <>
           <div className="hidden h-9 w-px bg-navy/40 lg:block" />
-          <OrgNode accent="sea" canEdit={canEdit} role={child} size="small" />
+          <OrgNode accent="sea" canEdit={canEdit} people={people} role={child} roles={roles} size="small" />
         </>
       ) : null}
     </div>
@@ -494,10 +557,12 @@ function OrgBranch({
 function OrgChart({
   canEdit = false,
   metrics,
+  people = [],
   roles,
 }: {
   canEdit?: boolean;
   metrics: OrgMetric[];
+  people?: PersonDirectoryItem[];
   roles: OrgRole[];
 }) {
   const hasEditableHierarchy = roles.some((role) => role.orgParentRoleId);
@@ -521,7 +586,16 @@ function OrgChart({
     const roots = positionedRoles
       .filter((role) => !role.orgParentRoleId || !byId.has(role.orgParentRoleId))
       .sort(compareOrgRoles);
-    return <SvgOrgChart childrenByParent={childrenByParent} canEdit={canEdit} metrics={metrics} roots={roots} />;
+    return (
+      <SvgOrgChart
+        childrenByParent={childrenByParent}
+        canEdit={canEdit}
+        metrics={metrics}
+        people={people}
+        roles={positionedRoles}
+        roots={roots}
+      />
+    );
   }
 
   const general = findRole(roles, ["GG", "Gerente General"]) ?? roles[0];
@@ -551,7 +625,7 @@ function OrgChart({
     <div className="mt-5 rounded-2xl bg-[#f6f8fa] px-3 py-6">
       <OrgChartMetrics metrics={metrics} />
       <div className="mx-auto w-full max-w-6xl">
-        <OrgNode accent="navy" canEdit={canEdit} role={general} size="large" />
+        <OrgNode accent="navy" canEdit={canEdit} people={people} role={general} roles={roles} size="large" />
         <div className="mx-auto hidden h-7 w-px bg-navy/70 lg:block" />
         <div className="mx-auto hidden h-px max-w-5xl bg-navy/70 lg:block" />
         <div className="grid gap-3 pt-0 md:grid-cols-2 xl:grid-cols-4">
@@ -561,6 +635,8 @@ function OrgChart({
               child={childrenByBranch.get(role.code)}
               key={`${role.code}-${role.title}`}
               parent={role}
+              people={people}
+              roles={roles}
             />
           ))}
         </div>
@@ -575,7 +651,9 @@ function OrgChart({
                   accent="sea"
                   canEdit={canEdit}
                   key={`${role.code}-${role.title}`}
+                  people={people}
                   role={role}
+                  roles={roles}
                   size="small"
                 />
               ))}
@@ -704,6 +782,7 @@ export default async function EstructuraPage({
             { label: "cargos", value: dynamicRoles.length },
             { label: "personas", value: activePeople.length },
           ]}
+          people={activePeople}
           roles={dynamicRoles}
         />
       </Panel>
