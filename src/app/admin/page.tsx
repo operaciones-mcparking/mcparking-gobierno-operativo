@@ -822,110 +822,118 @@ function AccessRbacPanel({ options }: { options: Awaited<ReturnType<typeof getAd
 
           <AccordionPanel
             count="8 bloques"
-            description="Configuracion tecnica para autorizaciones, sedes, roles, permisos, alcances y auditoria."
+            description="Opciones tecnicas para controlar login, sedes, roles, permisos y auditoria. No son tareas de uso diario."
             title="Configuracion avanzada"
           >
             <div className="grid gap-4">
               <AccessPanel options={options} />
 
-          <AccordionPanel
-            count={`${options.accessRoles.length} roles`}
-            description="Roles de permisos del sistema. No son cargos funcionales."
-            title="Roles de acceso"
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              {options.accessRoles.map((role) => (
-                <div className="rounded-xl border border-[#d6e1ea] bg-white p-4" key={role.id}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-base font-medium text-navy">{role.name}</h3>
-                      <p className="mt-1 text-sm text-slate-600">{role.description}</p>
-                    </div>
-                    <AccessPill>{role.role_code}</AccessPill>
-                  </div>
-                  <p className="mt-3 text-sm text-slate-500">
-                    {permissionsByRole.get(role.id)?.length ?? 0} permisos activos
-                  </p>
-                </div>
-              ))}
-            </div>
-          </AccordionPanel>
-
-          <AccordionPanel
-            count={`${options.accessRolePermissions.length} relaciones`}
-            description="Permisos internos incluidos en cada rol de acceso."
-            title="Permisos por rol"
-          >
-            <div className="grid gap-3">
-              {options.accessRoles.map((role) => {
-                const rolePermissions = permissionsByRole.get(role.id) ?? [];
-                const activePermissionIds = new Set(rolePermissions.map((permission) => permission.id));
-                return (
-                  <form
-                    action={updateAccessRolePermissions}
-                    className="rounded-xl border border-[#d6e1ea] bg-white p-4"
-                    key={role.id}
-                  >
-                    <input name="access_role_id" type="hidden" value={role.id} />
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-navy">{role.name}</h3>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {rolePermissions.length} permisos activos
-                        </p>
-                      </div>
-                      <button
-                        className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white transition hover:bg-[#034982]"
-                        type="submit"
-                      >
-                        Guardar permisos
-                      </button>
-                    </div>
-                    <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                      {options.permissions.map((permission) => (
-                        <label
-                          className="flex items-start gap-2 rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] px-3 py-2 text-sm"
-                          key={permission.id}
-                        >
-                          <input
-                            className="mt-1"
-                            defaultChecked={activePermissionIds.has(permission.id)}
-                            name="permission_ids"
-                            type="checkbox"
-                            value={permission.id}
-                          />
-                          <span>
-                            <span className="block font-medium text-navy">{permission.code}</span>
-                            <span className="text-xs text-slate-500">{permission.name}</span>
-                          </span>
-                        </label>
+              <AccordionPanel
+                count={`${options.accessRoles.length} roles`}
+                description="Roles de acceso, permisos internos y alcances disponibles."
+                title="Catalogo RBAC"
+              >
+                <div className="grid gap-4">
+                  <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
+                    <h3 className="text-sm font-semibold text-navy">Roles de acceso</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Roles de permisos del sistema. No son cargos funcionales.
+                    </p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {options.accessRoles.map((role) => (
+                        <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4" key={role.id}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <h4 className="text-base font-medium text-navy">{role.name}</h4>
+                              <p className="mt-1 text-sm text-slate-600">{role.description}</p>
+                            </div>
+                            <AccessPill>{role.role_code}</AccessPill>
+                          </div>
+                          <p className="mt-3 text-sm text-slate-500">
+                            {permissionsByRole.get(role.id)?.length ?? 0} permisos activos
+                          </p>
+                        </div>
                       ))}
                     </div>
-                  </form>
-                );
-              })}
-            </div>
-          </AccordionPanel>
+                  </div>
 
-          <AccordionPanel
-            count={`${options.userAccessAssignments.length} asignaciones`}
-            description="Resumen de alcance operativo para evitar mezclar paises, empresas y sedes."
-            title="Alcances"
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              {["global", "country", "company", "site"].map((scopeType) => (
-                <div className="rounded-xl border border-[#d6e1ea] bg-white p-4" key={scopeType}>
-                  <p className="text-sm text-slate-500">{scopeTypeLabel(scopeType)}</p>
-                  <p className="mt-2 text-2xl font-medium text-navy">{scopeCounts[scopeType] ?? 0}</p>
+                  <AccordionPanel
+                    count={`${options.accessRolePermissions.length} relaciones`}
+                    description="Permisos internos incluidos en cada rol de acceso."
+                    title="Permisos por rol"
+                  >
+                    <div className="grid gap-3">
+                      {options.accessRoles.map((role) => {
+                        const rolePermissions = permissionsByRole.get(role.id) ?? [];
+                        const activePermissionIds = new Set(rolePermissions.map((permission) => permission.id));
+                        return (
+                          <form
+                            action={updateAccessRolePermissions}
+                            className="rounded-xl border border-[#d6e1ea] bg-white p-4"
+                            key={role.id}
+                          >
+                            <input name="access_role_id" type="hidden" value={role.id} />
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <h3 className="text-sm font-semibold text-navy">{role.name}</h3>
+                                <p className="mt-1 text-sm text-slate-600">
+                                  {rolePermissions.length} permisos activos
+                                </p>
+                              </div>
+                              <button
+                                className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white transition hover:bg-[#034982]"
+                                type="submit"
+                              >
+                                Guardar permisos
+                              </button>
+                            </div>
+                            <div className="mt-3 grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                              {options.permissions.map((permission) => (
+                                <label
+                                  className="flex items-start gap-2 rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] px-3 py-2 text-sm"
+                                  key={permission.id}
+                                >
+                                  <input
+                                    className="mt-1"
+                                    defaultChecked={activePermissionIds.has(permission.id)}
+                                    name="permission_ids"
+                                    type="checkbox"
+                                    value={permission.id}
+                                  />
+                                  <span>
+                                    <span className="block font-medium text-navy">{permission.code}</span>
+                                    <span className="text-xs text-slate-500">{permission.name}</span>
+                                  </span>
+                                </label>
+                              ))}
+                            </div>
+                          </form>
+                        );
+                      })}
+                    </div>
+                  </AccordionPanel>
+
+                  <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
+                    <h3 className="text-sm font-semibold text-navy">Alcances</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Resumen de alcance operativo para evitar mezclar paises, empresas y sedes.
+                    </p>
+                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                      {["global", "country", "company", "site"].map((scopeType) => (
+                        <div className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4" key={scopeType}>
+                          <p className="text-sm text-slate-500">{scopeTypeLabel(scopeType)}</p>
+                          <p className="mt-2 text-2xl font-medium text-navy">{scopeCounts[scopeType] ?? 0}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-          </AccordionPanel>
+              </AccordionPanel>
 
           <AccordionPanel
             count={`${adminAssignments.length} admins`}
-            description="Lectura inicial para revisar usuarios con permisos altos y excepciones puntuales."
-            title="Auditoria de permisos"
+            description="Revision de usuarios con permisos altos, excepciones y riesgos."
+            title="Auditoria y excepciones"
           >
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
@@ -981,106 +989,220 @@ function AccessPanel({ options }: { options: Awaited<ReturnType<typeof getAdminO
 
   return (
     <div className="grid gap-4">
-      <div>
+      <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
         <h3 className="text-base font-semibold text-navy">Autorizacion de login</h3>
         <p className="mt-1 text-sm text-slate-600">
-          Correos y dominios autorizados para crear o actualizar perfiles de plataforma.
+          Define que correos o dominios pueden iniciar sesion y crear perfiles de plataforma.
         </p>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <details className="group rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-navy">Correos autorizados</h4>
+                <p className="mt-1 text-xs text-slate-500">Autoriza un correo especifico.</p>
+              </div>
+              <span className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white">Autorizar correo</span>
+            </summary>
+            <form action={authorizeEmailAccess} className="mt-4 grid gap-3 rounded-xl border border-[#d6e1ea] bg-white p-4">
+              <Field label="Correo">
+                <Input name="email" placeholder="persona@mcparking.cl" required type="email" />
+              </Field>
+              <Field label="Nombre visible">
+                <Input name="display_name" placeholder="Nombre de la persona" />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Rol de sistema">
+                  <AppRoleSelect defaultValue="viewer" />
+                </Field>
+                <Field label="Estado">
+                  <StatusSelect />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Pais por defecto">
+                  <CountrySelect countries={options.countries} />
+                </Field>
+                <Field label="Sede por defecto">
+                  <SiteSelect sites={options.sites} />
+                </Field>
+              </div>
+              <div className="flex justify-end">
+                <Submit>Autorizar correo</Submit>
+              </div>
+            </form>
+          </details>
+
+          <details className="group rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-navy">Dominios autorizados</h4>
+                <p className="mt-1 text-xs text-slate-500">Permite entrar a cualquier correo del dominio.</p>
+              </div>
+              <span className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white">Autorizar dominio</span>
+            </summary>
+            <form action={authorizeDomainAccess} className="mt-4 grid gap-3 rounded-xl border border-[#d6e1ea] bg-white p-4">
+              <Field label="Dominio">
+                <Input name="domain" placeholder="mcparking.cl" required />
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Rol de sistema">
+                  <AppRoleSelect defaultValue="viewer" />
+                </Field>
+                <Field label="Estado">
+                  <StatusSelect />
+                </Field>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Pais por defecto">
+                  <CountrySelect countries={options.countries} />
+                </Field>
+                <Field label="Sede por defecto">
+                  <SiteSelect sites={options.sites} />
+                </Field>
+              </div>
+              <div className="flex justify-end">
+                <Submit>Autorizar dominio</Submit>
+              </div>
+            </form>
+          </details>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+            <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-navy">Correos autorizados</h3>
+                <AccessPill>{`${options.emailAllowlist.length} correos`}</AccessPill>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Correos especificos que pueden entrar, aunque su dominio no este abierto.
+              </p>
+            </div>
+            <div className="divide-y divide-[#d6e1ea]">
+              {options.emailAllowlist.map((item) => (
+                <form action={authorizeEmailAccess} className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_auto]" key={item.id}>
+                  <div>
+                    <input name="email" type="hidden" value={item.email} />
+                    <p className="text-sm font-medium text-navy">{item.email}</p>
+                    <p className="text-xs text-slate-500">{item.display_name || "Sin nombre visible"}</p>
+                  </div>
+                  <Input name="display_name" defaultValue={item.display_name ?? ""} placeholder="Nombre visible" />
+                  <AppRoleSelect defaultValue={item.app_role} />
+                  <StatusSelect defaultValue={item.status} />
+                  <button className="rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-4 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-white" type="submit">
+                    Guardar
+                  </button>
+                  <div className="xl:col-span-5 grid gap-3 sm:grid-cols-2">
+                    <Field label="Pais por defecto">
+                      <CountrySelect
+                        countries={options.countries}
+                        defaultValue={item.default_country_id}
+                      />
+                    </Field>
+                    <Field label="Sede por defecto">
+                      <SiteSelect sites={options.sites} defaultValue={item.default_site_id} />
+                    </Field>
+                  </div>
+                </form>
+              ))}
+              {options.emailAllowlist.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-slate-600">Sin correos autorizados.</p>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+            <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-navy">Dominios autorizados</h3>
+                <AccessPill>{`${options.domainAllowlist.length} dominios`}</AccessPill>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Permiten entrar a usuarios de una organizacion completa.
+              </p>
+            </div>
+            <div className="divide-y divide-[#d6e1ea]">
+              {options.domainAllowlist.map((item) => (
+                <form action={authorizeDomainAccess} className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_0.8fr_0.8fr_auto]" key={item.id}>
+                  <div>
+                    <input name="domain" type="hidden" value={item.domain} />
+                    <p className="text-sm font-medium text-navy">@{item.domain}</p>
+                    <p className="text-xs text-slate-500">
+                      {roleLabel(item.app_role)} / {statusLabel(item.status)}
+                    </p>
+                  </div>
+                  <AppRoleSelect defaultValue={item.app_role} />
+                  <StatusSelect defaultValue={item.status} />
+                  <button className="rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-4 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-white" type="submit">
+                    Guardar
+                  </button>
+                  <div className="xl:col-span-4 grid gap-3 sm:grid-cols-2">
+                    <Field label="Pais por defecto">
+                      <CountrySelect
+                        countries={options.countries}
+                        defaultValue={item.default_country_id}
+                      />
+                    </Field>
+                    <Field label="Sede por defecto">
+                      <SiteSelect sites={options.sites} defaultValue={item.default_site_id} />
+                    </Field>
+                  </div>
+                </form>
+              ))}
+              {options.domainAllowlist.length === 0 ? (
+                <p className="px-4 py-5 text-sm text-slate-600">Sin dominios autorizados.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <form action={authorizeEmailAccess} className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
-          <h3 className="text-base font-medium text-navy">Autorizar correo</h3>
-          <div className="mt-4 grid gap-3">
-            <Field label="Correo">
-              <Input name="email" placeholder="persona@mcparking.cl" required type="email" />
-            </Field>
-            <Field label="Nombre visible">
-              <Input name="display_name" placeholder="Nombre de la persona" />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Rol de sistema">
-                <AppRoleSelect defaultValue="viewer" />
+      <div className="rounded-xl border border-[#d6e1ea] bg-white p-4">
+        <h3 className="text-base font-semibold text-navy">Acceso por sede</h3>
+        <p className="mt-1 text-sm text-slate-600">
+          Permisos especificos por sede para usuarios de plataforma.
+        </p>
+        <details className="mt-4 rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-navy">Asignar sede</h4>
+              <p className="mt-1 text-xs text-slate-500">Agrega o actualiza un permiso por sede.</p>
+            </div>
+            <span className="rounded-lg bg-navy px-3 py-2 text-xs font-medium text-white">Asignar sede</span>
+          </summary>
+          <form action={grantSiteAccess} className="mt-4 grid gap-3 rounded-xl border border-[#d6e1ea] bg-white p-4">
+              <Field label="Usuario">
+                <Select name="user_id" required>
+                  {options.userProfiles.map((profile) => (
+                    <option key={profile.user_id} value={profile.user_id}>
+                      {profile.email}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Sede">
+                <SiteSelect name="site_id" required sites={options.sites} />
+              </Field>
+              <Field label="Nivel de acceso">
+                <Select defaultValue="viewer" name="access_level">
+                  {accessLevelOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Estado">
                 <StatusSelect />
               </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Pais por defecto">
-                <CountrySelect countries={options.countries} />
-              </Field>
-              <Field label="Sede por defecto">
-                <SiteSelect sites={options.sites} />
-              </Field>
-            </div>
-            <Submit>Autorizar correo</Submit>
-          </div>
-        </form>
+              <div className="flex justify-end">
+                <Submit>Guardar permiso</Submit>
+              </div>
+          </form>
+        </details>
 
-        <form action={authorizeDomainAccess} className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
-          <h3 className="text-base font-medium text-navy">Autorizar dominio</h3>
-          <p className="mt-1 text-sm text-slate-600">
-            Permite entrar a cualquier correo del dominio, por ejemplo mcparking.cl.
-          </p>
-          <div className="mt-4 grid gap-3">
-            <Field label="Dominio">
-              <Input name="domain" placeholder="mcparking.cl" required />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Rol de sistema">
-                <AppRoleSelect defaultValue="viewer" />
-              </Field>
-              <Field label="Estado">
-                <StatusSelect />
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Pais por defecto">
-                <CountrySelect countries={options.countries} />
-              </Field>
-              <Field label="Sede por defecto">
-                <SiteSelect sites={options.sites} />
-              </Field>
-            </div>
-            <Submit>Autorizar dominio</Submit>
-          </div>
-        </form>
-      </div>
-
-      <div className="mt-5 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-        <form action={grantSiteAccess} className="rounded-xl border border-[#d6e1ea] bg-[#f8fbfd] p-4">
-          <h3 className="text-base font-medium text-navy">Asignar sede</h3>
-          <div className="mt-4 grid gap-3">
-            <Field label="Usuario">
-              <Select name="user_id" required>
-                {options.userProfiles.map((profile) => (
-                  <option key={profile.user_id} value={profile.user_id}>
-                    {profile.email}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Sede">
-              <SiteSelect name="site_id" required sites={options.sites} />
-            </Field>
-            <Field label="Nivel de acceso">
-              <Select defaultValue="viewer" name="access_level">
-                {accessLevelOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Estado">
-              <StatusSelect />
-            </Field>
-            <Submit>Guardar permiso</Submit>
-          </div>
-        </form>
-
-        <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
+        <div className="mt-4 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
           <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
             <h3 className="text-base font-semibold text-navy">Permisos por sede</h3>
           </div>
@@ -1117,94 +1239,6 @@ function AccessPanel({ options }: { options: Awaited<ReturnType<typeof getAdminO
               <div className="px-4 py-5 text-sm text-slate-600">
                 No hay permisos de sede configurados.
               </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
-          <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium text-navy">Correos autorizados</h3>
-              <AccessPill>{`${options.emailAllowlist.length} correos`}</AccessPill>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Correos especificos que pueden entrar, aunque su dominio no este abierto.
-            </p>
-          </div>
-          <div className="divide-y divide-[#d6e1ea]">
-            {options.emailAllowlist.map((item) => (
-              <form action={authorizeEmailAccess} className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_0.9fr_0.8fr_0.8fr_auto]" key={item.id}>
-                <div>
-                  <input name="email" type="hidden" value={item.email} />
-                  <p className="text-sm font-medium text-navy">{item.email}</p>
-                  <p className="text-xs text-slate-500">{item.display_name || "Sin nombre visible"}</p>
-                </div>
-                <Input name="display_name" defaultValue={item.display_name ?? ""} placeholder="Nombre visible" />
-                <AppRoleSelect defaultValue={item.app_role} />
-                <StatusSelect defaultValue={item.status} />
-                <button className="rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-4 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-white" type="submit">
-                  Guardar
-                </button>
-                <div className="xl:col-span-5 grid gap-3 sm:grid-cols-2">
-                  <Field label="Pais por defecto">
-                    <CountrySelect
-                      countries={options.countries}
-                      defaultValue={item.default_country_id}
-                    />
-                  </Field>
-                  <Field label="Sede por defecto">
-                    <SiteSelect sites={options.sites} defaultValue={item.default_site_id} />
-                  </Field>
-                </div>
-              </form>
-            ))}
-            {options.emailAllowlist.length === 0 ? (
-              <p className="px-4 py-5 text-sm text-slate-600">Sin correos autorizados.</p>
-            ) : null}
-          </div>
-        </div>
-        <div className="overflow-hidden rounded-xl border border-[#d6e1ea] bg-white">
-          <div className="border-b border-[#d6e1ea] bg-[#f8fafb] px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium text-navy">Dominios autorizados</h3>
-              <AccessPill>{`${options.domainAllowlist.length} dominios`}</AccessPill>
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              Permiten entrar a usuarios de una organizacion completa.
-            </p>
-          </div>
-          <div className="divide-y divide-[#d6e1ea]">
-            {options.domainAllowlist.map((item) => (
-              <form action={authorizeDomainAccess} className="grid gap-3 px-4 py-4 xl:grid-cols-[1.2fr_0.8fr_0.8fr_auto]" key={item.id}>
-                <div>
-                  <input name="domain" type="hidden" value={item.domain} />
-                  <p className="text-sm font-medium text-navy">@{item.domain}</p>
-                  <p className="text-xs text-slate-500">
-                    {roleLabel(item.app_role)} / {statusLabel(item.status)}
-                  </p>
-                </div>
-                <AppRoleSelect defaultValue={item.app_role} />
-                <StatusSelect defaultValue={item.status} />
-                <button className="rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] px-4 py-2 text-sm font-medium text-navy transition hover:border-sea hover:bg-white" type="submit">
-                  Guardar
-                </button>
-                <div className="xl:col-span-4 grid gap-3 sm:grid-cols-2">
-                  <Field label="Pais por defecto">
-                    <CountrySelect
-                      countries={options.countries}
-                      defaultValue={item.default_country_id}
-                    />
-                  </Field>
-                  <Field label="Sede por defecto">
-                    <SiteSelect sites={options.sites} defaultValue={item.default_site_id} />
-                  </Field>
-                </div>
-              </form>
-            ))}
-            {options.domainAllowlist.length === 0 ? (
-              <p className="px-4 py-5 text-sm text-slate-600">Sin dominios autorizados.</p>
             ) : null}
           </div>
         </div>
