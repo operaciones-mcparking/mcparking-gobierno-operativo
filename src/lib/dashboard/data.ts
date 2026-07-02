@@ -47,6 +47,10 @@ export type RoleBottleneck = {
   missing_backup_person: boolean;
 };
 
+export type ActiveRoleBottleneck = RoleBottleneck & {
+  role_status: string;
+};
+
 export type PersonBottleneck = {
   person_id: string;
   person_name: string;
@@ -55,6 +59,10 @@ export type PersonBottleneck = {
   critical_process_count: number;
   system_count: number;
   backup_assignment_count: number;
+};
+
+export type ActivePersonBottleneck = PersonBottleneck & {
+  person_status: string;
 };
 
 export type ProcessSystem = {
@@ -396,6 +404,18 @@ export async function getRoleBottlenecks() {
   return { data: (data ?? []) as RoleBottleneck[], error };
 }
 
+export async function getActiveRoleBottlenecks() {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("v_active_role_bottlenecks")
+    .select("*")
+    .order("critical_process_count", { ascending: false })
+    .order("process_count", { ascending: false })
+    .order("role_name");
+
+  return { data: (data ?? []) as ActiveRoleBottleneck[], error };
+}
+
 export async function getPersonBottlenecks() {
   const supabase = createSupabaseServerClient();
   const { data, error } = await supabase
@@ -406,6 +426,18 @@ export async function getPersonBottlenecks() {
     .order("person_name");
 
   return { data: (data ?? []) as PersonBottleneck[], error };
+}
+
+export async function getActivePersonBottlenecks() {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("v_active_person_bottlenecks")
+    .select("*")
+    .order("critical_process_count", { ascending: false })
+    .order("role_count", { ascending: false })
+    .order("person_name");
+
+  return { data: (data ?? []) as ActivePersonBottleneck[], error };
 }
 
 export async function getProcessSystems() {
