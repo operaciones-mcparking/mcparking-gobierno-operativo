@@ -19,6 +19,11 @@ type SearchParams = Promise<{
   site_id?: string;
 }>;
 
+type OrgMetric = {
+  label: string;
+  value: number;
+};
+
 function toOrgLevel(level: string): OrgRole["level"] {
   if (level === "directivo" || level === "executive" || level === "board") return "Direccion";
   if (level === "gerencial" || level === "jefatura" || level === "strategic" || level === "tactical") return "Gestion";
@@ -349,19 +354,22 @@ function SvgOrgCard({ canEdit = false, node }: { canEdit?: boolean; node: OrgPoi
 function SvgOrgChart({
   childrenByParent,
   canEdit = false,
+  metrics,
   roots,
 }: {
   childrenByParent: Map<string, OrgRole[]>;
   canEdit?: boolean;
+  metrics: OrgMetric[];
   roots: OrgRole[];
 }) {
   const chart = buildSvgOrgChart(roots, childrenByParent);
 
   return (
     <div className="mt-5 rounded-2xl bg-[#f6f8fa] p-3 sm:p-5">
+      <OrgChartMetrics metrics={metrics} />
       <svg
         aria-label="Organigrama operativo"
-        className="block h-auto w-full"
+        className="mt-4 block h-auto w-full"
         role="img"
         style={{ aspectRatio: `${chart.width} / ${chart.height}` }}
         viewBox={`0 0 ${chart.width} ${chart.height}`}
@@ -389,6 +397,21 @@ function SvgOrgChart({
           </foreignObject>
         ))}
       </svg>
+    </div>
+  );
+}
+
+function OrgChartMetrics({ metrics }: { metrics: OrgMetric[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {metrics.map((metric) => (
+        <span
+          className="w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600"
+          key={metric.label}
+        >
+          {metric.value} {metric.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -467,7 +490,15 @@ function OrgBranch({
   );
 }
 
-function OrgChart({ canEdit = false, roles }: { canEdit?: boolean; roles: OrgRole[] }) {
+function OrgChart({
+  canEdit = false,
+  metrics,
+  roles,
+}: {
+  canEdit?: boolean;
+  metrics: OrgMetric[];
+  roles: OrgRole[];
+}) {
   const hasEditableHierarchy = roles.some((role) => role.orgParentRoleId);
 
   if (hasEditableHierarchy) {
@@ -489,7 +520,7 @@ function OrgChart({ canEdit = false, roles }: { canEdit?: boolean; roles: OrgRol
     const roots = positionedRoles
       .filter((role) => !role.orgParentRoleId || !byId.has(role.orgParentRoleId))
       .sort(compareOrgRoles);
-    return <SvgOrgChart childrenByParent={childrenByParent} canEdit={canEdit} roots={roots} />;
+    return <SvgOrgChart childrenByParent={childrenByParent} canEdit={canEdit} metrics={metrics} roots={roots} />;
   }
 
   const general = findRole(roles, ["GG", "Gerente General"]) ?? roles[0];
@@ -517,6 +548,7 @@ function OrgChart({ canEdit = false, roles }: { canEdit?: boolean; roles: OrgRol
 
   return (
     <div className="mt-5 rounded-2xl bg-[#f6f8fa] px-3 py-6">
+      <OrgChartMetrics metrics={metrics} />
       <div className="mx-auto w-full max-w-6xl">
         <OrgNode accent="navy" canEdit={canEdit} role={general} size="large" />
         <div className="mx-auto hidden h-7 w-px bg-navy/70 lg:block" />
@@ -653,14 +685,6 @@ export default async function EstructuraPage({
         description="Cargos, responsables actuales y relaciones jerarquicas del modelo operativo."
         title="Organigrama operativo"
       >
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-            {dynamicRoles.length} cargos
-          </span>
-          <span className="w-fit rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-            {activePeople.length + archivedPeople.length} personas
-          </span>
-        </div>
         {roleDictionaryResult.error ? (
           <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm text-[#86510d]">
             {roleDictionaryResult.error.message}
@@ -671,7 +695,14 @@ export default async function EstructuraPage({
             No se pudieron cargar todas las opciones para crear roles en este contexto.
           </div>
         ) : null}
-        <OrgChart canEdit={capabilities.canEditRoles} roles={dynamicRoles} />
+        <OrgChart
+          canEdit={capabilities.canEditRoles}
+          metrics={[
+            { label: "cargos", value: dynamicRoles.length },
+            { label: "personas", value: activePeople.length + archivedPeople.length },
+          ]}
+          roles={dynamicRoles}
+        />
       </Panel>
 
       <Panel count={`${governanceProcesses.length} procesos`} title="Matriz web de procesos por rol">
