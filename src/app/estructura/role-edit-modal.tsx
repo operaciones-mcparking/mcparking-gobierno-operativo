@@ -289,32 +289,6 @@ export function RoleEditModal({
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-[#e5d2bf] bg-white p-4">
-                  <h3 className="text-sm font-medium text-navy">Zona administrativa</h3>
-                  <p className="mt-2 text-sm leading-5 text-slate-600">
-                    Archivar este cargo lo quitara de los cargos activos y lo conservara como historial.
-                  </p>
-                  <div className="mt-3">
-                    <button
-                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#e5d2bf] bg-[#fff8ef] px-3 py-2 text-sm font-medium text-[#8a5b2d] transition hover:border-[#d9b98f] hover:bg-[#fff3e2] disabled:cursor-wait disabled:opacity-70"
-                      disabled={isPending || isArchivePending}
-                      onClick={() => {
-                        setArchiveError(null);
-                        setConfirmArchiveOpen(true);
-                      }}
-                      type="button"
-                    >
-                      <Archive className="h-4 w-4" />
-                      Archivar cargo
-                    </button>
-                  </div>
-                  {archiveError ? (
-                    <p className="mt-3 rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
-                      {archiveError}
-                    </p>
-                  ) : null}
-                </div>
-
                 {error ? (
                   <p className="rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
                     {error}
@@ -337,6 +311,32 @@ export function RoleEditModal({
                   >
                     {isPending ? "Guardando..." : "Guardar cargo"}
                   </button>
+                </div>
+
+                <div className="rounded-xl border border-[#f0d2b8] bg-[#fff7ed] p-4">
+                  <h3 className="text-sm font-medium text-[#9a4a16]">Zona administrativa</h3>
+                  <p className="mt-1 text-xs leading-5 text-[#9a4a16]">
+                    Archivar este cargo lo quitara de los cargos activos y lo conservara como historial.
+                  </p>
+                  <div className="mt-3">
+                    <button
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#f0c6a4] bg-[#fff7ed] px-4 py-2 text-sm font-medium text-[#9a4a16] transition hover:bg-[#ffedd5] disabled:cursor-wait disabled:opacity-70"
+                      disabled={isPending || isArchivePending}
+                      onClick={() => {
+                        setArchiveError(null);
+                        setConfirmArchiveOpen(true);
+                      }}
+                      type="button"
+                    >
+                      <Archive className="h-4 w-4" />
+                      Archivar cargo
+                    </button>
+                  </div>
+                  {archiveError ? (
+                    <p className="mt-3 rounded-lg border border-[#ffd6b0] bg-[#fff7ed] px-3 py-2 text-sm text-[#9a4a16]">
+                      {archiveError}
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </form>

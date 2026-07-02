@@ -701,8 +701,8 @@ export default async function EstructuraPage({
         <OrgChart
           canEdit={capabilities.canEditRoles}
           metrics={[
-            { label: "cargos activos", value: dynamicRoles.length },
-            { label: "personas activas", value: activePeople.length },
+            { label: "cargos", value: dynamicRoles.length },
+            { label: "personas", value: activePeople.length },
           ]}
           roles={dynamicRoles}
         />

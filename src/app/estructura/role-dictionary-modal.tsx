@@ -82,10 +82,10 @@ export function RoleDictionaryModal({
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-                  {activeRoleCount} cargos activos
+                  {activeRoleCount} cargos
                 </span>
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-                  {activePeopleCount} personas activas
+                  {activePeopleCount} personas
                 </span>
                 <button
                   aria-label="Cerrar"
