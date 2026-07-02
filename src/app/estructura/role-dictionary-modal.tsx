@@ -38,6 +38,8 @@ export function RoleDictionaryModal({
   const [activeTab, setActiveTab] = useState<"roles" | "people">("roles");
   const totalPeople = activePeople.length + archivedPeople.length;
   const totalRoles = roles.length + archivedRoles.length;
+  const activeRoleCount = roles.length;
+  const activePeopleCount = activePeople.length;
   const people = [...activePeople, ...archivedPeople];
 
   return (
@@ -80,10 +82,10 @@ export function RoleDictionaryModal({
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-                  {totalRoles} roles
+                  {activeRoleCount} cargos activos
                 </span>
                 <span className="rounded-md border border-[#d6e1ea] bg-[#f8fafb] px-2.5 py-1 text-xs font-medium text-slate-600">
-                  {totalPeople} personas
+                  {activePeopleCount} personas activas
                 </span>
                 <button
                   aria-label="Cerrar"
