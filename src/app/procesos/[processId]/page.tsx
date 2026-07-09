@@ -12,7 +12,7 @@ import {
   Workflow,
 } from "lucide-react";
 
-import { TypedBadge } from "@/components/dashboard/badge";
+import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import { ProcessMatrixTools } from "@/components/dashboard/process-matrix-tools";
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
 import {
@@ -27,6 +27,18 @@ type Params = Promise<{
 
 function Value({ value }: { value: string | null | undefined }) {
   return <span>{value && value.length > 0 ? value : "No definido"}</span>;
+}
+
+function processTypeBadge(value: string | null | undefined) {
+  if (value === "strategic") {
+    return { label: "Estratégico", tone: "info" as const };
+  }
+
+  if (value === "support") {
+    return { label: "Soporte", tone: "warning" as const };
+  }
+
+  return { label: "Operativo / Clave", tone: "success" as const };
 }
 
 function splitList(value: string | null) {
@@ -234,6 +246,7 @@ export default async function ProcessDetailPage({ params }: { params: Params }) 
   }
 
   const process = processResult.data;
+  const macroType = processTypeBadge(process.process_type);
   const rows = matrixResult.data;
   const totalImpact = rows.reduce((total, row) => total + (row.impact_percent ?? 0), 0);
   const rolesWithoutPerson = new Set(
@@ -276,6 +289,7 @@ export default async function ProcessDetailPage({ params }: { params: Params }) 
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
+              <ValueBadge tone={macroType.tone}>Tipo de proceso: {macroType.label}</ValueBadge>
               <TypedBadge type="criticality" value={process.criticality} />
               <TypedBadge type="status" value={process.status} />
               <TypedBadge type="documentation" value={process.documentation_status} />
