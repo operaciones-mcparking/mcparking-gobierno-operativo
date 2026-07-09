@@ -89,19 +89,19 @@ const processTypeGroups: Array<{
   value: ProcessCatalogItem["process_type"];
 }> = [
   {
-    description: "Direccion, estrategia y decisiones que orientan el modelo operativo.",
+    description: "Definen direccion, prioridades y decisiones de negocio.",
     label: "Estrategicos",
     tone: "info",
     value: "strategic",
   },
   {
-    description: "Procesos clave que sostienen la operacion principal.",
+    description: "Entregan el servicio principal y generan valor directo.",
     label: "Operativos / Clave",
     tone: "success",
     value: "operational",
   },
   {
-    description: "Procesos de apoyo que habilitan la gestion y continuidad.",
+    description: "Habilitan que la operacion funcione correctamente.",
     label: "Soporte",
     tone: "warning",
     value: "support",
@@ -121,55 +121,84 @@ function ProcessMacroMap({ processes }: { processes: ProcessCatalogItem[] }) {
         <ValueBadge tone="neutral">{processes.length} procesos</ValueBadge>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
-        {processTypeGroups.map((group) => {
-          const groupProcesses = processes.filter(
-            (process) => process.process_type === group.value,
-          );
+      <div className="mt-4 grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)_220px] xl:items-stretch">
+        <div className="rounded-lg border border-[#dce7ef] bg-[#f8fafb] p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Entrada</p>
+          <h3 className="mt-2 text-sm font-semibold text-navy">Requerimientos / necesidades</h3>
+          <p className="mt-2 text-xs leading-5 text-slate-600">Lo que activa la operacion.</p>
+        </div>
 
-          return (
-            <article
-              className="rounded-lg border border-line bg-[#fbfdfe] p-4"
-              key={group.value}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-navy">{group.label}</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-600">{group.description}</p>
-                </div>
-                <ValueBadge tone={group.tone}>{groupProcesses.length}</ValueBadge>
-              </div>
+        <div className="relative rounded-xl border border-line bg-[#fbfdfe] p-3">
+          <div className="hidden xl:block">
+            <span className="absolute -left-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-white text-sea">
+              <ChevronRight className="h-4 w-4" />
+            </span>
+            <span className="absolute -right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-white text-sea">
+              <ChevronRight className="h-4 w-4" />
+            </span>
+          </div>
 
-              <div className="mt-4 space-y-2">
-                {groupProcesses.length > 0 ? (
-                  groupProcesses.slice(0, 4).map((process) => (
-                    <div
-                      className="rounded-md border border-[#dce7ef] bg-white px-3 py-2"
-                      key={process.process_id}
-                    >
-                      <p className="line-clamp-2 text-sm font-medium text-navy">
-                        {process.process_name}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {process.area_name ?? "Sin area"}
-                      </p>
+          <div className="grid gap-3 lg:grid-cols-3">
+            {processTypeGroups.map((group) => {
+              const groupProcesses = processes.filter(
+                (process) => process.process_type === group.value,
+              );
+
+              return (
+                <article
+                  className="rounded-lg border border-[#dce7ef] bg-white p-4"
+                  key={group.value}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-navy">{group.label}</h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-600">{group.description}</p>
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-md border border-dashed border-[#cbd8e3] bg-white px-3 py-3 text-sm text-slate-600">
-                    No hay procesos en este grupo.
+                    <ValueBadge tone={group.tone}>{groupProcesses.length}</ValueBadge>
                   </div>
-                )}
 
-                {groupProcesses.length > 4 ? (
-                  <p className="text-xs font-medium text-slate-500">
-                    +{groupProcesses.length - 4} procesos mas en el listado.
-                  </p>
-                ) : null}
-              </div>
-            </article>
-          );
-        })}
+                  <div className="mt-4 space-y-2">
+                    {groupProcesses.length > 0 ? (
+                      groupProcesses.slice(0, 4).map((process) => (
+                        <div
+                          className="rounded-md border border-[#dce7ef] bg-[#f8fafb] px-3 py-2"
+                          key={process.process_id}
+                        >
+                          <p className="line-clamp-2 text-sm font-medium text-navy">
+                            {process.process_name}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {process.area_name ?? "Sin area"}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-md border border-dashed border-[#cbd8e3] bg-[#f8fafb] px-3 py-3 text-sm text-slate-600">
+                        No hay procesos en este grupo.
+                      </div>
+                    )}
+
+                    {groupProcesses.length > 4 ? (
+                      <p className="text-xs font-medium text-slate-500">
+                        +{groupProcesses.length - 4} procesos mas en el listado.
+                      </p>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-[#dce7ef] bg-[#f8fafb] p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">Salida</p>
+          <h3 className="mt-2 text-sm font-semibold text-navy">
+            Satisfaccion / resultado del servicio
+          </h3>
+          <p className="mt-2 text-xs leading-5 text-slate-600">
+            Lo que recibe el cliente o la organizacion.
+          </p>
+        </div>
       </div>
     </section>
   );
