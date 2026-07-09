@@ -1541,6 +1541,29 @@ export async function updateProcessBasics(formData: FormData) {
   done("Proceso actualizado", returnTo);
 }
 
+export async function archiveProcess(formData: FormData) {
+  const processId = value(formData, "process_id");
+
+  if (!processId) {
+    fail("Proceso no definido", "/procesos");
+  }
+
+  const { supabase } = await requireAdminAccess();
+  const { error } = await supabase
+    .from("processes")
+    .update({ status: "archived" })
+    .eq("id", processId);
+
+  if (error) {
+    fail(error.message, `/procesos/${processId}/editar`);
+  }
+
+  revalidatePath("/procesos");
+  revalidatePath(`/procesos/${processId}`);
+  revalidatePath(`/procesos/${processId}/editar`);
+  redirect(withMessage("/procesos", "ok", "Proceso archivado"));
+}
+
 export async function reorderSubprocesses(processId: string, orderedIds: string[]) {
   const { supabase } = await requireAdminAccess();
 

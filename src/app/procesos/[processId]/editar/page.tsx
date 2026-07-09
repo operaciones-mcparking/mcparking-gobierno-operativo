@@ -11,6 +11,7 @@ import { DashboardShell } from "@/components/dashboard/shell";
 import { updateProcessBasics } from "@/app/admin/actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getProcessCatalogItem, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
+import { ArchiveProcessPanel } from "./archive-process-panel";
 import { StageEditor } from "./stage-editor";
 
 type Params = Promise<{
@@ -214,6 +215,8 @@ export default async function EditProcessPage({
         roleDictionary={roleDictionaryResult.data}
         systems={systems}
       />
+
+      {process.status === "active" ? <ArchiveProcessPanel processId={process.process_id} /> : null}
     </DashboardShell>
   );
 }
