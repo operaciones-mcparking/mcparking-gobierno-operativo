@@ -83,6 +83,7 @@ export type ProcessCatalogItem = {
   definition: string | null;
   objective: string | null;
   expected_result: string | null;
+  process_type: "strategic" | "operational" | "support";
   criticality: string;
   status: string;
   documentation_status: string;
