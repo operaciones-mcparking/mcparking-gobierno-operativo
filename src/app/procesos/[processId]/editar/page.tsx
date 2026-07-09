@@ -40,6 +40,12 @@ function Field({
 const inputClass =
   "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
 
+const processTypeOptions = [
+  { label: "Estratégico", value: "strategic" },
+  { label: "Operativo / Clave", value: "operational" },
+  { label: "Soporte", value: "support" },
+];
+
 function PrimaryButton({ children }: { children: React.ReactNode }) {
   return (
     <button
@@ -152,7 +158,16 @@ export default async function EditProcessPage({
               />
             </Field>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Field label="Tipo de proceso">
+              <select className={inputClass} name="process_type" defaultValue={process.process_type}>
+                {processTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <Field label="Criticidad">
               <select className={inputClass} name="criticality" defaultValue={process.criticality}>
                 {criticalityOptions.map((option) => (

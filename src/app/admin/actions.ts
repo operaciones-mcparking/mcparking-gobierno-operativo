@@ -27,6 +27,16 @@ function numberValue(formData: FormData, key: string) {
   return raw.length > 0 ? Number(raw) : null;
 }
 
+function processTypeValue(formData: FormData) {
+  const raw = value(formData, "process_type");
+
+  if (raw === "strategic" || raw === "operational" || raw === "support") {
+    return raw;
+  }
+
+  return "operational";
+}
+
 function generateRoleCode(name: string) {
   const words = name
     .normalize("NFD")
@@ -1517,6 +1527,7 @@ export async function updateProcessBasics(formData: FormData) {
       description: optionalValue(formData, "description"),
       objective: optionalValue(formData, "objective"),
       expected_result: optionalValue(formData, "expected_result"),
+      process_type: processTypeValue(formData),
       criticality: value(formData, "criticality"),
       status: value(formData, "status"),
       documentation_status: value(formData, "documentation_status"),
