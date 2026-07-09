@@ -216,18 +216,19 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
     getProcessCatalog(context),
     getProcessMatrix(),
   ]);
+  const activeProcesses = catalogResult.data.filter((process) => process.status === "active");
 
   const companyOptions = Array.from(
     new Set(
-      catalogResult.data
+      activeProcesses
         .map((process) => process.owner_company_name ?? process.company_name)
         .filter(Boolean),
     ),
   ).sort((a, b) => a.localeCompare(b, "es"));
   const typeOptions = Array.from(
-    new Set(catalogResult.data.map((process) => process.area_name ?? "Sin tipo")),
+    new Set(activeProcesses.map((process) => process.area_name ?? "Sin tipo")),
   ).sort((a, b) => a.localeCompare(b, "es"));
-  const filteredProcesses = catalogResult.data.filter((process) => {
+  const filteredProcesses = activeProcesses.filter((process) => {
     const ownerCompany = process.owner_company_name ?? process.company_name;
     const operationType = process.area_name ?? "Sin tipo";
 
@@ -241,14 +242,14 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
     matrixResult.data.filter((row) => filteredProcessIds.has(row.process_id)),
   );
   const processCount =
-    filteredProcesses.length === catalogResult.data.length
-      ? `${catalogResult.data.length} procesos`
-      : `${filteredProcesses.length} de ${catalogResult.data.length} procesos`;
+    filteredProcesses.length === activeProcesses.length
+      ? `${activeProcesses.length} procesos`
+      : `${filteredProcesses.length} de ${activeProcesses.length} procesos`;
 
   return (
     <DashboardShell
       description="Catalogo de procesos oficiales con vista rapida desplegable por proceso."
-      eyebrow={`${catalogResult.data.length} Procesos`}
+      eyebrow={`${activeProcesses.length} Procesos`}
       title="Procesos oficiales"
     >
       {!catalogResult.error ? <ProcessMacroMap processes={filteredProcesses} /> : null}
@@ -269,7 +270,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
               companyOptions={companyOptions}
               selectedCompany={selectedCompany}
               selectedType={selectedType}
-              totalCount={catalogResult.data.length}
+              totalCount={activeProcesses.length}
               typeOptions={typeOptions}
               visibleCount={filteredProcesses.length}
             />
