@@ -203,6 +203,11 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
       (selectedType === "todos" || operationType === selectedType)
     );
   });
+  const macroMapProcesses = activeProcesses.filter((process) => {
+    const ownerCompany = process.owner_company_name ?? process.company_name;
+
+    return ownerCompany === "McParking";
+  });
   const filteredProcessIds = new Set(filteredProcesses.map((process) => process.process_id));
   const groupedRows = groupedByProcess(
     matrixResult.data.filter((row) => filteredProcessIds.has(row.process_id)),
@@ -226,7 +231,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
         />
       </div>
 
-      {!catalogResult.error ? <ProcessMacroMap processes={filteredProcesses} /> : null}
+      {!catalogResult.error ? <ProcessMacroMap processes={macroMapProcesses} /> : null}
 
       <AccordionPanel
         count={processCount}
