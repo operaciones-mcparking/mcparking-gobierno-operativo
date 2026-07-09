@@ -5,6 +5,7 @@ import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import { ProcessFilters } from "@/components/dashboard/process-filters";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { getProcessCatalog, getProcessMatrix } from "@/lib/dashboard/data";
+import type { ProcessCatalogItem } from "@/lib/dashboard/data";
 
 function TextValue({ value }: { value: string | null | undefined }) {
   return <span>{value && value.length > 0 ? value : "No definido"}</span>;
@@ -81,6 +82,99 @@ type ProcesosPageProps = {
   }>;
 };
 
+const processTypeGroups: Array<{
+  description: string;
+  label: string;
+  tone: "info" | "success" | "warning";
+  value: ProcessCatalogItem["process_type"];
+}> = [
+  {
+    description: "Direccion, estrategia y decisiones que orientan el modelo operativo.",
+    label: "Estrategicos",
+    tone: "info",
+    value: "strategic",
+  },
+  {
+    description: "Procesos clave que sostienen la operacion principal.",
+    label: "Operativos / Clave",
+    tone: "success",
+    value: "operational",
+  },
+  {
+    description: "Procesos de apoyo que habilitan la gestion y continuidad.",
+    label: "Soporte",
+    tone: "warning",
+    value: "support",
+  },
+];
+
+function ProcessMacroMap({ processes }: { processes: ProcessCatalogItem[] }) {
+  return (
+    <section className="mb-5 rounded-xl border border-line bg-white p-5 shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <h2 className="text-base font-medium tracking-tight text-navy">Mapa de procesos</h2>
+          <p className="mt-1 text-sm leading-5 text-slate-600">
+            Vista macro de procesos estrategicos, operativos y de soporte.
+          </p>
+        </div>
+        <ValueBadge tone="neutral">{processes.length} procesos</ValueBadge>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        {processTypeGroups.map((group) => {
+          const groupProcesses = processes.filter(
+            (process) => process.process_type === group.value,
+          );
+
+          return (
+            <article
+              className="rounded-lg border border-line bg-[#fbfdfe] p-4"
+              key={group.value}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-navy">{group.label}</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">{group.description}</p>
+                </div>
+                <ValueBadge tone={group.tone}>{groupProcesses.length}</ValueBadge>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                {groupProcesses.length > 0 ? (
+                  groupProcesses.slice(0, 4).map((process) => (
+                    <div
+                      className="rounded-md border border-[#dce7ef] bg-white px-3 py-2"
+                      key={process.process_id}
+                    >
+                      <p className="line-clamp-2 text-sm font-medium text-navy">
+                        {process.process_name}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {process.area_name ?? "Sin area"}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-md border border-dashed border-[#cbd8e3] bg-white px-3 py-3 text-sm text-slate-600">
+                    No hay procesos en este grupo.
+                  </div>
+                )}
+
+                {groupProcesses.length > 4 ? (
+                  <p className="text-xs font-medium text-slate-500">
+                    +{groupProcesses.length - 4} procesos mas en el listado.
+                  </p>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export default async function ProcesosPage({ searchParams }: ProcesosPageProps) {
   const params = searchParams ? await searchParams : {};
   const selectedCompany = params.empresa ?? "todas";
@@ -128,6 +222,8 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
       eyebrow={`${catalogResult.data.length} Procesos`}
       title="Procesos oficiales"
     >
+      {!catalogResult.error ? <ProcessMacroMap processes={filteredProcesses} /> : null}
+
       <AccordionPanel
         count={processCount}
         defaultOpen
