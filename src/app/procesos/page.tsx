@@ -4,7 +4,13 @@ import { ChevronRight, FileText } from "lucide-react";
 import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import { ProcessFilters } from "@/components/dashboard/process-filters";
 import { DashboardShell } from "@/components/dashboard/shell";
-import { getProcessCatalog, getProcessMatrix } from "@/lib/dashboard/data";
+import {
+  getAreaDirectory,
+  getProcessCatalog,
+  getProcessMatrix,
+  getRoleDictionary,
+} from "@/lib/dashboard/data";
+import { CreateProcessModal } from "./create-process-modal";
 import type { ProcessCatalogItem } from "@/lib/dashboard/data";
 
 function TextValue({ value }: { value: string | null | undefined }) {
@@ -71,6 +77,46 @@ function groupedByProcess<T extends { process_id: string; process_name: string }
     },
     [],
   );
+}
+
+type CreateProcessOption = {
+  id: string;
+  name: string;
+};
+
+type CreateProcessAreaOption = CreateProcessOption & {
+  company_id: string | null;
+  company_name: string | null;
+};
+
+function uniqueCreateProcessOptions(options: CreateProcessOption[]) {
+  const seen = new Set<string>();
+
+  return options
+    .filter((option) => {
+      if (!option.id || seen.has(option.id)) {
+        return false;
+      }
+
+      seen.add(option.id);
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+function uniqueCreateProcessAreas(options: CreateProcessAreaOption[]) {
+  const seen = new Set<string>();
+
+  return options
+    .filter((option) => {
+      if (!option.id || seen.has(option.id)) {
+        return false;
+      }
+
+      seen.add(option.id);
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
 type ProcesosPageProps = {
@@ -212,11 +258,53 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
     countryId: params.country_id ?? null,
     siteId: params.site_id ?? null,
   };
-  const [catalogResult, matrixResult] = await Promise.all([
+  const [catalogResult, matrixResult, areaDirectoryResult, roleDictionaryResult] = await Promise.all([
     getProcessCatalog(context),
     getProcessMatrix(),
+    getAreaDirectory(context),
+    getRoleDictionary(context),
   ]);
   const activeProcesses = catalogResult.data.filter((process) => process.status === "active");
+  const createProcessSource = activeProcesses.length > 0 ? activeProcesses : catalogResult.data;
+  const createProcessCompanies = uniqueCreateProcessOptions([
+    ...createProcessSource.flatMap((process) => {
+      const options: CreateProcessOption[] = [];
+
+      if (process.owner_company_id && process.owner_company_name) {
+        options.push({ id: process.owner_company_id, name: process.owner_company_name });
+      } else if (process.owner_company_id && process.company_name) {
+        options.push({ id: process.owner_company_id, name: process.company_name });
+      }
+
+      if (process.operating_company_id && process.operating_company_name) {
+        options.push({ id: process.operating_company_id, name: process.operating_company_name });
+      }
+
+      return options;
+    }),
+    ...(areaDirectoryResult.data ?? [])
+      .filter((area) => area.company_id && area.company_name)
+      .map((area) => ({
+        id: area.company_id as string,
+        name: area.company_name as string,
+      })),
+  ]);
+  const createProcessAreas = uniqueCreateProcessAreas([
+    ...(areaDirectoryResult.data ?? []).map((area) => ({
+      company_id: area.company_id,
+      company_name: area.company_name,
+      id: area.id,
+      name: area.name,
+    })),
+    ...roleDictionaryResult.data
+      .filter((role) => role.area_id && role.area_name)
+      .map((role) => ({
+        company_id: role.company_id,
+        company_name: role.company_name,
+        id: role.area_id as string,
+        name: role.area_name as string,
+      })),
+  ]);
 
   const companyOptions = Array.from(
     new Set(
@@ -252,6 +340,14 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
       eyebrow={`${activeProcesses.length} Procesos`}
       title="Procesos oficiales"
     >
+      <div className="mb-4 mt-5 flex justify-end">
+        <CreateProcessModal
+          areas={createProcessAreas}
+          companies={createProcessCompanies}
+          optionsError={areaDirectoryResult.error?.message ?? roleDictionaryResult.error?.message ?? null}
+        />
+      </div>
+
       {!catalogResult.error ? <ProcessMacroMap processes={filteredProcesses} /> : null}
 
       <AccordionPanel

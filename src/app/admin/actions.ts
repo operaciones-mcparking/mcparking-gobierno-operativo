@@ -630,6 +630,7 @@ export async function addArea(formData: FormData) {
 
 export async function addProcess(formData: FormData) {
   const { supabase } = await requireAdminAccess();
+  const returnTo = internalReturnTo(formData, "/admin");
   const requestContext = await requestOperationalContext();
   const companyId = value(formData, "company_id");
   const explicitSiteId =
@@ -659,6 +660,7 @@ export async function addProcess(formData: FormData) {
       description: optionalValue(formData, "description"),
       objective: optionalValue(formData, "objective"),
       expected_result: optionalValue(formData, "expected_result"),
+      process_type: processTypeValue(formData),
       criticality: value(formData, "criticality"),
       documentation_status: value(formData, "documentation_status"),
       is_replicable: checkbox(formData, "is_replicable"),
@@ -668,10 +670,10 @@ export async function addProcess(formData: FormData) {
   );
 
   if (error) {
-    fail(error.message);
+    fail(error.message, returnTo);
   }
 
-  done("Proceso guardado");
+  done("Proceso guardado", returnTo);
 }
 
 export async function addSubprocess(formData: FormData) {
