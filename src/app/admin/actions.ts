@@ -1520,7 +1520,7 @@ export async function assignProcessSystem(formData: FormData) {
 
 export async function updateProcessBasics(formData: FormData) {
   const processId = value(formData, "process_id");
-  const returnTo = `/procesos/${processId}/editar`;
+  const returnTo = internalReturnTo(formData, `/procesos/${processId}/editar`);
   const { supabase } = await requireAdminAccess();
   const { error } = await supabase
     .from("processes")

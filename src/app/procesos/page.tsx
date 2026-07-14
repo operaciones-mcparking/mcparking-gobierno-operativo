@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ChevronRight, FileText } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import { ProcessFilters } from "@/components/dashboard/process-filters";
@@ -11,6 +10,7 @@ import {
   getRoleDictionary,
 } from "@/lib/dashboard/data";
 import { CreateProcessModal } from "./create-process-modal";
+import { ProcessDetailModal } from "./process-detail-modal";
 import { ProcessMacroMap } from "./process-macro-map";
 
 function TextValue({ value }: { value: string | null | undefined }) {
@@ -313,14 +313,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                         </div>
 
                         <div className="flex justify-start xl:justify-end">
-                          <Link
-                            className="inline-flex items-center gap-2 rounded-full bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea transition hover:bg-[#dff0f7]"
-                            href={`/procesos/${process.process_id}`}
-                            title="Ver ficha"
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            Ver ficha
-                          </Link>
+                          <ProcessDetailModal process={process} stages={rows} />
                         </div>
                       </div>
                     </summary>

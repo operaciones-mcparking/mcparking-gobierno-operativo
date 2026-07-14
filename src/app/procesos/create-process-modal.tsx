@@ -20,7 +20,7 @@ const inputClass =
   "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
 
 const processTypeOptions = [
-  { label: "Estratégico", value: "strategic" },
+  { label: "Estrategico", value: "strategic" },
   { label: "Operativo / Clave", value: "operational" },
   { label: "Soporte", value: "support" },
 ];
@@ -77,7 +77,7 @@ export function CreateProcessModal({
           <section
             aria-labelledby="create-process-title"
             aria-modal="true"
-            className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-[#cbd8e3] bg-white shadow-[0_24px_70px_rgba(2,53,116,0.20)]"
+            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#cbd8e3] bg-white shadow-[0_24px_70px_rgba(2,53,116,0.20)]"
             role="dialog"
           >
             <header className="flex items-start justify-between gap-4 border-b border-[#d6e1ea] px-5 py-4">
@@ -119,6 +119,23 @@ export function CreateProcessModal({
                 </div>
               ) : null}
 
+              <Field label="Nombre del proceso">
+                <input className={inputClass} name="name" required />
+              </Field>
+
+              <Field label="Descripcion corta">
+                <textarea className={`${inputClass} min-h-24`} name="description" />
+              </Field>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Field label="Objetivo">
+                  <textarea className={`${inputClass} min-h-28`} name="objective" />
+                </Field>
+                <Field label="Resultado esperado">
+                  <textarea className={`${inputClass} min-h-28`} name="expected_result" />
+                </Field>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Empresa">
                   <select
@@ -139,9 +156,9 @@ export function CreateProcessModal({
                     )}
                   </select>
                 </Field>
-                <Field label="Área">
+                <Field label="Area">
                   <select className={inputClass} name="area_id">
-                    <option value="">Sin área</option>
+                    <option value="">Sin area</option>
                     {visibleAreas.map((area) => (
                       <option key={area.id} value={area.id}>
                         {areaLabel(area)}
@@ -156,14 +173,6 @@ export function CreateProcessModal({
                   ) : null}
                 </Field>
               </div>
-
-              <Field label="Nombre del proceso">
-                <input className={inputClass} name="name" required />
-              </Field>
-
-              <Field label="Descripción corta">
-                <textarea className={`${inputClass} min-h-24`} name="description" />
-              </Field>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Tipo de proceso">
