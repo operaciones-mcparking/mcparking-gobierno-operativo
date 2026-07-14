@@ -1543,6 +1543,29 @@ export async function updateProcessBasics(formData: FormData) {
   done("Proceso actualizado", returnTo);
 }
 
+export async function updateSubprocessBasics(formData: FormData) {
+  const processId = value(formData, "process_id");
+  const subprocessId = value(formData, "subprocess_id");
+  const returnTo = internalReturnTo(formData, `/procesos/${processId}/editar`);
+  const { supabase } = await requireAdminAccess();
+  const { error } = await supabase
+    .from("subprocesses")
+    .update({
+      name: value(formData, "name"),
+      description: optionalValue(formData, "description"),
+      criticality: value(formData, "criticality"),
+      impact_percent: numberValue(formData, "impact_percent"),
+    })
+    .eq("id", subprocessId)
+    .eq("process_id", processId);
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  done("Etapa actualizada", returnTo);
+}
+
 export async function archiveProcess(formData: FormData) {
   const processId = value(formData, "process_id");
 

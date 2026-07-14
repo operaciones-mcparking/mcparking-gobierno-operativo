@@ -171,7 +171,7 @@ export function ProcessDetailModal({
                 >
                   Cerrar
                 </button>
-                <ProcessEditModal process={process} />
+                <ProcessEditModal process={process} stages={stages} />
               </div>
             </div>
           </section>
