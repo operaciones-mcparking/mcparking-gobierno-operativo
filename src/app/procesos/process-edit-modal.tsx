@@ -3,7 +3,11 @@
 import { Pencil, Save, X } from "lucide-react";
 import { useState } from "react";
 
-import { updateProcessBasics, updateSubprocessBasics } from "@/app/admin/actions";
+import {
+  addSubprocessBasic,
+  updateProcessBasics,
+  updateSubprocessBasics,
+} from "@/app/admin/actions";
 import {
   criticalityOptions,
   documentationOptions,
@@ -112,6 +116,74 @@ function StageBasicsForm({
   );
 }
 
+function AddStageForm({
+  nextSortOrder,
+  processId,
+}: {
+  nextSortOrder: number;
+  processId: string;
+}) {
+  return (
+    <form
+      action={addSubprocessBasic}
+      className="rounded-xl border border-dashed border-[#b9d4e4] bg-[#f7fbfd] p-4"
+    >
+      <input name="process_id" type="hidden" value={processId} />
+      <input name="return_to" type="hidden" value="/procesos" />
+      <input name="sort_order" type="hidden" value={nextSortOrder} />
+
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div>
+          <h4 className="text-sm font-medium text-navy">Agregar etapa</h4>
+          <p className="mt-1 text-sm leading-5 text-slate-600">
+            Crea una etapa basica. Roles, sistemas, riesgos y controles se completan despues.
+          </p>
+        </div>
+        <button
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-sea px-3 py-2 text-sm font-medium text-white transition hover:bg-[#007bb0]"
+          type="submit"
+        >
+          <Save className="h-4 w-4" />
+          Agregar etapa
+        </button>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_150px_130px]">
+        <Field label="Nombre de la etapa">
+          <input className={inputClass} name="name" required />
+        </Field>
+        <Field label="Criticidad">
+          <select className={inputClass} defaultValue="medium" name="criticality">
+            {criticalityOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Impacto %">
+          <input
+            className={inputClass}
+            max={100}
+            min={0}
+            name="impact_percent"
+            type="number"
+          />
+        </Field>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_180px]">
+        <Field label="Descripcion">
+          <textarea className={`${inputClass} min-h-20`} name="description" />
+        </Field>
+        <Field label="Frecuencia">
+          <input className={inputClass} name="frequency" placeholder="Ej: mensual" />
+        </Field>
+      </div>
+    </form>
+  );
+}
+
 export function ProcessEditModal({
   process,
   stages,
@@ -120,6 +192,8 @@ export function ProcessEditModal({
   stages: ProcessMatrixRow[];
 }) {
   const [open, setOpen] = useState(false);
+  const nextSortOrder =
+    stages.reduce((max, stage) => Math.max(max, Number(stage.sort_order ?? 0)), 0) + 1;
 
   return (
     <>
@@ -296,6 +370,10 @@ export function ProcessEditModal({
                   Este proceso aun no tiene etapas registradas.
                 </div>
               )}
+
+              <div className="mt-4">
+                <AddStageForm nextSortOrder={nextSortOrder} processId={process.process_id} />
+              </div>
             </section>
           </section>
         </div>
