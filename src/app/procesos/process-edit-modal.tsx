@@ -7,13 +7,18 @@ import {
   addSubprocessBasic,
   updateProcessBasics,
   updateSubprocessBasics,
+  updateSubprocessOwnerRole,
 } from "@/app/admin/actions";
 import {
   criticalityOptions,
   documentationOptions,
   statusOptions,
 } from "@/components/dashboard/badge";
-import type { ProcessCatalogItem, ProcessMatrixRow } from "@/lib/dashboard/data";
+import type {
+  ProcessCatalogItem,
+  ProcessMatrixRow,
+  RoleDictionaryItem,
+} from "@/lib/dashboard/data";
 
 const inputClass =
   "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
@@ -40,78 +45,150 @@ function Field({
 }
 
 function StageBasicsForm({
+  currentOwnerRoleId,
   processId,
+  roleDictionary,
   stage,
   stageNumber,
 }: {
+  currentOwnerRoleId: string;
   processId: string;
+  roleDictionary: RoleDictionaryItem[];
   stage: ProcessMatrixRow;
   stageNumber: number;
 }) {
+  const activeRoles = roleDictionary.filter((role) => role.role_status === "active");
+
   return (
-    <form
-      action={updateSubprocessBasics}
-      className="rounded-xl border border-[#dce7ef] bg-[#fbfdfe] p-4"
-    >
+    <div className="rounded-xl border border-[#dce7ef] bg-[#fbfdfe] p-4">
+      <form action={updateSubprocessBasics}>
+        <input name="process_id" type="hidden" value={processId} />
+        <input name="subprocess_id" type="hidden" value={stage.subprocess_id} />
+        <input name="return_to" type="hidden" value="/procesos" />
+
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-sea">
+              Etapa {stage.sort_order ?? stageNumber}
+            </p>
+            <p className="mt-1 text-sm font-medium text-navy">{stage.subprocess_name}</p>
+          </div>
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
+            type="submit"
+          >
+            <Save className="h-4 w-4 text-sea" />
+            Guardar etapa
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_150px_130px]">
+          <Field label="Nombre">
+            <input
+              className={inputClass}
+              defaultValue={stage.subprocess_name}
+              name="name"
+              required
+            />
+          </Field>
+          <Field label="Criticidad">
+            <select className={inputClass} defaultValue={stage.criticality} name="criticality">
+              {criticalityOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Impacto %">
+            <input
+              className={inputClass}
+              defaultValue={stage.impact_percent ?? ""}
+              max={100}
+              min={0}
+              name="impact_percent"
+              type="number"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-4">
+          <Field label="Descripcion">
+            <textarea
+              className={`${inputClass} min-h-20`}
+              defaultValue={stage.subprocess_description ?? ""}
+              name="description"
+            />
+          </Field>
+        </div>
+      </form>
+
+      <OwnerRoleForm
+        currentOwnerRoleId={currentOwnerRoleId}
+        processId={processId}
+        roles={activeRoles}
+        stage={stage}
+      />
+    </div>
+  );
+}
+
+function roleOptionLabel(role: RoleDictionaryItem) {
+  const context = [role.area_name, role.company_name].filter(Boolean).join(" - ");
+
+  return context ? `${role.role_name} (${context})` : role.role_name;
+}
+
+function OwnerRoleForm({
+  currentOwnerRoleId,
+  processId,
+  roles,
+  stage,
+}: {
+  currentOwnerRoleId: string;
+  processId: string;
+  roles: RoleDictionaryItem[];
+  stage: ProcessMatrixRow;
+}) {
+  const [selectedRoleId, setSelectedRoleId] = useState(currentOwnerRoleId);
+  const selectedRole = roles.find((role) => role.role_id === selectedRoleId);
+  const currentPerson = selectedRole?.current_person_name ?? "Sin persona asignada";
+
+  return (
+    <form action={updateSubprocessOwnerRole} className="mt-4 border-t border-[#d6e1ea] pt-4">
       <input name="process_id" type="hidden" value={processId} />
       <input name="subprocess_id" type="hidden" value={stage.subprocess_id} />
+      <input name="criticality" type="hidden" value={stage.criticality} />
+      <input name="impact_percent" type="hidden" value={stage.impact_percent ?? ""} />
       <input name="return_to" type="hidden" value="/procesos" />
 
-      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-sea">
-            Etapa {stage.sort_order ?? stageNumber}
-          </p>
-          <p className="mt-1 text-sm font-medium text-navy">{stage.subprocess_name}</p>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
+        <Field label="Rol dueno">
+          <select
+            className={inputClass}
+            name="owner_role_id"
+            onChange={(event) => setSelectedRoleId(event.target.value)}
+            value={selectedRoleId}
+          >
+            <option value="">Sin rol dueno</option>
+            {roles.map((role) => (
+              <option key={role.role_id} value={role.role_id}>
+                {roleOptionLabel(role)}
+              </option>
+            ))}
+          </select>
+        </Field>
         <button
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy transition hover:bg-[#f6f8fa]"
           type="submit"
         >
           <Save className="h-4 w-4 text-sea" />
-          Guardar etapa
+          Guardar rol dueno
         </button>
       </div>
-
-      <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_150px_130px]">
-        <Field label="Nombre">
-          <input
-            className={inputClass}
-            defaultValue={stage.subprocess_name}
-            name="name"
-            required
-          />
-        </Field>
-        <Field label="Criticidad">
-          <select className={inputClass} defaultValue={stage.criticality} name="criticality">
-            {criticalityOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Impacto %">
-          <input
-            className={inputClass}
-            defaultValue={stage.impact_percent ?? ""}
-            max={100}
-            min={0}
-            name="impact_percent"
-            type="number"
-          />
-        </Field>
-      </div>
-
-      <div className="mt-4">
-        <Field label="Descripcion">
-          <textarea
-            className={`${inputClass} min-h-20`}
-            defaultValue={stage.subprocess_description ?? ""}
-            name="description"
-          />
-        </Field>
-      </div>
+      <p className="mt-2 text-xs text-slate-500">
+        Persona actual: {selectedRoleId ? currentPerson : "No definida"}
+      </p>
     </form>
   );
 }
@@ -185,10 +262,14 @@ function AddStageForm({
 }
 
 export function ProcessEditModal({
+  ownerRoleBySubprocess,
   process,
+  roleDictionary,
   stages,
 }: {
+  ownerRoleBySubprocess: Record<string, string>;
   process: ProcessCatalogItem;
+  roleDictionary: RoleDictionaryItem[];
   stages: ProcessMatrixRow[];
 }) {
   const [open, setOpen] = useState(false);
@@ -358,8 +439,10 @@ export function ProcessEditModal({
                 <div className="mt-4 grid gap-3">
                   {stages.map((stage, index) => (
                     <StageBasicsForm
+                      currentOwnerRoleId={ownerRoleBySubprocess[stage.subprocess_id] ?? ""}
                       key={stage.subprocess_id}
                       processId={process.process_id}
+                      roleDictionary={roleDictionary}
                       stage={stage}
                       stageNumber={index + 1}
                     />

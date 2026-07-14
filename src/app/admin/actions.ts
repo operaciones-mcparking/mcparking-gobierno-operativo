@@ -1587,6 +1587,28 @@ export async function addSubprocessBasic(formData: FormData) {
   done("Etapa agregada", returnTo);
 }
 
+export async function updateSubprocessOwnerRole(formData: FormData) {
+  const processId = value(formData, "process_id");
+  const subprocessId = value(formData, "subprocess_id");
+  const returnTo = internalReturnTo(formData, `/procesos/${processId}/editar`);
+  const { supabase } = await requireAdminAccess();
+  const error = await replaceProcessRole({
+    supabase,
+    criticality: value(formData, "criticality"),
+    impactPercent: numberValue(formData, "impact_percent"),
+    processId,
+    responsibilityType: "owner",
+    roleId: optionalValue(formData, "owner_role_id"),
+    subprocessId,
+  });
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  done("Rol due\u00f1o actualizado", returnTo);
+}
+
 export async function archiveProcess(formData: FormData) {
   const processId = value(formData, "process_id");
 

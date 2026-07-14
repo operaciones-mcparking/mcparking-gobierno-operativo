@@ -137,6 +137,12 @@ export type ProcessMatrixRow = {
   controls: string | null;
 };
 
+export type ProcessStageOwnerRole = {
+  process_id: string;
+  subprocess_id: string;
+  role_id: string;
+};
+
 export type ProcessBottleneck = {
   process_id: string;
   process_name: string;
@@ -350,6 +356,23 @@ export async function getProcessMatrix(processId?: string) {
   const { data, error } = await query;
 
   return { data: (data ?? []) as ProcessMatrixRow[], error };
+}
+
+export async function getProcessStageOwnerRoles(processIds: string[] = []) {
+  const supabase = createSupabaseServerClient();
+  let query = supabase
+    .from("process_roles")
+    .select("process_id,subprocess_id,role_id")
+    .eq("responsibility_type", "owner")
+    .not("subprocess_id", "is", null);
+
+  if (processIds.length > 0) {
+    query = query.in("process_id", processIds);
+  }
+
+  const { data, error } = await query;
+
+  return { data: (data ?? []) as ProcessStageOwnerRole[], error };
 }
 
 export async function getProcessBottlenecks(processId?: string) {

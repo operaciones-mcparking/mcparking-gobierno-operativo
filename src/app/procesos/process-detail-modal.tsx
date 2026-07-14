@@ -4,7 +4,11 @@ import { FileText, X } from "lucide-react";
 import { useState } from "react";
 
 import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
-import type { ProcessCatalogItem, ProcessMatrixRow } from "@/lib/dashboard/data";
+import type {
+  ProcessCatalogItem,
+  ProcessMatrixRow,
+  RoleDictionaryItem,
+} from "@/lib/dashboard/data";
 import { ProcessEditModal } from "./process-edit-modal";
 
 const processTypeLabels: Record<ProcessCatalogItem["process_type"], string> = {
@@ -29,10 +33,14 @@ function DetailItem({
 }
 
 export function ProcessDetailModal({
+  ownerRoleBySubprocess,
   process,
+  roleDictionary,
   stages,
 }: {
+  ownerRoleBySubprocess: Record<string, string>;
   process: ProcessCatalogItem;
+  roleDictionary: RoleDictionaryItem[];
   stages: ProcessMatrixRow[];
 }) {
   const [open, setOpen] = useState(false);
@@ -171,7 +179,12 @@ export function ProcessDetailModal({
                 >
                   Cerrar
                 </button>
-                <ProcessEditModal process={process} stages={stages} />
+                <ProcessEditModal
+                  ownerRoleBySubprocess={ownerRoleBySubprocess}
+                  process={process}
+                  roleDictionary={roleDictionary}
+                  stages={stages}
+                />
               </div>
             </div>
           </section>

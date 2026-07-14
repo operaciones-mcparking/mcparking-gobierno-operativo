@@ -7,6 +7,7 @@ import {
   getAreaDirectory,
   getProcessCatalog,
   getProcessMatrix,
+  getProcessStageOwnerRoles,
   getRoleDictionary,
 } from "@/lib/dashboard/data";
 import { CreateProcessModal } from "./create-process-modal";
@@ -136,11 +137,12 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
     countryId: params.country_id ?? null,
     siteId: params.site_id ?? null,
   };
-  const [catalogResult, matrixResult, areaDirectoryResult, roleDictionaryResult] = await Promise.all([
+  const [catalogResult, matrixResult, areaDirectoryResult, roleDictionaryResult, stageOwnerRolesResult] = await Promise.all([
     getProcessCatalog(context),
     getProcessMatrix(),
     getAreaDirectory(context),
     getRoleDictionary(context),
+    getProcessStageOwnerRoles(),
   ]);
   const activeProcesses = catalogResult.data.filter((process) => process.status === "active");
   const createProcessSource = activeProcesses.length > 0 ? activeProcesses : catalogResult.data;
@@ -211,6 +213,9 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const filteredProcessIds = new Set(filteredProcesses.map((process) => process.process_id));
   const groupedRows = groupedByProcess(
     matrixResult.data.filter((row) => filteredProcessIds.has(row.process_id)),
+  );
+  const ownerRoleBySubprocess = Object.fromEntries(
+    stageOwnerRolesResult.data.map((ownerRole) => [ownerRole.subprocess_id, ownerRole.role_id]),
   );
   const processCount =
     filteredProcesses.length === activeProcesses.length
@@ -313,7 +318,12 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                         </div>
 
                         <div className="flex justify-start xl:justify-end">
-                          <ProcessDetailModal process={process} stages={rows} />
+                          <ProcessDetailModal
+                            ownerRoleBySubprocess={ownerRoleBySubprocess}
+                            process={process}
+                            roleDictionary={roleDictionaryResult.data}
+                            stages={rows}
+                          />
                         </div>
                       </div>
                     </summary>
