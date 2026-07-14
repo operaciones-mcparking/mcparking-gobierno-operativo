@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FileText, X } from "lucide-react";
 import { useState } from "react";
@@ -28,6 +28,36 @@ function DetailItem({
     <div className="rounded-lg border border-[#dce7ef] bg-[#fbfdfe] px-3 py-2">
       <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{label}</p>
       <div className="mt-1 text-sm font-medium text-navy">{value}</div>
+    </div>
+  );
+}
+
+function roleText(roleName: string | null, personName: string | null) {
+  if (!roleName || roleName === "No definido") {
+    return "No definido";
+  }
+
+  return [roleName, personName ?? "Sin persona asignada"].join(" \u00b7 ");
+}
+
+function StageRoles({ stage }: { stage: ProcessMatrixRow }) {
+  const roles = [
+    { label: "Dueño", value: roleText(stage.owner_role_name, stage.owner_person_name) },
+    { label: "Usuario", value: roleText(stage.user_role_name, stage.user_person_name) },
+    { label: "Apoyo", value: roleText(stage.support_role_name, stage.support_person_name) },
+    { label: "Respaldo", value: roleText(stage.backup_role_name, stage.backup_person_name) },
+  ];
+
+  return (
+    <div className="mt-2 grid gap-1.5 text-xs text-slate-600 sm:grid-cols-2">
+      {roles.map((role) => (
+        <p key={role.label}>
+          <span className="font-medium text-slate-500">{role.label}:</span>{" "}
+          <span className={role.value === "No definido" ? "text-slate-400" : "text-slate-700"}>
+            {role.value}
+          </span>
+        </p>
+      ))}
     </div>
   );
 }
@@ -150,9 +180,7 @@ export function ProcessDetailModal({
                                 {stage.subprocess_description}
                               </p>
                             ) : null}
-                            <p className="mt-1 text-xs text-slate-500">
-                              Rol dueno: {stage.owner_role_name ?? "Sin rol dueno"}
-                            </p>
+                            <StageRoles stage={stage} />
                           </div>
                           <div className="flex shrink-0 flex-wrap gap-2">
                             <TypedBadge type="criticality" value={stage.criticality} />

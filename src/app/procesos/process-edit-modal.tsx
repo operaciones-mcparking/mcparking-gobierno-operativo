@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Pencil, Save, X } from "lucide-react";
 import { useState } from "react";
@@ -139,6 +139,40 @@ function roleOptionLabel(role: RoleDictionaryItem) {
   return context ? `${role.role_name} (${context})` : role.role_name;
 }
 
+function roleText(roleName: string | null, personName: string | null) {
+  if (!roleName || roleName === "No definido") {
+    return "No definido";
+  }
+
+  return [roleName, personName ?? "Sin persona asignada"].join(" \u00b7 ");
+}
+
+function ReadOnlyStageRoles({ stage }: { stage: ProcessMatrixRow }) {
+  const roles = [
+    { label: "Usuario", value: roleText(stage.user_role_name, stage.user_person_name) },
+    { label: "Apoyo / consultado", value: roleText(stage.support_role_name, stage.support_person_name) },
+    { label: "Respaldo", value: roleText(stage.backup_role_name, stage.backup_person_name) },
+  ];
+
+  return (
+    <div className="mt-4 rounded-lg border border-[#dce7ef] bg-white px-3 py-3">
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+        Otros roles de la etapa
+      </p>
+      <div className="mt-2 grid gap-1.5 text-xs text-slate-600 sm:grid-cols-2">
+        {roles.map((role) => (
+          <p key={role.label}>
+            <span className="font-medium text-slate-500">{role.label}:</span>{" "}
+            <span className={role.value === "No definido" ? "text-slate-400" : "text-slate-700"}>
+              {role.value}
+            </span>
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OwnerRoleForm({
   currentOwnerRoleId,
   processId,
@@ -163,14 +197,14 @@ function OwnerRoleForm({
       <input name="return_to" type="hidden" value="/procesos" />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-        <Field label="Rol dueno">
+        <Field label="Rol dueño">
           <select
             className={inputClass}
             name="owner_role_id"
             onChange={(event) => setSelectedRoleId(event.target.value)}
             value={selectedRoleId}
           >
-            <option value="">Sin rol dueno</option>
+            <option value="">Sin rol dueño</option>
             {roles.map((role) => (
               <option key={role.role_id} value={role.role_id}>
                 {roleOptionLabel(role)}
@@ -183,12 +217,13 @@ function OwnerRoleForm({
           type="submit"
         >
           <Save className="h-4 w-4 text-sea" />
-          Guardar rol dueno
+          Guardar rol dueño
         </button>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        Persona actual: {selectedRoleId ? currentPerson : "No definida"}
+        Persona actual: {selectedRoleId ? currentPerson : "Sin persona asignada"}
       </p>
+      <ReadOnlyStageRoles stage={stage} />
     </form>
   );
 }

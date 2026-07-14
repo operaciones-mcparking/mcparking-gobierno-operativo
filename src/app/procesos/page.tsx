@@ -14,8 +14,12 @@ import { CreateProcessModal } from "./create-process-modal";
 import { ProcessDetailModal } from "./process-detail-modal";
 import { ProcessMacroMap } from "./process-macro-map";
 
-function TextValue({ value }: { value: string | null | undefined }) {
-  return <span>{value && value.length > 0 ? value : "No definido"}</span>;
+function ownerRoleText(roleName: string | null, personName: string | null) {
+  if (!roleName || roleName === "No definido") {
+    return "Dueño: No definido";
+  }
+
+  return `Dueño: ${roleName} · ${personName ?? "Sin persona asignada"}`;
 }
 
 function AccordionPanel({
@@ -337,7 +341,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                             <div>
                               <p className="text-sm font-medium text-navy">Vista rapida de etapas</p>
                               <p className="text-sm text-slate-600">
-                                Orden operativo, rol dueno e impacto dentro del proceso.
+                                Orden operativo, rol dueño e impacto dentro del proceso.
                               </p>
                             </div>
                             <span className="text-xs font-medium text-slate-500">
@@ -348,7 +352,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                           <div className="overflow-hidden rounded-xl border border-line bg-white">
                             {rows.map((row, rowIndex) => (
                               <div
-                                className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 md:grid-cols-[42px_minmax(220px,1.4fr)_minmax(160px,1fr)_120px] md:items-center"
+                                className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 md:grid-cols-[42px_minmax(220px,1.4fr)_minmax(220px,1fr)_120px] md:items-center"
                                 key={row.subprocess_id}
                               >
                                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef7fb] text-sm font-medium text-sea">
@@ -358,16 +362,11 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                                   <p className="text-sm font-medium text-navy">
                                     {row.subprocess_name}
                                   </p>
-                                  <p className="mt-1 text-xs text-slate-500">
-                                    {row.owner_person_name
-                                      ? `Persona actual: ${row.owner_person_name}`
-                                      : "Sin persona duena"}
-                                  </p>
                                 </div>
                                 <div className="min-w-0 text-sm">
-                                  <p className="text-xs text-slate-500">Rol dueno</p>
+                                  <p className="text-xs text-slate-500">Responsable funcional</p>
                                   <p className="mt-1 font-medium text-navy">
-                                    <TextValue value={row.owner_role_name} />
+                                    {ownerRoleText(row.owner_role_name, row.owner_person_name)}
                                   </p>
                                 </div>
                                 <div className="text-sm">
