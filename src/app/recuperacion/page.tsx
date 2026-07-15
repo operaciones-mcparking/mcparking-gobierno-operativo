@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { PurchasesUploadMock } from "./purchases-upload-mock";
 
 const kpis = [
   { label: "Carritos perdidos", value: "128", icon: ShoppingCart, tone: "info" as BadgeTone },
@@ -173,6 +174,8 @@ export default function RecuperacionPage() {
             );
           })}
         </section>
+
+        <PurchasesUploadMock />
 
         <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
           <div className="flex flex-col justify-between gap-3 px-5 pt-5 sm:flex-row sm:items-end">
