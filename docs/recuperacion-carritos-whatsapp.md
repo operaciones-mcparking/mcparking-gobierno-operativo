@@ -159,6 +159,246 @@ La tabla clave seria `recovery_attribution_cases`, donde se consolida:
 - Monto recuperado.
 - Confianza del match.
 
+## Diseno staging propuesto
+
+Esta seccion documenta un diseno futuro de staging. No esta implementado y no implica crear tablas todavia.
+
+### Tablas recomendadas
+
+#### `recovery_abandoned_carts`
+
+Proposito: representar carritos perdidos o cancelados desde `BackendIncompleteBookings2`.
+
+Columnas principales:
+
+- `id uuid`
+- `source_id` o `n8n_id`
+- `booking_id`
+- `phone_raw`
+- `phone_normalized`
+- `email_raw`
+- `email_normalized`
+- `type`
+- `parking_code`
+- `cms_url`
+- `bform jsonb`
+- `form_datetime timestamptz`
+- `message_sent boolean`
+- `message_id`
+- `source_created_at`
+- `source_updated_at`
+- `imported_at`
+- `raw_payload jsonb`
+
+#### `recovery_message_tracking`
+
+Proposito: representar eventos de seguimiento desde `Seguimiento`.
+
+Columnas principales:
+
+- `id uuid`
+- `source_id` o `n8n_id`
+- `message_id`
+- `business_phone_raw`
+- `business_phone_normalized`
+- `client_phone_raw`
+- `client_phone_normalized`
+- `message_category`
+- `charge_type`
+- `sent_at`
+- `delivered_at`
+- `read_at`
+- `failed_at`
+- `survey_json jsonb`
+- `source_created_at`
+- `source_updated_at`
+- `imported_at`
+- `raw_payload jsonb`
+
+#### `recovery_whatsapp_messages`
+
+Proposito: representar mensajes y respuestas desde Google Sheet `Whatsapp BBDD`.
+
+Columnas principales:
+
+- `id uuid`
+- `source_row_id`
+- `message_timestamp`
+- `conversation_id`
+- `api_phone_raw`
+- `api_phone_normalized`
+- `wa_id_raw`
+- `wa_id_normalized`
+- `message_bound`
+- `processing_time`
+- `message_type`
+- `time_of_day`
+- `day_of_week`
+- `message_sentiment`
+- `chat_state`
+- `intent_category`
+- `message_text`
+- `text_summary`
+- `imported_at`
+- `raw_payload jsonb`
+
+#### `recovery_bookings_import`
+
+Proposito: representar compras o reservas reales desde `mcp_Buchungen.csv`.
+
+Columnas principales:
+
+- `id uuid`
+- `source_booking_id`
+- `customer_id`
+- `email_raw`
+- `email_normalized`
+- `phone_raw`
+- `phone_normalized`
+- `booking_created_at`
+- `location_code`
+- `parking_code`
+- `arrival_date`
+- `arrival_time`
+- `departure_date`
+- `departure_time`
+- `duration_days`
+- `plate`
+- `booking_number`
+- `booking_status`
+- `paying_status`
+- `price numeric(12,2)`
+- `is_valid_purchase boolean`
+- `imported_batch_id`
+- `imported_at`
+- `raw_payload jsonb`
+
+#### `recovery_import_batches`
+
+Proposito: controlar cargas manuales o programadas.
+
+Columnas principales:
+
+- `id uuid`
+- `source_type`
+- `filename`
+- `uploaded_by`
+- `row_count`
+- `valid_row_count`
+- `invalid_row_count`
+- `status`
+- `created_at`
+- `completed_at`
+- `notes`
+
+#### `recovery_attribution_cases`
+
+Proposito: consolidar el resultado del matching entre carrito, mensaje, respuesta y compra.
+
+Columnas principales:
+
+- `abandoned_cart_id`
+- `tracking_id`
+- `whatsapp_conversation_id` o `whatsapp_message_id`
+- `attributed_booking_import_id`
+- `attribution_window_hours`
+- `match_confidence`
+- `match_method`
+- `sent_at`
+- `delivered_at`
+- `read_at`
+- `first_client_reply_at`
+- `first_client_reply_text`
+- `intent_category`
+- `message_sentiment`
+- `recovered_purchase_at`
+- `recovered_amount numeric(12,2)`
+- `days_to_purchase`
+- `is_recovered`
+- `created_at`
+- `updated_at`
+
+### Llaves de cruce staging
+
+- Carrito con tracking: `message_id`.
+- Carrito con WhatsApp: `phone_normalized` + ventana temporal.
+- Carrito con compra: `phone_normalized`, `email_normalized` y `booking_id` si aplica.
+- Tracking con WhatsApp: `client_phone_normalized` con `wa_id_normalized` o `api_phone_normalized`.
+- Compra valida: `booking_status in (1, 8)`.
+
+### Normalizacion staging
+
+- Telefonos: normalizar a `56XXXXXXXXX`.
+- Emails: `lowercase` + `trim`.
+- Fechas: guardar como `timestamptz` en una zona unica.
+- Precios: guardar como `numeric(12,2)`.
+- `message_id`: limpiar espacios y conservar formato consistente.
+
+### Indices sugeridos
+
+- `message_id`
+- `phone_normalized`
+- `email_normalized`
+- `booking_id`
+- `form_datetime`
+- `sent_at`
+- `conversation_id`
+- `booking_number`
+- `booking_created_at`
+- `is_valid_purchase`
+- `imported_batch_id`
+
+### Constraints sugeridas
+
+- `unique(source_id)` cuando aplique por fuente.
+- `unique(message_id)` en tracking si `Id_Mensaje` es unico.
+- `unique(imported_batch_id, source_booking_id)` para evitar duplicados en cargas de compras.
+- Checks para `match_confidence`.
+- Checks para `source_type`.
+- Checks para `status`.
+- Checks para `attribution_window_hours`.
+- Check `price >= 0`.
+
+### Seguridad y RLS
+
+Este modulo deberia tener acceso restringido por tratar datos personales y comerciales sensibles:
+
+- Telefonos.
+- Emails.
+- Patentes.
+- Mensajes.
+- Reservas.
+- Monto de compra.
+- Comportamiento de recuperacion.
+
+El acceso deberia limitarse a administradores o a un rol especifico de analitica/operaciones. No deberia estar disponible para usuarios generales.
+
+### Vistas futuras
+
+Cuando existan staging y matching, convendria exponer vistas limpias para la UI:
+
+- `v_recovery_cases`
+- `v_recovery_funnel`
+- `v_recovery_kpis`
+
+### Decision recomendada
+
+Primero conviene prototipo local con datos ficticios o muestra anonimizada.
+
+No partir con Supabase directo hasta cerrar:
+
+- Normalizador telefono/email/fecha.
+- Formato CSV esperado.
+- Reglas de deduplicacion.
+- Ventanas de atribucion.
+
+### Proximas tareas chicas para staging
+
+1. Crear normalizador local con datos ficticios.
+2. Disenar plantilla CSV esperada para compras.
+3. Definir politica de PII y acceso.
+4. Crear migracion staging base solo despues de validar lo anterior.
+
 ## Metricas iniciales
 
 - Carritos perdidos.
