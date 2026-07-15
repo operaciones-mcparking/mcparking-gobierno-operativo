@@ -167,6 +167,64 @@ Una carga futura deberia transformar cada fila en un registro normalizado con:
 - `is_valid_purchase`
 - `raw_payload`
 
+## Observaciones desde muestra real
+
+Muestra auditada: `mcp_Buchungen (3).csv`.
+
+Resumen agregado:
+
+- Filas: 2302.
+- Columnas: 58.
+- Columnas esperadas presentes: todas.
+- Columnas obligatorias presentes: `Id`, `Email`, `Telefon`, `Buchungszeit`, `BookingStatus`, `Preis`.
+- Rango de `Buchungszeit`: 2026-07-08 16:35:09 a 2026-07-15 16:20:51.
+- Precios parseables: 2302 de 2302.
+- Fechas `Buchungszeit` parseables: 2302 de 2302.
+
+Conteo por `BookingStatus`:
+
+| BookingStatus | Filas |
+|---:|---:|
+| 1 | 646 |
+| 2 | 405 |
+| 8 | 1251 |
+
+Compras validas:
+
+- Regla aplicada: `BookingStatus in (1, 8)`.
+- Filas validas: 1897.
+- Monto total valido agregado: 37.369.445.
+- Nota: el campo `Preis` en esta muestra viene como numero ya parseable; no debe multiplicarse por 100 al agregarlo.
+
+Calidad de matching:
+
+- Emails presentes: 2302 de 2302.
+- Emails con formato valido: 2302 de 2302.
+- Telefonos presentes: 2301 de 2302.
+- Telefonos normalizables con regla Chile demo: 2296 de 2302.
+- Filas sin email y sin telefono util para matching: 0.
+
+Duplicados:
+
+- Duplicados por `Id`: 0 grupos.
+- Duplicados por `Buchungsnummer`: 0 grupos.
+
+Columnas extra utiles para `raw_payload` o analisis futuro:
+
+- Datos de cliente/direccion: `Anrede`, `Firma`, `Vorname`, `Name`, `Strasse`, `Hausnummer`, `PLZ`, `Ort`, `Land`.
+- Datos operativos: `PlusID`, `Personenzahl`, `OwnedBy`, `PackageCode`, `Fremdnummer`, `Editor`, `Datum2`, `Kostenstelle`, `SubDaysUsed`.
+- Datos de vuelos: `HFlugnr`, `RFlugnr`.
+- Datos de origen/marketing: `Source`, `SourceURL`, `PromotionCode`, `PromotionCodeCalculatedValue`, `Website`.
+- Datos administrativos: `EmailSent`, `GeneratedInvoice`, `GeneratedPDF`, `ScanStatus`, `TicketPrinted`, `BookingPaid`, `PaymentVersion`, `ReviewEmail`, `PaymentAddedValue`, `PaymentAddedValueUnpaid`, `WebServiceTax`, `LastDateBooking`.
+- Notas: `Anmerkung`, `InternalAnmerkung`.
+
+Riesgos detectados:
+
+- Hay una fila sin telefono y algunas filas no normalizables por la regla chilena demo; el importador debe permitir matching por email cuando telefono falte.
+- La muestra contiene columnas con datos personales o sensibles, como nombres, direccion, patente y notas. No deben exponerse en UI general.
+- Las columnas extra conviene conservarlas en `raw_payload`, pero no todas deben promoverse a columnas analiticas.
+- `BookingStatus = 2` aparece en 405 filas y no debe contarse como compra recuperada bajo la regla inicial.
+
 ## Estado
 
 Estado: documento de contexto. No implementado.
