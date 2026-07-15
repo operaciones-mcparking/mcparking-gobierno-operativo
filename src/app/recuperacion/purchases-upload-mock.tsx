@@ -1,41 +1,173 @@
+"use client";
+
 import { CheckCircle2, Database, FileSpreadsheet, ShieldCheck, Upload } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 
-const previewMetrics = [
-  { label: "Filas", value: "2.302" },
-  { label: "Columnas", value: "58" },
-  { label: "Columnas obligatorias faltantes", value: "0" },
-  { label: "Compras validas", value: "1.897" },
-  { label: "Monto valido", value: "$37.369.445" },
-  { label: "Emails validos", value: "2.302 / 2.302" },
-  { label: "Telefonos normalizables", value: "2.296 / 2.302" },
-  { label: "Duplicados por Id", value: "0" },
-  { label: "Duplicados por Buchungsnummer", value: "0" },
-];
+type ValidationSummary = {
+  bookingStatusCounts: Record<string, number>;
+  columns: number;
+  duplicateBookingNumberGroups: number;
+  duplicateIdGroups: number;
+  emailsTotal: number;
+  emailsValid: number;
+  missingMandatoryColumns: string[];
+  phonesNormalizable: number;
+  phonesTotal: number;
+  rows: number;
+  validPurchaseAmount: number;
+  validPurchaseRows: number;
+};
 
-const bookingStatusCounts = [
-  { label: "BookingStatus 1", value: "646", tone: "success" as BadgeTone },
-  { label: "BookingStatus 2", value: "405", tone: "neutral" as BadgeTone },
-  { label: "BookingStatus 8", value: "1.251", tone: "success" as BadgeTone },
-];
+type ValidationResponse = {
+  error?: string;
+  ok: boolean;
+  summary?: ValidationSummary;
+};
 
 const steps = [
-  { label: "Subir CSV", status: "mock", tone: "info" as BadgeTone },
-  { label: "Validar archivo", status: "mock", tone: "info" as BadgeTone },
-  { label: "Revisar preview", status: "mock", tone: "warning" as BadgeTone },
+  { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
+  { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
+  { label: "Revisar preview", status: "seguro", tone: "warning" as BadgeTone },
   { label: "Confirmar importacion", status: "pendiente", tone: "neutral" as BadgeTone },
   { label: "Guardar en staging", status: "pendiente", tone: "neutral" as BadgeTone },
 ];
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-CL").format(value);
+}
+
+function formatCurrency(value: number) {
+  return `$${formatNumber(value)}`;
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${formatNumber(Math.round(bytes / 1024))} KB`;
+
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
+}
+
+function errorMessageForStatus(status: number, fallback: string) {
+  if (status === 401 || status === 403) {
+    return "No tienes permisos para validar compras. Ingresa con un usuario administrador.";
+  }
+
+  if (status === 413) {
+    return "El archivo supera el limite permitido para esta validacion.";
+  }
+
+  if (status === 400) {
+    return fallback || "Revisa que el archivo exista y tenga formato CSV.";
+  }
+
+  return fallback || "No se pudo validar el archivo. Intenta nuevamente.";
+}
+
 export function PurchasesUploadMock() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [summary, setSummary] = useState<ValidationSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+
+  const previewMetrics = useMemo(() => {
+    if (!summary) {
+      return [
+        { label: "Filas", value: "-" },
+        { label: "Columnas", value: "-" },
+        { label: "Columnas obligatorias faltantes", value: "-" },
+        { label: "Compras validas", value: "-" },
+        { label: "Monto valido", value: "-" },
+        { label: "Emails validos", value: "-" },
+        { label: "Telefonos normalizables", value: "-" },
+        { label: "Duplicados por Id", value: "-" },
+        { label: "Duplicados por Buchungsnummer", value: "-" },
+      ];
+    }
+
+    return [
+      { label: "Filas", value: formatNumber(summary.rows) },
+      { label: "Columnas", value: formatNumber(summary.columns) },
+      { label: "Columnas obligatorias faltantes", value: formatNumber(summary.missingMandatoryColumns.length) },
+      { label: "Compras validas", value: formatNumber(summary.validPurchaseRows) },
+      { label: "Monto valido", value: formatCurrency(summary.validPurchaseAmount) },
+      { label: "Emails validos", value: `${formatNumber(summary.emailsValid)} / ${formatNumber(summary.emailsTotal)}` },
+      {
+        label: "Telefonos normalizables",
+        value: `${formatNumber(summary.phonesNormalizable)} / ${formatNumber(summary.phonesTotal)}`,
+      },
+      { label: "Duplicados por Id", value: formatNumber(summary.duplicateIdGroups) },
+      {
+        label: "Duplicados por Buchungsnummer",
+        value: formatNumber(summary.duplicateBookingNumberGroups),
+      },
+    ];
+  }, [summary]);
+
+  const bookingStatusCounts = useMemo(() => {
+    const counts = summary?.bookingStatusCounts ?? {};
+
+    return ["1", "2", "8"].map((status) => ({
+      label: `BookingStatus ${status}`,
+      tone: status === "2" ? ("neutral" as BadgeTone) : ("success" as BadgeTone),
+      value: counts[status] === undefined ? "-" : formatNumber(counts[status]),
+    }));
+  }, [summary]);
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+
+    setError(null);
+    setSummary(null);
+    setSelectedFile(file);
+  }
+
+  async function handleValidate() {
+    if (!selectedFile) {
+      setError("Selecciona un archivo CSV antes de validar.");
+      return;
+    }
+
+    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+      setError("Solo se aceptan archivos .csv en esta etapa.");
+      return;
+    }
+
+    setError(null);
+    setIsValidating(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/recuperacion/compras/validar", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = (await response.json()) as ValidationResponse;
+
+      if (!response.ok || !payload.ok || !payload.summary) {
+        setError(errorMessageForStatus(response.status, payload.error ?? ""));
+        return;
+      }
+
+      setSummary(payload.summary);
+    } catch {
+      setError("No se pudo conectar con el validador. Revisa la conexion o intenta nuevamente.");
+    } finally {
+      setIsValidating(false);
+    }
+  }
+
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
       <div className="flex flex-col justify-between gap-3 border-b border-[#edf2f6] px-5 py-5 lg:flex-row lg:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-medium tracking-tight text-navy">Carga de compras</h2>
-            <ValueBadge tone="warning">Mock visual - aun no guarda datos</ValueBadge>
+            <ValueBadge tone="warning">Validacion real - aun no guarda datos</ValueBadge>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Sube un CSV de compras para validar columnas, compras validas y montos antes de importarlo al
@@ -58,24 +190,52 @@ export function PurchasesUploadMock() {
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Por ahora solo CSV. Excel se evaluara despues.
             </p>
+            {selectedFile ? (
+              <div className="mt-4 rounded-lg border border-[#d6e1ea] bg-white px-3 py-3 text-sm">
+                <p className="font-medium text-navy">{selectedFile.name}</p>
+                <p className="mt-1 text-xs text-slate-500">Tamano aproximado: {formatFileSize(selectedFile.size)}</p>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-lg border border-[#d6e1ea] bg-white px-3 py-3 text-sm text-slate-500">
+                Sin archivo seleccionado.
+              </p>
+            )}
+            <input
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleFileChange}
+              ref={inputRef}
+              type="file"
+            />
             <div className="mt-4 flex flex-wrap gap-2">
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-slate-500"
-                disabled
+                className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy hover:bg-[#f8fafb]"
+                onClick={() => inputRef.current?.click()}
                 type="button"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 Seleccionar CSV
               </button>
               <button
-                className="inline-flex items-center gap-2 rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white opacity-45"
-                disabled
+                className="inline-flex items-center gap-2 rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white disabled:opacity-45"
+                disabled={!selectedFile || isValidating}
+                onClick={handleValidate}
                 type="button"
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Validar CSV
+                {isValidating ? "Validando..." : "Validar CSV"}
               </button>
             </div>
+            {error ? (
+              <p className="mt-3 rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
+                {error}
+              </p>
+            ) : null}
+            {summary ? (
+              <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
+                Validacion completada. La vista previa muestra solo agregados seguros.
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-xl border border-[#d6e1ea] bg-[#fbfdfe] p-4">
@@ -112,12 +272,16 @@ export function PurchasesUploadMock() {
           <div className="rounded-xl border border-[#d6e1ea] bg-[#fbfdfe] p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
-                <h3 className="text-sm font-medium text-navy">Preview seguro simulado</h3>
+                <h3 className="text-sm font-medium text-navy">Preview seguro</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Basado en la muestra auditada. No corresponde a una importacion real.
+                  {summary
+                    ? "Resultado real de validacion. No corresponde a una importacion."
+                    : "Selecciona un CSV y validalo para ver el resumen real."}
                 </p>
               </div>
-              <ValueBadge tone="warning">Pendiente backend</ValueBadge>
+              <ValueBadge tone={summary ? "success" : "warning"}>
+                {summary ? "Validado" : "Pendiente validacion"}
+              </ValueBadge>
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -151,7 +315,7 @@ export function PurchasesUploadMock() {
             <div className="rounded-xl border border-[#ffd6b0] bg-[#fff7ef] p-4 md:w-56">
               <div className="flex items-center gap-2 text-[#86510d]">
                 <Database className="h-4 w-4" />
-                <h3 className="text-sm font-medium">Importacion</h3>
+                <h3 className="text-sm font-medium">Importación</h3>
               </div>
               <p className="mt-2 text-xs leading-5 text-[#86510d]">
                 Confirmar importacion y guardar en staging aun no estan implementados.
@@ -161,7 +325,7 @@ export function PurchasesUploadMock() {
                 disabled
                 type="button"
               >
-                Confirmar importación
+                Disponible en la siguiente etapa
               </button>
             </div>
           </div>
