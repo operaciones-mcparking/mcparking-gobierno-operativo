@@ -136,6 +136,26 @@ Estas reglas deben alinearse con el script local `scripts/recovery/normalizer-de
 - Devuelve `true` solo si `BookingStatus` es `1` o `8`.
 - Otros estados no cuentan como compra valida recuperada.
 
+## Validador local
+
+Antes de implementar una carga manual en la web o crear tablas en Supabase, se puede revisar un CSV localmente con:
+
+```bash
+node scripts/recovery/validate-purchases-csv.js "ruta/al/archivo.csv"
+```
+
+El validador entrega un resumen seguro de:
+
+- columnas obligatorias presentes o faltantes;
+- conteos por `BookingStatus`;
+- compras validas segun `BookingStatus in (1, 8)`;
+- monto total valido agregado;
+- calidad de emails y telefonos sin imprimir PII;
+- rango y parseo de fechas;
+- duplicados por `Id` y `Buchungsnummer`.
+
+Este script no sube datos a Supabase, no conecta APIs y no imprime emails, telefonos, patentes ni filas reales. Solo entrega agregados seguros para revisar la calidad del archivo como paso previo a la futura carga manual.
+
 ## Ejemplo CSV ficticio
 
 ```csv
