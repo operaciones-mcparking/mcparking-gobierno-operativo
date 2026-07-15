@@ -5,6 +5,7 @@ const {
   normalizePrice,
   parseDateSafe,
 } = require("./recovery-normalizers");
+const crypto = require("node:crypto");
 
 const EXPECTED_COLUMNS = [
   "Id",
@@ -133,6 +134,68 @@ function duplicateGroupCount(rows, key) {
   return Array.from(counts.values()).filter((count) => count > 1).length;
 }
 
+function cleanText(raw) {
+  if (raw === null || raw === undefined) return null;
+
+  const value = String(raw).trim();
+
+  return value.length > 0 ? value : null;
+}
+
+function integerValue(raw) {
+  const value = Number(String(raw ?? "").trim());
+
+  return Number.isInteger(value) ? value : null;
+}
+
+function dateTimeValue(raw) {
+  const date = parseDateSafe(raw);
+
+  return date ? date.toISOString() : null;
+}
+
+function dateOnlyValue(raw) {
+  const date = parseDateSafe(raw);
+
+  return date ? date.toISOString().slice(0, 10) : null;
+}
+
+function hashNormalizedRow(row) {
+  return crypto.createHash("sha256").update(JSON.stringify(row)).digest("hex");
+}
+
+function normalizePurchaseRow(row) {
+  const bookingStatus = integerValue(row.BookingStatus);
+  const normalized = {
+    arrival_date: dateOnlyValue(row.Anreisedatum),
+    booking_created_at: dateTimeValue(row.Buchungszeit),
+    booking_number: cleanText(row.Buchungsnummer),
+    booking_status: bookingStatus,
+    customer_id: cleanText(row.CustomerId),
+    departure_date: dateOnlyValue(row.Abreisedatum),
+    duration_days: integerValue(row.Dauer),
+    email_normalized: normalizeEmail(row.Email),
+    is_valid_purchase: isValidPurchase(bookingStatus),
+    location_code: cleanText(row.LocationCode),
+    parking_code: cleanText(row.ParkingCode),
+    paying_status: cleanText(row.PayingStatus),
+    phone_normalized: normalizePhone(row.Telefon),
+    price: normalizePrice(row.Preis),
+    source_booking_id: cleanText(row.Id),
+  };
+
+  return {
+    ...normalized,
+    row_hash: hashNormalizedRow(normalized),
+  };
+}
+
+function buildRecoveryBookingImportRows(csvContent) {
+  const { rows } = parseCsv(csvContent);
+
+  return rows.map(normalizePurchaseRow).filter((row) => row.source_booking_id);
+}
+
 function validatePurchasesCsv(csvContent) {
   const { delimiter, headers, rows } = parseCsv(csvContent);
   const missingExpected = EXPECTED_COLUMNS.filter((column) => !headers.includes(column));
@@ -170,6 +233,7 @@ function validatePurchasesCsv(csvContent) {
 }
 
 module.exports = {
+  buildRecoveryBookingImportRows,
   detectDelimiter,
   parseCsv,
   parseCsvRecords,
