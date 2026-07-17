@@ -22,7 +22,7 @@ function formatDate(value: string | null) {
 function formatHours(value: number | null) {
   if (value === null || value === undefined) return "-";
 
-  return `${Number(value).toFixed(2).replace(".", ",")} h`;
+  return `${Number(value).toFixed(1).replace(".", ",")} h`;
 }
 
 function confidenceTone(confidence: string | null): BadgeTone {
@@ -54,7 +54,7 @@ export function RecoveryAttributionCases({ cases, error }: RecoveryAttributionCa
         <div>
           <h2 className="text-base font-medium tracking-tight text-navy">Casos recuperados recientes</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Muestra segura de recuperaciones atribuidas. No incluye emails, telefonos ni identificadores de reserva.
+            Vista interna para auditoria. Muestra contacto normalizado del cliente; no incluye identificadores de reserva ni payloads.
           </p>
         </div>
         <ValueBadge tone="info">Ultimos 20</ValueBadge>
@@ -77,18 +77,19 @@ export function RecoveryAttributionCases({ cases, error }: RecoveryAttributionCa
       ) : null}
 
       {!error && cases.length > 0 ? (
-        <div className="overflow-x-auto px-5 py-5">
-          <table className="min-w-[980px] w-full border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-sm">
+        <div className="px-5 py-5">
+          <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Tipo</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Parking</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Mensaje enviado</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Fecha carrito</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Fecha compra</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Horas hasta compra</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Monto</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Confianza</th>
+                <th className="w-[10%] border-b border-[#d6e1ea] px-2 py-3">Tipo</th>
+                <th className="w-[23%] border-b border-[#d6e1ea] px-2 py-3">Contacto</th>
+                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Parking</th>
+                <th className="w-[10%] border-b border-[#d6e1ea] px-2 py-3">Mensaje</th>
+                <th className="w-[13%] border-b border-[#d6e1ea] px-2 py-3">Fecha carrito</th>
+                <th className="w-[13%] border-b border-[#d6e1ea] px-2 py-3">Fecha compra</th>
+                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Horas</th>
+                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Monto</th>
+                <th className="w-[9%] border-b border-[#d6e1ea] px-2 py-3">Confianza</th>
               </tr>
             </thead>
             <tbody>
@@ -100,27 +101,35 @@ export function RecoveryAttributionCases({ cases, error }: RecoveryAttributionCa
                   <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
                     {item.cart_type ?? "Sin tipo"}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
+                  <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
+                    <div className="break-all font-medium text-navy">
+                      {item.email ?? "Sin correo"}
+                    </div>
+                    <div className="mt-1 break-all text-[11px] text-slate-500">
+                      {item.phone ?? "Sin telefono"}
+                    </div>
+                  </td>
+                  <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {item.parking_code ?? "Sin parking"}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3">
+                  <td className="border-b border-[#edf2f6] px-2 py-3">
                     <ValueBadge tone={messageSentTone(item.message_sent)}>
                       {messageSentLabel(item.message_sent)}
                     </ValueBadge>
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
+                  <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {formatDate(item.cart_form_datetime)}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
+                  <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {formatDate(item.purchase_created_at)}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
+                  <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {formatHours(item.hours_to_purchase)}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 font-medium text-navy">
+                  <td className="border-b border-[#edf2f6] px-2 py-3 font-medium text-navy">
                     {formatCurrency(item.purchase_amount)}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3">
+                  <td className="border-b border-[#edf2f6] px-2 py-3">
                     <ValueBadge tone={confidenceTone(item.confidence)}>
                       {item.confidence ?? "Sin confianza"}
                     </ValueBadge>

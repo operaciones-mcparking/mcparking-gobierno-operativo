@@ -288,10 +288,12 @@ export type RecentRecoveryAttributionCase = {
   cart_form_datetime: string | null;
   cart_type: string | null;
   confidence: string | null;
+  email: string | null;
   hours_to_purchase: number | null;
   match_type: string | null;
   message_sent: boolean | null;
   parking_code: string | null;
+  phone: string | null;
   purchase_amount: number | null;
   purchase_created_at: string | null;
   recovered_24h: boolean | null;
@@ -978,11 +980,22 @@ export async function getRecoveryAttributionBreakdown() {
 export async function getRecentRecoveryAttributionCases(limit = 20) {
   noStore();
 
+  type AttributionCaseRow = RecentRecoveryAttributionCase & {
+    cart_id: string | null;
+    purchase_id: string | null;
+  };
+
+  type ContactRow = {
+    email_normalized: string | null;
+    id: string;
+    phone_normalized: string | null;
+  };
+
   const supabase = await createSupabaseAuthServerClient();
   const { data, error } = await supabase
     .from("v_recovery_attribution_cases")
     .select(
-      "cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
+      "cart_id,purchase_id,cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
     )
     .order("purchase_created_at", { ascending: false })
     .limit(limit);
@@ -991,5 +1004,51 @@ export async function getRecentRecoveryAttributionCases(limit = 20) {
     return { data: [] as RecentRecoveryAttributionCase[], error };
   }
 
-  return { data: (data ?? []) as RecentRecoveryAttributionCase[], error: null };
+  const rows = (data ?? []) as AttributionCaseRow[];
+  const cartIds = Array.from(new Set(rows.map((item) => item.cart_id).filter(Boolean))) as string[];
+  const purchaseIds = Array.from(new Set(rows.map((item) => item.purchase_id).filter(Boolean))) as string[];
+
+  const [cartContactsResult, purchaseContactsResult] = await Promise.all([
+    cartIds.length > 0
+      ? supabase
+          .from("recovery_incomplete_bookings_import")
+          .select("id,email_normalized,phone_normalized")
+          .in("id", cartIds)
+      : Promise.resolve({ data: [] as ContactRow[], error: null }),
+    purchaseIds.length > 0
+      ? supabase
+          .from("recovery_bookings_import")
+          .select("id,email_normalized,phone_normalized")
+          .in("id", purchaseIds)
+      : Promise.resolve({ data: [] as ContactRow[], error: null }),
+  ]);
+
+  if (cartContactsResult.error) {
+    return { data: [] as RecentRecoveryAttributionCase[], error: cartContactsResult.error };
+  }
+
+  if (purchaseContactsResult.error) {
+    return { data: [] as RecentRecoveryAttributionCase[], error: purchaseContactsResult.error };
+  }
+
+  const cartContacts = new Map(
+    ((cartContactsResult.data ?? []) as ContactRow[]).map((item) => [item.id, item]),
+  );
+  const purchaseContacts = new Map(
+    ((purchaseContactsResult.data ?? []) as ContactRow[]).map((item) => [item.id, item]),
+  );
+
+  const enrichedRows = rows.map((item) => {
+    const cartContact = item.cart_id ? cartContacts.get(item.cart_id) : undefined;
+    const purchaseContact = item.purchase_id ? purchaseContacts.get(item.purchase_id) : undefined;
+    const { cart_id: _cartId, purchase_id: _purchaseId, ...safeItem } = item;
+
+    return {
+      ...safeItem,
+      email: cartContact?.email_normalized ?? purchaseContact?.email_normalized ?? null,
+      phone: cartContact?.phone_normalized ?? purchaseContact?.phone_normalized ?? null,
+    };
+  });
+
+  return { data: enrichedRows, error: null };
 }
