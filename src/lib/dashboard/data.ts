@@ -284,6 +284,21 @@ export type RecoveryAttributionBreakdown = {
   total_recovered: number;
 };
 
+export type RecentRecoveryAttributionCase = {
+  cart_form_datetime: string | null;
+  cart_type: string | null;
+  confidence: string | null;
+  hours_to_purchase: number | null;
+  match_type: string | null;
+  message_sent: boolean | null;
+  parking_code: string | null;
+  purchase_amount: number | null;
+  purchase_created_at: string | null;
+  recovered_24h: boolean | null;
+  recovered_48h: boolean | null;
+  recovered_7d: boolean | null;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -958,4 +973,23 @@ export async function getRecoveryAttributionBreakdown() {
     },
     error: null,
   };
+}
+
+export async function getRecentRecoveryAttributionCases(limit = 20) {
+  noStore();
+
+  const supabase = await createSupabaseAuthServerClient();
+  const { data, error } = await supabase
+    .from("v_recovery_attribution_cases")
+    .select(
+      "cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
+    )
+    .order("purchase_created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return { data: [] as RecentRecoveryAttributionCase[], error };
+  }
+
+  return { data: (data ?? []) as RecentRecoveryAttributionCase[], error: null };
 }

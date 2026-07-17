@@ -13,10 +13,12 @@ import {
   getRecoveryAttributionBreakdown,
   getRecoveryAttributionKpis,
   getRecoveryImportHistory,
+  getRecentRecoveryAttributionCases,
 } from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
 import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
+import { RecoveryAttributionCases } from "./recovery-attribution-cases";
 import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
 import { RecoveryImportHistory } from "./recovery-import-history";
 
@@ -142,10 +144,12 @@ export default async function RecuperacionPage() {
     { data: importHistory, error: importHistoryError },
     { data: attributionKpis, error: attributionKpisError },
     { data: attributionBreakdown, error: attributionBreakdownError },
+    { data: recentAttributionCases, error: recentAttributionCasesError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
     getRecoveryAttributionKpis(),
     getRecoveryAttributionBreakdown(),
+    getRecentRecoveryAttributionCases(),
   ]);
 
   return (
@@ -201,6 +205,10 @@ export default async function RecuperacionPage() {
         <RecoveryAttributionBreakdown
           breakdown={attributionBreakdown}
           error={attributionBreakdownError?.message ?? null}
+        />
+        <RecoveryAttributionCases
+          cases={recentAttributionCases}
+          error={recentAttributionCasesError?.message ?? null}
         />
         <PurchasesUploadMock />
         <IncompleteBookingsUploadMock />
