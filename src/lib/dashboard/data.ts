@@ -244,6 +244,7 @@ export type RoleAccessSuggestion = {
 export type RecoveryImportHistoryItem = {
   id: string;
   file_name: string;
+  import_type: string;
   status: string;
   rows_total: number;
   imported_rows: number;
@@ -730,7 +731,7 @@ export async function getRecoveryImportHistory(limit = 10) {
   const supabase = await createSupabaseAuthServerClient();
   const { data: batches, error: batchesError } = await supabase
     .from("recovery_import_batches")
-    .select("id,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at")
+    .select("id,import_type,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at")
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -738,18 +739,21 @@ export async function getRecoveryImportHistory(limit = 10) {
     return { data: [] as RecoveryImportHistoryItem[], error: batchesError };
   }
 
-  const batchIds = (batches ?? []).map((batch) => batch.id).filter(Boolean);
   const importedRowsByBatch = new Map<string, number>();
 
-  if (batchIds.length > 0) {
+  if ((batches ?? []).length > 0) {
     const importedRowCounts = await Promise.all(
-      batchIds.map(async (batchId) => {
+      (batches ?? []).map(async (batch) => {
+        const table =
+          batch.import_type === "incomplete_bookings_csv"
+            ? "recovery_incomplete_bookings_import"
+            : "recovery_bookings_import";
         const { count, error } = await supabase
-          .from("recovery_bookings_import")
+          .from(table)
           .select("id", { count: "exact", head: true })
-          .eq("batch_id", batchId);
+          .eq("batch_id", batch.id);
 
-        return { batchId, count: count ?? 0, error };
+        return { batchId: batch.id, count: count ?? 0, error };
       }),
     );
 
@@ -769,6 +773,7 @@ export async function getRecoveryImportHistory(limit = 10) {
     created_at: batch.created_at,
     file_name: batch.file_name,
     id: batch.id,
+    import_type: batch.import_type,
     imported_rows: importedRowsByBatch.get(batch.id) ?? 0,
     rows_total: batch.rows_total,
     status: batch.status,

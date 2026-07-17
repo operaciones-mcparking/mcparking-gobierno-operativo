@@ -44,6 +44,22 @@ function statusLabel(status: string) {
   return labels[status] ?? status;
 }
 
+function importTypeLabel(importType: string) {
+  const labels: Record<string, string> = {
+    incomplete_bookings_csv: "Carritos perdidos",
+    purchases_csv: "Compras",
+  };
+
+  return labels[importType] ?? importType;
+}
+
+function importTypeTone(importType: string): BadgeTone {
+  if (importType === "incomplete_bookings_csv") return "warning";
+  if (importType === "purchases_csv") return "success";
+
+  return "neutral";
+}
+
 function shortBatchId(id: string) {
   return id.slice(0, 8);
 }
@@ -83,6 +99,7 @@ export function RecoveryImportHistory({ error, imports }: RecoveryImportHistoryP
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Fecha</th>
+                <th className="border-b border-[#d6e1ea] px-3 py-3">Tipo</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Archivo</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Estado</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Filas archivo</th>
@@ -99,8 +116,14 @@ export function RecoveryImportHistory({ error, imports }: RecoveryImportHistoryP
                   <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
                     {formatDate(item.created_at)}
                   </td>
+                  <td className="border-b border-[#edf2f6] px-3 py-3">
+                    <ValueBadge tone={importTypeTone(item.import_type)}>{importTypeLabel(item.import_type)}</ValueBadge>
+                  </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3 font-medium text-navy">
                     {item.file_name}
+                    {item.import_type === "incomplete_bookings_csv" ? (
+                      <p className="mt-1 text-xs font-normal text-slate-500">Carga de carritos perdidos</p>
+                    ) : null}
                   </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3">
                     <ValueBadge tone={statusTone(item.status)}>{statusLabel(item.status)}</ValueBadge>
@@ -112,10 +135,10 @@ export function RecoveryImportHistory({ error, imports }: RecoveryImportHistoryP
                     {formatNumber(item.imported_rows)}
                   </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
-                    {formatNumber(item.valid_purchase_rows)}
+                    {item.import_type === "purchases_csv" ? formatNumber(item.valid_purchase_rows) : "—"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3 font-medium text-navy">
-                    {formatCurrency(item.valid_purchase_amount)}
+                    {item.import_type === "purchases_csv" ? formatCurrency(item.valid_purchase_amount) : "—"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
                     {formatDate(item.confirmed_at)}
