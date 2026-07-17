@@ -1,48 +1,191 @@
-import { AlertTriangle, FileSpreadsheet, ShieldCheck, Upload } from "lucide-react";
+"use client";
+
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, ShieldCheck, Upload } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 
+type IncompleteBookingsValidationSummary = {
+  columns: number;
+  duplicateBookingIdGroups: number;
+  duplicateIdGroups: number;
+  duplicateMessageIdGroups: number;
+  emailsTotal: number;
+  emailsValid: number;
+  formDatetimeParseable: number;
+  messageSentCounts: Record<string, number>;
+  missingCriticalColumns: string[];
+  missingRecommendedColumns: string[];
+  missingRequiredColumns: string[];
+  phonesNormalizable: number;
+  phonesTotal: number;
+  rows: number;
+  rowsWithoutEmailOrPhone: number;
+  typeCounts: Record<string, number>;
+  unknownTypeRows: number;
+};
+
+type ValidationResponse = {
+  error?: string;
+  ok: boolean;
+  summary?: IncompleteBookingsValidationSummary;
+};
+
 const steps = [
-  { label: "Subir CSV", status: "mock", tone: "neutral" as BadgeTone },
-  { label: "Validar archivo", status: "mock", tone: "neutral" as BadgeTone },
+  { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
+  { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
   { label: "Revisar preview", status: "seguro", tone: "warning" as BadgeTone },
   { label: "Preparar staging", status: "pendiente", tone: "neutral" as BadgeTone },
   { label: "Cruzar con compras", status: "pendiente", tone: "neutral" as BadgeTone },
 ];
 
-const previewMetrics = [
-  { label: "Filas", value: "2.300" },
-  { label: "Columnas", value: "13" },
-  { label: "Columnas obligatorias faltantes", value: "0" },
-  { label: "Emails válidos", value: "2.050 / 2.300" },
-  { label: "Teléfonos normalizables", value: "2.100 / 2.300" },
-  { label: "Sin email ni teléfono útil", value: "15" },
-  { label: "form_datetime parseable", value: "2.290 / 2.300" },
-  { label: "Duplicados id", value: "0" },
-  { label: "Duplicados booking_id", value: "0" },
-  { label: "Duplicados Id_Mensaje", value: "5" },
-];
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-CL").format(value);
+}
 
-const typeCounts = [
-  { label: "abandoned", value: "1.700", tone: "info" as BadgeTone },
-  { label: "canceled", value: "600", tone: "warning" as BadgeTone },
-  { label: "unknown", value: "0", tone: "neutral" as BadgeTone },
-];
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${formatNumber(Math.round(bytes / 1024))} KB`;
 
-const messageSentCounts = [
-  { label: "true", value: "1.800", tone: "success" as BadgeTone },
-  { label: "false", value: "400", tone: "neutral" as BadgeTone },
-  { label: "unknown", value: "100", tone: "warning" as BadgeTone },
-];
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace(".", ",")} MB`;
+}
+
+function errorMessageForStatus(status: number, fallback: string) {
+  if (status === 401 || status === 403) {
+    return "No tienes permisos para validar carritos. Ingresa con un usuario administrador.";
+  }
+
+  if (status === 413) {
+    return "El archivo supera el límite permitido de 10 MB.";
+  }
+
+  if (status === 400) {
+    return fallback || "Revisa que el archivo exista y tenga formato CSV.";
+  }
+
+  return fallback || "No se pudo validar el archivo. Intenta nuevamente.";
+}
 
 export function IncompleteBookingsUploadMock() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [summary, setSummary] = useState<IncompleteBookingsValidationSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+
+  const previewMetrics = useMemo(() => {
+    if (!summary) {
+      return [
+        { label: "Filas", value: "-" },
+        { label: "Columnas", value: "-" },
+        { label: "Columnas obligatorias faltantes", value: "-" },
+        { label: "Columnas críticas faltantes", value: "-" },
+        { label: "Columnas recomendadas faltantes", value: "-" },
+        { label: "Emails válidos", value: "-" },
+        { label: "Teléfonos normalizables", value: "-" },
+        { label: "Sin email ni teléfono útil", value: "-" },
+        { label: "form_datetime parseable", value: "-" },
+        { label: "Duplicados id", value: "-" },
+        { label: "Duplicados booking_id", value: "-" },
+        { label: "Duplicados Id_Mensaje", value: "-" },
+      ];
+    }
+
+    return [
+      { label: "Filas", value: formatNumber(summary.rows) },
+      { label: "Columnas", value: formatNumber(summary.columns) },
+      { label: "Columnas obligatorias faltantes", value: formatNumber(summary.missingRequiredColumns.length) },
+      { label: "Columnas críticas faltantes", value: formatNumber(summary.missingCriticalColumns.length) },
+      { label: "Columnas recomendadas faltantes", value: formatNumber(summary.missingRecommendedColumns.length) },
+      { label: "Emails válidos", value: `${formatNumber(summary.emailsValid)} / ${formatNumber(summary.emailsTotal)}` },
+      {
+        label: "Teléfonos normalizables",
+        value: `${formatNumber(summary.phonesNormalizable)} / ${formatNumber(summary.phonesTotal)}`,
+      },
+      { label: "Sin email ni teléfono útil", value: formatNumber(summary.rowsWithoutEmailOrPhone) },
+      {
+        label: "form_datetime parseable",
+        value: `${formatNumber(summary.formDatetimeParseable)} / ${formatNumber(summary.rows)}`,
+      },
+      { label: "Duplicados id", value: formatNumber(summary.duplicateIdGroups) },
+      { label: "Duplicados booking_id", value: formatNumber(summary.duplicateBookingIdGroups) },
+      { label: "Duplicados Id_Mensaje", value: formatNumber(summary.duplicateMessageIdGroups) },
+    ];
+  }, [summary]);
+
+  const typeCounts = useMemo(() => {
+    const counts = summary?.typeCounts ?? {};
+
+    return [
+      { label: "abandoned", value: counts.abandoned === undefined ? "-" : formatNumber(counts.abandoned), tone: "info" as BadgeTone },
+      { label: "canceled", value: counts.canceled === undefined ? "-" : formatNumber(counts.canceled), tone: "warning" as BadgeTone },
+      { label: "unknown", value: summary ? formatNumber(summary.unknownTypeRows) : "-", tone: "neutral" as BadgeTone },
+    ];
+  }, [summary]);
+
+  const messageSentCounts = useMemo(() => {
+    const counts = summary?.messageSentCounts ?? {};
+
+    return [
+      { label: "true", value: counts.true === undefined ? "-" : formatNumber(counts.true), tone: "success" as BadgeTone },
+      { label: "false", value: counts.false === undefined ? "-" : formatNumber(counts.false), tone: "neutral" as BadgeTone },
+      { label: "unknown", value: counts.unknown === undefined ? "-" : formatNumber(counts.unknown), tone: "warning" as BadgeTone },
+    ];
+  }, [summary]);
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+
+    setError(null);
+    setSummary(null);
+    setSelectedFile(file);
+  }
+
+  async function handleValidate() {
+    if (!selectedFile) {
+      setError("Selecciona un archivo CSV antes de validar.");
+      return;
+    }
+
+    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+      setError("Solo se aceptan archivos .csv en esta etapa.");
+      return;
+    }
+
+    setError(null);
+    setSummary(null);
+    setIsValidating(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/recuperacion/carritos/validar", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = (await response.json()) as ValidationResponse;
+
+      if (!response.ok || !payload.ok || !payload.summary) {
+        setError(errorMessageForStatus(response.status, payload.error ?? ""));
+        return;
+      }
+
+      setSummary(payload.summary);
+    } catch {
+      setError("No se pudo conectar con el validador. Revisa la conexión o intenta nuevamente.");
+    } finally {
+      setIsValidating(false);
+    }
+  }
+
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
       <div className="flex flex-col justify-between gap-3 border-b border-[#edf2f6] px-5 py-5 lg:flex-row lg:items-start">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-medium tracking-tight text-navy">Carga de carritos perdidos</h2>
-            <ValueBadge tone="warning">Mock visual — aún no guarda datos</ValueBadge>
+            <ValueBadge tone="warning">Validación real — aún no guarda datos</ValueBadge>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Sube un CSV de BackendIncompleteBookings2 para validar reservas incompletas, abandonos y
@@ -63,27 +206,52 @@ export function IncompleteBookingsUploadMock() {
               Formato esperado: <span className="font-medium text-navy">BackendIncompleteBookings2.csv</span>
             </p>
             <p className="mt-1 text-xs leading-5 text-slate-500">Fuente n8n: BackendIncompleteBookings2.</p>
-            <p className="mt-4 rounded-lg border border-[#e8d7bd] bg-white px-3 py-3 text-sm text-slate-500">
-              Sin archivo seleccionado. Esta sección todavía es solo visual.
-            </p>
+            {selectedFile ? (
+              <div className="mt-4 rounded-lg border border-[#e8d7bd] bg-white px-3 py-3 text-sm">
+                <p className="font-medium text-navy">{selectedFile.name}</p>
+                <p className="mt-1 text-xs text-slate-500">Tamaño aproximado: {formatFileSize(selectedFile.size)}</p>
+              </div>
+            ) : (
+              <p className="mt-4 rounded-lg border border-[#e8d7bd] bg-white px-3 py-3 text-sm text-slate-500">
+                Sin archivo seleccionado.
+              </p>
+            )}
+            <input
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleFileChange}
+              ref={inputRef}
+              type="file"
+            />
             <div className="mt-4 flex flex-wrap gap-2">
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy opacity-55"
-                disabled
+                className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-medium text-navy hover:bg-[#f8fafb]"
+                onClick={() => inputRef.current?.click()}
                 type="button"
               >
                 <FileSpreadsheet className="h-4 w-4" />
                 Seleccionar CSV
               </button>
               <button
-                className="inline-flex items-center gap-2 rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white opacity-45"
-                disabled
+                className="inline-flex items-center gap-2 rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white disabled:opacity-45"
+                disabled={!selectedFile || isValidating}
+                onClick={handleValidate}
                 type="button"
               >
-                <AlertTriangle className="h-4 w-4" />
-                Validar CSV
+                {isValidating ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+                {isValidating ? "Validando..." : "Validar CSV"}
               </button>
             </div>
+            {error ? (
+              <p className="mt-3 rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
+                {error}
+              </p>
+            ) : null}
+            {summary ? (
+              <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
+                Validación completada. La vista previa muestra solo agregados seguros.
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-xl border border-[#d6e1ea] bg-[#fbfdfe] p-4">
@@ -120,12 +288,14 @@ export function IncompleteBookingsUploadMock() {
           <div className="rounded-xl border border-[#d6e1ea] bg-[#fbfdfe] p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
               <div>
-                <h3 className="text-sm font-medium text-navy">Preview seguro simulado</h3>
+                <h3 className="text-sm font-medium text-navy">Preview seguro</h3>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Datos ficticios para validar estructura visual. No corresponde a una carga real.
+                  {summary
+                    ? "Resultado real de validación. No corresponde a una importación."
+                    : "Selecciona un CSV y valídalo para ver el resumen real."}
                 </p>
               </div>
-              <ValueBadge tone="warning">Mock</ValueBadge>
+              <ValueBadge tone={summary ? "success" : "warning"}>{summary ? "Validado" : "Pendiente"}</ValueBadge>
             </div>
 
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -177,7 +347,7 @@ export function IncompleteBookingsUploadMock() {
               <div>
                 <h3 className="text-sm font-medium text-[#86510d]">Preparar importación</h3>
                 <p className="mt-1 text-xs leading-5 text-[#86510d]">
-                  Disponible cuando exista endpoint, staging y reglas de deduplicación.
+                  Disponible cuando exista staging de carritos.
                 </p>
               </div>
               <button
@@ -185,7 +355,7 @@ export function IncompleteBookingsUploadMock() {
                 disabled
                 type="button"
               >
-                Preparar importación
+                Disponible cuando exista staging de carritos
               </button>
             </div>
           </div>
