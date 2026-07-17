@@ -241,6 +241,18 @@ export type RoleAccessSuggestion = {
   status: string;
 };
 
+export type RecoveryImportHistoryItem = {
+  id: string;
+  file_name: string;
+  status: string;
+  rows_total: number;
+  imported_rows: number;
+  valid_purchase_rows: number;
+  valid_purchase_amount: number;
+  created_at: string;
+  confirmed_at: string | null;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -710,4 +722,52 @@ export async function getRoleGovernanceProcesses() {
     .eq("status", "active");
 
   return { data: (data ?? []) as RoleGovernanceProcessItem[], error };
+}
+
+export async function getRecoveryImportHistory(limit = 10) {
+  noStore();
+
+  const supabase = await createSupabaseAuthServerClient();
+  const { data: batches, error: batchesError } = await supabase
+    .from("recovery_import_batches")
+    .select("id,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (batchesError) {
+    return { data: [] as RecoveryImportHistoryItem[], error: batchesError };
+  }
+
+  const batchIds = (batches ?? []).map((batch) => batch.id).filter(Boolean);
+  const importedRowsByBatch = new Map<string, number>();
+
+  if (batchIds.length > 0) {
+    const { data: importedRows, error: importedRowsError } = await supabase
+      .from("recovery_bookings_import")
+      .select("batch_id")
+      .in("batch_id", batchIds);
+
+    if (importedRowsError) {
+      return { data: [] as RecoveryImportHistoryItem[], error: importedRowsError };
+    }
+
+    for (const row of importedRows ?? []) {
+      if (!row.batch_id) continue;
+      importedRowsByBatch.set(row.batch_id, (importedRowsByBatch.get(row.batch_id) ?? 0) + 1);
+    }
+  }
+
+  const data = (batches ?? []).map((batch) => ({
+    confirmed_at: batch.confirmed_at,
+    created_at: batch.created_at,
+    file_name: batch.file_name,
+    id: batch.id,
+    imported_rows: importedRowsByBatch.get(batch.id) ?? 0,
+    rows_total: batch.rows_total,
+    status: batch.status,
+    valid_purchase_amount: Number(batch.valid_purchase_amount ?? 0),
+    valid_purchase_rows: batch.valid_purchase_rows,
+  }));
+
+  return { data, error: null };
 }

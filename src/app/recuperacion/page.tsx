@@ -9,7 +9,9 @@ import {
 } from "lucide-react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { getRecoveryImportHistory } from "@/lib/dashboard/data";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
+import { RecoveryImportHistory } from "./recovery-import-history";
 
 const kpis = [
   { label: "Carritos perdidos", value: "128", icon: ShoppingCart, tone: "info" as BadgeTone },
@@ -128,7 +130,9 @@ function statusTone(status: string): BadgeTone {
   return "neutral";
 }
 
-export default function RecuperacionPage() {
+export default async function RecuperacionPage() {
+  const { data: importHistory, error: importHistoryError } = await getRecoveryImportHistory();
+
   return (
     <main className="min-h-screen bg-[#f6f8fa] text-ink">
       <div className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
@@ -176,6 +180,10 @@ export default function RecuperacionPage() {
         </section>
 
         <PurchasesUploadMock />
+        <RecoveryImportHistory
+          error={importHistoryError?.message ?? null}
+          imports={importHistory}
+        />
 
         <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
           <div className="flex flex-col justify-between gap-3 px-5 pt-5 sm:flex-row sm:items-end">
