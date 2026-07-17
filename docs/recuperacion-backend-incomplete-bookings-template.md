@@ -193,6 +193,34 @@ id,booking_id,phone,email,type,parking_code,cms_url,bform,form_datetime,Message_
 3,BKG-TEST-003,+56 9 1234 5679,,abandoned,MPV,,,"2026-07-15 12:00:00",true,MSG-TEST-003,"2026-07-15 12:01:00","2026-07-15 12:05:00"
 ```
 
+## Validador local
+
+Antes de implementar una carga manual en la web o crear tablas en Supabase, se puede revisar un CSV localmente con:
+
+```bash
+node scripts/recovery/validate-incomplete-bookings-csv.js "ruta/al/BackendIncompleteBookings2.csv"
+```
+
+El validador entrega un resumen seguro de:
+
+- columnas obligatorias presentes o faltantes;
+- columnas recomendadas criticas presentes o faltantes;
+- emails presentes y validos;
+- telefonos presentes y normalizables;
+- filas sin email ni telefono util;
+- valores `type` validos: `abandoned` / `canceled`;
+- valores `type` desconocidos;
+- conteo `Message_Sent=true`;
+- conteo `Message_Sent=false`;
+- conteo `Message_Sent` no parseable;
+- fechas `form_datetime` parseables;
+- rango minimo y maximo de `form_datetime`;
+- duplicados por `id`;
+- duplicados por `booking_id`;
+- duplicados por `Id_Mensaje`.
+
+Este script no sube datos a Supabase, no conecta APIs y no imprime emails, telefonos, `cms_url`, `bform` ni filas reales. Solo entrega agregados seguros para revisar la calidad del archivo como paso previo a una futura carga manual.
+
 ## Proximas tareas chicas
 
 1. Crear normalizador demo local para `BackendIncompleteBookings2` con datos ficticios.
