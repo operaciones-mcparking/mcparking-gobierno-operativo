@@ -258,6 +258,7 @@ export type RecoveryLatestImportSummaryItem = {
   id: string;
   file_name: string;
   import_type: string;
+  insertedRows: number;
   status: string;
   rows_total: number;
   valid_purchase_rows: number;
@@ -898,6 +899,19 @@ export async function getRecoveryLatestImportsSummary() {
       return { data: null as RecoveryLatestImportSummaryItem | null, error: null };
     }
 
+    const table =
+      data.import_type === "incomplete_bookings_csv"
+        ? "recovery_incomplete_bookings_import"
+        : "recovery_bookings_import";
+    const { count: insertedRows, error: insertedRowsError } = await supabase
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("batch_id", data.id);
+
+    if (insertedRowsError) {
+      return { data: null as RecoveryLatestImportSummaryItem | null, error: insertedRowsError };
+    }
+
     return {
       data: {
         confirmed_at: data.confirmed_at,
@@ -905,6 +919,7 @@ export async function getRecoveryLatestImportsSummary() {
         file_name: data.file_name,
         id: data.id,
         import_type: data.import_type,
+        insertedRows: insertedRows ?? 0,
         rows_total: data.rows_total,
         status: data.status,
         valid_purchase_amount: Number(data.valid_purchase_amount ?? 0),

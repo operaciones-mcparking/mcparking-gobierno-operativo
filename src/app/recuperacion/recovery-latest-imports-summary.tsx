@@ -74,7 +74,8 @@ function LatestImportCard({
         <div className="mt-4">
           <DetailRow label="Archivo" value={importItem.file_name} />
           <DetailRow label="Fecha" value={formatDate(importItem.confirmed_at ?? importItem.created_at)} />
-          <DetailRow label="Filas" value={formatNumber(importItem.rows_total)} />
+          <DetailRow label="Filas archivo" value={formatNumber(importItem.rows_total)} />
+          <DetailRow label="Filas insertadas" value={formatNumber(importItem.insertedRows)} />
           {type === "purchases" ? (
             <>
               <DetailRow label="Compras validas" value={formatNumber(importItem.valid_purchase_rows)} />
@@ -83,6 +84,9 @@ function LatestImportCard({
           ) : null}
           <DetailRow label="Estado" value={importItem.status} />
           <DetailRow label="Batch" value={shortBatchId(importItem.id)} />
+          <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs leading-5 text-slate-500">
+            Duplicadas y conflictos se mostraran cuando queden persistidos en el resultado de importacion.
+          </p>
         </div>
       )}
     </article>
