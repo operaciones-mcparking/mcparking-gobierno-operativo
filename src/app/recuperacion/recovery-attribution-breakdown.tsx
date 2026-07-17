@@ -46,11 +46,23 @@ function BreakdownCard({ items, title }: { items: RecoveryAttributionBreakdownIt
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-navy">{item.label}</p>
-                <p className="mt-1 text-xs text-slate-500">{formatCurrency(item.amount)}</p>
+                {item.segment_total !== undefined && item.recovery_rate !== undefined ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatNumber(item.count)} recuperados de {formatNumber(item.segment_total)} · tasa{" "}
+                    {formatPercent(item.recovery_rate)}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatNumber(item.count)} casos · {formatPercent(item.percentage ?? 0)} de recuperados
+                  </p>
+                )}
+                <p className="mt-1 text-xs font-medium text-navy">{formatCurrency(item.amount)}</p>
               </div>
               <div className="text-right">
                 <ValueBadge tone={toneForLabel(item.label)}>{formatNumber(item.count)}</ValueBadge>
-                {item.percentage !== undefined ? (
+                {item.segment_total !== undefined && item.recovery_rate !== undefined ? (
+                  <p className="mt-1 text-xs text-slate-500">{formatPercent(item.recovery_rate)}</p>
+                ) : item.percentage !== undefined ? (
                   <p className="mt-1 text-xs text-slate-500">{formatPercent(item.percentage)}</p>
                 ) : null}
               </div>

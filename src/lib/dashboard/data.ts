@@ -273,6 +273,8 @@ export type RecoveryAttributionBreakdownItem = {
   amount: number;
   count: number;
   percentage?: number;
+  recovery_rate?: number;
+  segment_total?: number;
 };
 
 export type RecoveryAttributionBreakdown = {
@@ -873,20 +875,43 @@ export async function getRecoveryAttributionBreakdown() {
   noStore();
 
   const supabase = await createSupabaseAuthServerClient();
-  const { data: attributionCases, error } = await supabase
-    .from("v_recovery_attribution_cases")
-    .select("cart_type,parking_code,purchase_amount,confidence");
+  const [
+    { data: attributionCases, error: attributionError },
+    { data: cartSegments, error: cartSegmentsError },
+  ] = await Promise.all([
+    supabase
+      .from("v_recovery_attribution_cases")
+      .select("cart_type,parking_code,purchase_amount,confidence"),
+    supabase
+      .from("recovery_incomplete_bookings_import")
+      .select("type,parking_code"),
+  ]);
 
-  if (error) {
-    return { data: null as RecoveryAttributionBreakdown | null, error };
+  if (attributionError) {
+    return { data: null as RecoveryAttributionBreakdown | null, error: attributionError };
+  }
+
+  if (cartSegmentsError) {
+    return { data: null as RecoveryAttributionBreakdown | null, error: cartSegmentsError };
   }
 
   const cases = attributionCases ?? [];
+  const carts = cartSegments ?? [];
   const totalRecovered = cases.length;
+  const totalsByType = new Map<string, number>();
+  const totalsByParking = new Map<string, number>();
+
+  for (const cart of carts) {
+    const typeKey = cart.type ?? "Sin tipo";
+    const parkingKey = cart.parking_code ?? "Sin parking";
+    totalsByType.set(typeKey, (totalsByType.get(typeKey) ?? 0) + 1);
+    totalsByParking.set(parkingKey, (totalsByParking.get(parkingKey) ?? 0) + 1);
+  }
 
   function buildGroup(
     keyForCase: (item: (typeof cases)[number]) => string,
     preferredOrder: string[] = [],
+    segmentTotals?: Map<string, number>,
   ): RecoveryAttributionBreakdownItem[] {
     const grouped = new Map<string, { amount: number; count: number }>();
 
@@ -899,12 +924,18 @@ export async function getRecoveryAttributionBreakdown() {
     }
 
     return Array.from(grouped.entries())
-      .map(([label, value]) => ({
-        amount: value.amount,
-        count: value.count,
-        label,
-        percentage: totalRecovered > 0 ? (value.count / totalRecovered) * 100 : 0,
-      }))
+      .map(([label, value]) => {
+        const segmentTotal = segmentTotals?.get(label);
+
+        return {
+          amount: value.amount,
+          count: value.count,
+          label,
+          percentage: totalRecovered > 0 ? (value.count / totalRecovered) * 100 : 0,
+          recovery_rate: segmentTotal && segmentTotal > 0 ? (value.count / segmentTotal) * 100 : undefined,
+          segment_total: segmentTotal,
+        };
+      })
       .sort((left, right) => {
         const leftIndex = preferredOrder.indexOf(left.label);
         const rightIndex = preferredOrder.indexOf(right.label);
@@ -921,8 +952,8 @@ export async function getRecoveryAttributionBreakdown() {
   return {
     data: {
       by_confidence: buildGroup((item) => item.confidence ?? "Sin confianza", ["high", "medium", "low"]),
-      by_parking: buildGroup((item) => item.parking_code ?? "Sin parking"),
-      by_type: buildGroup((item) => item.cart_type ?? "Sin tipo", ["abandoned", "canceled"]),
+      by_parking: buildGroup((item) => item.parking_code ?? "Sin parking", [], totalsByParking),
+      by_type: buildGroup((item) => item.cart_type ?? "Sin tipo", ["abandoned", "canceled"], totalsByType),
       total_recovered: totalRecovered,
     },
     error: null,
