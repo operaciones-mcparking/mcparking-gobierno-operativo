@@ -329,6 +329,12 @@ export type RecentRecoveryAttributionCase = {
   recovered_7d: boolean | null;
 };
 
+export type RecoveryAttributionDashboardData = {
+  breakdown: RecoveryAttributionBreakdown;
+  kpis: RecoveryAttributionKpis;
+  recentCases: RecentRecoveryAttributionCase[];
+};
+
 export type RecoveryCartAuditStatus =
   | "expired"
   | "not_recovered"
@@ -1191,6 +1197,236 @@ export async function getRecentRecoveryAttributionCases(limit = 20) {
   });
 
   return { data: enrichedRows, error: null };
+}
+
+export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
+  noStore();
+
+  type AttributionDashboardRow = RecentRecoveryAttributionCase & {
+    cart_id: string | null;
+    purchase_id: string | null;
+  };
+
+  type CartSegmentRow = {
+    id: string;
+    parking_code: string | null;
+    type: string | null;
+  };
+
+  type ContactRow = {
+    email_normalized: string | null;
+    id: string;
+    phone_normalized: string | null;
+  };
+
+  const pageSize = 1000;
+  const supabase = await createSupabaseAuthServerClient();
+
+  async function fetchAllRows<T>(queryFactory: () => unknown) {
+    const rows: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const query = queryFactory() as {
+        range: (
+          from: number,
+          to: number,
+        ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+      };
+      const { data, error } = await query.range(from, from + pageSize - 1);
+
+      if (error) {
+        return { data: [] as T[], error };
+      }
+
+      const page = data ?? [];
+      rows.push(...page);
+
+      if (page.length < pageSize) {
+        return { data: rows, error: null };
+      }
+
+      from += pageSize;
+    }
+  }
+
+  const [
+    { count: totalCarts, error: totalCartsError },
+    { data: attributionRows, error: attributionError },
+    { data: cartSegments, error: cartSegmentsError },
+  ] = await Promise.all([
+    supabase
+      .from("recovery_incomplete_bookings_import")
+      .select("id", { count: "exact", head: true }),
+    fetchAllRows<AttributionDashboardRow>(() =>
+      supabase
+        .from("v_recovery_attribution_cases")
+        .select(
+          "cart_id,purchase_id,cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
+        )
+        .order("cart_id", { ascending: true }),
+    ),
+    fetchAllRows<CartSegmentRow>(() =>
+      supabase
+        .from("recovery_incomplete_bookings_import")
+        .select("id,type,parking_code")
+        .order("id", { ascending: true }),
+    ),
+  ]);
+
+  if (totalCartsError) {
+    return { data: null as RecoveryAttributionDashboardData | null, error: totalCartsError };
+  }
+
+  if (attributionError) {
+    return { data: null as RecoveryAttributionDashboardData | null, error: attributionError };
+  }
+
+  if (cartSegmentsError) {
+    return { data: null as RecoveryAttributionDashboardData | null, error: cartSegmentsError };
+  }
+
+  const cases = attributionRows ?? [];
+  const carts = cartSegments ?? [];
+  const totalCarritos = totalCarts ?? 0;
+  const recuperados24h = cases.filter((item) => item.recovered_24h).length;
+  const recuperados48h = cases.filter((item) => item.recovered_48h).length;
+  const recuperados7d = cases.filter((item) => item.recovered_7d).length;
+  const totalRecovered = cases.length;
+  const totalsByType = new Map<string, number>();
+  const totalsByParking = new Map<string, number>();
+
+  for (const cart of carts) {
+    const typeKey = cart.type ?? "Sin tipo";
+    const parkingKey = cart.parking_code ?? "Sin parking";
+    totalsByType.set(typeKey, (totalsByType.get(typeKey) ?? 0) + 1);
+    totalsByParking.set(parkingKey, (totalsByParking.get(parkingKey) ?? 0) + 1);
+  }
+
+  function buildGroup(
+    keyForCase: (item: AttributionDashboardRow) => string,
+    preferredOrder: string[] = [],
+    segmentTotals?: Map<string, number>,
+  ): RecoveryAttributionBreakdownItem[] {
+    const grouped = new Map<string, { amount: number; count: number }>();
+
+    for (const item of cases) {
+      const key = keyForCase(item);
+      const current = grouped.get(key) ?? { amount: 0, count: 0 };
+      current.amount += Number(item.purchase_amount ?? 0);
+      current.count += 1;
+      grouped.set(key, current);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([label, value]) => {
+        const segmentTotal = segmentTotals?.get(label);
+
+        return {
+          amount: value.amount,
+          count: value.count,
+          label,
+          percentage: totalRecovered > 0 ? (value.count / totalRecovered) * 100 : 0,
+          recovery_rate: segmentTotal && segmentTotal > 0 ? (value.count / segmentTotal) * 100 : undefined,
+          segment_total: segmentTotal,
+        };
+      })
+      .sort((left, right) => {
+        const leftIndex = preferredOrder.indexOf(left.label);
+        const rightIndex = preferredOrder.indexOf(right.label);
+
+        if (leftIndex !== -1 || rightIndex !== -1) {
+          return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+            (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
+        }
+
+        return right.count - left.count;
+      });
+  }
+
+  const recentRows = [...cases]
+    .sort((left, right) => {
+      const leftTime = left.purchase_created_at ? new Date(left.purchase_created_at).getTime() : 0;
+      const rightTime = right.purchase_created_at ? new Date(right.purchase_created_at).getTime() : 0;
+
+      return rightTime - leftTime;
+    })
+    .slice(0, recentLimit);
+  const cartIds = Array.from(new Set(recentRows.map((item) => item.cart_id).filter(Boolean))) as string[];
+  const purchaseIds = Array.from(new Set(recentRows.map((item) => item.purchase_id).filter(Boolean))) as string[];
+
+  const [cartContactsResult, purchaseContactsResult] = await Promise.all([
+    cartIds.length > 0
+      ? supabase
+          .from("recovery_incomplete_bookings_import")
+          .select("id,email_normalized,phone_normalized")
+          .in("id", cartIds)
+      : Promise.resolve({ data: [] as ContactRow[], error: null }),
+    purchaseIds.length > 0
+      ? supabase
+          .from("recovery_bookings_import")
+          .select("id,email_normalized,phone_normalized")
+          .in("id", purchaseIds)
+      : Promise.resolve({ data: [] as ContactRow[], error: null }),
+  ]);
+
+  if (cartContactsResult.error) {
+    return { data: null as RecoveryAttributionDashboardData | null, error: cartContactsResult.error };
+  }
+
+  if (purchaseContactsResult.error) {
+    return { data: null as RecoveryAttributionDashboardData | null, error: purchaseContactsResult.error };
+  }
+
+  const cartContacts = new Map(
+    ((cartContactsResult.data ?? []) as ContactRow[]).map((item) => [item.id, item]),
+  );
+  const purchaseContacts = new Map(
+    ((purchaseContactsResult.data ?? []) as ContactRow[]).map((item) => [item.id, item]),
+  );
+  const recentCases = recentRows.map((item) => {
+    const cartContact = item.cart_id ? cartContacts.get(item.cart_id) : undefined;
+    const purchaseContact = item.purchase_id ? purchaseContacts.get(item.purchase_id) : undefined;
+    const { cart_id: _cartId, purchase_id: _purchaseId, ...safeItem } = item;
+
+    return {
+      ...safeItem,
+      email: cartContact?.email_normalized ?? purchaseContact?.email_normalized ?? null,
+      phone: cartContact?.phone_normalized ?? purchaseContact?.phone_normalized ?? null,
+    };
+  });
+
+  return {
+    data: {
+      breakdown: {
+        by_confidence: buildGroup((item) => item.confidence ?? "Sin confianza", ["high", "medium", "low"]),
+        by_parking: buildGroup((item) => item.parking_code ?? "Sin parking", [], totalsByParking),
+        by_type: buildGroup((item) => item.cart_type ?? "Sin tipo", ["abandoned", "canceled"], totalsByType),
+        total_recovered: totalRecovered,
+      },
+      kpis: {
+        high_confidence_cases: cases.filter((item) => item.confidence === "high").length,
+        low_confidence_cases: cases.filter((item) => item.confidence === "low").length,
+        medium_confidence_cases: cases.filter((item) => item.confidence === "medium").length,
+        monto_24h: cases.reduce(
+          (total, item) => total + (item.recovered_24h ? Number(item.purchase_amount ?? 0) : 0),
+          0,
+        ),
+        monto_48h: cases.reduce(
+          (total, item) => total + (item.recovered_48h ? Number(item.purchase_amount ?? 0) : 0),
+          0,
+        ),
+        monto_7d: cases.reduce((total, item) => total + Number(item.purchase_amount ?? 0), 0),
+        recuperados_24h: recuperados24h,
+        recuperados_48h: recuperados48h,
+        recuperados_7d: recuperados7d,
+        tasa_7d: totalCarritos > 0 ? (recuperados7d / totalCarritos) * 100 : 0,
+        total_carritos: totalCarritos,
+      },
+      recentCases,
+    },
+    error: null,
+  };
 }
 
 export async function getRecoveryCartAuditRows(limit = 300) {

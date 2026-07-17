@@ -12,11 +12,9 @@ import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import {
   getRecoveryCartAuditRows,
   getRecoveryCartStatusSummary,
-  getRecoveryAttributionBreakdown,
-  getRecoveryAttributionKpis,
+  getRecoveryAttributionDashboardData,
   getRecoveryImportHistory,
   getRecoveryLatestImportsSummary,
-  getRecentRecoveryAttributionCases,
 } from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
@@ -148,17 +146,13 @@ function statusTone(status: string): BadgeTone {
 export default async function RecuperacionPage() {
   const [
     { data: importHistory, error: importHistoryError },
-    { data: attributionKpis, error: attributionKpisError },
-    { data: attributionBreakdown, error: attributionBreakdownError },
-    { data: recentAttributionCases, error: recentAttributionCasesError },
+    { data: attributionDashboard, error: attributionDashboardError },
     { data: cartStatusSummary, error: cartStatusSummaryError },
     { data: latestImportsSummary, error: latestImportsSummaryError },
     { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
-    getRecoveryAttributionKpis(),
-    getRecoveryAttributionBreakdown(),
-    getRecentRecoveryAttributionCases(),
+    getRecoveryAttributionDashboardData(),
     getRecoveryCartStatusSummary(),
     getRecoveryLatestImportsSummary(),
     getRecoveryCartAuditRows(),
@@ -211,16 +205,16 @@ export default async function RecuperacionPage() {
         </section>
 
         <RecoveryAttributionKpis
-          error={attributionKpisError?.message ?? null}
-          kpis={attributionKpis}
+          error={attributionDashboardError?.message ?? null}
+          kpis={attributionDashboard?.kpis ?? null}
         />
         <RecoveryAttributionBreakdown
-          breakdown={attributionBreakdown}
-          error={attributionBreakdownError?.message ?? null}
+          breakdown={attributionDashboard?.breakdown ?? null}
+          error={attributionDashboardError?.message ?? null}
         />
         <RecoveryAttributionCases
-          cases={recentAttributionCases}
-          error={recentAttributionCasesError?.message ?? null}
+          cases={attributionDashboard?.recentCases ?? []}
+          error={attributionDashboardError?.message ?? null}
         />
         <RecoveryCartStatusSummary
           error={cartStatusSummaryError?.message ?? null}
