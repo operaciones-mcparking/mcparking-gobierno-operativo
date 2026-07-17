@@ -45,6 +45,12 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function OptionalDetailRow({ label, value }: { label: string; value: number | null }) {
+  if (value === null) return null;
+
+  return <DetailRow label={label} value={formatNumber(value)} />;
+}
+
 function LatestImportCard({
   importItem,
   title,
@@ -54,6 +60,21 @@ function LatestImportCard({
   title: string;
   type: "carts" | "purchases";
 }) {
+  const hasPersistedResult = importItem
+    ? [
+        importItem.skipped_duplicate_rows,
+        importItem.conflict_rows,
+        importItem.invalid_rows,
+        importItem.inserted_amount,
+        importItem.source_duplicate_rows,
+        importItem.booking_duplicate_rows,
+        importItem.message_duplicate_rows,
+        importItem.inserted_abandoned_rows,
+        importItem.inserted_canceled_rows,
+        importItem.message_sent_rows,
+      ].some((value) => value !== null)
+    : false;
+
   return (
     <article className="rounded-xl border border-[#d6e1ea] bg-[#fbfdfe] p-4">
       <div className="flex items-start justify-between gap-3">
@@ -80,13 +101,31 @@ function LatestImportCard({
             <>
               <DetailRow label="Compras validas" value={formatNumber(importItem.valid_purchase_rows)} />
               <DetailRow label="Monto valido" value={formatCurrency(importItem.valid_purchase_amount)} />
+              {importItem.inserted_amount !== null ? (
+                <DetailRow label="Monto insertado" value={formatCurrency(importItem.inserted_amount)} />
+              ) : null}
+            </>
+          ) : null}
+          <OptionalDetailRow label="Duplicadas omitidas" value={importItem.skipped_duplicate_rows} />
+          <OptionalDetailRow label="Conflictos" value={importItem.conflict_rows} />
+          <OptionalDetailRow label="Invalidas" value={importItem.invalid_rows} />
+          {type === "carts" ? (
+            <>
+              <OptionalDetailRow label="Duplicadas source" value={importItem.source_duplicate_rows} />
+              <OptionalDetailRow label="Duplicadas booking" value={importItem.booking_duplicate_rows} />
+              <OptionalDetailRow label="Duplicadas mensaje" value={importItem.message_duplicate_rows} />
+              <OptionalDetailRow label="Abandoned insertados" value={importItem.inserted_abandoned_rows} />
+              <OptionalDetailRow label="Canceled insertados" value={importItem.inserted_canceled_rows} />
+              <OptionalDetailRow label="Con mensaje enviado" value={importItem.message_sent_rows} />
             </>
           ) : null}
           <DetailRow label="Estado" value={importItem.status} />
           <DetailRow label="Batch" value={shortBatchId(importItem.id)} />
-          <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs leading-5 text-slate-500">
-            Duplicadas y conflictos se mostraran cuando queden persistidos en el resultado de importacion.
-          </p>
+          {!hasPersistedResult ? (
+            <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs leading-5 text-slate-500">
+              Duplicadas y conflictos se mostraran cuando queden persistidos en el resultado de importacion.
+            </p>
+          ) : null}
         </div>
       )}
     </article>

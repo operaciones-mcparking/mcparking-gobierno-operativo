@@ -255,10 +255,20 @@ export type RecoveryImportHistoryItem = {
 };
 
 export type RecoveryLatestImportSummaryItem = {
+  booking_duplicate_rows: number | null;
+  conflict_rows: number | null;
   id: string;
   file_name: string;
   import_type: string;
+  inserted_abandoned_rows: number | null;
+  inserted_amount: number | null;
+  inserted_canceled_rows: number | null;
   insertedRows: number;
+  invalid_rows: number | null;
+  message_duplicate_rows: number | null;
+  message_sent_rows: number | null;
+  skipped_duplicate_rows: number | null;
+  source_duplicate_rows: number | null;
   status: string;
   rows_total: number;
   valid_purchase_rows: number;
@@ -883,7 +893,9 @@ export async function getRecoveryLatestImportsSummary() {
   async function getLatestImport(importType: "incomplete_bookings_csv" | "purchases_csv") {
     const { data, error } = await supabase
       .from("recovery_import_batches")
-      .select("id,import_type,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at")
+      .select(
+        "id,import_type,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at,inserted_rows,skipped_duplicate_rows,conflict_rows,invalid_rows,inserted_amount,source_duplicate_rows,booking_duplicate_rows,message_duplicate_rows,inserted_abandoned_rows,inserted_canceled_rows,message_sent_rows",
+      )
       .eq("import_type", importType)
       .eq("status", "imported")
       .order("confirmed_at", { ascending: false, nullsFirst: false })
@@ -919,8 +931,18 @@ export async function getRecoveryLatestImportsSummary() {
         file_name: data.file_name,
         id: data.id,
         import_type: data.import_type,
-        insertedRows: insertedRows ?? 0,
+        booking_duplicate_rows: data.booking_duplicate_rows,
+        conflict_rows: data.conflict_rows,
+        inserted_abandoned_rows: data.inserted_abandoned_rows,
+        inserted_amount: data.inserted_amount === null ? null : Number(data.inserted_amount),
+        inserted_canceled_rows: data.inserted_canceled_rows,
+        insertedRows: data.inserted_rows ?? insertedRows ?? 0,
+        invalid_rows: data.invalid_rows,
+        message_duplicate_rows: data.message_duplicate_rows,
+        message_sent_rows: data.message_sent_rows,
         rows_total: data.rows_total,
+        skipped_duplicate_rows: data.skipped_duplicate_rows,
+        source_duplicate_rows: data.source_duplicate_rows,
         status: data.status,
         valid_purchase_amount: Number(data.valid_purchase_amount ?? 0),
         valid_purchase_rows: data.valid_purchase_rows,
