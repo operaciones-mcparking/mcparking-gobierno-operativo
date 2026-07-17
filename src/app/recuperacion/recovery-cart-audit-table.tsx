@@ -106,6 +106,15 @@ function sortValue(row: RecoveryCartAuditRow, sortKey: SortKey) {
   return "";
 }
 
+function quickFilterClass(active: boolean) {
+  return [
+    "rounded-full border px-3 py-1.5 text-sm font-medium transition",
+    active
+      ? "border-sea bg-[#eaf6f7] text-navy"
+      : "border-[#d6e1ea] bg-white text-slate-600 hover:border-sea hover:text-navy",
+  ].join(" ");
+}
+
 export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTableProps) {
   const [dateQuery, setDateQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -145,6 +154,33 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           </p>
         </div>
         <ValueBadge tone="info">{visibleRows.length} visibles</ValueBadge>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#edf2f6] px-5 py-3">
+        <span className="mr-1 text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+          Accesos rapidos
+        </span>
+        <button
+          className={quickFilterClass(statusFilter === "not_recovered")}
+          onClick={() => setStatusFilter("not_recovered")}
+          type="button"
+        >
+          Vivos pendientes
+        </button>
+        <button
+          className={quickFilterClass(statusFilter === "expired")}
+          onClick={() => setStatusFilter("expired")}
+          type="button"
+        >
+          Expirados
+        </button>
+        <button
+          className={quickFilterClass(statusFilter === "all")}
+          onClick={() => setStatusFilter("all")}
+          type="button"
+        >
+          Todos
+        </button>
       </div>
 
       <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
