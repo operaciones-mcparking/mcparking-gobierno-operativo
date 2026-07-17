@@ -10,6 +10,7 @@ import {
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import {
+  getRecoveryCartAuditRows,
   getRecoveryAttributionBreakdown,
   getRecoveryAttributionKpis,
   getRecoveryImportHistory,
@@ -20,6 +21,7 @@ import { PurchasesUploadMock } from "./purchases-upload-mock";
 import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
 import { RecoveryAttributionCases } from "./recovery-attribution-cases";
 import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
+import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryImportHistory } from "./recovery-import-history";
 
 const kpis = [
@@ -145,11 +147,13 @@ export default async function RecuperacionPage() {
     { data: attributionKpis, error: attributionKpisError },
     { data: attributionBreakdown, error: attributionBreakdownError },
     { data: recentAttributionCases, error: recentAttributionCasesError },
+    { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
     getRecoveryAttributionKpis(),
     getRecoveryAttributionBreakdown(),
     getRecentRecoveryAttributionCases(),
+    getRecoveryCartAuditRows(),
   ]);
 
   return (
@@ -209,6 +213,10 @@ export default async function RecuperacionPage() {
         <RecoveryAttributionCases
           cases={recentAttributionCases}
           error={recentAttributionCasesError?.message ?? null}
+        />
+        <RecoveryCartAuditTable
+          error={cartAuditRowsError?.message ?? null}
+          rows={cartAuditRows}
         />
         <PurchasesUploadMock />
         <IncompleteBookingsUploadMock />

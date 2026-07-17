@@ -301,6 +301,20 @@ export type RecentRecoveryAttributionCase = {
   recovered_7d: boolean | null;
 };
 
+export type RecoveryCartAuditRow = {
+  cart_form_datetime: string | null;
+  cart_type: string | null;
+  confidence: string | null;
+  email: string | null;
+  hours_to_purchase: number | null;
+  message_sent: boolean | null;
+  parking_code: string | null;
+  phone: string | null;
+  purchase_amount: number | null;
+  purchase_created_at: string | null;
+  recovered: boolean;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -1051,4 +1065,78 @@ export async function getRecentRecoveryAttributionCases(limit = 20) {
   });
 
   return { data: enrichedRows, error: null };
+}
+
+export async function getRecoveryCartAuditRows(limit = 300) {
+  noStore();
+
+  type CartAuditSourceRow = {
+    email_normalized: string | null;
+    form_datetime: string | null;
+    id: string;
+    message_sent: boolean | null;
+    parking_code: string | null;
+    phone_normalized: string | null;
+    type: string | null;
+  };
+
+  type AttributionByCartRow = {
+    cart_id: string | null;
+    confidence: string | null;
+    hours_to_purchase: number | null;
+    purchase_amount: number | null;
+    purchase_created_at: string | null;
+  };
+
+  const supabase = await createSupabaseAuthServerClient();
+  const { data: carts, error: cartsError } = await supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id,type,email_normalized,phone_normalized,parking_code,message_sent,form_datetime")
+    .order("form_datetime", { ascending: false })
+    .limit(limit);
+
+  if (cartsError) {
+    return { data: [] as RecoveryCartAuditRow[], error: cartsError };
+  }
+
+  const cartRows = (carts ?? []) as CartAuditSourceRow[];
+  const cartIds = Array.from(new Set(cartRows.map((item) => item.id).filter(Boolean)));
+
+  const { data: attributions, error: attributionsError } =
+    cartIds.length > 0
+      ? await supabase
+          .from("v_recovery_attribution_cases")
+          .select("cart_id,purchase_created_at,purchase_amount,hours_to_purchase,confidence")
+          .in("cart_id", cartIds)
+      : { data: [] as AttributionByCartRow[], error: null };
+
+  if (attributionsError) {
+    return { data: [] as RecoveryCartAuditRow[], error: attributionsError };
+  }
+
+  const attributionsByCartId = new Map(
+    ((attributions ?? []) as AttributionByCartRow[])
+      .filter((item) => item.cart_id)
+      .map((item) => [item.cart_id as string, item]),
+  );
+
+  const auditRows = cartRows.map((cart) => {
+    const attribution = attributionsByCartId.get(cart.id);
+
+    return {
+      cart_form_datetime: cart.form_datetime,
+      cart_type: cart.type,
+      confidence: attribution?.confidence ?? null,
+      email: cart.email_normalized,
+      hours_to_purchase: attribution?.hours_to_purchase ?? null,
+      message_sent: cart.message_sent,
+      parking_code: cart.parking_code,
+      phone: cart.phone_normalized,
+      purchase_amount: attribution?.purchase_amount ?? null,
+      purchase_created_at: attribution?.purchase_created_at ?? null,
+      recovered: Boolean(attribution),
+    };
+  });
+
+  return { data: auditRows, error: null };
 }
