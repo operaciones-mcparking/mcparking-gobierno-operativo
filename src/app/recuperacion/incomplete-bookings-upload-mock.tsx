@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, ShieldCheck, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Database, FileSpreadsheet, ShieldCheck, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
@@ -31,11 +31,34 @@ type ValidationResponse = {
   summary?: IncompleteBookingsValidationSummary;
 };
 
+type ImportSummary = {
+  bookingDuplicateRows: number;
+  conflictRows: number;
+  fileAlreadyImported: boolean;
+  insertedAbandonedRows: number;
+  insertedCanceledRows: number;
+  insertedRows: number;
+  invalidRows: number;
+  messageDuplicateRows: number;
+  messageSentRows: number;
+  rowsReceived: number;
+  rowsTotal: number;
+  skippedDuplicateRows: number;
+  sourceDuplicateRows: number;
+};
+
+type ImportResponse = {
+  batchId?: string | null;
+  error?: string;
+  ok: boolean;
+  summary?: ImportSummary;
+};
+
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
   { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
   { label: "Revisar preview", status: "seguro", tone: "warning" as BadgeTone },
-  { label: "Preparar staging", status: "pendiente", tone: "neutral" as BadgeTone },
+  { label: "Preparar staging", status: "disponible", tone: "info" as BadgeTone },
   { label: "Cruzar con compras", status: "pendiente", tone: "neutral" as BadgeTone },
 ];
 
@@ -70,8 +93,12 @@ export function IncompleteBookingsUploadMock() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<IncompleteBookingsValidationSummary | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
 
   const previewMetrics = useMemo(() => {
     if (!summary) {
@@ -137,7 +164,9 @@ export function IncompleteBookingsUploadMock() {
     const file = event.target.files?.[0] ?? null;
 
     setError(null);
+    setImportError(null);
     setSummary(null);
+    setImportSummary(null);
     setSelectedFile(file);
   }
 
@@ -153,7 +182,9 @@ export function IncompleteBookingsUploadMock() {
     }
 
     setError(null);
+    setImportError(null);
     setSummary(null);
+    setImportSummary(null);
     setIsValidating(true);
 
     try {
@@ -176,6 +207,48 @@ export function IncompleteBookingsUploadMock() {
       setError("No se pudo conectar con el validador. Revisa la conexión o intenta nuevamente.");
     } finally {
       setIsValidating(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!selectedFile || !summary) {
+      setImportError("Valida un archivo CSV antes de preparar la importación.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Esta acción guardará los carritos perdidos/cancelados normalizados en staging de recuperación.\n" +
+        "No se guardará el CSV completo, cms_url, bform ni PII cruda.\n" +
+        "¿Confirmar importación?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setImportError(null);
+    setIsImporting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/recuperacion/carritos/importar", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = (await response.json()) as ImportResponse;
+
+      if (!response.ok || !payload.ok || !payload.summary) {
+        setImportError(errorMessageForStatus(response.status, payload.error ?? ""));
+        return;
+      }
+
+      setImportSummary(payload.summary);
+    } catch {
+      setImportError("No se pudo conectar con el importador. Revisa la conexión o intenta nuevamente.");
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -250,6 +323,16 @@ export function IncompleteBookingsUploadMock() {
             {summary ? (
               <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
                 Validación completada. La vista previa muestra solo agregados seguros.
+              </p>
+            ) : null}
+            {importSummary ? (
+              <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
+                Importación preparada en staging. Filas insertadas: {formatNumber(importSummary.insertedRows)}.
+              </p>
+            ) : null}
+            {importError ? (
+              <p className="mt-3 rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
+                {importError}
               </p>
             ) : null}
           </div>
@@ -345,17 +428,31 @@ export function IncompleteBookingsUploadMock() {
           <div className="rounded-xl border border-[#ffd6b0] bg-[#fff7ef] p-4">
             <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
               <div>
-                <h3 className="text-sm font-medium text-[#86510d]">Preparar importación</h3>
+                <div className="flex items-center gap-2 text-[#86510d]">
+                  <Database className="h-4 w-4" />
+                  <h3 className="text-sm font-medium">Preparar importación</h3>
+                </div>
                 <p className="mt-1 text-xs leading-5 text-[#86510d]">
-                  Disponible cuando exista staging de carritos.
+                  Guarda los carritos normalizados en staging. No se almacena el CSV completo ni PII cruda.
                 </p>
+                {importSummary ? (
+                  <div className="mt-3 rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-xs leading-5 text-[#86510d]">
+                    <p>Filas insertadas: {formatNumber(importSummary.insertedRows)}</p>
+                    <p>Abandoned: {formatNumber(importSummary.insertedAbandonedRows)}</p>
+                    <p>Canceled: {formatNumber(importSummary.insertedCanceledRows)}</p>
+                    <p>Message_Sent true: {formatNumber(importSummary.messageSentRows)}</p>
+                    <p>Duplicadas omitidas: {formatNumber(importSummary.skippedDuplicateRows)}</p>
+                    {importSummary.fileAlreadyImported ? <p>Archivo ya importado anteriormente.</p> : null}
+                  </div>
+                ) : null}
               </div>
               <button
-                className="rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-sm font-medium text-[#9a621a] opacity-55"
-                disabled
+                className="rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-sm font-medium text-[#9a621a] disabled:opacity-55"
+                disabled={!canImport}
+                onClick={handleImport}
                 type="button"
               >
-                Disponible cuando exista staging de carritos
+                {isImporting ? "Preparando..." : "Preparar importación"}
               </button>
             </div>
           </div>
