@@ -11,6 +11,7 @@ import {
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import {
   getRecoveryCartAuditRows,
+  getRecoveryCartStatusSummary,
   getRecoveryAttributionBreakdown,
   getRecoveryAttributionKpis,
   getRecoveryImportHistory,
@@ -22,6 +23,7 @@ import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
 import { RecoveryAttributionCases } from "./recovery-attribution-cases";
 import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
+import { RecoveryCartStatusSummary } from "./recovery-cart-status-summary";
 import { RecoveryImportHistory } from "./recovery-import-history";
 
 const kpis = [
@@ -147,12 +149,14 @@ export default async function RecuperacionPage() {
     { data: attributionKpis, error: attributionKpisError },
     { data: attributionBreakdown, error: attributionBreakdownError },
     { data: recentAttributionCases, error: recentAttributionCasesError },
+    { data: cartStatusSummary, error: cartStatusSummaryError },
     { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
     getRecoveryAttributionKpis(),
     getRecoveryAttributionBreakdown(),
     getRecentRecoveryAttributionCases(),
+    getRecoveryCartStatusSummary(),
     getRecoveryCartAuditRows(),
   ]);
 
@@ -213,6 +217,10 @@ export default async function RecuperacionPage() {
         <RecoveryAttributionCases
           cases={recentAttributionCases}
           error={recentAttributionCasesError?.message ?? null}
+        />
+        <RecoveryCartStatusSummary
+          error={cartStatusSummaryError?.message ?? null}
+          summary={cartStatusSummary}
         />
         <RecoveryCartAuditTable
           error={cartAuditRowsError?.message ?? null}

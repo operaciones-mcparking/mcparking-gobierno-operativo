@@ -323,6 +323,10 @@ export type RecoveryCartAuditRow = {
   recovered: boolean;
 };
 
+export type RecoveryCartStatusSummary = Record<RecoveryCartAuditStatus, number> & {
+  total: number;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -1170,4 +1174,115 @@ export async function getRecoveryCartAuditRows(limit = 300) {
   });
 
   return { data: auditRows, error: null };
+}
+
+export async function getRecoveryCartStatusSummary() {
+  noStore();
+
+  const pageSize = 1000;
+
+  type CartStatusSourceRow = {
+    id: string;
+    intended_departure_date: string | null;
+  };
+
+  type AttributionStatusRow = {
+    cart_id: string | null;
+    purchase_amount: number | null;
+  };
+
+  function todayDateValue() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function resolveStatus(
+    attribution: AttributionStatusRow | undefined,
+    intendedDepartureDate: string | null,
+  ): RecoveryCartAuditStatus {
+    if (attribution && Number(attribution.purchase_amount ?? 0) > 0) return "recovered_with_amount";
+    if (attribution && Number(attribution.purchase_amount ?? 0) === 0) return "recovered_pack";
+    if (intendedDepartureDate && intendedDepartureDate < todayDateValue()) return "expired";
+
+    return "not_recovered";
+  }
+
+  async function fetchAllRows<T>(queryFactory: () => unknown) {
+    const rows: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const query = queryFactory() as {
+        range: (
+          from: number,
+          to: number,
+        ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+      };
+      const { data, error } = await query.range(from, from + pageSize - 1);
+
+      if (error) {
+        return { data: [] as T[], error };
+      }
+
+      const page = data ?? [];
+      rows.push(...page);
+
+      if (page.length < pageSize) {
+        return { data: rows, error: null };
+      }
+
+      from += pageSize;
+    }
+  }
+
+  const supabase = await createSupabaseAuthServerClient();
+  const [{ data: carts, error: cartsError }, { data: attributions, error: attributionsError }] =
+    await Promise.all([
+      fetchAllRows<CartStatusSourceRow>(() =>
+        supabase
+          .from("recovery_incomplete_bookings_import")
+          .select("id,intended_departure_date")
+          .order("id", { ascending: true }),
+      ),
+      fetchAllRows<AttributionStatusRow>(() =>
+        supabase
+          .from("v_recovery_attribution_cases")
+          .select("cart_id,purchase_amount")
+          .order("cart_id", { ascending: true }),
+      ),
+    ]);
+
+  if (cartsError) {
+    return { data: null as RecoveryCartStatusSummary | null, error: cartsError };
+  }
+
+  if (attributionsError) {
+    return { data: null as RecoveryCartStatusSummary | null, error: attributionsError };
+  }
+
+  const attributionsByCartId = new Map(
+    ((attributions ?? []) as AttributionStatusRow[])
+      .filter((item) => item.cart_id)
+      .map((item) => [item.cart_id as string, item]),
+  );
+
+  const summary: RecoveryCartStatusSummary = {
+    expired: 0,
+    not_recovered: 0,
+    recovered_pack: 0,
+    recovered_with_amount: 0,
+    total: 0,
+  };
+
+  for (const cart of (carts ?? []) as CartStatusSourceRow[]) {
+    const status = resolveStatus(attributionsByCartId.get(cart.id), cart.intended_departure_date);
+    summary[status] += 1;
+    summary.total += 1;
+  }
+
+  return { data: summary, error: null };
 }
