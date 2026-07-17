@@ -26,12 +26,31 @@ type ValidationResponse = {
   summary?: ValidationSummary;
 };
 
+type ImportSummary = {
+  batchId: string | null;
+  conflictRows: number;
+  fileAlreadyImported: boolean;
+  insertedAmount: number;
+  insertedRows: number;
+  invalidRows: number;
+  rowsReceived: number;
+  rowsTotal: number;
+  skippedDuplicateRows: number;
+};
+
+type ImportResponse = {
+  batchId?: string | null;
+  error?: string;
+  ok: boolean;
+  summary?: ImportSummary;
+};
+
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
   { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
   { label: "Revisar preview", status: "seguro", tone: "warning" as BadgeTone },
-  { label: "Confirmar importacion", status: "pendiente", tone: "neutral" as BadgeTone },
-  { label: "Guardar en staging", status: "pendiente", tone: "neutral" as BadgeTone },
+  { label: "Confirmar importación", status: "disponible", tone: "info" as BadgeTone },
+  { label: "Guardar en staging", status: "controlado", tone: "warning" as BadgeTone },
 ];
 
 function formatNumber(value: number) {
@@ -69,8 +88,12 @@ export function PurchasesUploadMock() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<ValidationSummary | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
 
   const previewMetrics = useMemo(() => {
     if (!summary) {
@@ -120,7 +143,9 @@ export function PurchasesUploadMock() {
     const file = event.target.files?.[0] ?? null;
 
     setError(null);
+    setImportError(null);
     setSummary(null);
+    setImportSummary(null);
     setSelectedFile(file);
   }
 
@@ -136,6 +161,8 @@ export function PurchasesUploadMock() {
     }
 
     setError(null);
+    setImportError(null);
+    setImportSummary(null);
     setIsValidating(true);
 
     try {
@@ -158,6 +185,51 @@ export function PurchasesUploadMock() {
       setError("No se pudo conectar con el validador. Revisa la conexion o intenta nuevamente.");
     } finally {
       setIsValidating(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!selectedFile || !summary) {
+      setImportError("Valida un archivo CSV antes de confirmar la importación.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Esta acción guardará las compras normalizadas en staging de recuperación.\n" +
+        "No se guardará el CSV completo ni PII cruda.\n" +
+        "¿Confirmar importación?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setImportError(null);
+    setIsImporting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/recuperacion/compras/importar", {
+        body: formData,
+        method: "POST",
+      });
+      const payload = (await response.json()) as ImportResponse;
+
+      if (!response.ok || !payload.ok || !payload.summary) {
+        setImportError(errorMessageForStatus(response.status, payload.error ?? ""));
+        return;
+      }
+
+      setImportSummary({
+        ...payload.summary,
+        batchId: payload.batchId ?? payload.summary.batchId ?? null,
+      });
+    } catch {
+      setImportError("No se pudo conectar con el importador. Revisa la conexion o intenta nuevamente.");
+    } finally {
+      setIsImporting(false);
     }
   }
 
@@ -234,6 +306,16 @@ export function PurchasesUploadMock() {
             {summary ? (
               <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
                 Validacion completada. La vista previa muestra solo agregados seguros.
+              </p>
+            ) : null}
+            {importSummary ? (
+              <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
+                Importación completada en staging. Batch: {importSummary.batchId ?? "sin identificador"}.
+              </p>
+            ) : null}
+            {importError ? (
+              <p className="mt-3 rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
+                {importError}
               </p>
             ) : null}
           </div>
@@ -318,14 +400,23 @@ export function PurchasesUploadMock() {
                 <h3 className="text-sm font-medium">Importación</h3>
               </div>
               <p className="mt-2 text-xs leading-5 text-[#86510d]">
-                Confirmar importacion y guardar en staging aun no estan implementados.
+                Guarda las compras normalizadas en staging. No se almacena el CSV completo ni PII cruda.
               </p>
+              {importSummary ? (
+                <div className="mt-3 rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-xs leading-5 text-[#86510d]">
+                  <p>Filas insertadas: {formatNumber(importSummary.insertedRows)}</p>
+                  <p>Duplicadas omitidas: {formatNumber(importSummary.skippedDuplicateRows)}</p>
+                  <p>Monto insertado: {formatCurrency(importSummary.insertedAmount)}</p>
+                  {importSummary.fileAlreadyImported ? <p>Archivo ya importado anteriormente.</p> : null}
+                </div>
+              ) : null}
               <button
-                className="mt-3 w-full rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-sm font-medium text-[#9a621a] opacity-55"
-                disabled
+                className="mt-3 w-full rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-sm font-medium text-[#9a621a] disabled:opacity-55"
+                disabled={!canImport}
+                onClick={handleImport}
                 type="button"
               >
-                Disponible en la siguiente etapa
+                {isImporting ? "Importando..." : "Confirmar importación"}
               </button>
             </div>
           </div>
