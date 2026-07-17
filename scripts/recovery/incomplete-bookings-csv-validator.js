@@ -60,16 +60,122 @@ function dateTimeValue(raw) {
   return date ? date.toISOString() : null;
 }
 
+function dateValue(raw) {
+  const date = parseDateSafe(raw);
+
+  if (!date) return null;
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function integerValue(raw) {
+  const value = cleanText(raw);
+
+  if (!value) return null;
+
+  const parsed = Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+
+  return parsed;
+}
+
+function parseBform(raw) {
+  const value = cleanText(raw);
+
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value);
+
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeHour(raw) {
+  const value = cleanText(raw);
+
+  if (!value) return null;
+
+  const match = value.match(/^(\d{1,2})(?::(\d{1,2}))?(?::(\d{1,2}))?$/);
+
+  if (!match) return null;
+
+  const [, hour, minute = "0", second = "0"] = match;
+  const hourNumber = Number(hour);
+  const minuteNumber = Number(minute);
+  const secondNumber = Number(second);
+
+  if (
+    !Number.isInteger(hourNumber) ||
+    !Number.isInteger(minuteNumber) ||
+    !Number.isInteger(secondNumber) ||
+    hourNumber < 0 ||
+    hourNumber > 23 ||
+    minuteNumber < 0 ||
+    minuteNumber > 59 ||
+    secondNumber < 0 ||
+    secondNumber > 59
+  ) {
+    return null;
+  }
+
+  return [
+    String(hourNumber).padStart(2, "0"),
+    String(minuteNumber).padStart(2, "0"),
+    String(secondNumber).padStart(2, "0"),
+  ].join(":");
+}
+
+function intendedTimestamp(dateRaw, hourRaw) {
+  const date = dateValue(dateRaw);
+  const hour = normalizeHour(hourRaw);
+
+  if (!date || !hour) return null;
+
+  return dateTimeValue(`${date}T${hour}`);
+}
+
+function intendedFieldsFromBform(raw) {
+  const bform = parseBform(raw);
+
+  if (!bform) {
+    return {
+      intended_arrival_at: null,
+      intended_arrival_date: null,
+      intended_days: null,
+      intended_departure_at: null,
+      intended_departure_date: null,
+    };
+  }
+
+  return {
+    intended_arrival_at: intendedTimestamp(bform.arrival_date, bform.arrival_hour),
+    intended_arrival_date: dateValue(bform.arrival_date),
+    intended_days: integerValue(bform.days),
+    intended_departure_at: intendedTimestamp(bform.departure_date, bform.departure_hour),
+    intended_departure_date: dateValue(bform.departure_date),
+  };
+}
+
 function hashNormalizedRow(row) {
   return crypto.createHash("sha256").update(JSON.stringify(row)).digest("hex");
 }
 
 function normalizeIncompleteBookingRow(row) {
+  const intendedFields = intendedFieldsFromBform(row.bform);
   const normalized = {
     booking_id: cleanText(row.booking_id),
     created_at_source: dateTimeValue(row.createdAt),
     email_normalized: normalizeEmail(row.email),
     form_datetime: dateTimeValue(row.form_datetime),
+    ...intendedFields,
     message_id: cleanText(row.Id_Mensaje),
     message_sent: parseBoolean(row.Message_Sent),
     parking_code: normalizeParkingCode(row.parking_code),
