@@ -1,5 +1,6 @@
 const { normalizeEmail, normalizePhone, parseDateSafe } = require("./recovery-normalizers");
 const { parseCsv } = require("./purchases-csv-validator");
+const crypto = require("node:crypto");
 
 const EXPECTED_COLUMNS = [
   "id",
@@ -51,6 +52,45 @@ function parseBoolean(raw) {
   if (["false", "0", "no"].includes(normalized)) return false;
 
   return null;
+}
+
+function dateTimeValue(raw) {
+  const date = parseDateSafe(raw);
+
+  return date ? date.toISOString() : null;
+}
+
+function hashNormalizedRow(row) {
+  return crypto.createHash("sha256").update(JSON.stringify(row)).digest("hex");
+}
+
+function normalizeIncompleteBookingRow(row) {
+  const normalized = {
+    booking_id: cleanText(row.booking_id),
+    created_at_source: dateTimeValue(row.createdAt),
+    email_normalized: normalizeEmail(row.email),
+    form_datetime: dateTimeValue(row.form_datetime),
+    message_id: cleanText(row.Id_Mensaje),
+    message_sent: parseBoolean(row.Message_Sent),
+    parking_code: normalizeParkingCode(row.parking_code),
+    phone_normalized: normalizePhone(row.phone),
+    source_id: cleanText(row.id),
+    type: normalizeType(row.type),
+    updated_at_source: dateTimeValue(row.updatedAt),
+  };
+
+  return {
+    ...normalized,
+    row_hash: hashNormalizedRow(normalized),
+  };
+}
+
+function buildRecoveryIncompleteBookingImportRows(csvContent) {
+  const { rows } = parseCsv(csvContent);
+
+  return rows
+    .map(normalizeIncompleteBookingRow)
+    .filter((row) => row.source_id && row.booking_id && row.type);
 }
 
 function duplicateGroupCount(rows, key) {
@@ -126,5 +166,6 @@ function validateIncompleteBookingsCsv(csvContent) {
 }
 
 module.exports = {
+  buildRecoveryIncompleteBookingImportRows,
   validateIncompleteBookingsCsv,
 };
