@@ -742,18 +742,25 @@ export async function getRecoveryImportHistory(limit = 10) {
   const importedRowsByBatch = new Map<string, number>();
 
   if (batchIds.length > 0) {
-    const { data: importedRows, error: importedRowsError } = await supabase
-      .from("recovery_bookings_import")
-      .select("batch_id")
-      .in("batch_id", batchIds);
+    const importedRowCounts = await Promise.all(
+      batchIds.map(async (batchId) => {
+        const { count, error } = await supabase
+          .from("recovery_bookings_import")
+          .select("id", { count: "exact", head: true })
+          .eq("batch_id", batchId);
+
+        return { batchId, count: count ?? 0, error };
+      }),
+    );
+
+    const importedRowsError = importedRowCounts.find((result) => result.error)?.error;
 
     if (importedRowsError) {
       return { data: [] as RecoveryImportHistoryItem[], error: importedRowsError };
     }
 
-    for (const row of importedRows ?? []) {
-      if (!row.batch_id) continue;
-      importedRowsByBatch.set(row.batch_id, (importedRowsByBatch.get(row.batch_id) ?? 0) + 1);
+    for (const result of importedRowCounts) {
+      importedRowsByBatch.set(result.batchId, result.count);
     }
   }
 
