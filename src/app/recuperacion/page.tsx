@@ -10,6 +10,7 @@ import {
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { getRecoveryImportHistory } from "@/lib/dashboard/data";
+import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
 import { RecoveryImportHistory } from "./recovery-import-history";
 
@@ -180,6 +181,7 @@ export default async function RecuperacionPage() {
         </section>
 
         <PurchasesUploadMock />
+        <IncompleteBookingsUploadMock />
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}
