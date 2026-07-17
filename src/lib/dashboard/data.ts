@@ -254,6 +254,23 @@ export type RecoveryImportHistoryItem = {
   confirmed_at: string | null;
 };
 
+export type RecoveryLatestImportSummaryItem = {
+  id: string;
+  file_name: string;
+  import_type: string;
+  status: string;
+  rows_total: number;
+  valid_purchase_rows: number;
+  valid_purchase_amount: number;
+  created_at: string;
+  confirmed_at: string | null;
+};
+
+export type RecoveryLatestImportsSummary = {
+  carts: RecoveryLatestImportSummaryItem | null;
+  purchases: RecoveryLatestImportSummaryItem | null;
+};
+
 export type RecoveryAttributionKpis = {
   high_confidence_cases: number;
   low_confidence_cases: number;
@@ -855,6 +872,66 @@ export async function getRecoveryImportHistory(limit = 10) {
   }));
 
   return { data, error: null };
+}
+
+export async function getRecoveryLatestImportsSummary() {
+  noStore();
+
+  const supabase = await createSupabaseAuthServerClient();
+
+  async function getLatestImport(importType: "incomplete_bookings_csv" | "purchases_csv") {
+    const { data, error } = await supabase
+      .from("recovery_import_batches")
+      .select("id,import_type,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at")
+      .eq("import_type", importType)
+      .eq("status", "imported")
+      .order("confirmed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      return { data: null as RecoveryLatestImportSummaryItem | null, error };
+    }
+
+    if (!data) {
+      return { data: null as RecoveryLatestImportSummaryItem | null, error: null };
+    }
+
+    return {
+      data: {
+        confirmed_at: data.confirmed_at,
+        created_at: data.created_at,
+        file_name: data.file_name,
+        id: data.id,
+        import_type: data.import_type,
+        rows_total: data.rows_total,
+        status: data.status,
+        valid_purchase_amount: Number(data.valid_purchase_amount ?? 0),
+        valid_purchase_rows: data.valid_purchase_rows,
+      },
+      error: null,
+    };
+  }
+
+  const [purchasesResult, cartsResult] = await Promise.all([
+    getLatestImport("purchases_csv"),
+    getLatestImport("incomplete_bookings_csv"),
+  ]);
+
+  const error = purchasesResult.error ?? cartsResult.error;
+
+  if (error) {
+    return { data: null as RecoveryLatestImportsSummary | null, error };
+  }
+
+  return {
+    data: {
+      carts: cartsResult.data,
+      purchases: purchasesResult.data,
+    },
+    error: null,
+  };
 }
 
 export async function getRecoveryAttributionKpis() {

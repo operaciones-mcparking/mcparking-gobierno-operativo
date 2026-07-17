@@ -15,6 +15,7 @@ import {
   getRecoveryAttributionBreakdown,
   getRecoveryAttributionKpis,
   getRecoveryImportHistory,
+  getRecoveryLatestImportsSummary,
   getRecentRecoveryAttributionCases,
 } from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
@@ -25,6 +26,7 @@ import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryCartStatusSummary } from "./recovery-cart-status-summary";
 import { RecoveryImportHistory } from "./recovery-import-history";
+import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
 
 const kpis = [
   { label: "Carritos perdidos", value: "128", icon: ShoppingCart, tone: "info" as BadgeTone },
@@ -150,6 +152,7 @@ export default async function RecuperacionPage() {
     { data: attributionBreakdown, error: attributionBreakdownError },
     { data: recentAttributionCases, error: recentAttributionCasesError },
     { data: cartStatusSummary, error: cartStatusSummaryError },
+    { data: latestImportsSummary, error: latestImportsSummaryError },
     { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
@@ -157,6 +160,7 @@ export default async function RecuperacionPage() {
     getRecoveryAttributionBreakdown(),
     getRecentRecoveryAttributionCases(),
     getRecoveryCartStatusSummary(),
+    getRecoveryLatestImportsSummary(),
     getRecoveryCartAuditRows(),
   ]);
 
@@ -221,6 +225,10 @@ export default async function RecuperacionPage() {
         <RecoveryCartStatusSummary
           error={cartStatusSummaryError?.message ?? null}
           summary={cartStatusSummary}
+        />
+        <RecoveryLatestImportsSummary
+          error={latestImportsSummaryError?.message ?? null}
+          summary={latestImportsSummary}
         />
         <RecoveryCartAuditTable
           error={cartAuditRowsError?.message ?? null}
