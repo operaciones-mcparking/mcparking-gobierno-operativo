@@ -9,9 +9,10 @@ import {
 } from "lucide-react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
-import { getRecoveryImportHistory } from "@/lib/dashboard/data";
+import { getRecoveryAttributionKpis, getRecoveryImportHistory } from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
+import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
 import { RecoveryImportHistory } from "./recovery-import-history";
 
 const kpis = [
@@ -132,7 +133,10 @@ function statusTone(status: string): BadgeTone {
 }
 
 export default async function RecuperacionPage() {
-  const { data: importHistory, error: importHistoryError } = await getRecoveryImportHistory();
+  const [
+    { data: importHistory, error: importHistoryError },
+    { data: attributionKpis, error: attributionKpisError },
+  ] = await Promise.all([getRecoveryImportHistory(), getRecoveryAttributionKpis()]);
 
   return (
     <main className="min-h-screen bg-[#f6f8fa] text-ink">
@@ -182,6 +186,10 @@ export default async function RecuperacionPage() {
 
         <PurchasesUploadMock />
         <IncompleteBookingsUploadMock />
+        <RecoveryAttributionKpis
+          error={attributionKpisError?.message ?? null}
+          kpis={attributionKpis}
+        />
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}

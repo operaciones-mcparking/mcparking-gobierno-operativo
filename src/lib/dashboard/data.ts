@@ -254,6 +254,20 @@ export type RecoveryImportHistoryItem = {
   confirmed_at: string | null;
 };
 
+export type RecoveryAttributionKpis = {
+  high_confidence_cases: number;
+  low_confidence_cases: number;
+  medium_confidence_cases: number;
+  monto_24h: number;
+  monto_48h: number;
+  monto_7d: number;
+  recuperados_24h: number;
+  recuperados_48h: number;
+  recuperados_7d: number;
+  tasa_7d: number;
+  total_carritos: number;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -782,4 +796,61 @@ export async function getRecoveryImportHistory(limit = 10) {
   }));
 
   return { data, error: null };
+}
+
+export async function getRecoveryAttributionKpis() {
+  noStore();
+
+  const supabase = await createSupabaseAuthServerClient();
+  const [
+    { count: totalCarts, error: totalCartsError },
+    { data: attributionCases, error: attributionError },
+  ] = await Promise.all([
+    supabase
+      .from("recovery_incomplete_bookings_import")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("v_recovery_attribution_cases")
+      .select("recovered_24h,recovered_48h,recovered_7d,purchase_amount,confidence"),
+  ]);
+
+  if (totalCartsError) {
+    return { data: null as RecoveryAttributionKpis | null, error: totalCartsError };
+  }
+
+  if (attributionError) {
+    return { data: null as RecoveryAttributionKpis | null, error: attributionError };
+  }
+
+  const cases = attributionCases ?? [];
+  const recuperados24h = cases.filter((item) => item.recovered_24h).length;
+  const recuperados48h = cases.filter((item) => item.recovered_48h).length;
+  const recuperados7d = cases.filter((item) => item.recovered_7d).length;
+  const monto24h = cases.reduce(
+    (total, item) => total + (item.recovered_24h ? Number(item.purchase_amount ?? 0) : 0),
+    0,
+  );
+  const monto48h = cases.reduce(
+    (total, item) => total + (item.recovered_48h ? Number(item.purchase_amount ?? 0) : 0),
+    0,
+  );
+  const monto7d = cases.reduce((total, item) => total + Number(item.purchase_amount ?? 0), 0);
+  const totalCarritos = totalCarts ?? 0;
+
+  return {
+    data: {
+      high_confidence_cases: cases.filter((item) => item.confidence === "high").length,
+      low_confidence_cases: cases.filter((item) => item.confidence === "low").length,
+      medium_confidence_cases: cases.filter((item) => item.confidence === "medium").length,
+      monto_24h: monto24h,
+      monto_48h: monto48h,
+      monto_7d: monto7d,
+      recuperados_24h: recuperados24h,
+      recuperados_48h: recuperados48h,
+      recuperados_7d: recuperados7d,
+      tasa_7d: totalCarritos > 0 ? (recuperados7d / totalCarritos) * 100 : 0,
+      total_carritos: totalCarritos,
+    },
+    error: null,
+  };
 }
