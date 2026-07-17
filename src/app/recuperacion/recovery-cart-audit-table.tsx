@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
-import type { RecoveryCartAuditRow } from "@/lib/dashboard/data";
+import type { RecoveryCartAuditRow, RecoveryCartAuditStatus } from "@/lib/dashboard/data";
 
 type RecoveryCartAuditTableProps = {
   error?: string | null;
   rows: RecoveryCartAuditRow[];
 };
 
-type StatusFilter = "all" | "recovered" | "not_recovered";
+type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
 type SortKey = "cart_date" | "purchase_date" | "amount" | "status" | "type" | "parking" | "confidence";
 
@@ -27,6 +27,16 @@ function formatDate(value: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDateOnly(value: string | null) {
+  if (!value) return "-";
+
+  const [year, month, day] = value.split("-");
+
+  if (!year || !month || !day) return formatDate(value);
+
+  return `${day}/${month}/${year}`;
 }
 
 function formatHours(value: number | null) {
@@ -60,8 +70,20 @@ function messageSentTone(value: boolean | null): BadgeTone {
   return "warning";
 }
 
-function statusTone(recovered: boolean): BadgeTone {
-  return recovered ? "success" : "neutral";
+function auditStatusLabel(status: RecoveryCartAuditStatus) {
+  if (status === "recovered_with_amount") return "Recuperado con monto";
+  if (status === "recovered_pack") return "Recuperado sin monto / pack";
+  if (status === "expired") return "Carrito expirado";
+
+  return "No recuperado";
+}
+
+function auditStatusTone(status: RecoveryCartAuditStatus): BadgeTone {
+  if (status === "recovered_with_amount") return "success";
+  if (status === "recovered_pack") return "info";
+  if (status === "expired") return "warning";
+
+  return "neutral";
 }
 
 function confidenceTone(confidence: string | null): BadgeTone {
@@ -76,7 +98,7 @@ function sortValue(row: RecoveryCartAuditRow, sortKey: SortKey) {
   if (sortKey === "cart_date") return row.cart_form_datetime ? new Date(row.cart_form_datetime).getTime() : 0;
   if (sortKey === "purchase_date") return row.purchase_created_at ? new Date(row.purchase_created_at).getTime() : 0;
   if (sortKey === "amount") return Number(row.purchase_amount ?? -1);
-  if (sortKey === "status") return row.recovered ? 1 : 0;
+  if (sortKey === "status") return row.audit_status;
   if (sortKey === "type") return row.cart_type ?? "";
   if (sortKey === "parking") return row.parking_code ?? "";
   if (sortKey === "confidence") return row.confidence ?? "";
@@ -93,8 +115,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const visibleRows = useMemo(() => {
     return [...rows]
       .filter((row) => {
-        if (statusFilter === "recovered" && !row.recovered) return false;
-        if (statusFilter === "not_recovered" && row.recovered) return false;
+        if (statusFilter !== "all" && row.audit_status !== statusFilter) return false;
         if (typeFilter !== "all" && row.cart_type !== typeFilter) return false;
         if (dateQuery && dateInputValue(row.cart_form_datetime) !== dateQuery) {
           return false;
@@ -145,8 +166,10 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
             value={statusFilter}
           >
             <option value="all">Todos</option>
-            <option value="recovered">Recuperados</option>
-            <option value="not_recovered">No recuperados</option>
+            <option value="recovered_with_amount">Recuperado con monto</option>
+            <option value="recovered_pack">Recuperado sin monto / pack</option>
+            <option value="expired">Carrito expirado</option>
+            <option value="not_recovered">No recuperado</option>
           </select>
         </label>
 
@@ -202,16 +225,16 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="w-[9%] border-b border-[#d6e1ea] px-2 py-3">Tipo</th>
-                <th className="w-[21%] border-b border-[#d6e1ea] px-2 py-3">Contacto</th>
-                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Parking</th>
-                <th className="w-[9%] border-b border-[#d6e1ea] px-2 py-3">Mensaje</th>
-                <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Fecha carrito</th>
-                <th className="w-[10%] border-b border-[#d6e1ea] px-2 py-3">Estado</th>
+                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Tipo</th>
+                <th className="w-[20%] border-b border-[#d6e1ea] px-2 py-3">Contacto</th>
+                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Parking</th>
+                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Mensaje</th>
+                <th className="w-[13%] border-b border-[#d6e1ea] px-2 py-3">Fecha carrito</th>
+                <th className="w-[13%] border-b border-[#d6e1ea] px-2 py-3">Estado</th>
                 <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Fecha compra</th>
-                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Horas</th>
-                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Monto</th>
-                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Confianza</th>
+                <th className="w-[6%] border-b border-[#d6e1ea] px-2 py-3">Horas</th>
+                <th className="w-[6%] border-b border-[#d6e1ea] px-2 py-3">Monto</th>
+                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Confianza</th>
               </tr>
             </thead>
             <tbody>
@@ -233,11 +256,14 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                     </ValueBadge>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
-                    {formatDate(row.cart_form_datetime)}
+                    <div>{formatDate(row.cart_form_datetime)}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      Salida: {formatDateOnly(row.intended_departure_date)}
+                    </div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
-                    <ValueBadge tone={statusTone(row.recovered)}>
-                      {row.recovered ? "Recuperado" : "No recuperado"}
+                    <ValueBadge tone={auditStatusTone(row.audit_status)}>
+                      {auditStatusLabel(row.audit_status)}
                     </ValueBadge>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
@@ -247,7 +273,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                     {formatHours(row.hours_to_purchase)}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 font-medium text-navy">
-                    {formatCurrency(row.purchase_amount)}
+                    {row.recovered ? formatCurrency(row.purchase_amount) : "-"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
                     {row.confidence ? (

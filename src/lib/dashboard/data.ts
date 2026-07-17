@@ -301,12 +301,20 @@ export type RecentRecoveryAttributionCase = {
   recovered_7d: boolean | null;
 };
 
+export type RecoveryCartAuditStatus =
+  | "expired"
+  | "not_recovered"
+  | "recovered_pack"
+  | "recovered_with_amount";
+
 export type RecoveryCartAuditRow = {
+  audit_status: RecoveryCartAuditStatus;
   cart_form_datetime: string | null;
   cart_type: string | null;
   confidence: string | null;
   email: string | null;
   hours_to_purchase: number | null;
+  intended_departure_date: string | null;
   message_sent: boolean | null;
   parking_code: string | null;
   phone: string | null;
@@ -1074,6 +1082,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     email_normalized: string | null;
     form_datetime: string | null;
     id: string;
+    intended_departure_date: string | null;
     message_sent: boolean | null;
     parking_code: string | null;
     phone_normalized: string | null;
@@ -1088,10 +1097,30 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     purchase_created_at: string | null;
   };
 
+  function todayDateValue() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function resolveAuditStatus(
+    attribution: AttributionByCartRow | undefined,
+    intendedDepartureDate: string | null,
+  ): RecoveryCartAuditStatus {
+    if (attribution && Number(attribution.purchase_amount ?? 0) > 0) return "recovered_with_amount";
+    if (attribution && Number(attribution.purchase_amount ?? 0) === 0) return "recovered_pack";
+    if (intendedDepartureDate && intendedDepartureDate < todayDateValue()) return "expired";
+
+    return "not_recovered";
+  }
+
   const supabase = await createSupabaseAuthServerClient();
   const { data: carts, error: cartsError } = await supabase
     .from("recovery_incomplete_bookings_import")
-    .select("id,type,email_normalized,phone_normalized,parking_code,message_sent,form_datetime")
+    .select("id,type,email_normalized,phone_normalized,parking_code,message_sent,form_datetime,intended_departure_date")
     .order("form_datetime", { ascending: false })
     .limit(limit);
 
@@ -1124,11 +1153,13 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     const attribution = attributionsByCartId.get(cart.id);
 
     return {
+      audit_status: resolveAuditStatus(attribution, cart.intended_departure_date),
       cart_form_datetime: cart.form_datetime,
       cart_type: cart.type,
       confidence: attribution?.confidence ?? null,
       email: cart.email_normalized,
       hours_to_purchase: attribution?.hours_to_purchase ?? null,
+      intended_departure_date: cart.intended_departure_date,
       message_sent: cart.message_sent,
       parking_code: cart.parking_code,
       phone: cart.phone_normalized,
