@@ -9,9 +9,14 @@ import {
 } from "lucide-react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
-import { getRecoveryAttributionKpis, getRecoveryImportHistory } from "@/lib/dashboard/data";
+import {
+  getRecoveryAttributionBreakdown,
+  getRecoveryAttributionKpis,
+  getRecoveryImportHistory,
+} from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
+import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
 import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
 import { RecoveryImportHistory } from "./recovery-import-history";
 
@@ -136,7 +141,12 @@ export default async function RecuperacionPage() {
   const [
     { data: importHistory, error: importHistoryError },
     { data: attributionKpis, error: attributionKpisError },
-  ] = await Promise.all([getRecoveryImportHistory(), getRecoveryAttributionKpis()]);
+    { data: attributionBreakdown, error: attributionBreakdownError },
+  ] = await Promise.all([
+    getRecoveryImportHistory(),
+    getRecoveryAttributionKpis(),
+    getRecoveryAttributionBreakdown(),
+  ]);
 
   return (
     <main className="min-h-screen bg-[#f6f8fa] text-ink">
@@ -184,12 +194,16 @@ export default async function RecuperacionPage() {
           })}
         </section>
 
-        <PurchasesUploadMock />
-        <IncompleteBookingsUploadMock />
         <RecoveryAttributionKpis
           error={attributionKpisError?.message ?? null}
           kpis={attributionKpis}
         />
+        <RecoveryAttributionBreakdown
+          breakdown={attributionBreakdown}
+          error={attributionBreakdownError?.message ?? null}
+        />
+        <PurchasesUploadMock />
+        <IncompleteBookingsUploadMock />
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}

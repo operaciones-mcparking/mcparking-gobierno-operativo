@@ -268,6 +268,20 @@ export type RecoveryAttributionKpis = {
   total_carritos: number;
 };
 
+export type RecoveryAttributionBreakdownItem = {
+  label: string;
+  amount: number;
+  count: number;
+  percentage?: number;
+};
+
+export type RecoveryAttributionBreakdown = {
+  by_confidence: RecoveryAttributionBreakdownItem[];
+  by_parking: RecoveryAttributionBreakdownItem[];
+  by_type: RecoveryAttributionBreakdownItem[];
+  total_recovered: number;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -850,6 +864,66 @@ export async function getRecoveryAttributionKpis() {
       recuperados_7d: recuperados7d,
       tasa_7d: totalCarritos > 0 ? (recuperados7d / totalCarritos) * 100 : 0,
       total_carritos: totalCarritos,
+    },
+    error: null,
+  };
+}
+
+export async function getRecoveryAttributionBreakdown() {
+  noStore();
+
+  const supabase = await createSupabaseAuthServerClient();
+  const { data: attributionCases, error } = await supabase
+    .from("v_recovery_attribution_cases")
+    .select("cart_type,parking_code,purchase_amount,confidence");
+
+  if (error) {
+    return { data: null as RecoveryAttributionBreakdown | null, error };
+  }
+
+  const cases = attributionCases ?? [];
+  const totalRecovered = cases.length;
+
+  function buildGroup(
+    keyForCase: (item: (typeof cases)[number]) => string,
+    preferredOrder: string[] = [],
+  ): RecoveryAttributionBreakdownItem[] {
+    const grouped = new Map<string, { amount: number; count: number }>();
+
+    for (const item of cases) {
+      const key = keyForCase(item);
+      const current = grouped.get(key) ?? { amount: 0, count: 0 };
+      current.amount += Number(item.purchase_amount ?? 0);
+      current.count += 1;
+      grouped.set(key, current);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([label, value]) => ({
+        amount: value.amount,
+        count: value.count,
+        label,
+        percentage: totalRecovered > 0 ? (value.count / totalRecovered) * 100 : 0,
+      }))
+      .sort((left, right) => {
+        const leftIndex = preferredOrder.indexOf(left.label);
+        const rightIndex = preferredOrder.indexOf(right.label);
+
+        if (leftIndex !== -1 || rightIndex !== -1) {
+          return (leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex) -
+            (rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex);
+        }
+
+        return right.count - left.count;
+      });
+  }
+
+  return {
+    data: {
+      by_confidence: buildGroup((item) => item.confidence ?? "Sin confianza", ["high", "medium", "low"]),
+      by_parking: buildGroup((item) => item.parking_code ?? "Sin parking"),
+      by_type: buildGroup((item) => item.cart_type ?? "Sin tipo", ["abandoned", "canceled"]),
+      total_recovered: totalRecovered,
     },
     error: null,
   };
