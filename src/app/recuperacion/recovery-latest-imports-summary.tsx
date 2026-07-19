@@ -51,6 +51,20 @@ function OptionalDetailRow({ label, value }: { label: string; value: number | nu
   return <DetailRow label={label} value={formatNumber(value)} />;
 }
 
+function TrackingStatusRows({ counts }: { counts: Record<string, number> | null }) {
+  if (!counts) return null;
+
+  return (
+    <>
+      <OptionalDetailRow label="Leidos" value={counts.read ?? null} />
+      <OptionalDetailRow label="Entregados" value={counts.delivered ?? null} />
+      <OptionalDetailRow label="Enviados" value={counts.sent ?? null} />
+      <OptionalDetailRow label="Fallidos" value={counts.failed ?? null} />
+      <OptionalDetailRow label="Unknown" value={counts.unknown ?? null} />
+    </>
+  );
+}
+
 function LatestImportCard({
   importItem,
   title,
@@ -58,7 +72,7 @@ function LatestImportCard({
 }: {
   importItem: RecoveryLatestImportSummaryItem | null;
   title: string;
-  type: "carts" | "purchases";
+  type: "carts" | "purchases" | "tracking";
 }) {
   const hasPersistedResult = importItem
     ? [
@@ -72,6 +86,7 @@ function LatestImportCard({
         importItem.inserted_abandoned_rows,
         importItem.inserted_canceled_rows,
         importItem.message_sent_rows,
+        importItem.tracking_status_counts,
       ].some((value) => value !== null)
     : false;
 
@@ -119,6 +134,14 @@ function LatestImportCard({
               <OptionalDetailRow label="Con mensaje enviado" value={importItem.message_sent_rows} />
             </>
           ) : null}
+          {type === "tracking" ? (
+            <>
+              <OptionalDetailRow label="Duplicadas source" value={importItem.source_duplicate_rows} />
+              <OptionalDetailRow label="Duplicadas mensaje" value={importItem.message_duplicate_rows} />
+              <OptionalDetailRow label="Con mensaje enviado" value={importItem.message_sent_rows} />
+              <TrackingStatusRows counts={importItem.tracking_status_counts} />
+            </>
+          ) : null}
           <DetailRow label="Estado" value={importItem.status} />
           <DetailRow label="Batch" value={shortBatchId(importItem.id)} />
           {!hasPersistedResult ? (
@@ -157,7 +180,7 @@ export function RecoveryLatestImportsSummary({ error, summary }: RecoveryLatestI
       ) : null}
 
       {!error ? (
-        <div className="grid gap-3 p-5 lg:grid-cols-2">
+        <div className="grid gap-3 p-5 xl:grid-cols-3">
           <LatestImportCard
             importItem={summary?.purchases ?? null}
             title="Ultima carga de compras"
@@ -167,6 +190,11 @@ export function RecoveryLatestImportsSummary({ error, summary }: RecoveryLatestI
             importItem={summary?.carts ?? null}
             title="Ultima carga de carritos"
             type="carts"
+          />
+          <LatestImportCard
+            importItem={summary?.tracking ?? null}
+            title="Ultima carga de Seguimiento WhatsApp"
+            type="tracking"
           />
         </div>
       ) : null}

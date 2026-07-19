@@ -270,6 +270,7 @@ export type RecoveryLatestImportSummaryItem = {
   skipped_duplicate_rows: number | null;
   source_duplicate_rows: number | null;
   status: string;
+  tracking_status_counts: Record<string, number> | null;
   rows_total: number;
   valid_purchase_rows: number;
   valid_purchase_amount: number;
@@ -280,6 +281,7 @@ export type RecoveryLatestImportSummaryItem = {
 export type RecoveryLatestImportsSummary = {
   carts: RecoveryLatestImportSummaryItem | null;
   purchases: RecoveryLatestImportSummaryItem | null;
+  tracking: RecoveryLatestImportSummaryItem | null;
 };
 
 export type RecoveryAttributionKpis = {
@@ -899,11 +901,11 @@ export async function getRecoveryLatestImportsSummary() {
 
   const supabase = await createSupabaseAuthServerClient();
 
-  async function getLatestImport(importType: "incomplete_bookings_csv" | "purchases_csv") {
+  async function getLatestImport(importType: "incomplete_bookings_csv" | "purchases_csv" | "whatsapp_tracking_csv") {
     const { data, error } = await supabase
       .from("recovery_import_batches")
       .select(
-        "id,import_type,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,created_at,confirmed_at,inserted_rows,skipped_duplicate_rows,conflict_rows,invalid_rows,inserted_amount,source_duplicate_rows,booking_duplicate_rows,message_duplicate_rows,inserted_abandoned_rows,inserted_canceled_rows,message_sent_rows",
+        "id,import_type,file_name,status,rows_total,valid_purchase_rows,valid_purchase_amount,booking_status_counts,created_at,confirmed_at,inserted_rows,skipped_duplicate_rows,conflict_rows,invalid_rows,inserted_amount,source_duplicate_rows,booking_duplicate_rows,message_duplicate_rows,inserted_abandoned_rows,inserted_canceled_rows,message_sent_rows",
       )
       .eq("import_type", importType)
       .eq("status", "imported")
@@ -923,7 +925,9 @@ export async function getRecoveryLatestImportsSummary() {
     const table =
       data.import_type === "incomplete_bookings_csv"
         ? "recovery_incomplete_bookings_import"
-        : "recovery_bookings_import";
+        : data.import_type === "whatsapp_tracking_csv"
+          ? "recovery_whatsapp_tracking_import"
+          : "recovery_bookings_import";
     const { count: insertedRows, error: insertedRowsError } = await supabase
       .from(table)
       .select("id", { count: "exact", head: true })
@@ -931,6 +935,34 @@ export async function getRecoveryLatestImportsSummary() {
 
     if (insertedRowsError) {
       return { data: null as RecoveryLatestImportSummaryItem | null, error: insertedRowsError };
+    }
+
+    const persistedTrackingCounts = (data.booking_status_counts ?? {}) as Record<string, number>;
+    let trackingStatusCounts =
+      data.import_type === "whatsapp_tracking_csv" && Object.keys(persistedTrackingCounts).length > 0
+        ? persistedTrackingCounts
+        : null;
+
+    if (data.import_type === "whatsapp_tracking_csv" && !trackingStatusCounts) {
+      const statuses = ["read", "delivered", "sent", "failed", "unknown"];
+      const countResults = await Promise.all(
+        statuses.map((status) =>
+          supabase
+            .from("recovery_whatsapp_tracking_import")
+            .select("id", { count: "exact", head: true })
+            .eq("batch_id", data.id)
+            .eq("tracking_status", status),
+        ),
+      );
+      const trackingCountError = countResults.find((result) => result.error)?.error;
+
+      if (trackingCountError) {
+        return { data: null as RecoveryLatestImportSummaryItem | null, error: trackingCountError };
+      }
+
+      trackingStatusCounts = Object.fromEntries(
+        statuses.map((status, index) => [status, countResults[index].count ?? 0]),
+      );
     }
 
     return {
@@ -953,6 +985,7 @@ export async function getRecoveryLatestImportsSummary() {
         skipped_duplicate_rows: data.skipped_duplicate_rows,
         source_duplicate_rows: data.source_duplicate_rows,
         status: data.status,
+        tracking_status_counts: trackingStatusCounts,
         valid_purchase_amount: Number(data.valid_purchase_amount ?? 0),
         valid_purchase_rows: data.valid_purchase_rows,
       },
@@ -960,12 +993,13 @@ export async function getRecoveryLatestImportsSummary() {
     };
   }
 
-  const [purchasesResult, cartsResult] = await Promise.all([
+  const [purchasesResult, cartsResult, trackingResult] = await Promise.all([
     getLatestImport("purchases_csv"),
     getLatestImport("incomplete_bookings_csv"),
+    getLatestImport("whatsapp_tracking_csv"),
   ]);
 
-  const error = purchasesResult.error ?? cartsResult.error;
+  const error = purchasesResult.error ?? cartsResult.error ?? trackingResult.error;
 
   if (error) {
     return { data: null as RecoveryLatestImportsSummary | null, error };
@@ -975,6 +1009,7 @@ export async function getRecoveryLatestImportsSummary() {
     data: {
       carts: cartsResult.data,
       purchases: purchasesResult.data,
+      tracking: trackingResult.data,
     },
     error: null,
   };
