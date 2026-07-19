@@ -64,6 +64,10 @@ function formatHours(value: number | null) {
   return `${Number(value).toFixed(1).replace(".", ",")} h`;
 }
 
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("es-CL").format(value);
+}
+
 function dateInputValue(value: string | null) {
   if (!value) return "";
 
@@ -219,27 +223,33 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const showingFrom = visibleRows.length === 0 ? 0 : pageStartIndex + 1;
   const showingTo = Math.min(pageStartIndex + rowsPerPage, visibleRows.length);
   const auditSummary = useMemo(
-    () => ({
-      deliveredAfterSent: visibleRows.filter(
-        (row) => row.message_sent === true && row.whatsappStatus === "delivered",
-      ).length,
-      failed: visibleRows.filter((row) => row.whatsappStatus === "failed").length,
-      notRecovered: visibleRows.filter((row) => row.audit_status === "not_recovered").length,
-      readAfterSent: visibleRows.filter((row) => row.message_sent === true && row.whatsappStatus === "read").length,
-      recovered: visibleRows.filter((row) => row.recovered).length,
-      total: visibleRows.length,
-      withoutTracking: visibleRows.filter((row) => row.whatsappStatus === "sin_seguimiento").length,
-    }),
+    () => {
+      const recoveredRows = visibleRows.filter((row) => row.recovered);
+      const rowsWithHours = recoveredRows.filter(
+        (row) => row.hours_to_purchase !== null && row.hours_to_purchase !== undefined,
+      );
+      const totalHours = rowsWithHours.reduce((total, row) => total + Number(row.hours_to_purchase ?? 0), 0);
+
+      return {
+        averageHours: rowsWithHours.length > 0 ? totalHours / rowsWithHours.length : null,
+        delivered: visibleRows.filter((row) => row.whatsappStatus === "delivered").length,
+        failed: visibleRows.filter((row) => row.whatsappStatus === "failed").length,
+        notRecovered: visibleRows.filter((row) => row.audit_status === "not_recovered").length,
+        read: visibleRows.filter((row) => row.whatsappStatus === "read").length,
+        recovered: recoveredRows.length,
+        recoveredAmount: recoveredRows.reduce((total, row) => total + Number(row.purchase_amount ?? 0), 0),
+        total: visibleRows.length,
+        withoutTracking: visibleRows.filter((row) => row.whatsappStatus === "sin_seguimiento").length,
+      };
+    },
     [visibleRows],
   );
-  const auditSummaryCards = [
-    { label: "Visibles segun filtros", value: auditSummary.total },
-    { label: "No recuperados", value: auditSummary.notRecovered },
-    { label: "Recuperados", value: auditSummary.recovered },
-    { label: "Enviado + leido", value: auditSummary.readAfterSent },
-    { label: "Enviado + entregado", value: auditSummary.deliveredAfterSent },
-    { label: "Fallidos", value: auditSummary.failed },
-    { label: "Sin seguimiento", value: auditSummary.withoutTracking },
+  const auditFunnelCards = [
+    { label: "Carritos perdidos", value: formatNumber(auditSummary.total) },
+    { label: "No recuperados", value: formatNumber(auditSummary.notRecovered) },
+    { label: "Recuperados", value: formatNumber(auditSummary.recovered) },
+    { label: "Horas promedio", value: formatHours(auditSummary.averageHours) },
+    { label: "Monto recuperado", value: formatCurrency(auditSummary.recoveredAmount) },
   ];
 
   useEffect(() => {
@@ -415,11 +425,11 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
               Calculado sobre las filas que cumplen los filtros actuales, antes de la paginacion.
             </p>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-            {auditSummaryCards.map((item) => (
-              <div className="rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-3" key={item.label}>
+          <div className="grid gap-2 lg:grid-cols-5">
+            {auditFunnelCards.map((item) => (
+              <div className="relative rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-3" key={item.label}>
                 <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
-                <p className="mt-1 text-lg font-medium text-navy">{new Intl.NumberFormat("es-CL").format(item.value)}</p>
+                <p className="mt-1 text-lg font-medium text-navy">{item.value}</p>
               </div>
             ))}
           </div>
