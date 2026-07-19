@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import type {
@@ -18,7 +18,20 @@ type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
 type WhatsappFilter = "all" | RecoveryCartWhatsappStatus;
 type QuickFilter = "none" | "not_sent_or_without_tracking" | "sent_and_delivered" | "sent_and_failed" | "sent_and_read";
-type SortKey = "cart_date" | "purchase_date" | "amount" | "status" | "type" | "parking" | "confidence";
+type SortDirection = "asc" | "desc";
+type SortKey =
+  | "amount"
+  | "cart_date"
+  | "confidence"
+  | "contact"
+  | "hours"
+  | "message"
+  | "parking"
+  | "purchase_date"
+  | "status"
+  | "type";
+
+const rowsPerPage = 20;
 
 function formatCurrency(value: number | null) {
   if (value === null || value === undefined) return "-";
@@ -122,12 +135,23 @@ function sortValue(row: RecoveryCartAuditRow, sortKey: SortKey) {
   if (sortKey === "cart_date") return row.cart_form_datetime ? new Date(row.cart_form_datetime).getTime() : 0;
   if (sortKey === "purchase_date") return row.purchase_created_at ? new Date(row.purchase_created_at).getTime() : 0;
   if (sortKey === "amount") return Number(row.purchase_amount ?? -1);
+  if (sortKey === "contact") return `${row.email ?? ""} ${row.phone ?? ""}`;
+  if (sortKey === "hours") return Number(row.hours_to_purchase ?? -1);
+  if (sortKey === "message") return `${messageSentLabel(row.message_sent)} ${row.whatsappStatus}`;
   if (sortKey === "status") return row.audit_status;
   if (sortKey === "type") return row.cart_type ?? "";
   if (sortKey === "parking") return row.parking_code ?? "";
   if (sortKey === "confidence") return row.confidence ?? "";
 
   return "";
+}
+
+function defaultSortDirection(sortKey: SortKey): SortDirection {
+  if (sortKey === "amount" || sortKey === "cart_date" || sortKey === "hours" || sortKey === "purchase_date") {
+    return "desc";
+  }
+
+  return "asc";
 }
 
 function quickFilterClass(active: boolean) {
@@ -145,6 +169,8 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [whatsappFilter, setWhatsappFilter] = useState<WhatsappFilter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [sortKey, setSortKey] = useState<SortKey>("cart_date");
 
   const visibleRows = useMemo(() => {
@@ -177,12 +203,25 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         const rightValue = sortValue(right, sortKey);
 
         if (typeof leftValue === "number" && typeof rightValue === "number") {
-          return rightValue - leftValue;
+          return sortDirection === "desc" ? rightValue - leftValue : leftValue - rightValue;
         }
 
-        return String(leftValue).localeCompare(String(rightValue), "es-CL");
+        const comparison = String(leftValue).localeCompare(String(rightValue), "es-CL");
+
+        return sortDirection === "desc" ? comparison * -1 : comparison;
       });
-  }, [dateQuery, quickFilter, rows, sortKey, statusFilter, typeFilter, whatsappFilter]);
+  }, [dateQuery, quickFilter, rows, sortDirection, sortKey, statusFilter, typeFilter, whatsappFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / rowsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * rowsPerPage;
+  const pageRows = visibleRows.slice(pageStartIndex, pageStartIndex + rowsPerPage);
+  const showingFrom = visibleRows.length === 0 ? 0 : pageStartIndex + 1;
+  const showingTo = Math.min(pageStartIndex + rowsPerPage, visibleRows.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateQuery, quickFilter, statusFilter, typeFilter, whatsappFilter]);
 
   function applyQuickFilter(
     status: StatusFilter,
@@ -192,6 +231,22 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
     setQuickFilter(specialFilter);
     setStatusFilter(status);
     setWhatsappFilter(whatsapp);
+  }
+
+  function handleSort(nextSortKey: SortKey) {
+    if (sortKey === nextSortKey) {
+      setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+
+    setSortKey(nextSortKey);
+    setSortDirection(defaultSortDirection(nextSortKey));
+  }
+
+  function sortIndicator(headerSortKey: SortKey) {
+    if (sortKey !== headerSortKey) return "";
+
+    return sortDirection === "asc" ? " ↑" : " ↓";
   }
 
   return (
@@ -261,7 +316,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         </button>
       </div>
 
-      <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
         <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
           Fecha carrito
           <input
@@ -270,6 +325,9 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
             type="date"
             value={dateQuery}
           />
+          <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-slate-500">
+            Formato: dd/mm/yyyy{dateQuery ? ` · ${formatDateOnly(dateQuery)}` : ""}
+          </span>
         </label>
 
         <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
@@ -322,22 +380,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           </select>
         </label>
 
-        <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
-          Ordenar por
-          <select
-            className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
-            onChange={(event) => setSortKey(event.target.value as SortKey)}
-            value={sortKey}
-          >
-            <option value="cart_date">Fecha carrito</option>
-            <option value="purchase_date">Fecha compra</option>
-            <option value="amount">Monto</option>
-            <option value="status">Estado</option>
-            <option value="type">Tipo</option>
-            <option value="parking">Parking</option>
-            <option value="confidence">Confianza</option>
-          </select>
-        </label>
       </div>
 
       {error ? (
@@ -358,24 +400,24 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
 
       {!error && visibleRows.length > 0 ? (
         <div className="px-5 py-5">
-          <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
+          <div className="overflow-x-auto">
+          <table className="min-w-[1080px] w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Tipo</th>
-                <th className="w-[20%] border-b border-[#d6e1ea] px-2 py-3">Contacto</th>
-                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Parking</th>
-                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Mensaje</th>
-                <th className="w-[9%] border-b border-[#d6e1ea] px-2 py-3">WhatsApp</th>
-                <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Fecha carrito</th>
-                <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Estado</th>
-                <th className="w-[11%] border-b border-[#d6e1ea] px-2 py-3">Fecha compra</th>
-                <th className="w-[6%] border-b border-[#d6e1ea] px-2 py-3">Horas</th>
-                <th className="w-[6%] border-b border-[#d6e1ea] px-2 py-3">Monto</th>
-                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Confianza</th>
+                <SortableHeader className="w-[8%]" label="Tipo" onSort={() => handleSort("type")} sortIndicator={sortIndicator("type")} />
+                <SortableHeader className="w-[20%]" label="Contacto" onSort={() => handleSort("contact")} sortIndicator={sortIndicator("contact")} />
+                <SortableHeader className="w-[7%]" label="Parking" onSort={() => handleSort("parking")} sortIndicator={sortIndicator("parking")} />
+                <SortableHeader className="w-[10%]" label="Mensaje" onSort={() => handleSort("message")} sortIndicator={sortIndicator("message")} />
+                <SortableHeader className="w-[12%]" label="Fecha carrito" onSort={() => handleSort("cart_date")} sortIndicator={sortIndicator("cart_date")} />
+                <SortableHeader className="w-[12%]" label="Estado" onSort={() => handleSort("status")} sortIndicator={sortIndicator("status")} />
+                <SortableHeader className="w-[11%]" label="Fecha compra" onSort={() => handleSort("purchase_date")} sortIndicator={sortIndicator("purchase_date")} />
+                <SortableHeader className="w-[6%]" label="Horas" onSort={() => handleSort("hours")} sortIndicator={sortIndicator("hours")} />
+                <SortableHeader className="w-[6%]" label="Monto" onSort={() => handleSort("amount")} sortIndicator={sortIndicator("amount")} />
+                <SortableHeader className="w-[8%]" label="Conf." onSort={() => handleSort("confidence")} sortIndicator={sortIndicator("confidence")} />
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row, index) => (
+              {pageRows.map((row, index) => (
                 <tr className="bg-white odd:bg-[#fbfdfe]" key={`${row.cart_form_datetime ?? "cart"}-${index}`}>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.cart_type ?? "Sin tipo"}
@@ -388,14 +430,14 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                     {row.parking_code ?? "Sin parking"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
-                    <ValueBadge tone={messageSentTone(row.message_sent)}>
-                      {messageSentLabel(row.message_sent)}
-                    </ValueBadge>
-                  </td>
-                  <td className="border-b border-[#edf2f6] px-2 py-3">
-                    <ValueBadge tone={whatsappStatusTone(row.whatsappStatus)}>
-                      {whatsappStatusLabel(row.whatsappStatus)}
-                    </ValueBadge>
+                    <div className="flex flex-col items-start gap-1">
+                      <ValueBadge tone={messageSentTone(row.message_sent)}>
+                        {messageSentLabel(row.message_sent)}
+                      </ValueBadge>
+                      <ValueBadge tone={whatsappStatusTone(row.whatsappStatus)}>
+                        {whatsappStatusLabel(row.whatsappStatus)}
+                      </ValueBadge>
+                    </div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     <div>{formatDate(row.cart_form_datetime)}</div>
@@ -428,8 +470,53 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
               ))}
             </tbody>
           </table>
+          </div>
+          <div className="mt-4 flex flex-col gap-3 border-t border-[#edf2f6] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-600">
+              Mostrando {showingFrom}-{showingTo} de {visibleRows.length}
+            </p>
+            <div className="flex gap-2">
+              <button
+                className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm font-medium text-navy disabled:opacity-45"
+                disabled={safeCurrentPage <= 1}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                type="button"
+              >
+                Anterior
+              </button>
+              <button
+                className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm font-medium text-navy disabled:opacity-45"
+                disabled={safeCurrentPage >= totalPages}
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                type="button"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function SortableHeader({
+  className,
+  label,
+  onSort,
+  sortIndicator,
+}: {
+  className: string;
+  label: string;
+  onSort: () => void;
+  sortIndicator: string;
+}) {
+  return (
+    <th className={`${className} border-b border-[#d6e1ea] px-2 py-3`}>
+      <button className="text-left font-medium uppercase tracking-[0.08em] hover:text-navy" onClick={onSort} type="button">
+        {label}
+        {sortIndicator}
+      </button>
+    </th>
   );
 }
