@@ -17,6 +17,7 @@ import {
   getRecoveryLatestImportsSummary,
 } from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
+import { MessageMemoryUploadCard } from "./message-memory-upload-card";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
 import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
 import { RecoveryAttributionCases } from "./recovery-attribution-cases";
@@ -223,6 +224,7 @@ export default async function RecuperacionPage() {
         <PurchasesUploadMock />
         <IncompleteBookingsUploadMock />
         <TrackingUploadCard />
+        <MessageMemoryUploadCard />
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}
