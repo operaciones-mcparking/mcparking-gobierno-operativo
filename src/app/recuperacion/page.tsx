@@ -25,6 +25,7 @@ import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryCartStatusSummary } from "./recovery-cart-status-summary";
 import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
+import { TrackingUploadCard } from "./tracking-upload-card";
 
 const kpis = [
   { label: "Carritos perdidos", value: "128", icon: ShoppingCart, tone: "info" as BadgeTone },
@@ -230,6 +231,7 @@ export default async function RecuperacionPage() {
         />
         <PurchasesUploadMock />
         <IncompleteBookingsUploadMock />
+        <TrackingUploadCard />
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}

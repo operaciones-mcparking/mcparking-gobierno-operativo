@@ -10,7 +10,7 @@ const { validateTrackingCsv } = requireFromRoute(
   validateTrackingCsv: (csvContent: string) => TrackingCsvReport;
 };
 
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;
 
 type CountRow = {
   count: number;
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (file.size > MAX_FILE_SIZE_BYTES) {
-    return jsonError("El archivo supera el limite inicial de 20 MB.", 413);
+    return jsonError("El archivo supera el limite inicial de 30 MB.", 413);
   }
 
   const csvContent = await file.text();
