@@ -352,6 +352,7 @@ export type RecoveryCartAuditRow = {
   confidence: string | null;
   email: string | null;
   hours_to_purchase: number | null;
+  id: string;
   intended_departure_date: string | null;
   message_sent: boolean | null;
   parking_code: string | null;
@@ -1625,6 +1626,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
       confidence: attribution?.confidence ?? null,
       email: cart.email_normalized,
       hours_to_purchase: attribution?.hours_to_purchase ?? null,
+      id: cart.id,
       intended_departure_date: cart.intended_departure_date,
       message_sent: cart.message_sent,
       parking_code: cart.parking_code,

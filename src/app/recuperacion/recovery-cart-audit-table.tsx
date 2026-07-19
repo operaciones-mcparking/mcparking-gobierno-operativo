@@ -8,6 +8,7 @@ import type {
   RecoveryCartAuditStatus,
   RecoveryCartWhatsappStatus,
 } from "@/lib/dashboard/data";
+import { RecoveryCartChatDrawer } from "./recovery-cart-chat-drawer";
 
 type RecoveryCartAuditTableProps = {
   error?: string | null;
@@ -174,6 +175,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [whatsappFilter, setWhatsappFilter] = useState<WhatsappFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedChatCartId, setSelectedChatCartId] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [sortKey, setSortKey] = useState<SortKey>("cart_date");
 
@@ -455,24 +457,25 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       {!error && visibleRows.length > 0 ? (
         <div className="px-5 py-5">
           <div className="overflow-x-auto">
-          <table className="min-w-[1080px] w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
+          <table className="min-w-[1160px] w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <SortableHeader className="w-[8%]" label="Tipo" onSort={() => handleSort("type")} sortIndicator={sortIndicator("type")} />
-                <SortableHeader className="w-[20%]" label="Contacto" onSort={() => handleSort("contact")} sortIndicator={sortIndicator("contact")} />
+                <SortableHeader className="w-[7%]" label="Tipo" onSort={() => handleSort("type")} sortIndicator={sortIndicator("type")} />
+                <SortableHeader className="w-[19%]" label="Contacto" onSort={() => handleSort("contact")} sortIndicator={sortIndicator("contact")} />
                 <SortableHeader className="w-[7%]" label="Parking" onSort={() => handleSort("parking")} sortIndicator={sortIndicator("parking")} />
                 <SortableHeader className="w-[10%]" label="Mensaje" onSort={() => handleSort("message")} sortIndicator={sortIndicator("message")} />
                 <SortableHeader className="w-[12%]" label="Fecha carrito" onSort={() => handleSort("cart_date")} sortIndicator={sortIndicator("cart_date")} />
                 <SortableHeader className="w-[12%]" label="Estado" onSort={() => handleSort("status")} sortIndicator={sortIndicator("status")} />
-                <SortableHeader className="w-[11%]" label="Fecha compra" onSort={() => handleSort("purchase_date")} sortIndicator={sortIndicator("purchase_date")} />
+                <SortableHeader className="w-[10%]" label="Fecha compra" onSort={() => handleSort("purchase_date")} sortIndicator={sortIndicator("purchase_date")} />
                 <SortableHeader className="w-[6%]" label="Horas" onSort={() => handleSort("hours")} sortIndicator={sortIndicator("hours")} />
                 <SortableHeader className="w-[6%]" label="Monto" onSort={() => handleSort("amount")} sortIndicator={sortIndicator("amount")} />
-                <SortableHeader className="w-[8%]" label="Conf." onSort={() => handleSort("confidence")} sortIndicator={sortIndicator("confidence")} />
+                <SortableHeader className="w-[7%]" label="Conf." onSort={() => handleSort("confidence")} sortIndicator={sortIndicator("confidence")} />
+                <th className="w-[10%] border-b border-[#d6e1ea] px-2 py-3">Chat</th>
               </tr>
             </thead>
             <tbody>
               {pageRows.map((row, index) => (
-                <tr className="bg-white odd:bg-[#fbfdfe]" key={`${row.cart_form_datetime ?? "cart"}-${index}`}>
+                <tr className="bg-white odd:bg-[#fbfdfe]" key={row.id}>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.cart_type ?? "Sin tipo"}
                   </td>
@@ -520,6 +523,15 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                       <span className="text-slate-400">-</span>
                     )}
                   </td>
+                  <td className="border-b border-[#edf2f6] px-2 py-3">
+                    <button
+                      className="rounded-lg border border-[#d6e1ea] bg-white px-2 py-1.5 text-xs font-medium text-navy hover:border-sea hover:bg-[#f8fafb]"
+                      onClick={() => setSelectedChatCartId(row.id)}
+                      type="button"
+                    >
+                      Ver chat
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -550,6 +562,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           </div>
         </div>
       ) : null}
+      <RecoveryCartChatDrawer cartId={selectedChatCartId} onClose={() => setSelectedChatCartId(null)} />
     </section>
   );
 }
