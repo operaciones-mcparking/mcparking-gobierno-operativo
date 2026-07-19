@@ -320,7 +320,9 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
           Fecha carrito
           <input
+            aria-label="Fecha carrito"
             className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
+            lang="es-CL"
             onChange={(event) => setDateQuery(event.target.value)}
             type="date"
             value={dateQuery}
