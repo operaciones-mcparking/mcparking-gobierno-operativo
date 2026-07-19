@@ -172,14 +172,56 @@ function normalizeMessageMemoryRow(row) {
   };
 }
 
+function normalizeMessageMemoryRawRow(row) {
+  const messageText = cleanText(row.Message);
+  const normalized = {
+    api_phone_normalized: normalizePhone(row.api_phone),
+    chat_state: normalizeCategory(row.chat_state),
+    conversation_id: cleanText(row.conversation_id),
+    intent_category: normalizeCategory(row.intent_category),
+    message_at: dateTimeValue(row.timestamp),
+    message_bound_type: normalizeCategory(row.message_bound_type),
+    message_sentiment: normalizeCategory(row.message_sentiment),
+    message_text: messageText,
+    message_type: normalizeCategory(row.message_type),
+    wa_id_normalized: normalizeMessagingPhone(row.wa_id),
+  };
+  const rowForHash = {
+    chat_state: normalized.chat_state,
+    conversation_id: normalized.conversation_id,
+    intent_category: normalized.intent_category,
+    message_at: normalized.message_at,
+    message_bound_type: normalized.message_bound_type,
+    message_sentiment: normalized.message_sentiment,
+    message_text: normalized.message_text,
+    message_type: normalized.message_type,
+    wa_id_normalized: normalized.wa_id_normalized,
+  };
+
+  return {
+    ...normalized,
+    row_hash: hashNormalizedRow(rowForHash),
+  };
+}
+
 function isImportableMessageMemoryRow(row) {
   return Boolean(row.conversation_id && row.wa_id_normalized && row.message_at && row.row_hash);
+}
+
+function isImportableMessageMemoryRawRow(row) {
+  return Boolean(row.conversation_id && row.wa_id_normalized && row.message_at && row.message_text && row.row_hash);
 }
 
 function buildMessageMemoryImportRows(csvContent) {
   const { rows } = parseCsv(csvContent);
 
   return rows.map(normalizeMessageMemoryRow).filter(isImportableMessageMemoryRow);
+}
+
+function buildMessageMemoryRawImportRows(csvContent) {
+  const { rows } = parseCsv(csvContent);
+
+  return rows.map(normalizeMessageMemoryRawRow).filter(isImportableMessageMemoryRawRow);
 }
 
 function validateMessageMemoryCsv(csvContent) {
@@ -189,8 +231,11 @@ function validateMessageMemoryCsv(csvContent) {
   const missingRecommended = RECOMMENDED_COLUMNS.filter((column) => !headers.includes(column));
   const extraColumns = headers.filter((column) => !EXPECTED_COLUMNS.includes(column));
   const normalizedRows = rows.map(normalizeMessageMemoryRow);
+  const normalizedRawRows = rows.map(normalizeMessageMemoryRawRow);
   const importableRows = normalizedRows.filter(isImportableMessageMemoryRow);
+  const rawImportableRows = normalizedRawRows.filter(isImportableMessageMemoryRawRow);
   const rowHashes = normalizedRows.map((row) => row.row_hash);
+  const rawRowHashes = normalizedRawRows.map((row) => row.row_hash);
   const parsedDates = normalizedRows
     .map((row) => (row.message_at ? new Date(row.message_at) : null))
     .filter((date) => date !== null)
@@ -220,6 +265,16 @@ function validateMessageMemoryCsv(csvContent) {
     missingRecommended,
     parseableProcessingTime: rows.filter((row) => parseNumberSafe(row.processing_time) !== null).length,
     parseableTimestamp: normalizedRows.filter((row) => row.message_at).length,
+    rawDuplicateRowHashGroups: duplicateGroupCount(rawRowHashes),
+    rawImportableRows: rawImportableRows.length,
+    rawRowHashPresent: normalizedRawRows.filter((row) => row.row_hash).length,
+    rawSkippedRows: {
+      missingConversationId: normalizedRawRows.filter((row) => !row.conversation_id).length,
+      missingMessageAt: normalizedRawRows.filter((row) => !row.message_at).length,
+      missingMessageText: normalizedRawRows.filter((row) => !row.message_text).length,
+      missingRowHash: normalizedRawRows.filter((row) => !row.row_hash).length,
+      missingWaIdNormalized: normalizedRawRows.filter((row) => !row.wa_id_normalized).length,
+    },
     rowHashPresent: normalizedRows.filter((row) => row.row_hash).length,
     rows: rows.length,
     rowsWithoutConversationId: rows.filter((row) => !cleanText(row.conversation_id)).length,
@@ -243,6 +298,8 @@ function validateMessageMemoryCsv(csvContent) {
 module.exports = {
   EXPECTED_COLUMNS,
   buildMessageMemoryImportRows,
+  buildMessageMemoryRawImportRows,
   normalizeMessageMemoryRow,
+  normalizeMessageMemoryRawRow,
   validateMessageMemoryCsv,
 };

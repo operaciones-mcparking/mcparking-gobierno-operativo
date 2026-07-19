@@ -100,6 +100,18 @@ function printReport(filePath, report) {
     { metric: "Duplicate conversation_id groups", value: report.duplicateConversationIdGroups },
   ]);
 
+  console.log("Raw import duplicate signals");
+  console.table([
+    { metric: "Raw importable rows", value: `${report.rawImportableRows} / ${report.rows}` },
+    { metric: "Raw skipped missing conversation_id", value: report.rawSkippedRows.missingConversationId },
+    { metric: "Raw skipped missing wa_id_normalized", value: report.rawSkippedRows.missingWaIdNormalized },
+    { metric: "Raw skipped missing message_at", value: report.rawSkippedRows.missingMessageAt },
+    { metric: "Raw skipped missing message_text", value: report.rawSkippedRows.missingMessageText },
+    { metric: "Raw skipped missing row_hash", value: report.rawSkippedRows.missingRowHash },
+    { metric: "Raw row_hash present", value: `${report.rawRowHashPresent} / ${report.rows}` },
+    { metric: "Raw duplicate row_hash groups", value: report.rawDuplicateRowHashGroups },
+  ]);
+
   if (report.extraColumns.length > 0) {
     console.log("Extra columns for schema review");
     console.log(report.extraColumns.join(", "));
