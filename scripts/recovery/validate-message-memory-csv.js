@@ -90,6 +90,11 @@ function printReport(filePath, report) {
 
   console.log("Incremental duplicate signals");
   console.table([
+    { metric: "Importable rows", value: `${report.importableRows} / ${report.rows}` },
+    { metric: "Skipped missing conversation_id", value: report.skippedRows.missingConversationId },
+    { metric: "Skipped missing wa_id_normalized", value: report.skippedRows.missingWaIdNormalized },
+    { metric: "Skipped missing message_at", value: report.skippedRows.missingMessageAt },
+    { metric: "Skipped missing row_hash", value: report.skippedRows.missingRowHash },
     { metric: "Row hash present", value: `${report.rowHashPresent} / ${report.rows}` },
     { metric: "Duplicate row_hash groups", value: report.duplicateRowHashGroups },
     { metric: "Duplicate conversation_id groups", value: report.duplicateConversationIdGroups },

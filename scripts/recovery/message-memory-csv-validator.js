@@ -148,15 +148,38 @@ function normalizeMessageMemoryRow(row) {
     message_bound_type: normalizeCategory(row.message_bound_type),
     message_sentiment: normalizeCategory(row.message_sentiment),
     message_type: normalizeCategory(row.message_type),
-    processing_time: parseNumberSafe(row.processing_time),
+    processing_time_seconds: parseNumberSafe(row.processing_time),
     time_of_day: normalizeCategory(row.time_of_day),
     wa_id_normalized: normalizeMessagingPhone(row.wa_id),
+  };
+  const rowForHash = {
+    chat_state: normalized.chat_state,
+    conversation_id: normalized.conversation_id,
+    day_of_week: normalized.day_of_week,
+    intent_category: normalized.intent_category,
+    message_at: normalized.message_at,
+    message_bound_type: normalized.message_bound_type,
+    message_sentiment: normalized.message_sentiment,
+    message_type: normalized.message_type,
+    processing_time_seconds: normalized.processing_time_seconds,
+    time_of_day: normalized.time_of_day,
+    wa_id_normalized: normalized.wa_id_normalized,
   };
 
   return {
     ...normalized,
-    row_hash: hashNormalizedRow(normalized),
+    row_hash: hashNormalizedRow(rowForHash),
   };
+}
+
+function isImportableMessageMemoryRow(row) {
+  return Boolean(row.conversation_id && row.wa_id_normalized && row.message_at && row.row_hash);
+}
+
+function buildMessageMemoryImportRows(csvContent) {
+  const { rows } = parseCsv(csvContent);
+
+  return rows.map(normalizeMessageMemoryRow).filter(isImportableMessageMemoryRow);
 }
 
 function validateMessageMemoryCsv(csvContent) {
@@ -166,6 +189,7 @@ function validateMessageMemoryCsv(csvContent) {
   const missingRecommended = RECOMMENDED_COLUMNS.filter((column) => !headers.includes(column));
   const extraColumns = headers.filter((column) => !EXPECTED_COLUMNS.includes(column));
   const normalizedRows = rows.map(normalizeMessageMemoryRow);
+  const importableRows = normalizedRows.filter(isImportableMessageMemoryRow);
   const rowHashes = normalizedRows.map((row) => row.row_hash);
   const parsedDates = normalizedRows
     .map((row) => (row.message_at ? new Date(row.message_at) : null))
@@ -184,6 +208,7 @@ function validateMessageMemoryCsv(csvContent) {
     duplicateRowHashGroups: duplicateGroupCount(rowHashes),
     extraColumns,
     intentCategoryCounts: countByValues(normalizedRows.map((row) => row.intent_category)),
+    importableRows: importableRows.length,
     maxMessageAt: parsedDates.at(-1) ?? null,
     messageBoundTypeCounts: countByValues(normalizedRows.map((row) => row.message_bound_type)),
     messagePresent: rows.filter((row) => cleanText(row.Message)).length,
@@ -200,6 +225,12 @@ function validateMessageMemoryCsv(csvContent) {
     rowsWithoutConversationId: rows.filter((row) => !cleanText(row.conversation_id)).length,
     rowsWithoutTimestamp: rows.filter((row) => !parseDateForRange(row.timestamp)).length,
     rowsWithoutWaId: rows.filter((row) => !cleanText(row.wa_id)).length,
+    skippedRows: {
+      missingConversationId: normalizedRows.filter((row) => !row.conversation_id).length,
+      missingMessageAt: normalizedRows.filter((row) => !row.message_at).length,
+      missingRowHash: normalizedRows.filter((row) => !row.row_hash).length,
+      missingWaIdNormalized: normalizedRows.filter((row) => !row.wa_id_normalized).length,
+    },
     textSummaryPresent: rows.filter((row) => cleanText(row.text_summary)).length,
     textSummarySensitivity: summarizeSensitiveText(rows.map((row) => row.text_summary)),
     timeOfDayCounts: countByValues(normalizedRows.map((row) => row.time_of_day)),
@@ -211,6 +242,7 @@ function validateMessageMemoryCsv(csvContent) {
 
 module.exports = {
   EXPECTED_COLUMNS,
+  buildMessageMemoryImportRows,
   normalizeMessageMemoryRow,
   validateMessageMemoryCsv,
 };
