@@ -17,6 +17,7 @@ type RecoveryCartAuditTableProps = {
 type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
 type WhatsappFilter = "all" | RecoveryCartWhatsappStatus;
+type QuickFilter = "none" | "not_sent_or_without_tracking" | "sent_and_delivered" | "sent_and_failed" | "sent_and_read";
 type SortKey = "cart_date" | "purchase_date" | "amount" | "status" | "type" | "parking" | "confidence";
 
 function formatCurrency(value: number | null) {
@@ -76,7 +77,7 @@ function messageSentTone(value: boolean | null): BadgeTone {
 }
 
 function whatsappStatusLabel(status: RecoveryCartWhatsappStatus) {
-  if (status === "read") return "Leido";
+  if (status === "read") return "Leído";
   if (status === "delivered") return "Entregado";
   if (status === "sent") return "Enviado";
   if (status === "failed") return "Fallido";
@@ -140,6 +141,7 @@ function quickFilterClass(active: boolean) {
 
 export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTableProps) {
   const [dateQuery, setDateQuery] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("none");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [whatsappFilter, setWhatsappFilter] = useState<WhatsappFilter>("all");
@@ -151,6 +153,19 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         if (statusFilter !== "all" && row.audit_status !== statusFilter) return false;
         if (typeFilter !== "all" && row.cart_type !== typeFilter) return false;
         if (whatsappFilter !== "all" && row.whatsappStatus !== whatsappFilter) return false;
+        if (
+          (quickFilter === "sent_and_delivered" || quickFilter === "sent_and_failed" || quickFilter === "sent_and_read") &&
+          row.message_sent !== true
+        ) {
+          return false;
+        }
+        if (
+          quickFilter === "not_sent_or_without_tracking" &&
+          row.message_sent !== false &&
+          row.whatsappStatus !== "sin_seguimiento"
+        ) {
+          return false;
+        }
         if (dateQuery && dateInputValue(row.cart_form_datetime) !== dateQuery) {
           return false;
         }
@@ -167,9 +182,14 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
 
         return String(leftValue).localeCompare(String(rightValue), "es-CL");
       });
-  }, [dateQuery, rows, sortKey, statusFilter, typeFilter, whatsappFilter]);
+  }, [dateQuery, quickFilter, rows, sortKey, statusFilter, typeFilter, whatsappFilter]);
 
-  function applyQuickFilter(status: StatusFilter, whatsapp: WhatsappFilter = "all") {
+  function applyQuickFilter(
+    status: StatusFilter,
+    whatsapp: WhatsappFilter = "all",
+    specialFilter: QuickFilter = "none",
+  ) {
+    setQuickFilter(specialFilter);
     setStatusFilter(status);
     setWhatsappFilter(whatsapp);
   }
@@ -191,46 +211,53 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           Accesos rapidos
         </span>
         <button
-          className={quickFilterClass(statusFilter === "not_recovered")}
+          className={quickFilterClass(statusFilter === "not_recovered" && whatsappFilter === "all" && quickFilter === "none")}
           onClick={() => applyQuickFilter("not_recovered")}
           type="button"
         >
-          Vivos pendientes
+          Pendientes
         </button>
         <button
-          className={quickFilterClass(statusFilter === "expired")}
+          className={quickFilterClass(quickFilter === "sent_and_read")}
+          onClick={() => applyQuickFilter("all", "read", "sent_and_read")}
+          type="button"
+        >
+          Enviado + leído
+        </button>
+        <button
+          className={quickFilterClass(quickFilter === "sent_and_delivered")}
+          onClick={() => applyQuickFilter("all", "delivered", "sent_and_delivered")}
+          type="button"
+        >
+          Enviado + entregado
+        </button>
+        <button
+          className={quickFilterClass(quickFilter === "sent_and_failed")}
+          onClick={() => applyQuickFilter("all", "failed", "sent_and_failed")}
+          type="button"
+        >
+          Enviado + fallido
+        </button>
+        <button
+          className={quickFilterClass(quickFilter === "not_sent_or_without_tracking")}
+          onClick={() => applyQuickFilter("all", "all", "not_sent_or_without_tracking")}
+          type="button"
+        >
+          No enviado / sin seguimiento
+        </button>
+        <button
+          className={quickFilterClass(statusFilter === "expired" && quickFilter === "none")}
           onClick={() => applyQuickFilter("expired")}
           type="button"
         >
           Expirados
         </button>
         <button
-          className={quickFilterClass(statusFilter === "all")}
+          className={quickFilterClass(statusFilter === "all" && whatsappFilter === "all" && quickFilter === "none")}
           onClick={() => applyQuickFilter("all")}
           type="button"
         >
           Todos
-        </button>
-        <button
-          className={quickFilterClass(statusFilter === "not_recovered" && whatsappFilter === "read")}
-          onClick={() => applyQuickFilter("not_recovered", "read")}
-          type="button"
-        >
-          Vivos + leido
-        </button>
-        <button
-          className={quickFilterClass(statusFilter === "not_recovered" && whatsappFilter === "delivered")}
-          onClick={() => applyQuickFilter("not_recovered", "delivered")}
-          type="button"
-        >
-          Vivos + entregado
-        </button>
-        <button
-          className={quickFilterClass(whatsappFilter === "failed")}
-          onClick={() => applyQuickFilter("all", "failed")}
-          type="button"
-        >
-          Fallidos
         </button>
       </div>
 
@@ -249,7 +276,10 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           Estado
           <select
             className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
-            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            onChange={(event) => {
+              setQuickFilter("none");
+              setStatusFilter(event.target.value as StatusFilter);
+            }}
             value={statusFilter}
           >
             <option value="all">Todos</option>
@@ -277,11 +307,14 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           Estado WhatsApp
           <select
             className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
-            onChange={(event) => setWhatsappFilter(event.target.value as WhatsappFilter)}
+            onChange={(event) => {
+              setQuickFilter("none");
+              setWhatsappFilter(event.target.value as WhatsappFilter);
+            }}
             value={whatsappFilter}
           >
             <option value="all">Todos</option>
-            <option value="read">Leido</option>
+            <option value="read">Leído</option>
             <option value="delivered">Entregado</option>
             <option value="sent">Enviado</option>
             <option value="failed">Fallido</option>
