@@ -1,5 +1,6 @@
 const { normalizePhone, parseDateSafe } = require("./recovery-normalizers");
 const { parseCsv } = require("./purchases-csv-validator");
+const crypto = require("node:crypto");
 
 const EXPECTED_COLUMNS = [
   "id",
@@ -81,13 +82,67 @@ function parseJsonSafe(raw) {
   }
 }
 
-function resolveTrackingStatus(row) {
-  if (parseDateSafe(row.Fecha_Read)) return "read";
-  if (parseDateSafe(row.Fecha_Delivered)) return "delivered";
-  if (parseDateSafe(row.Fecha_Sent)) return "sent";
-  if (parseDateSafe(row.Fecha_Failed)) return "failed";
+function dateTimeValue(raw) {
+  const date = parseDateSafe(raw);
+
+  return date ? date.toISOString() : null;
+}
+
+function resolveTrackingStatusFromDates({ delivered_at, failed_at, read_at, sent_at }) {
+  if (read_at) return "read";
+  if (delivered_at) return "delivered";
+  if (sent_at) return "sent";
+  if (failed_at) return "failed";
 
   return "unknown";
+}
+
+function resolveTrackingStatus(row) {
+  return resolveTrackingStatusFromDates({
+    delivered_at: dateTimeValue(row.Fecha_Delivered),
+    failed_at: dateTimeValue(row.Fecha_Failed),
+    read_at: dateTimeValue(row.Fecha_Read),
+    sent_at: dateTimeValue(row.Fecha_Sent),
+  });
+}
+
+function hashNormalizedRow(row) {
+  return crypto.createHash("sha256").update(JSON.stringify(row)).digest("hex");
+}
+
+function normalizeTrackingRow(row) {
+  const normalized = {
+    business_phone_normalized: normalizePhone(row.Telefono_Negocio),
+    charge_type: cleanText(row.Tipo_Cobro),
+    client_phone_normalized: normalizePhone(row.Telefono_Cliente),
+    created_at_source: dateTimeValue(row.createdAt),
+    delivered_at: dateTimeValue(row.Fecha_Delivered),
+    failed_at: dateTimeValue(row.Fecha_Failed),
+    message_category: normalizeCategory(row.Categoria_Mensaje),
+    message_id: cleanText(row.Id_Mensaje),
+    read_at: dateTimeValue(row.Fecha_Read),
+    sent_at: dateTimeValue(row.Fecha_Sent),
+    source_id: cleanText(row.id),
+    updated_at_source: dateTimeValue(row.updatedAt),
+  };
+
+  const rowForHash = {
+    ...normalized,
+    tracking_status: resolveTrackingStatusFromDates(normalized),
+  };
+
+  return {
+    ...rowForHash,
+    row_hash: hashNormalizedRow(rowForHash),
+  };
+}
+
+function buildTrackingImportRows(csvContent) {
+  const { rows } = parseCsv(csvContent);
+
+  return rows
+    .map(normalizeTrackingRow)
+    .filter((row) => row.source_id && row.message_id);
 }
 
 function validateTrackingCsv(csvContent) {
@@ -137,5 +192,6 @@ function validateTrackingCsv(csvContent) {
 }
 
 module.exports = {
+  buildTrackingImportRows,
   validateTrackingCsv,
 };
