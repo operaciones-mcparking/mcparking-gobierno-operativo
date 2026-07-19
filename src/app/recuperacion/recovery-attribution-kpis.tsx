@@ -73,9 +73,10 @@ export function RecoveryAttributionKpis({ error, kpis }: RecoveryAttributionKpis
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
       <div className="flex flex-col justify-between gap-3 border-b border-[#edf2f6] px-5 py-5 lg:flex-row lg:items-start">
         <div>
-          <h2 className="text-base font-medium tracking-tight text-navy">Recuperacion atribuida</h2>
+          <h2 className="text-base font-medium tracking-tight text-navy">Recuperacion atribuida global</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Cruce entre carritos perdidos/cancelados y compras validas posteriores dentro de 7 dias.
+            Cruce sobre todos los carritos importados y compras validas posteriores dentro de 7 dias. Estos
+            indicadores no dependen de los filtros de Auditoria de carritos.
           </p>
         </div>
         <ValueBadge tone="success">Vista real</ValueBadge>

@@ -218,6 +218,29 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const pageRows = visibleRows.slice(pageStartIndex, pageStartIndex + rowsPerPage);
   const showingFrom = visibleRows.length === 0 ? 0 : pageStartIndex + 1;
   const showingTo = Math.min(pageStartIndex + rowsPerPage, visibleRows.length);
+  const auditSummary = useMemo(
+    () => ({
+      deliveredAfterSent: visibleRows.filter(
+        (row) => row.message_sent === true && row.whatsappStatus === "delivered",
+      ).length,
+      failed: visibleRows.filter((row) => row.whatsappStatus === "failed").length,
+      notRecovered: visibleRows.filter((row) => row.audit_status === "not_recovered").length,
+      readAfterSent: visibleRows.filter((row) => row.message_sent === true && row.whatsappStatus === "read").length,
+      recovered: visibleRows.filter((row) => row.recovered).length,
+      total: visibleRows.length,
+      withoutTracking: visibleRows.filter((row) => row.whatsappStatus === "sin_seguimiento").length,
+    }),
+    [visibleRows],
+  );
+  const auditSummaryCards = [
+    { label: "Visibles segun filtros", value: auditSummary.total },
+    { label: "No recuperados", value: auditSummary.notRecovered },
+    { label: "Recuperados", value: auditSummary.recovered },
+    { label: "Enviado + leido", value: auditSummary.readAfterSent },
+    { label: "Enviado + entregado", value: auditSummary.deliveredAfterSent },
+    { label: "Fallidos", value: auditSummary.failed },
+    { label: "Sin seguimiento", value: auditSummary.withoutTracking },
+  ];
 
   useEffect(() => {
     setCurrentPage(1);
@@ -383,6 +406,25 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         </label>
 
       </div>
+
+      {!error ? (
+        <div className="border-b border-[#edf2f6] px-5 py-4">
+          <div className="mb-3">
+            <h3 className="text-sm font-medium text-navy">Resumen de auditoria filtrada</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Calculado sobre las filas que cumplen los filtros actuales, antes de la paginacion.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+            {auditSummaryCards.map((item) => (
+              <div className="rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-3" key={item.label}>
+                <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
+                <p className="mt-1 text-lg font-medium text-navy">{new Intl.NumberFormat("es-CL").format(item.value)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="p-5">
