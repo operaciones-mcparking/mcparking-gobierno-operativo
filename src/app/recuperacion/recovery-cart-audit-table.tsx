@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
-import type { RecoveryCartAuditRow, RecoveryCartAuditStatus } from "@/lib/dashboard/data";
+import type {
+  RecoveryCartAuditRow,
+  RecoveryCartAuditStatus,
+  RecoveryCartWhatsappStatus,
+} from "@/lib/dashboard/data";
 
 type RecoveryCartAuditTableProps = {
   error?: string | null;
@@ -12,6 +16,7 @@ type RecoveryCartAuditTableProps = {
 
 type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
+type WhatsappFilter = "all" | RecoveryCartWhatsappStatus;
 type SortKey = "cart_date" | "purchase_date" | "amount" | "status" | "type" | "parking" | "confidence";
 
 function formatCurrency(value: number | null) {
@@ -70,6 +75,24 @@ function messageSentTone(value: boolean | null): BadgeTone {
   return "warning";
 }
 
+function whatsappStatusLabel(status: RecoveryCartWhatsappStatus) {
+  if (status === "read") return "Leido";
+  if (status === "delivered") return "Entregado";
+  if (status === "sent") return "Enviado";
+  if (status === "failed") return "Fallido";
+
+  return "Sin seguimiento";
+}
+
+function whatsappStatusTone(status: RecoveryCartWhatsappStatus): BadgeTone {
+  if (status === "read") return "success";
+  if (status === "delivered") return "info";
+  if (status === "sent") return "warning";
+  if (status === "failed") return "danger";
+
+  return "neutral";
+}
+
 function auditStatusLabel(status: RecoveryCartAuditStatus) {
   if (status === "recovered_with_amount") return "Recuperado con monto";
   if (status === "recovered_pack") return "Recuperado sin monto / pack";
@@ -119,6 +142,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const [dateQuery, setDateQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [whatsappFilter, setWhatsappFilter] = useState<WhatsappFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("cart_date");
 
   const visibleRows = useMemo(() => {
@@ -126,6 +150,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       .filter((row) => {
         if (statusFilter !== "all" && row.audit_status !== statusFilter) return false;
         if (typeFilter !== "all" && row.cart_type !== typeFilter) return false;
+        if (whatsappFilter !== "all" && row.whatsappStatus !== whatsappFilter) return false;
         if (dateQuery && dateInputValue(row.cart_form_datetime) !== dateQuery) {
           return false;
         }
@@ -142,7 +167,12 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
 
         return String(leftValue).localeCompare(String(rightValue), "es-CL");
       });
-  }, [dateQuery, rows, sortKey, statusFilter, typeFilter]);
+  }, [dateQuery, rows, sortKey, statusFilter, typeFilter, whatsappFilter]);
+
+  function applyQuickFilter(status: StatusFilter, whatsapp: WhatsappFilter = "all") {
+    setStatusFilter(status);
+    setWhatsappFilter(whatsapp);
+  }
 
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
@@ -162,28 +192,49 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         </span>
         <button
           className={quickFilterClass(statusFilter === "not_recovered")}
-          onClick={() => setStatusFilter("not_recovered")}
+          onClick={() => applyQuickFilter("not_recovered")}
           type="button"
         >
           Vivos pendientes
         </button>
         <button
           className={quickFilterClass(statusFilter === "expired")}
-          onClick={() => setStatusFilter("expired")}
+          onClick={() => applyQuickFilter("expired")}
           type="button"
         >
           Expirados
         </button>
         <button
           className={quickFilterClass(statusFilter === "all")}
-          onClick={() => setStatusFilter("all")}
+          onClick={() => applyQuickFilter("all")}
           type="button"
         >
           Todos
         </button>
+        <button
+          className={quickFilterClass(statusFilter === "not_recovered" && whatsappFilter === "read")}
+          onClick={() => applyQuickFilter("not_recovered", "read")}
+          type="button"
+        >
+          Vivos + leido
+        </button>
+        <button
+          className={quickFilterClass(statusFilter === "not_recovered" && whatsappFilter === "delivered")}
+          onClick={() => applyQuickFilter("not_recovered", "delivered")}
+          type="button"
+        >
+          Vivos + entregado
+        </button>
+        <button
+          className={quickFilterClass(whatsappFilter === "failed")}
+          onClick={() => applyQuickFilter("all", "failed")}
+          type="button"
+        >
+          Fallidos
+        </button>
       </div>
 
-      <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-5">
         <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
           Fecha carrito
           <input
@@ -219,6 +270,22 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
             <option value="all">Todos</option>
             <option value="abandoned">abandoned</option>
             <option value="canceled">canceled</option>
+          </select>
+        </label>
+
+        <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+          Estado WhatsApp
+          <select
+            className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
+            onChange={(event) => setWhatsappFilter(event.target.value as WhatsappFilter)}
+            value={whatsappFilter}
+          >
+            <option value="all">Todos</option>
+            <option value="read">Leido</option>
+            <option value="delivered">Entregado</option>
+            <option value="sent">Enviado</option>
+            <option value="failed">Fallido</option>
+            <option value="sin_seguimiento">Sin seguimiento</option>
           </select>
         </label>
 
@@ -264,10 +331,11 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                 <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Tipo</th>
                 <th className="w-[20%] border-b border-[#d6e1ea] px-2 py-3">Contacto</th>
                 <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Parking</th>
-                <th className="w-[8%] border-b border-[#d6e1ea] px-2 py-3">Mensaje</th>
-                <th className="w-[13%] border-b border-[#d6e1ea] px-2 py-3">Fecha carrito</th>
-                <th className="w-[13%] border-b border-[#d6e1ea] px-2 py-3">Estado</th>
-                <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Fecha compra</th>
+                <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Mensaje</th>
+                <th className="w-[9%] border-b border-[#d6e1ea] px-2 py-3">WhatsApp</th>
+                <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Fecha carrito</th>
+                <th className="w-[12%] border-b border-[#d6e1ea] px-2 py-3">Estado</th>
+                <th className="w-[11%] border-b border-[#d6e1ea] px-2 py-3">Fecha compra</th>
                 <th className="w-[6%] border-b border-[#d6e1ea] px-2 py-3">Horas</th>
                 <th className="w-[6%] border-b border-[#d6e1ea] px-2 py-3">Monto</th>
                 <th className="w-[7%] border-b border-[#d6e1ea] px-2 py-3">Confianza</th>
@@ -289,6 +357,11 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                   <td className="border-b border-[#edf2f6] px-2 py-3">
                     <ValueBadge tone={messageSentTone(row.message_sent)}>
                       {messageSentLabel(row.message_sent)}
+                    </ValueBadge>
+                  </td>
+                  <td className="border-b border-[#edf2f6] px-2 py-3">
+                    <ValueBadge tone={whatsappStatusTone(row.whatsappStatus)}>
+                      {whatsappStatusLabel(row.whatsappStatus)}
                     </ValueBadge>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">

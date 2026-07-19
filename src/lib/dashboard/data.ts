@@ -341,6 +341,8 @@ export type RecoveryCartAuditStatus =
   | "recovered_pack"
   | "recovered_with_amount";
 
+export type RecoveryCartWhatsappStatus = "delivered" | "failed" | "read" | "sent" | "sin_seguimiento";
+
 export type RecoveryCartAuditRow = {
   audit_status: RecoveryCartAuditStatus;
   cart_form_datetime: string | null;
@@ -355,6 +357,7 @@ export type RecoveryCartAuditRow = {
   purchase_amount: number | null;
   purchase_created_at: string | null;
   recovered: boolean;
+  whatsappStatus: RecoveryCartWhatsappStatus;
 };
 
 export type RecoveryCartStatusSummary = Record<RecoveryCartAuditStatus, number> & {
@@ -1437,6 +1440,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     form_datetime: string | null;
     id: string;
     intended_departure_date: string | null;
+    message_id: string | null;
     message_sent: boolean | null;
     parking_code: string | null;
     phone_normalized: string | null;
@@ -1449,6 +1453,12 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     hours_to_purchase: number | null;
     purchase_amount: number | null;
     purchase_created_at: string | null;
+  };
+
+  type TrackingByMessageRow = {
+    created_at: string | null;
+    message_id: string | null;
+    tracking_status: RecoveryCartWhatsappStatus | null;
   };
 
   function todayDateValue() {
@@ -1471,10 +1481,39 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     return "not_recovered";
   }
 
+  async function fetchTrackingRowsByMessageIds(messageIds: string[]) {
+    const chunkSize = 25;
+    const rows: TrackingByMessageRow[] = [];
+
+    for (let index = 0; index < messageIds.length; index += chunkSize) {
+      const chunk = messageIds.slice(index, index + chunkSize);
+      const { data, error } = await supabase
+        .from("recovery_whatsapp_tracking_import")
+        .select("message_id,tracking_status,created_at")
+        .in("message_id", chunk)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        return {
+          data: [] as TrackingByMessageRow[],
+          error: {
+            message: "No se pudo cargar el estado WhatsApp de los carritos visibles.",
+          },
+        };
+      }
+
+      rows.push(...((data ?? []) as TrackingByMessageRow[]));
+    }
+
+    return { data: rows, error: null };
+  }
+
   const supabase = await createSupabaseAuthServerClient();
   const { data: carts, error: cartsError } = await supabase
     .from("recovery_incomplete_bookings_import")
-    .select("id,type,email_normalized,phone_normalized,parking_code,message_sent,form_datetime,intended_departure_date")
+    .select(
+      "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_departure_date",
+    )
     .order("form_datetime", { ascending: false })
     .limit(limit);
 
@@ -1484,27 +1523,43 @@ export async function getRecoveryCartAuditRows(limit = 300) {
 
   const cartRows = (carts ?? []) as CartAuditSourceRow[];
   const cartIds = Array.from(new Set(cartRows.map((item) => item.id).filter(Boolean)));
+  const messageIds = Array.from(new Set(cartRows.map((item) => item.message_id).filter(Boolean))) as string[];
 
-  const { data: attributions, error: attributionsError } =
+  const [attributionsResult, trackingResult] = await Promise.all([
     cartIds.length > 0
-      ? await supabase
+      ? supabase
           .from("v_recovery_attribution_cases")
           .select("cart_id,purchase_created_at,purchase_amount,hours_to_purchase,confidence")
           .in("cart_id", cartIds)
-      : { data: [] as AttributionByCartRow[], error: null };
+      : Promise.resolve({ data: [] as AttributionByCartRow[], error: null }),
+    messageIds.length > 0
+      ? fetchTrackingRowsByMessageIds(messageIds)
+      : Promise.resolve({ data: [] as TrackingByMessageRow[], error: null }),
+  ]);
 
-  if (attributionsError) {
-    return { data: [] as RecoveryCartAuditRow[], error: attributionsError };
+  if (attributionsResult.error) {
+    return { data: [] as RecoveryCartAuditRow[], error: attributionsResult.error };
+  }
+
+  if (trackingResult.error) {
+    return { data: [] as RecoveryCartAuditRow[], error: trackingResult.error };
   }
 
   const attributionsByCartId = new Map(
-    ((attributions ?? []) as AttributionByCartRow[])
+    ((attributionsResult.data ?? []) as AttributionByCartRow[])
       .filter((item) => item.cart_id)
       .map((item) => [item.cart_id as string, item]),
   );
+  const trackingByMessageId = new Map<string, TrackingByMessageRow>();
+
+  for (const tracking of (trackingResult.data ?? []) as TrackingByMessageRow[]) {
+    if (!tracking.message_id || trackingByMessageId.has(tracking.message_id)) continue;
+    trackingByMessageId.set(tracking.message_id, tracking);
+  }
 
   const auditRows = cartRows.map((cart) => {
     const attribution = attributionsByCartId.get(cart.id);
+    const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
 
     return {
       audit_status: resolveAuditStatus(attribution, cart.intended_departure_date),
@@ -1520,6 +1575,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
       purchase_amount: attribution?.purchase_amount ?? null,
       purchase_created_at: attribution?.purchase_created_at ?? null,
       recovered: Boolean(attribution),
+      whatsappStatus: tracking?.tracking_status ?? "sin_seguimiento",
     };
   });
 
