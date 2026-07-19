@@ -118,7 +118,8 @@ export function RecoveryConversationSummary({ error, summary }: RecoveryConversa
       {!error && !summary ? (
         <div className="p-5">
           <p className="rounded-lg border border-[#d6e1ea] bg-[#fbfdfe] px-3 py-3 text-sm text-slate-600">
-            No hay conversaciones asociadas disponibles todavia.
+            Resumen de conversaciones disponible bajo demanda. El calculo automatico esta pausado para evitar
+            timeouts mientras se prepara una vista o RPC agregada.
           </p>
         </div>
       ) : null}
