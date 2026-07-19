@@ -13,6 +13,7 @@ import {
   getRecoveryCartAuditRows,
   getRecoveryCartStatusSummary,
   getRecoveryAttributionDashboardData,
+  getRecoveryConversationSummary,
   getRecoveryImportHistory,
   getRecoveryLatestImportsSummary,
 } from "@/lib/dashboard/data";
@@ -24,6 +25,7 @@ import { RecoveryAttributionCases } from "./recovery-attribution-cases";
 import { RecoveryAttributionKpis } from "./recovery-attribution-kpis";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryCartStatusSummary } from "./recovery-cart-status-summary";
+import { RecoveryConversationSummary } from "./recovery-conversation-summary";
 import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
 import { TrackingUploadCard } from "./tracking-upload-card";
@@ -151,12 +153,14 @@ export default async function RecuperacionPage() {
     { data: attributionDashboard, error: attributionDashboardError },
     { data: cartStatusSummary, error: cartStatusSummaryError },
     { data: latestImportsSummary, error: latestImportsSummaryError },
+    { data: conversationSummary, error: conversationSummaryError },
     { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
     getRecoveryAttributionDashboardData(),
     getRecoveryCartStatusSummary(),
     getRecoveryLatestImportsSummary(),
+    getRecoveryConversationSummary(),
     getRecoveryCartAuditRows(),
   ]);
 
@@ -187,6 +191,10 @@ export default async function RecuperacionPage() {
         <RecoveryAttributionBreakdown
           breakdown={attributionDashboard?.breakdown ?? null}
           error={attributionDashboardError?.message ?? null}
+        />
+        <RecoveryConversationSummary
+          error={conversationSummaryError?.message ?? null}
+          summary={conversationSummary}
         />
         <RecoveryCartAuditTable
           error={cartAuditRowsError?.message ?? null}

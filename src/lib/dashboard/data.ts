@@ -366,6 +366,28 @@ export type RecoveryCartStatusSummary = Record<RecoveryCartAuditStatus, number> 
   total: number;
 };
 
+export type RecoveryConversationIntentSummaryItem = {
+  cart_count: number;
+  intent_category: string;
+  message_count: number;
+};
+
+export type RecoveryConversationSummary = {
+  associated_messages: number;
+  cotizar_reserva_carts: number;
+  descuentos_carts: number;
+  inbound_messages: number;
+  not_recovered_carts: number;
+  outbound_messages: number;
+  problema_operativo_carts: number;
+  problema_tecnico_carts: number;
+  problemas_carts: number;
+  top_inbound_intents: RecoveryConversationIntentSummaryItem[];
+  ubicacion_transporte_carts: number;
+  with_inbound_response: number;
+  without_conversation: number;
+};
+
 export async function getOperationalContextOptions() {
   noStore();
 
@@ -1724,6 +1746,291 @@ export async function getRecoveryCartStatusSummary() {
     summary[status] += 1;
     summary.total += 1;
   }
+
+  return { data: summary, error: null };
+}
+
+export async function getRecoveryConversationSummary() {
+  noStore();
+
+  const pageSize = 1000;
+  const phoneChunkSize = 25;
+
+  type ConversationCartRow = {
+    form_datetime: string | null;
+    id: string;
+    intended_departure_date: string | null;
+    phone_normalized: string | null;
+  };
+
+  type AttributionStatusRow = {
+    cart_id: string | null;
+    purchase_amount: number | null;
+  };
+
+  type MessageMemoryRow = {
+    chat_state: string | null;
+    id: string;
+    intent_category: string | null;
+    message_at: string;
+    message_bound_type: string | null;
+    message_sentiment: string | null;
+    wa_id_normalized: string | null;
+  };
+
+  type QueryError = { message: string };
+
+  function todayDateValue() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  function resolveStatus(
+    attribution: AttributionStatusRow | undefined,
+    intendedDepartureDate: string | null,
+  ): RecoveryCartAuditStatus {
+    if (attribution && Number(attribution.purchase_amount ?? 0) > 0) return "recovered_with_amount";
+    if (attribution && Number(attribution.purchase_amount ?? 0) === 0) return "recovered_pack";
+    if (intendedDepartureDate && intendedDepartureDate < todayDateValue()) return "expired";
+
+    return "not_recovered";
+  }
+
+  async function fetchAllRows<T>(queryFactory: () => unknown) {
+    const rows: T[] = [];
+    let from = 0;
+
+    while (true) {
+      const query = queryFactory() as {
+        range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: QueryError | null }>;
+      };
+      const { data, error } = await query.range(from, from + pageSize - 1);
+
+      if (error) {
+        return { data: [] as T[], error };
+      }
+
+      const page = data ?? [];
+      rows.push(...page);
+
+      if (page.length < pageSize) {
+        return { data: rows, error: null };
+      }
+
+      from += pageSize;
+    }
+  }
+
+  function addDays(dateValue: string, days: number) {
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) return null;
+
+    date.setDate(date.getDate() + days);
+
+    return date;
+  }
+
+  function emptySummary(): RecoveryConversationSummary {
+    return {
+      associated_messages: 0,
+      cotizar_reserva_carts: 0,
+      descuentos_carts: 0,
+      inbound_messages: 0,
+      not_recovered_carts: 0,
+      outbound_messages: 0,
+      problema_operativo_carts: 0,
+      problema_tecnico_carts: 0,
+      problemas_carts: 0,
+      top_inbound_intents: [],
+      ubicacion_transporte_carts: 0,
+      with_inbound_response: 0,
+      without_conversation: 0,
+    };
+  }
+
+  const supabase = await createSupabaseAuthServerClient();
+  const [{ data: carts, error: cartsError }, { data: attributions, error: attributionsError }] =
+    await Promise.all([
+      fetchAllRows<ConversationCartRow>(() =>
+        supabase
+          .from("recovery_incomplete_bookings_import")
+          .select("id,phone_normalized,form_datetime,intended_departure_date")
+          .order("id", { ascending: true }),
+      ),
+      fetchAllRows<AttributionStatusRow>(() =>
+        supabase
+          .from("v_recovery_attribution_cases")
+          .select("cart_id,purchase_amount")
+          .order("cart_id", { ascending: true }),
+      ),
+    ]);
+
+  if (cartsError) {
+    return { data: null as RecoveryConversationSummary | null, error: cartsError };
+  }
+
+  if (attributionsError) {
+    return { data: null as RecoveryConversationSummary | null, error: attributionsError };
+  }
+
+  const attributionsByCartId = new Map(
+    ((attributions ?? []) as AttributionStatusRow[])
+      .filter((item) => item.cart_id)
+      .map((item) => [item.cart_id as string, item]),
+  );
+  const notRecoveredCarts = ((carts ?? []) as ConversationCartRow[]).filter(
+    (cart) => resolveStatus(attributionsByCartId.get(cart.id), cart.intended_departure_date) === "not_recovered",
+  );
+  const summary = emptySummary();
+  summary.not_recovered_carts = notRecoveredCarts.length;
+
+  const cartsWithMatchKeys = notRecoveredCarts.filter((cart) => cart.phone_normalized && cart.form_datetime);
+
+  if (cartsWithMatchKeys.length === 0) {
+    summary.without_conversation = summary.not_recovered_carts;
+    return { data: summary, error: null };
+  }
+
+  const phoneValues = Array.from(
+    new Set(cartsWithMatchKeys.map((cart) => cart.phone_normalized).filter(Boolean) as string[]),
+  );
+  const minDate = cartsWithMatchKeys
+    .map((cart) => (cart.form_datetime ? new Date(cart.form_datetime) : null))
+    .filter((date) => date && !Number.isNaN(date.getTime()))
+    .sort((left, right) => (left as Date).getTime() - (right as Date).getTime())[0] as Date | undefined;
+  const maxDate = cartsWithMatchKeys
+    .map((cart) => (cart.form_datetime ? addDays(cart.form_datetime, 7) : null))
+    .filter((date) => date && !Number.isNaN(date.getTime()))
+    .sort((left, right) => (right as Date).getTime() - (left as Date).getTime())[0] as Date | undefined;
+
+  if (!minDate || !maxDate) {
+    summary.without_conversation = summary.not_recovered_carts;
+    return { data: summary, error: null };
+  }
+
+  const memoryRows: MessageMemoryRow[] = [];
+
+  for (let index = 0; index < phoneValues.length; index += phoneChunkSize) {
+    const chunk = phoneValues.slice(index, index + phoneChunkSize);
+    const { data, error } = await supabase
+      .from("recovery_whatsapp_message_memory_import")
+      .select("id,wa_id_normalized,message_at,message_bound_type,message_sentiment,chat_state,intent_category")
+      .in("wa_id_normalized", chunk)
+      .gte("message_at", minDate.toISOString())
+      .lt("message_at", maxDate.toISOString())
+      .order("message_at", { ascending: true });
+
+    if (error) {
+      return {
+        data: null as RecoveryConversationSummary | null,
+        error: { message: "No se pudo cargar el resumen de conversaciones asociadas." },
+      };
+    }
+
+    memoryRows.push(...((data ?? []) as MessageMemoryRow[]));
+  }
+
+  const messagesByPhone = new Map<string, MessageMemoryRow[]>();
+
+  for (const message of memoryRows) {
+    if (!message.wa_id_normalized) continue;
+
+    const currentRows = messagesByPhone.get(message.wa_id_normalized) ?? [];
+    currentRows.push(message);
+    messagesByPhone.set(message.wa_id_normalized, currentRows);
+  }
+
+  const inboundIntentMessages = new Map<string, number>();
+  const inboundIntentCartIds = new Map<string, Set<string>>();
+  const metricIntentCartIds = {
+    cotizar_reserva: new Set<string>(),
+    descuentos: new Set<string>(),
+    problema_operativo: new Set<string>(),
+    problema_tecnico: new Set<string>(),
+    ubicacion_transporte: new Set<string>(),
+  };
+  const problemCartIds = new Set<string>();
+
+  for (const cart of notRecoveredCarts) {
+    if (!cart.phone_normalized || !cart.form_datetime) {
+      summary.without_conversation += 1;
+      continue;
+    }
+
+    const fromDate = new Date(cart.form_datetime);
+    const toDate = addDays(cart.form_datetime, 7);
+
+    if (Number.isNaN(fromDate.getTime()) || !toDate) {
+      summary.without_conversation += 1;
+      continue;
+    }
+
+    const messages = (messagesByPhone.get(cart.phone_normalized) ?? []).filter((message) => {
+      const messageDate = new Date(message.message_at);
+
+      return messageDate >= fromDate && messageDate < toDate;
+    });
+    const inboundMessages = messages.filter((message) => message.message_bound_type === "inbound");
+    const outboundMessages = messages.filter((message) => message.message_bound_type === "outbound");
+
+    summary.associated_messages += messages.length;
+    summary.inbound_messages += inboundMessages.length;
+    summary.outbound_messages += outboundMessages.length;
+
+    if (messages.length === 0) {
+      summary.without_conversation += 1;
+    }
+
+    if (inboundMessages.length > 0) {
+      summary.with_inbound_response += 1;
+    }
+
+    const inboundIntentsForCart = new Set<string>();
+
+    for (const message of inboundMessages) {
+      const intent = message.intent_category ?? "(sin categoria)";
+      inboundIntentMessages.set(intent, (inboundIntentMessages.get(intent) ?? 0) + 1);
+
+      const cartIds = inboundIntentCartIds.get(intent) ?? new Set<string>();
+      cartIds.add(cart.id);
+      inboundIntentCartIds.set(intent, cartIds);
+      inboundIntentsForCart.add(intent);
+    }
+
+    for (const intent of inboundIntentsForCart) {
+      if (intent === "ubicacion_transporte") metricIntentCartIds.ubicacion_transporte.add(cart.id);
+      if (intent === "cotizar_reserva") metricIntentCartIds.cotizar_reserva.add(cart.id);
+      if (intent === "descuentos") metricIntentCartIds.descuentos.add(cart.id);
+      if (intent === "problema_tecnico") {
+        metricIntentCartIds.problema_tecnico.add(cart.id);
+        problemCartIds.add(cart.id);
+      }
+      if (intent === "problema_operativo") {
+        metricIntentCartIds.problema_operativo.add(cart.id);
+        problemCartIds.add(cart.id);
+      }
+    }
+  }
+
+  summary.ubicacion_transporte_carts = metricIntentCartIds.ubicacion_transporte.size;
+  summary.cotizar_reserva_carts = metricIntentCartIds.cotizar_reserva.size;
+  summary.problema_tecnico_carts = metricIntentCartIds.problema_tecnico.size;
+  summary.problema_operativo_carts = metricIntentCartIds.problema_operativo.size;
+  summary.problemas_carts = problemCartIds.size;
+  summary.descuentos_carts = metricIntentCartIds.descuentos.size;
+  summary.top_inbound_intents = Array.from(inboundIntentCartIds.entries())
+    .map(([intent, cartIds]) => ({
+      cart_count: cartIds.size,
+      intent_category: intent,
+      message_count: inboundIntentMessages.get(intent) ?? 0,
+    }))
+    .sort((left, right) => right.cart_count - left.cart_count || right.message_count - left.message_count)
+    .slice(0, 8);
 
   return { data: summary, error: null };
 }
