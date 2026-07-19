@@ -183,6 +183,14 @@ export default async function RecuperacionPage() {
           </div>
         </header>
 
+        <RecoveryAttributionBreakdown
+          breakdown={attributionDashboard?.breakdown ?? null}
+          error={attributionDashboardError?.message ?? null}
+        />
+        <RecoveryCartAuditTable
+          error={cartAuditRowsError?.message ?? null}
+          rows={cartAuditRows}
+        />
         <section className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {kpis.map((kpi) => {
             const Icon = kpi.icon;
@@ -204,30 +212,13 @@ export default async function RecuperacionPage() {
             );
           })}
         </section>
-
         <RecoveryAttributionKpis
           error={attributionDashboardError?.message ?? null}
           kpis={attributionDashboard?.kpis ?? null}
         />
-        <RecoveryAttributionBreakdown
-          breakdown={attributionDashboard?.breakdown ?? null}
-          error={attributionDashboardError?.message ?? null}
-        />
-        <RecoveryAttributionCases
-          cases={attributionDashboard?.recentCases ?? []}
-          error={attributionDashboardError?.message ?? null}
-        />
-        <RecoveryCartStatusSummary
-          error={cartStatusSummaryError?.message ?? null}
-          summary={cartStatusSummary}
-        />
         <RecoveryLatestImportsSummary
           error={latestImportsSummaryError?.message ?? null}
           summary={latestImportsSummary}
-        />
-        <RecoveryCartAuditTable
-          error={cartAuditRowsError?.message ?? null}
-          rows={cartAuditRows}
         />
         <PurchasesUploadMock />
         <IncompleteBookingsUploadMock />
@@ -235,6 +226,14 @@ export default async function RecuperacionPage() {
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}
+        />
+        <RecoveryCartStatusSummary
+          error={cartStatusSummaryError?.message ?? null}
+          summary={cartStatusSummary}
+        />
+        <RecoveryAttributionCases
+          cases={attributionDashboard?.recentCases ?? []}
+          error={attributionDashboardError?.message ?? null}
         />
 
         <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
