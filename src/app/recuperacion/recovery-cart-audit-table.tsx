@@ -456,12 +456,12 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
 
       {!error && visibleRows.length > 0 ? (
         <div className="px-5 py-5">
-          <div className="overflow-x-auto">
-          <table className="min-w-[1160px] w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
+          <div>
+          <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
                 <SortableHeader className="w-[7%]" label="Tipo" onSort={() => handleSort("type")} sortIndicator={sortIndicator("type")} />
-                <SortableHeader className="w-[19%]" label="Contacto" onSort={() => handleSort("contact")} sortIndicator={sortIndicator("contact")} />
+                <SortableHeader className="w-[21%]" label="Contacto" onSort={() => handleSort("contact")} sortIndicator={sortIndicator("contact")} />
                 <SortableHeader className="w-[7%]" label="Parking" onSort={() => handleSort("parking")} sortIndicator={sortIndicator("parking")} />
                 <SortableHeader className="w-[10%]" label="Mensaje" onSort={() => handleSort("message")} sortIndicator={sortIndicator("message")} />
                 <SortableHeader className="w-[12%]" label="Fecha carrito" onSort={() => handleSort("cart_date")} sortIndicator={sortIndicator("cart_date")} />
@@ -470,7 +470,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                 <SortableHeader className="w-[6%]" label="Horas" onSort={() => handleSort("hours")} sortIndicator={sortIndicator("hours")} />
                 <SortableHeader className="w-[6%]" label="Monto" onSort={() => handleSort("amount")} sortIndicator={sortIndicator("amount")} />
                 <SortableHeader className="w-[7%]" label="Conf." onSort={() => handleSort("confidence")} sortIndicator={sortIndicator("confidence")} />
-                <th className="w-[10%] border-b border-[#d6e1ea] px-2 py-3">Chat</th>
               </tr>
             </thead>
             <tbody>
@@ -482,6 +481,13 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     <div className="break-all font-medium text-navy">{row.email ?? "Sin correo"}</div>
                     <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>
+                    <button
+                      className="mt-2 rounded-md border border-[#d6e1ea] bg-white px-2 py-1 text-[11px] font-medium text-navy hover:border-sea hover:bg-[#f8fafb]"
+                      onClick={() => setSelectedChatCartId(row.id)}
+                      type="button"
+                    >
+                      Ver chat
+                    </button>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.parking_code ?? "Sin parking"}
@@ -522,15 +528,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                     ) : (
                       <span className="text-slate-400">-</span>
                     )}
-                  </td>
-                  <td className="border-b border-[#edf2f6] px-2 py-3">
-                    <button
-                      className="rounded-lg border border-[#d6e1ea] bg-white px-2 py-1.5 text-xs font-medium text-navy hover:border-sea hover:bg-[#f8fafb]"
-                      onClick={() => setSelectedChatCartId(row.id)}
-                      type="button"
-                    >
-                      Ver chat
-                    </button>
                   </td>
                 </tr>
               ))}

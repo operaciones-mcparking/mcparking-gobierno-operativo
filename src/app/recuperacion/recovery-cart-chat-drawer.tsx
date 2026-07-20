@@ -131,6 +131,22 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     return () => controller.abort();
   }, [cartId]);
 
+  useEffect(() => {
+    if (!cartId) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [cartId, onClose]);
+
   if (!cartId) {
     return null;
   }
@@ -140,8 +156,11 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const isRawChat = summary?.source === "raw";
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0f172a]/35">
-      <div className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[#d6e1ea] bg-white shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-[#0f172a]/35" onClick={onClose}>
+      <div
+        className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[#d6e1ea] bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="flex items-start justify-between gap-3 border-b border-[#edf2f6] px-5 py-4">
           <div>
             <div className="flex items-center gap-2 text-navy">
