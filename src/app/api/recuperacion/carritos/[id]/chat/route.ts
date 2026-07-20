@@ -11,6 +11,7 @@ type RouteContext = {
 };
 
 type CartChatSourceRow = {
+  email_normalized: string | null;
   form_datetime: string | null;
   id: string;
   intended_departure_date: string | null;
@@ -91,10 +92,13 @@ function labelForDirection(direction: "inbound" | "outbound") {
 
 function safeCartPayload(cart: CartChatSourceRow, windowStart: string | null, windowEnd: string | null) {
   return {
+    cmsUrl: null,
+    email: cart.email_normalized,
     formDatetime: cart.form_datetime,
     id: cart.id,
     intendedDepartureDate: cart.intended_departure_date,
     parkingCode: cart.parking_code,
+    phone: cart.phone_normalized,
     type: cart.type,
     windowEnd,
     windowStart,
@@ -148,7 +152,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   const { data: cartData, error: cartError } = await admin.supabase
     .from("recovery_incomplete_bookings_import")
-    .select("id,phone_normalized,form_datetime,intended_departure_date,type,parking_code")
+    .select("id,email_normalized,phone_normalized,form_datetime,intended_departure_date,type,parking_code")
     .eq("id", cartId)
     .maybeSingle();
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageCircle, X } from "lucide-react";
+import { Copy, ExternalLink, MessageCircle, Send, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
@@ -23,9 +23,12 @@ type CartChatMessage = {
 
 type CartChatResponse = {
   cart?: {
+    cmsUrl: string | null;
+    email: string | null;
     formDatetime: string | null;
     id: string;
     parkingCode: string | null;
+    phone: string | null;
     type: string | null;
     windowEnd: string | null;
     windowStart: string | null;
@@ -82,10 +85,39 @@ function genericMessageText(direction: "inbound" | "outbound") {
   return direction === "inbound" ? "Mensaje del cliente" : "Mensaje nuestro / sistema";
 }
 
+function whatsappUrl(phone: string | null | undefined) {
+  const digits = String(phone ?? "").replace(/\D/g, "");
+
+  return digits ? `https://wa.me/${digits}` : null;
+}
+
+function safeHttpUrl(value: string | null | undefined) {
+  if (!value) return null;
+
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDrawerProps) {
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [data, setData] = useState<CartChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!copyFeedback) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => setCopyFeedback(null), 2200);
+
+    return () => window.clearTimeout(timeout);
+  }, [copyFeedback]);
 
   useEffect(() => {
     if (!cartId) {
@@ -157,6 +189,20 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const messages = data?.messages ?? [];
   const summary = data?.summary;
   const isRawChat = summary?.source === "raw";
+  const cart = data?.cart;
+  const cmsUrl = safeHttpUrl(cart?.cmsUrl);
+  const chatUrl = whatsappUrl(cart?.phone);
+
+  async function copyValue(value: string | null | undefined, label: string) {
+    if (!value) return;
+
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyFeedback(`${label} copiado`);
+    } catch {
+      setCopyFeedback(`No se pudo copiar ${label.toLowerCase()}`);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0f172a]/35" onClick={onClose}>
@@ -201,6 +247,67 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Inbound: {formatNumber(summary.inboundMessages)} · Outbound: {formatNumber(summary.outboundMessages)}
             </p>
+          ) : null}
+
+          {cart ? (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contacto</p>
+              <div className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <span className="text-xs text-slate-500">Email</span>
+                  <p className="break-all font-medium text-slate-900">{cart.email || "-"}</p>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs text-slate-500">Teléfono</span>
+                  <p className="break-all font-medium text-slate-900">{cart.phone || "-"}</p>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {chatUrl ? (
+                  <a
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                    href={chatUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    WhatsApp
+                  </a>
+                ) : null}
+                {cart.phone ? (
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => void copyValue(cart.phone, "Teléfono")}
+                    type="button"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copiar teléfono
+                  </button>
+                ) : null}
+                {cart.cmsUrl ? (
+                  <button
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => void copyValue(cart.cmsUrl, "Reserva")}
+                    type="button"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copiar reserva
+                  </button>
+                ) : null}
+                {cmsUrl ? (
+                  <a
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    href={cmsUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Abrir reserva
+                  </a>
+                ) : null}
+              </div>
+              {copyFeedback ? <p className="mt-2 text-xs font-medium text-teal-700">{copyFeedback}</p> : null}
+            </div>
           ) : null}
         </div>
 
@@ -286,8 +393,8 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
         <div className="border-t border-[#edf2f6] bg-white px-5 py-3">
           <p className="text-xs leading-5 text-slate-500">
             {isRawChat
-              ? "Vista admin sensible. No incluye telefonos, wa_id, api_phone, payloads ni identificadores tecnicos."
-              : "Esta vista no incluye texto de mensajes, telefonos, wa_id, api_phone, payloads ni identificadores tecnicos."}
+              ? "Vista admin sensible. El contacto solo se muestra aquí; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."
+              : "Esta vista no incluye texto de mensajes. El contacto solo se muestra aquí; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."}
           </p>
         </div>
       </div>
