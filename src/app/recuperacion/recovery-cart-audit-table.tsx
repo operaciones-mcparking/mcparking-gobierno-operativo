@@ -168,6 +168,30 @@ function defaultSortDirection(sortKey: SortKey): SortDirection {
 }
 
 
+function intentTooltipItems(row: RecoveryCartAuditRow): Array<[string, string]> {
+  const items: Array<[string, string]> = [];
+
+  if (row.lastInboundIntentCategory) {
+    items.push(["intent_category", row.lastInboundIntentCategory]);
+    items.push(["Intenci\u00f3n", row.lastInboundIntentCategory]);
+  }
+
+  if (row.lastInboundSentiment) items.push(["Sentimiento", row.lastInboundSentiment]);
+  if (row.lastInboundChatState) items.push(["Chat", row.lastInboundChatState]);
+  if (row.hasChat) items.push(["Mensajes", formatNumber(row.chatMessageCount)]);
+
+  return items;
+}
+
+function intentTooltipTitle(row: RecoveryCartAuditRow) {
+  const items = intentTooltipItems(row);
+
+  if (items.length === 0) return row.hasChat ? "Chat disponible" : "Sin chat asociado";
+
+  return items.map(([label, value]) => `${label}: ${value}`).join(" | ");
+}
+
+
 export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTableProps) {
   const [dateQuery, setDateQuery] = useState(() => todayInputValue());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -229,7 +253,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
     [visibleRows],
   );
   const auditFunnelCards = [
-    { label: "Carritos perdidos", value: formatNumber(auditSummary.total) },
+    { label: "Carritos filtrados", value: formatNumber(auditSummary.total) },
     { label: "Enviados", value: formatNumber(auditSummary.sent) },
     { label: "Entregados", value: formatNumber(auditSummary.delivered) },
     { label: "Leídos", value: formatNumber(auditSummary.read) },
@@ -356,7 +380,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       {!error ? (
         <div className="border-b border-[#edf2f6] px-5 py-4">
           <div className="mb-3">
-            <h3 className="text-sm font-medium text-navy">Funnel de auditoria filtrada</h3>
+            <h3 className="text-sm font-medium text-navy">Conversaciones de la auditoria filtrada</h3>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Calculado sobre los carritos que cumplen los filtros actuales.
             </p>
@@ -407,26 +431,41 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
               </tr>
             </thead>
             <tbody>
-              {pageRows.map((row, index) => (
-                <tr className="bg-white odd:bg-[#fbfdfe]" key={row.id}>
+              {pageRows.map((row) => {
+                const canOpenChat = row.hasChat === true;
+
+                return (
+                <tr
+                  aria-label={canOpenChat ? "Ver chat del carrito" : undefined}
+                  className={`group bg-white transition odd:bg-[#fbfdfe] ${canOpenChat ? "cursor-pointer hover:bg-[#eef7f8]" : "cursor-default"}`}
+                  key={row.id}
+                  onClick={canOpenChat ? () => setSelectedChatCartId(row.id) : undefined}
+                  onKeyDown={canOpenChat ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedChatCartId(row.id);
+                    }
+                  } : undefined}
+                  role={canOpenChat ? "button" : undefined}
+                  tabIndex={canOpenChat ? 0 : undefined}
+                  title={intentTooltipTitle(row)}
+                >
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.cart_type ?? "Sin tipo"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     <div className="break-all font-medium text-navy">{row.email ?? "Sin correo"}</div>
                     <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>
-                    <button
-                      className="mt-2 rounded-md border border-[#d6e1ea] bg-white px-2 py-1 text-[11px] font-medium text-navy hover:border-sea hover:bg-[#f8fafb]"
-                      onClick={() => setSelectedChatCartId(row.id)}
-                      type="button"
-                    >
-                      Ver chat
-                    </button>
+                    <div className="mt-2">
+                      <ValueBadge tone={row.hasChat ? "info" : "neutral"}>
+                        {row.hasChat ? `Chat: ${formatNumber(row.chatMessageCount)}` : "Sin chat"}
+                      </ValueBadge>
+                    </div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.parking_code ?? "Sin parking"}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-2 py-3">
+                  <td className="relative border-b border-[#edf2f6] px-2 py-3">
                     <div className="flex flex-col items-start gap-1">
                       <ValueBadge tone={messageSentTone(row.message_sent)}>
                         {messageSentLabel(row.message_sent)}
@@ -435,6 +474,15 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                         {whatsappStatusLabel(row.whatsappStatus)}
                       </ValueBadge>
                     </div>
+                    {intentTooltipItems(row).length > 0 ? (
+                      <div className="pointer-events-none absolute left-2 top-full z-30 mt-2 hidden w-56 rounded-lg border border-[#d6e1ea] bg-white p-3 text-[11px] leading-4 text-slate-600 shadow-[0_12px_28px_rgba(2,53,116,0.16)] group-hover:block group-focus:block">
+                        {intentTooltipItems(row).map(([label, value]) => (
+                          <div key={label}>
+                            <span className="font-medium text-navy">{label}:</span> {value}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     <div>{formatDate(row.cart_form_datetime)}</div>
@@ -464,7 +512,8 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           </div>

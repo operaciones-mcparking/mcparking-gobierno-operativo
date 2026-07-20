@@ -353,11 +353,17 @@ export type RecoveryCartAuditRow = {
   audit_status: RecoveryCartAuditStatus;
   cart_form_datetime: string | null;
   cart_type: string | null;
+  chatMessageCount: number;
   confidence: string | null;
   email: string | null;
+  hasChat: boolean;
   hours_to_purchase: number | null;
   id: string;
   intended_departure_date: string | null;
+  lastInboundChatState: string | null;
+  lastInboundIntentCategory: string | null;
+  lastInboundMessageAt: string | null;
+  lastInboundSentiment: string | null;
   message_sent: boolean | null;
   parking_code: string | null;
   phone: string | null;
@@ -1545,6 +1551,15 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     tracking_status: RecoveryCartWhatsappStatus | null;
   };
 
+  type MessageMemoryIntentRow = {
+    chat_state: string | null;
+    intent_category: string | null;
+    message_at: string | null;
+    message_bound_type: string | null;
+    message_sentiment: string | null;
+    wa_id_normalized: string | null;
+  };
+
   function todayDateValue() {
     const today = new Date();
     const year = today.getFullYear();
@@ -1592,6 +1607,52 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     return { data: rows, error: null };
   }
 
+
+  async function fetchMessageMemoryRows(cartsToMatch: CartAuditSourceRow[]) {
+    const phoneChunkSize = 25;
+    const cartsWithWindow = cartsToMatch.filter((cart) => cart.phone_normalized && cart.form_datetime);
+
+    if (cartsWithWindow.length === 0) {
+      return { data: [] as MessageMemoryIntentRow[], error: null };
+    }
+
+    const phoneValues = Array.from(
+      new Set(cartsWithWindow.map((cart) => cart.phone_normalized).filter(Boolean) as string[]),
+    );
+    const fromDates = cartsWithWindow
+      .map((cart) => new Date(cart.form_datetime as string))
+      .filter((date) => !Number.isNaN(date.getTime()));
+
+    if (phoneValues.length === 0 || fromDates.length === 0) {
+      return { data: [] as MessageMemoryIntentRow[], error: null };
+    }
+
+    const minDate = new Date(Math.min(...fromDates.map((date) => date.getTime())));
+    const maxDate = new Date(Math.max(...fromDates.map((date) => date.getTime())));
+    maxDate.setDate(maxDate.getDate() + 7);
+
+    const rows: MessageMemoryIntentRow[] = [];
+
+    for (let index = 0; index < phoneValues.length; index += phoneChunkSize) {
+      const chunk = phoneValues.slice(index, index + phoneChunkSize);
+      const { data, error } = await supabase
+        .from("recovery_whatsapp_message_memory_import")
+        .select("wa_id_normalized,message_at,message_bound_type,intent_category,message_sentiment,chat_state")
+        .in("wa_id_normalized", chunk)
+        .gte("message_at", minDate.toISOString())
+        .lt("message_at", maxDate.toISOString())
+        .order("message_at", { ascending: false });
+
+      if (error) {
+        return { data: [] as MessageMemoryIntentRow[], error };
+      }
+
+      rows.push(...((data ?? []) as MessageMemoryIntentRow[]));
+    }
+
+    return { data: rows, error: null };
+  }
+
   const supabase = await createSupabaseAuthServerClient();
   const { data: carts, error: cartsError } = await supabase
     .from("recovery_incomplete_bookings_import")
@@ -1609,7 +1670,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
   const cartIds = Array.from(new Set(cartRows.map((item) => item.id).filter(Boolean)));
   const messageIds = Array.from(new Set(cartRows.map((item) => item.message_id).filter(Boolean))) as string[];
 
-  const [attributionsResult, trackingResult] = await Promise.all([
+  const [attributionsResult, trackingResult, intentResult] = await Promise.all([
     cartIds.length > 0
       ? supabase
           .from("v_recovery_attribution_cases")
@@ -1619,6 +1680,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     messageIds.length > 0
       ? fetchTrackingRowsByMessageIds(messageIds)
       : Promise.resolve({ data: [] as TrackingByMessageRow[], error: null }),
+    fetchMessageMemoryRows(cartRows),
   ]);
 
   if (attributionsResult.error) {
@@ -1641,19 +1703,61 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     trackingByMessageId.set(tracking.message_id, tracking);
   }
 
+  const intentRowsByPhone = new Map<string, MessageMemoryIntentRow[]>();
+
+  if (!intentResult.error) {
+    for (const intentRow of (intentResult.data ?? []) as MessageMemoryIntentRow[]) {
+      if (!intentRow.wa_id_normalized) continue;
+      const rowsForPhone = intentRowsByPhone.get(intentRow.wa_id_normalized) ?? [];
+      rowsForPhone.push(intentRow);
+      intentRowsByPhone.set(intentRow.wa_id_normalized, rowsForPhone);
+    }
+  }
+
+  function findMessageMemoryRowsForCart(cart: CartAuditSourceRow) {
+    if (!cart.phone_normalized || !cart.form_datetime) return [];
+
+    const fromDate = new Date(cart.form_datetime);
+    const toDate = new Date(cart.form_datetime);
+    toDate.setDate(toDate.getDate() + 7);
+
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return [];
+
+    return (intentRowsByPhone.get(cart.phone_normalized) ?? []).filter((intentRow) => {
+      if (!intentRow.message_at) return false;
+      const messageDate = new Date(intentRow.message_at);
+      return messageDate >= fromDate && messageDate < toDate;
+    });
+  }
+
+  function findLastInboundIntent(cart: CartAuditSourceRow) {
+    return findMessageMemoryRowsForCart(cart).find(
+      (intentRow) => intentRow.message_bound_type === "inbound",
+    ) ?? null;
+  }
+
   const auditRows = cartRows.map((cart) => {
     const attribution = attributionsByCartId.get(cart.id);
     const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
+    const messageMemoryRows = intentResult.error ? [] : findMessageMemoryRowsForCart(cart);
+    const lastInboundIntent = findLastInboundIntent(cart);
+    const chatMessageCount = messageMemoryRows.length;
 
     return {
       audit_status: resolveAuditStatus(attribution, cart.intended_departure_date),
       cart_form_datetime: cart.form_datetime,
       cart_type: cart.type,
+      chatMessageCount,
       confidence: attribution?.confidence ?? null,
       email: cart.email_normalized,
+      hasChat: chatMessageCount > 0,
       hours_to_purchase: attribution?.hours_to_purchase ?? null,
       id: cart.id,
       intended_departure_date: cart.intended_departure_date,
+      lastInboundChatState: lastInboundIntent?.chat_state ?? null,
+      lastInboundIntentCategory: lastInboundIntent?.intent_category ?? null,
+      lastInboundMessageAt: lastInboundIntent?.message_at ?? null,
+      lastInboundSentiment: lastInboundIntent?.message_sentiment ?? null,
       message_sent: cart.message_sent,
       parking_code: cart.parking_code,
       phone: cart.phone_normalized,

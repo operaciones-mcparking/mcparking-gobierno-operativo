@@ -1,6 +1,5 @@
 import {
   getRecoveryCartAuditRows,
-  getRecoveryCartStatusSummary,
   getRecoveryAttributionDashboardData,
   getRecoveryImportHistory,
   getRecoveryLatestImportsSummary,
@@ -10,8 +9,6 @@ import { MessageMemoryUploadCard } from "./message-memory-upload-card";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
 import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
-import { RecoveryCartStatusSummary } from "./recovery-cart-status-summary";
-import { RecoveryConversationSummary } from "./recovery-conversation-summary";
 import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
 import { TrackingUploadCard } from "./tracking-upload-card";
@@ -20,13 +17,11 @@ export default async function RecuperacionPage() {
   const [
     { data: importHistory, error: importHistoryError },
     { data: attributionDashboard, error: attributionDashboardError },
-    { data: cartStatusSummary, error: cartStatusSummaryError },
     { data: latestImportsSummary, error: latestImportsSummaryError },
     { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
     getRecoveryAttributionDashboardData(),
-    getRecoveryCartStatusSummary(),
     getRecoveryLatestImportsSummary(),
     getRecoveryCartAuditRows(),
   ]);
@@ -69,14 +64,6 @@ export default async function RecuperacionPage() {
         <RecoveryImportHistory
           error={importHistoryError?.message ?? null}
           imports={importHistory}
-        />
-        <RecoveryConversationSummary
-          error={null}
-          summary={null}
-        />
-        <RecoveryCartStatusSummary
-          error={cartStatusSummaryError?.message ?? null}
-          summary={cartStatusSummary}
         />
       </div>
     </main>
