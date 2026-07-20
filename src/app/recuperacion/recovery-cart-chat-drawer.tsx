@@ -207,13 +207,13 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   return (
     <div className="fixed inset-0 z-50 bg-[#0f172a]/35" onClick={onClose}>
       <div
-        className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[#d6e1ea] bg-white shadow-2xl"
+        className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[#d8e7e1] bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-[#edf2f6] px-5 py-4">
+        <div className="flex items-start justify-between gap-3 border-b border-[#e7f0ec] bg-[#fbfefd] px-5 py-4">
           <div>
             <div className="flex items-center gap-2 text-navy">
-              <MessageCircle className="h-4 w-4 text-sea" />
+              <MessageCircle className="h-4 w-4 text-teal-700" />
               <h2 className="text-base font-medium tracking-tight">
                 {isRawChat ? "Chat real" : "Chat metadata-only"}
               </h2>
@@ -226,7 +226,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           </div>
           <button
             aria-label="Cerrar chat"
-            className="rounded-lg border border-[#d6e1ea] bg-white p-2 text-slate-600 hover:text-navy"
+            className="rounded-lg border border-[#d8e7e1] bg-white p-2 text-slate-600 hover:border-teal-200 hover:bg-teal-50 hover:text-teal-800"
             onClick={onClose}
             type="button"
           >
@@ -234,7 +234,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           </button>
         </div>
 
-        <div className="border-b border-[#edf2f6] bg-[#fbfdfe] px-5 py-3">
+        <div className="border-b border-[#e7f0ec] bg-[#f7fbf9] px-5 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <ValueBadge tone="info">{data?.cart?.type ?? "Carrito"}</ValueBadge>
             <ValueBadge tone="neutral">{data?.cart?.parkingCode ?? "Sin parking"}</ValueBadge>
@@ -250,7 +250,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           ) : null}
 
           {cart ? (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <div className="mt-3 rounded-2xl border border-[#d8e7e1] bg-white/95 px-4 py-3 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contacto</p>
               <div className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
                 <div className="min-w-0">
@@ -258,14 +258,14 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                   <p className="break-all font-medium text-slate-900">{cart.email || "-"}</p>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-xs text-slate-500">Teléfono</span>
+                  <span className="text-xs text-slate-500">Telefono</span>
                   <p className="break-all font-medium text-slate-900">{cart.phone || "-"}</p>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {chatUrl ? (
                   <a
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#a9dbc3] bg-[#e5f6ee] px-3 py-1.5 text-xs font-semibold text-[#0f766e] hover:bg-[#d8f0e4]"
                     href={chatUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -276,17 +276,17 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 ) : null}
                 {cart.phone ? (
                   <button
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    onClick={() => void copyValue(cart.phone, "Teléfono")}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
+                    onClick={() => void copyValue(cart.phone, "Telefono")}
                     type="button"
                   >
                     <Copy className="h-3.5 w-3.5" />
-                    Copiar teléfono
+                    Copiar telefono
                   </button>
                 ) : null}
                 {cart.cmsUrl ? (
                   <button
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
                     onClick={() => void copyValue(cart.cmsUrl, "Reserva")}
                     type="button"
                   >
@@ -296,7 +296,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 ) : null}
                 {cmsUrl ? (
                   <a
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
                     href={cmsUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -314,16 +314,16 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
         <div
           className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
           style={{
-            backgroundColor: "#eef7f1",
+            backgroundColor: "#edf8f3",
             backgroundImage:
-              "radial-gradient(circle at 16px 16px, rgba(15, 118, 110, 0.08) 0 1px, transparent 1.5px), radial-gradient(circle at 42px 38px, rgba(15, 23, 42, 0.05) 0 1px, transparent 1.5px)",
+              "radial-gradient(circle at 16px 16px, rgba(15, 118, 110, 0.07) 0 1px, transparent 1.5px), radial-gradient(circle at 42px 38px, rgba(20, 83, 45, 0.045) 0 1px, transparent 1.5px)",
             backgroundSize: "56px 56px",
           }}
         >
           {isLoading ? (
             <div className="flex min-h-[320px] items-center justify-center">
-              <div className="rounded-2xl border border-slate-200 bg-white/85 px-6 py-5 text-center shadow-sm backdrop-blur">
-                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+              <div className="rounded-2xl border border-[#d8e7e1] bg-white/90 px-6 py-5 text-center shadow-sm backdrop-blur">
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-[#d8e7e1] border-t-teal-700" />
                 <p className="text-sm font-semibold text-slate-900">Cargando chat real...</p>
                 <p className="mt-1 text-xs text-slate-500">Buscando mensajes asociados al carrito</p>
               </div>
@@ -359,8 +359,8 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                       className={[
                         "max-w-[82%] rounded-2xl border px-4 py-3 text-sm shadow-sm",
                         isInbound
-                          ? "rounded-bl-sm border-[#d6e1ea] bg-white text-slate-700"
-                          : "rounded-br-sm border-[#bfe5d2] bg-[#dcf8c6] text-slate-800",
+                          ? "rounded-bl-sm border-slate-200 bg-white text-slate-900"
+                          : "rounded-br-sm border-[#a9dbc3] bg-[#dff6e8] text-[#14352b]",
                       ].join(" ")}
                     >
                       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -390,11 +390,11 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           ) : null}
         </div>
 
-        <div className="border-t border-[#edf2f6] bg-white px-5 py-3">
+        <div className="border-t border-[#e7f0ec] bg-[#fbfefd] px-5 py-3">
           <p className="text-xs leading-5 text-slate-500">
             {isRawChat
-              ? "Vista admin sensible. El contacto solo se muestra aquí; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."
-              : "Esta vista no incluye texto de mensajes. El contacto solo se muestra aquí; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."}
+              ? "Vista admin sensible. El contacto solo se muestra aqui; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."
+              : "Esta vista no incluye texto de mensajes. El contacto solo se muestra aqui; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."}
           </p>
         </div>
       </div>
