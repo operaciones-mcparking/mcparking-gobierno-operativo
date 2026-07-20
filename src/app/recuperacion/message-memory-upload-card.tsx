@@ -66,6 +66,11 @@ type ImportResponse = {
   chunksTotal?: number;
 };
 
+type SafeApiPayload = {
+  error?: string;
+  ok?: boolean;
+};
+
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
   { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
@@ -119,6 +124,39 @@ function errorMessageForStatus(status: number, fallback: string) {
   return fallback || "No se pudo procesar el archivo. Intenta nuevamente.";
 }
 
+async function readSafeJsonResponse<T extends SafeApiPayload>(response: Response) {
+  const text = await response.text();
+
+  if (!text) {
+    return {
+      data: null,
+      error: `HTTP ${response.status}: respuesta vacia del servidor.`,
+    };
+  }
+
+  try {
+    return {
+      data: JSON.parse(text) as T,
+      error: null,
+    };
+  } catch {
+    const shortText = /<html|<!doctype/i.test(text)
+      ? "El servidor devolvio HTML en vez de JSON."
+      : text.slice(0, 180);
+
+    return {
+      data: null,
+      error: `HTTP ${response.status}: ${shortText}`,
+    };
+  }
+}
+
+function safeHttpError(status: number, fallback: string) {
+  const message = errorMessageForStatus(status, fallback);
+
+  return `HTTP ${status}: ${message}`;
+}
+
 function countValue(counts: Record<string, number> | undefined, key: string) {
   return formatNumber(counts?.[key] ?? 0);
 }
@@ -134,13 +172,18 @@ export function MessageMemoryUploadCard() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [summary, setSummary] = useState<MessageMemoryValidationSummary | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [rawImportSummary, setRawImportSummary] = useState<ImportSummary | null>(null);
   const [chunksTotal, setChunksTotal] = useState<number | null>(null);
+  const [rawChunksTotal, setRawChunksTotal] = useState<number | null>(null);
   const [chunkSize, setChunkSize] = useState<number | null>(null);
+  const [rawChunkSize, setRawChunkSize] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [rawImportError, setRawImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isRawImporting, setIsRawImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
-  const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
+  const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting && !isRawImporting);
 
   const previewMetrics = useMemo(() => {
     if (!summary) {
@@ -192,10 +235,14 @@ export function MessageMemoryUploadCard() {
 
     setError(null);
     setImportError(null);
+    setRawImportError(null);
     setSummary(null);
     setImportSummary(null);
+    setRawImportSummary(null);
     setChunksTotal(null);
+    setRawChunksTotal(null);
     setChunkSize(null);
+    setRawChunkSize(null);
     setSelectedFile(file);
   }
 
@@ -212,10 +259,14 @@ export function MessageMemoryUploadCard() {
 
     setError(null);
     setImportError(null);
+    setRawImportError(null);
     setSummary(null);
     setImportSummary(null);
+    setRawImportSummary(null);
     setChunksTotal(null);
+    setRawChunksTotal(null);
     setChunkSize(null);
+    setRawChunkSize(null);
     setIsValidating(true);
 
     try {
@@ -285,6 +336,60 @@ export function MessageMemoryUploadCard() {
       setImportError("No se pudo conectar con el importador. Revisa la conexion o intenta nuevamente.");
     } finally {
       setIsImporting(false);
+    }
+  }
+
+  async function handleRawImport() {
+    if (!selectedFile || !summary) {
+      setRawImportError("Valida un archivo CSV antes de importar mensajes para chat.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Carga sensible admin-only.\n" +
+        "Esta accion guardara texto real de mensajes solo para Ver chat.\n" +
+        "No se mostraran mensajes en el resultado de importacion.\n" +
+        "Confirmar importacion de mensajes para chat?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setRawImportError(null);
+    setIsRawImporting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/recuperacion/message-memory/raw/importar", {
+        body: formData,
+        method: "POST",
+      });
+      const { data: payload, error: parseError } = await readSafeJsonResponse<ImportResponse>(response);
+
+      if (parseError || !payload) {
+        setRawImportError(parseError ?? `HTTP ${response.status}: respuesta invalida del importador raw.`);
+        return;
+      }
+
+      if (!response.ok || !payload.ok || !payload.summary) {
+        setRawImportError(safeHttpError(response.status, payload.error ?? ""));
+        return;
+      }
+
+      setRawImportSummary({
+        ...payload.summary,
+        batchId: payload.batchId ?? payload.summary.batchId ?? null,
+      });
+      setRawChunksTotal(payload.chunksTotal ?? null);
+      setRawChunkSize(payload.chunkSize ?? null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error desconocido";
+      setRawImportError(`No se pudo conectar con el importador raw: ${message}`);
+    } finally {
+      setIsRawImporting(false);
     }
   }
 
@@ -370,6 +475,16 @@ export function MessageMemoryUploadCard() {
             {importError ? (
               <p className="mt-3 rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
                 {importError}
+              </p>
+            ) : null}
+            {rawImportSummary ? (
+              <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
+                Mensajes para chat importados. Batch: {shortBatchId(rawImportSummary.batchId)}.
+              </p>
+            ) : null}
+            {rawImportError ? (
+              <p className="mt-3 rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
+                {rawImportError}
               </p>
             ) : null}
           </div>
@@ -507,6 +622,43 @@ export function MessageMemoryUploadCard() {
               >
                 <MessageSquareText className="h-4 w-4" />
                 {isImporting ? "Importando..." : "Importar memoria"}
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#f2b8b5] bg-[#fff5f5] p-4">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex items-center gap-2 text-[#9a3412]">
+                  <ShieldCheck className="h-4 w-4" />
+                  <h3 className="text-sm font-medium">Importar mensajes para chat</h3>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[#9a3412]">
+                  Carga sensible admin-only. Guarda texto real de mensajes solo para Ver chat.
+                </p>
+                {rawImportSummary ? (
+                  <div className="mt-3 grid gap-1 rounded-lg border border-[#f2b8b5] bg-white px-3 py-2 text-xs leading-5 text-[#9a3412] sm:grid-cols-2">
+                    <p>Batch: {shortBatchId(rawImportSummary.batchId)}</p>
+                    <p>Status: {rawImportSummary.status ?? "-"}</p>
+                    <p>Chunks: {rawChunksTotal === null ? "-" : formatNumber(rawChunksTotal)}</p>
+                    <p>Chunk size: {rawChunkSize === null ? "-" : formatNumber(rawChunkSize)}</p>
+                    <p>Filas recibidas: {formatNumber(rawImportSummary.rowsReceived)}</p>
+                    <p>Insertadas: {formatNumber(rawImportSummary.insertedRows)}</p>
+                    <p>Duplicadas omitidas: {formatNumber(rawImportSummary.skippedDuplicateRows)}</p>
+                    <p>Conflictos: {formatNumber(rawImportSummary.conflictRows)}</p>
+                    <p>Invalidas: {formatNumber(rawImportSummary.invalidRows)}</p>
+                    {rawImportSummary.fileAlreadyImported ? <p>Archivo ya importado anteriormente.</p> : null}
+                  </div>
+                ) : null}
+              </div>
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#f2b8b5] bg-white px-3 py-2 text-sm font-medium text-[#9a3412] disabled:opacity-55"
+                disabled={!canImport}
+                onClick={handleRawImport}
+                type="button"
+              >
+                <MessageSquareText className="h-4 w-4" />
+                {isRawImporting ? "Importando..." : "Importar mensajes para chat"}
               </button>
             </div>
           </div>

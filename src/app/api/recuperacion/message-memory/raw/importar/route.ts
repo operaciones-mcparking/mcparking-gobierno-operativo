@@ -5,15 +5,23 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 const requireFromRoute = createRequire(import.meta.url);
-const { buildMessageMemoryRawImportRows, validateMessageMemoryCsv } = requireFromRoute(
+const { validateMessageMemoryCsv } = requireFromRoute(
   "../../../../../../../scripts/recovery/message-memory-csv-validator.js",
 ) as {
-  buildMessageMemoryRawImportRows: (csvContent: string) => MessageMemoryRawImportRow[];
   validateMessageMemoryCsv: (csvContent: string) => MessageMemoryCsvReport;
+};
+const { parseCsv } = requireFromRoute("../../../../../../../scripts/recovery/purchases-csv-validator.js") as {
+  parseCsv: (csvContent: string) => { rows: Array<Record<string, string>> };
+};
+const { normalizePhone, parseDateSafe } = requireFromRoute(
+  "../../../../../../../scripts/recovery/recovery-normalizers.js",
+) as {
+  normalizePhone: (raw: unknown) => string | null;
+  parseDateSafe: (raw: unknown) => Date | null;
 };
 
 const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;
-const MESSAGE_MEMORY_RAW_IMPORT_CHUNK_SIZE = 5000;
+const MESSAGE_MEMORY_RAW_IMPORT_CHUNK_SIZE = 1000;
 
 type CountRow = {
   count: number;
@@ -155,6 +163,108 @@ function dateToIso(date: Date | null) {
   return date ? date.toISOString() : null;
 }
 
+function cleanText(raw: unknown) {
+  if (raw === null || raw === undefined) return null;
+
+  const value = String(raw).trim();
+
+  return value.length > 0 ? value : null;
+}
+
+function normalizeCategory(raw: unknown) {
+  const value = cleanText(raw);
+
+  return value ? value.toLowerCase() : null;
+}
+
+function parseTimestampSafe(raw: unknown) {
+  const value = cleanText(raw);
+
+  if (!value) return null;
+
+  if (/^\d{10}$/.test(value)) {
+    const date = new Date(Number(value) * 1000);
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  if (/^\d{13}$/.test(value)) {
+    const date = new Date(Number(value));
+
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return parseDateSafe(value);
+}
+
+function dateTimeValue(raw: unknown) {
+  const date = parseTimestampSafe(raw);
+
+  return date ? date.toISOString() : null;
+}
+
+function normalizeMessagingPhone(raw: unknown) {
+  if (raw === null || raw === undefined) return null;
+
+  const digits = String(raw).replace(/\D/g, "");
+
+  return digits.length >= 8 ? digits : null;
+}
+
+function hashNormalizedRow(row: Record<string, unknown>) {
+  return createHash("sha256").update(JSON.stringify(row)).digest("hex");
+}
+
+function buildRawImportRow(row: Record<string, string>): MessageMemoryRawImportRow | null {
+  const normalized = {
+    api_phone_normalized: normalizePhone(row.api_phone),
+    chat_state: normalizeCategory(row.chat_state),
+    conversation_id: cleanText(row.conversation_id),
+    intent_category: normalizeCategory(row.intent_category),
+    message_at: dateTimeValue(row.timestamp),
+    message_bound_type: normalizeCategory(row.message_bound_type),
+    message_sentiment: normalizeCategory(row.message_sentiment),
+    message_text: cleanText(row.Message),
+    message_type: normalizeCategory(row.message_type),
+    wa_id_normalized: normalizeMessagingPhone(row.wa_id),
+  };
+  const rowHash = hashNormalizedRow({
+    chat_state: normalized.chat_state,
+    conversation_id: normalized.conversation_id,
+    intent_category: normalized.intent_category,
+    message_at: normalized.message_at,
+    message_bound_type: normalized.message_bound_type,
+    message_sentiment: normalized.message_sentiment,
+    message_text: normalized.message_text,
+    message_type: normalized.message_type,
+    wa_id_normalized: normalized.wa_id_normalized,
+  });
+
+  if (
+    !normalized.conversation_id ||
+    !normalized.wa_id_normalized ||
+    !normalized.message_at ||
+    !normalized.message_text ||
+    !rowHash
+  ) {
+    return null;
+  }
+
+  return {
+    api_phone_normalized: normalized.api_phone_normalized,
+    chat_state: normalized.chat_state,
+    conversation_id: normalized.conversation_id,
+    intent_category: normalized.intent_category,
+    message_at: normalized.message_at,
+    message_bound_type: normalized.message_bound_type,
+    message_sentiment: normalized.message_sentiment,
+    message_text: normalized.message_text,
+    message_type: normalized.message_type,
+    row_hash: rowHash,
+    wa_id_normalized: normalized.wa_id_normalized,
+  };
+}
+
 function validationSummary(report: MessageMemoryCsvReport) {
   return {
     apiPhonesNormalizable: report.apiPhoneNormalizable,
@@ -242,14 +352,34 @@ function safeImportSummary(result: ImportRpcResult) {
   };
 }
 
-function chunkRows(rows: MessageMemoryRawImportRow[], size: number) {
-  const chunks: MessageMemoryRawImportRow[][] = [];
+async function appendRawChunk(
+  supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>,
+  batchId: string,
+  chunk: MessageMemoryRawImportRow[],
+) {
+  const { data, error } = await supabase.rpc("append_recovery_whatsapp_message_memory_raw_import_rows", {
+    p_batch_id: batchId,
+    p_rows: chunk,
+  });
 
-  for (let index = 0; index < rows.length; index += size) {
-    chunks.push(rows.slice(index, index + size));
+  if (error) {
+    throw error;
   }
 
-  return chunks;
+  if (!data || typeof data !== "object") {
+    throw new Error("Un chunk de importacion raw no devolvio un resumen valido.");
+  }
+
+  return data as ChunkImportRpcResult;
+}
+
+function addChunkResult(accumulated: ImportRpcResult, chunkResult: ChunkImportRpcResult) {
+  accumulated.conflictRows = (accumulated.conflictRows ?? 0) + (chunkResult.conflictRows ?? 0);
+  accumulated.insertedRows = (accumulated.insertedRows ?? 0) + (chunkResult.insertedRows ?? 0);
+  accumulated.invalidRows = (accumulated.invalidRows ?? 0) + (chunkResult.invalidRows ?? 0);
+  accumulated.rowsReceived = (accumulated.rowsReceived ?? 0) + (chunkResult.rowsReceived ?? 0);
+  accumulated.skippedDuplicateRows =
+    (accumulated.skippedDuplicateRows ?? 0) + (chunkResult.skippedDuplicateRows ?? 0);
 }
 
 export async function POST(request: NextRequest) {
@@ -274,13 +404,21 @@ export async function POST(request: NextRequest) {
     return jsonError("El archivo supera el limite inicial de 30 MB.", 413);
   }
 
-  const csvContent = await file.text();
-  const report = validateMessageMemoryCsv(csvContent);
+  let csvContent: string;
+  let report: MessageMemoryCsvReport;
+  let fileHash: string;
+
+  try {
+    csvContent = await file.text();
+    report = validateMessageMemoryCsv(csvContent);
+    fileHash = hashContent(csvContent);
+  } catch (error) {
+    return jsonError(safeErrorMessage(error), 500);
+  }
+
   const summary = rpcSummary(report);
   const validation = validationSummary(report);
-  const rows = buildMessageMemoryRawImportRows(csvContent);
-  const fileHash = hashContent(csvContent);
-  const chunks = chunkRows(rows, MESSAGE_MEMORY_RAW_IMPORT_CHUNK_SIZE);
+  const chunksTotal = Math.ceil(report.rawImportableRows / MESSAGE_MEMORY_RAW_IMPORT_CHUNK_SIZE);
   let batchId: string | null = null;
 
   try {
@@ -338,32 +476,28 @@ export async function POST(request: NextRequest) {
     }
 
     const accumulated = emptyImportSummary();
+    const currentChunk: MessageMemoryRawImportRow[] = [];
+    const { rows: csvRows } = parseCsv(csvContent);
 
-    for (const chunk of chunks) {
-      const { data: chunkData, error: chunkError } = await admin.supabase.rpc(
-        "append_recovery_whatsapp_message_memory_raw_import_rows",
-        {
-          p_batch_id: batchId,
-          p_rows: chunk,
-        },
-      );
+    for (const csvRow of csvRows) {
+      const normalizedRow = buildRawImportRow(csvRow);
 
-      if (chunkError) {
-        throw chunkError;
+      if (!normalizedRow) {
+        continue;
       }
 
-      if (!chunkData || typeof chunkData !== "object") {
-        throw new Error("Un chunk de importacion raw no devolvio un resumen valido.");
+      currentChunk.push(normalizedRow);
+
+      if (currentChunk.length >= MESSAGE_MEMORY_RAW_IMPORT_CHUNK_SIZE) {
+        const chunkResult = await appendRawChunk(admin.supabase, batchId, currentChunk);
+        addChunkResult(accumulated, chunkResult);
+        currentChunk.length = 0;
       }
+    }
 
-      const chunkResult = chunkData as ChunkImportRpcResult;
-
-      accumulated.conflictRows = (accumulated.conflictRows ?? 0) + (chunkResult.conflictRows ?? 0);
-      accumulated.insertedRows = (accumulated.insertedRows ?? 0) + (chunkResult.insertedRows ?? 0);
-      accumulated.invalidRows = (accumulated.invalidRows ?? 0) + (chunkResult.invalidRows ?? 0);
-      accumulated.rowsReceived = (accumulated.rowsReceived ?? 0) + (chunkResult.rowsReceived ?? 0);
-      accumulated.skippedDuplicateRows =
-        (accumulated.skippedDuplicateRows ?? 0) + (chunkResult.skippedDuplicateRows ?? 0);
+    if (currentChunk.length > 0) {
+      const chunkResult = await appendRawChunk(admin.supabase, batchId, currentChunk);
+      addChunkResult(accumulated, chunkResult);
     }
 
     const { data: finishData, error: finishError } = await admin.supabase.rpc(
@@ -396,7 +530,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       batchId,
       chunkSize: MESSAGE_MEMORY_RAW_IMPORT_CHUNK_SIZE,
-      chunksTotal: chunks.length,
+      chunksTotal,
       conflictRows: importResult.conflictRows,
       fileAlreadyImported: false,
       fileHash: fileHash.slice(0, 12),

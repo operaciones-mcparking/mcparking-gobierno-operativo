@@ -224,6 +224,12 @@ function buildMessageMemoryRawImportRows(csvContent) {
   return rows.map(normalizeMessageMemoryRawRow).filter(isImportableMessageMemoryRawRow);
 }
 
+function buildMessageMemoryRawImportRow(row) {
+  const normalizedRow = normalizeMessageMemoryRawRow(row);
+
+  return isImportableMessageMemoryRawRow(normalizedRow) ? normalizedRow : null;
+}
+
 function validateMessageMemoryCsv(csvContent) {
   const { delimiter, headers, rows } = parseCsv(csvContent);
   const missingExpected = EXPECTED_COLUMNS.filter((column) => !headers.includes(column));
@@ -298,6 +304,7 @@ function validateMessageMemoryCsv(csvContent) {
 module.exports = {
   EXPECTED_COLUMNS,
   buildMessageMemoryImportRows,
+  buildMessageMemoryRawImportRow,
   buildMessageMemoryRawImportRows,
   normalizeMessageMemoryRow,
   normalizeMessageMemoryRawRow,
