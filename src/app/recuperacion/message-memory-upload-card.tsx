@@ -4,6 +4,7 @@ import { CheckCircle2, Database, FileSpreadsheet, MessageSquareText, ShieldCheck
 import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { ImportProgressModal, ImportResultGrid } from "./import-progress-modal";
 
 type TextSummarySensitivity = {
   averageLength: number;
@@ -70,6 +71,8 @@ type SafeApiPayload = {
   error?: string;
   ok?: boolean;
 };
+
+type ImportModalStatus = "confirm" | "loading" | "success" | "error";
 
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
@@ -182,6 +185,7 @@ export function MessageMemoryUploadCard() {
   const [rawImportError, setRawImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [importModalStatus, setImportModalStatus] = useState<ImportModalStatus | null>(null);
   const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
 
   const previewMetrics = useMemo(() => {
@@ -242,6 +246,7 @@ export function MessageMemoryUploadCard() {
     setRawChunksTotal(null);
     setChunkSize(null);
     setRawChunkSize(null);
+    setImportModalStatus(null);
     setSelectedFile(file);
   }
 
@@ -318,21 +323,19 @@ export function MessageMemoryUploadCard() {
     return { error: null, payload };
   }
 
-  async function handleImportComplete() {
+  function handleImportComplete() {
     if (!selectedFile || !summary) {
       setImportError("Valida un archivo CSV antes de importar memoria completa.");
       return;
     }
 
-    const confirmed = window.confirm(
-      "Esta accion importara metadata segura y texto real admin-only para Ver chat.\n" +
-        "No se mostraran mensajes, text_summary, telefonos, payloads ni filas crudas en los resultados.\n" +
-        "Confirmar importacion de memoria completa?",
-    );
+    setImportError(null);
+    setRawImportError(null);
+    setImportModalStatus("confirm");
+  }
 
-    if (!confirmed) {
-      return;
-    }
+  async function handleConfirmImportComplete() {
+    if (!selectedFile || !summary) return;
 
     setImportError(null);
     setRawImportError(null);
@@ -342,6 +345,7 @@ export function MessageMemoryUploadCard() {
     setRawChunksTotal(null);
     setChunkSize(null);
     setRawChunkSize(null);
+    setImportModalStatus("loading");
     setIsImporting(true);
 
     try {
@@ -349,6 +353,7 @@ export function MessageMemoryUploadCard() {
 
       if (metadataResult.error || !metadataResult.payload?.summary) {
         setImportError(metadataResult.error ?? "No se pudo importar metadata segura.");
+        setImportModalStatus("error");
         return;
       }
 
@@ -363,6 +368,7 @@ export function MessageMemoryUploadCard() {
 
       if (rawResult.error || !rawResult.payload?.summary) {
         setRawImportError(`Metadata importada, pero fallo chat raw: ${rawResult.error ?? "error desconocido"}`);
+        setImportModalStatus("error");
         return;
       }
 
@@ -372,9 +378,11 @@ export function MessageMemoryUploadCard() {
       });
       setRawChunksTotal(rawResult.payload.chunksTotal ?? null);
       setRawChunkSize(rawResult.payload.chunkSize ?? null);
+      setImportModalStatus("success");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error desconocido";
       setImportError(`No se pudo conectar con el importador de memoria completa: ${message}`);
+      setImportModalStatus("error");
     } finally {
       setIsImporting(false);
     }
@@ -607,6 +615,51 @@ export function MessageMemoryUploadCard() {
           </div>
         </div>
       </div>
+
+      <ImportProgressModal
+        confirmLabel="Confirmar importacion"
+        description="Guarda metadata segura y texto real admin-only para Ver chat. No muestra mensajes en el preview ni en resultados."
+        errorMessage={rawImportError ?? importError}
+        fileName={selectedFile?.name ?? null}
+        importTypeLabel="Message Memory"
+        loadingMessage="Se esta importando la memoria completa. Esto puede tardar."
+        onCancel={() => setImportModalStatus(null)}
+        onClose={() => setImportModalStatus(null)}
+        onConfirm={handleConfirmImportComplete}
+        open={importModalStatus !== null}
+        status={importModalStatus ?? "confirm"}
+        successMessage="Message Memory cargado correctamente"
+        title="Confirmar importacion de Message Memory"
+      >
+        {importModalStatus === "confirm" && summary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Filas archivo", value: formatNumber(summary.rows) },
+              { label: "conversation_id", value: formatNumber(summary.conversationIdPresent) },
+              { label: "Inbound", value: countValue(summary.messageBoundTypeCounts, "inbound") },
+              { label: "Outbound", value: countValue(summary.messageBoundTypeCounts, "outbound") },
+              { label: "row_hash", value: formatNumber(summary.rowHashPresent) },
+            ]}
+            title="Resumen seguro de validacion"
+          />
+        ) : null}
+        {importModalStatus === "success" || importModalStatus === "error" ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <ImportResultPanel
+              chunkSize={chunkSize}
+              chunksTotal={chunksTotal}
+              summary={importSummary}
+              title="Metadata segura"
+            />
+            <ImportResultPanel
+              chunkSize={rawChunkSize}
+              chunksTotal={rawChunksTotal}
+              summary={rawImportSummary}
+              title="Chat real admin-only"
+            />
+          </div>
+        ) : null}
+      </ImportProgressModal>
     </section>
   );
 }

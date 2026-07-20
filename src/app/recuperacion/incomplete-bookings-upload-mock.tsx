@@ -4,6 +4,7 @@ import { AlertTriangle, CheckCircle2, Database, FileSpreadsheet, ShieldCheck, Up
 import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { ImportProgressModal, ImportResultGrid } from "./import-progress-modal";
 
 type IncompleteBookingsValidationSummary = {
   columns: number;
@@ -54,6 +55,8 @@ type ImportResponse = {
   summary?: ImportSummary;
 };
 
+type ImportModalStatus = "confirm" | "loading" | "success" | "error";
+
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
   { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
@@ -64,6 +67,10 @@ const steps = [
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-CL").format(value);
+}
+
+function shortBatchId(batchId: string | null | undefined) {
+  return batchId ? batchId.slice(0, 8) : "sin batch";
 }
 
 function formatFileSize(bytes: number) {
@@ -98,6 +105,8 @@ export function IncompleteBookingsUploadMock() {
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [importBatchId, setImportBatchId] = useState<string | null>(null);
+  const [importModalStatus, setImportModalStatus] = useState<ImportModalStatus | null>(null);
   const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
 
   const previewMetrics = useMemo(() => {
@@ -167,6 +176,8 @@ export function IncompleteBookingsUploadMock() {
     setImportError(null);
     setSummary(null);
     setImportSummary(null);
+    setImportBatchId(null);
+    setImportModalStatus(null);
     setSelectedFile(file);
   }
 
@@ -210,23 +221,21 @@ export function IncompleteBookingsUploadMock() {
     }
   }
 
-  async function handleImport() {
+  function handleImport() {
     if (!selectedFile || !summary) {
-      setImportError("Valida un archivo CSV antes de preparar la importación.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Esta acción guardará los carritos perdidos/cancelados normalizados en staging de recuperación.\n" +
-        "No se guardará el CSV completo, cms_url, bform ni PII cruda.\n" +
-        "¿Confirmar importación?",
-    );
-
-    if (!confirmed) {
+      setImportError("Valida un archivo CSV antes de preparar la importacion.");
       return;
     }
 
     setImportError(null);
+    setImportModalStatus("confirm");
+  }
+
+  async function handleConfirmImport() {
+    if (!selectedFile || !summary) return;
+
+    setImportError(null);
+    setImportModalStatus("loading");
     setIsImporting(true);
 
     try {
@@ -240,13 +249,18 @@ export function IncompleteBookingsUploadMock() {
       const payload = (await response.json()) as ImportResponse;
 
       if (!response.ok || !payload.ok || !payload.summary) {
-        setImportError(errorMessageForStatus(response.status, payload.error ?? ""));
+        const nextError = errorMessageForStatus(response.status, payload.error ?? "");
+        setImportError(nextError);
+        setImportModalStatus("error");
         return;
       }
 
       setImportSummary(payload.summary);
+      setImportBatchId(payload.batchId ?? null);
+      setImportModalStatus("success");
     } catch {
-      setImportError("No se pudo conectar con el importador. Revisa la conexión o intenta nuevamente.");
+      setImportError("No se pudo conectar con el importador. Revisa la conexion o intenta nuevamente.");
+      setImportModalStatus("error");
     } finally {
       setIsImporting(false);
     }
@@ -458,6 +472,48 @@ export function IncompleteBookingsUploadMock() {
           </div>
         </div>
       </div>
+
+      <ImportProgressModal
+        confirmLabel="Confirmar importacion"
+        description="Guarda los carritos perdidos/cancelados normalizados en staging de recuperacion. No se almacena el CSV completo, cms_url, bform ni PII cruda."
+        errorMessage={importError}
+        fileName={selectedFile?.name ?? null}
+        importTypeLabel="Carritos"
+        loadingMessage="Se estan importando los carritos perdidos..."
+        onCancel={() => setImportModalStatus(null)}
+        onClose={() => setImportModalStatus(null)}
+        onConfirm={handleConfirmImport}
+        open={importModalStatus !== null}
+        status={importModalStatus ?? "confirm"}
+        successMessage="Archivo de carritos cargado correctamente"
+        title="Confirmar importacion de carritos perdidos"
+      >
+        {importModalStatus === "confirm" && summary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Filas archivo", value: formatNumber(summary.rows) },
+              { label: "Tipos abandoned", value: formatNumber(summary.typeCounts.abandoned ?? 0) },
+              { label: "Tipos canceled", value: formatNumber(summary.typeCounts.canceled ?? 0) },
+              { label: "Duplicados Id_Mensaje", value: formatNumber(summary.duplicateMessageIdGroups) },
+            ]}
+            title="Resumen seguro de validacion"
+          />
+        ) : null}
+        {(importModalStatus === "success" || importModalStatus === "error") && importSummary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Batch", value: shortBatchId(importBatchId) },
+              { label: "Filas recibidas", value: formatNumber(importSummary.rowsReceived) },
+              { label: "Insertadas", value: formatNumber(importSummary.insertedRows) },
+              { label: "Duplicadas omitidas", value: formatNumber(importSummary.skippedDuplicateRows) },
+              { label: "Conflictos", value: formatNumber(importSummary.conflictRows) },
+              { label: "Invalidas", value: formatNumber(importSummary.invalidRows) },
+              { label: "Message_Sent true", value: formatNumber(importSummary.messageSentRows) },
+            ]}
+            title="Resultado seguro"
+          />
+        ) : null}
+      </ImportProgressModal>
     </section>
   );
 }

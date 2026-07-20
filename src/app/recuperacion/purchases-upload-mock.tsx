@@ -4,6 +4,7 @@ import { CheckCircle2, Database, FileSpreadsheet, ShieldCheck, Upload } from "lu
 import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { ImportProgressModal, ImportResultGrid } from "./import-progress-modal";
 
 type ValidationSummary = {
   bookingStatusCounts: Record<string, number>;
@@ -45,6 +46,8 @@ type ImportResponse = {
   summary?: ImportSummary;
 };
 
+type ImportModalStatus = "confirm" | "loading" | "success" | "error";
+
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
   { label: "Validar archivo", status: "disponible", tone: "info" as BadgeTone },
@@ -59,6 +62,10 @@ function formatNumber(value: number) {
 
 function formatCurrency(value: number) {
   return `$${formatNumber(value)}`;
+}
+
+function shortBatchId(batchId: string | null) {
+  return batchId ? batchId.slice(0, 8) : "sin batch";
 }
 
 function formatFileSize(bytes: number) {
@@ -93,6 +100,7 @@ export function PurchasesUploadMock() {
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [importModalStatus, setImportModalStatus] = useState<ImportModalStatus | null>(null);
   const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
 
   const previewMetrics = useMemo(() => {
@@ -146,6 +154,7 @@ export function PurchasesUploadMock() {
     setImportError(null);
     setSummary(null);
     setImportSummary(null);
+    setImportModalStatus(null);
     setSelectedFile(file);
   }
 
@@ -188,23 +197,21 @@ export function PurchasesUploadMock() {
     }
   }
 
-  async function handleImport() {
+  function handleImport() {
     if (!selectedFile || !summary) {
-      setImportError("Valida un archivo CSV antes de confirmar la importación.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "Esta acción guardará las compras normalizadas en staging de recuperación.\n" +
-        "No se guardará el CSV completo ni PII cruda.\n" +
-        "¿Confirmar importación?",
-    );
-
-    if (!confirmed) {
+      setImportError("Valida un archivo CSV antes de confirmar la importacion.");
       return;
     }
 
     setImportError(null);
+    setImportModalStatus("confirm");
+  }
+
+  async function handleConfirmImport() {
+    if (!selectedFile || !summary) return;
+
+    setImportError(null);
+    setImportModalStatus("loading");
     setIsImporting(true);
 
     try {
@@ -218,7 +225,9 @@ export function PurchasesUploadMock() {
       const payload = (await response.json()) as ImportResponse;
 
       if (!response.ok || !payload.ok || !payload.summary) {
-        setImportError(errorMessageForStatus(response.status, payload.error ?? ""));
+        const nextError = errorMessageForStatus(response.status, payload.error ?? "");
+        setImportError(nextError);
+        setImportModalStatus("error");
         return;
       }
 
@@ -226,8 +235,10 @@ export function PurchasesUploadMock() {
         ...payload.summary,
         batchId: payload.batchId ?? payload.summary.batchId ?? null,
       });
+      setImportModalStatus("success");
     } catch {
       setImportError("No se pudo conectar con el importador. Revisa la conexion o intenta nuevamente.");
+      setImportModalStatus("error");
     } finally {
       setIsImporting(false);
     }
@@ -422,6 +433,48 @@ export function PurchasesUploadMock() {
           </div>
         </div>
       </div>
+
+      <ImportProgressModal
+        confirmLabel="Confirmar importacion"
+        description="Guarda las compras normalizadas en staging de recuperacion. No se almacena el CSV completo ni PII cruda."
+        errorMessage={importError}
+        fileName={selectedFile?.name ?? null}
+        importTypeLabel="Compras"
+        loadingMessage="Se estan importando las compras..."
+        onCancel={() => setImportModalStatus(null)}
+        onClose={() => setImportModalStatus(null)}
+        onConfirm={handleConfirmImport}
+        open={importModalStatus !== null}
+        status={importModalStatus ?? "confirm"}
+        successMessage="Archivo de compras cargado correctamente"
+        title="Confirmar importacion de compras"
+      >
+        {importModalStatus === "confirm" && summary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Filas archivo", value: formatNumber(summary.rows) },
+              { label: "Compras validas", value: formatNumber(summary.validPurchaseRows) },
+              { label: "Monto valido", value: formatCurrency(summary.validPurchaseAmount) },
+              { label: "Duplicados por Id", value: formatNumber(summary.duplicateIdGroups) },
+            ]}
+            title="Resumen seguro de validacion"
+          />
+        ) : null}
+        {(importModalStatus === "success" || importModalStatus === "error") && importSummary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Batch", value: shortBatchId(importSummary.batchId) },
+              { label: "Filas recibidas", value: formatNumber(importSummary.rowsReceived) },
+              { label: "Insertadas", value: formatNumber(importSummary.insertedRows) },
+              { label: "Duplicadas omitidas", value: formatNumber(importSummary.skippedDuplicateRows) },
+              { label: "Conflictos", value: formatNumber(importSummary.conflictRows) },
+              { label: "Invalidas", value: formatNumber(importSummary.invalidRows) },
+              { label: "Monto insertado", value: formatCurrency(importSummary.insertedAmount) },
+            ]}
+            title="Resultado seguro"
+          />
+        ) : null}
+      </ImportProgressModal>
     </section>
   );
 }

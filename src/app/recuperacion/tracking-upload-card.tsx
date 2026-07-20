@@ -4,6 +4,7 @@ import { CheckCircle2, Database, FileSpreadsheet, MessageCircle, ShieldCheck, Up
 import { useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { ImportProgressModal, ImportResultGrid } from "./import-progress-modal";
 
 type TrackingValidationSummary = {
   businessPhonesNormalizable: number;
@@ -53,6 +54,8 @@ type ImportResponse = {
   ok: boolean;
   summary?: ImportSummary;
 };
+
+type ImportModalStatus = "confirm" | "loading" | "success" | "error";
 
 const steps = [
   { label: "Subir CSV", status: "disponible", tone: "info" as BadgeTone },
@@ -112,6 +115,7 @@ export function TrackingUploadCard() {
   const [importError, setImportError] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [importModalStatus, setImportModalStatus] = useState<ImportModalStatus | null>(null);
   const canImport = Boolean(selectedFile && summary && !error && !isValidating && !isImporting);
 
   const previewMetrics = useMemo(() => {
@@ -167,6 +171,7 @@ export function TrackingUploadCard() {
     setImportError(null);
     setSummary(null);
     setImportSummary(null);
+    setImportModalStatus(null);
     setSelectedFile(file);
   }
 
@@ -210,23 +215,21 @@ export function TrackingUploadCard() {
     }
   }
 
-  async function handleImport() {
+  function handleImport() {
     if (!selectedFile || !summary) {
       setImportError("Valida un archivo CSV antes de importar seguimiento.");
       return;
     }
 
-    const confirmed = window.confirm(
-      "Esta accion guardara el seguimiento WhatsApp normalizado en staging de recuperacion.\n" +
-        "No se guardara Json_Encuesta, telefonos raw, payloads ni el CSV completo.\n" +
-        "Confirmar importacion de seguimiento?",
-    );
+    setImportError(null);
+    setImportModalStatus("confirm");
+  }
 
-    if (!confirmed) {
-      return;
-    }
+  async function handleConfirmImport() {
+    if (!selectedFile || !summary) return;
 
     setImportError(null);
+    setImportModalStatus("loading");
     setIsImporting(true);
 
     try {
@@ -240,7 +243,9 @@ export function TrackingUploadCard() {
       const payload = (await response.json()) as ImportResponse;
 
       if (!response.ok || !payload.ok || !payload.summary) {
-        setImportError(errorMessageForStatus(response.status, payload.error ?? ""));
+        const nextError = errorMessageForStatus(response.status, payload.error ?? "");
+        setImportError(nextError);
+        setImportModalStatus("error");
         return;
       }
 
@@ -248,8 +253,10 @@ export function TrackingUploadCard() {
         ...payload.summary,
         batchId: payload.batchId ?? payload.summary.batchId ?? null,
       });
+      setImportModalStatus("success");
     } catch {
       setImportError("No se pudo conectar con el importador. Revisa la conexion o intenta nuevamente.");
+      setImportModalStatus("error");
     } finally {
       setIsImporting(false);
     }
@@ -494,6 +501,50 @@ export function TrackingUploadCard() {
           </div>
         </div>
       </div>
+
+      <ImportProgressModal
+        confirmLabel="Confirmar importacion"
+        description="Guarda estados normalizados de WhatsApp en staging. No almacena Json_Encuesta, telefonos raw, payloads ni el CSV completo."
+        errorMessage={importError}
+        fileName={selectedFile?.name ?? null}
+        importTypeLabel="Seguimiento WhatsApp"
+        loadingMessage="Se estan importando los estados de WhatsApp..."
+        onCancel={() => setImportModalStatus(null)}
+        onClose={() => setImportModalStatus(null)}
+        onConfirm={handleConfirmImport}
+        open={importModalStatus !== null}
+        status={importModalStatus ?? "confirm"}
+        successMessage="Seguimiento WhatsApp cargado correctamente"
+        title="Confirmar importacion de Seguimiento WhatsApp"
+      >
+        {importModalStatus === "confirm" && summary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Filas archivo", value: formatNumber(summary.rows) },
+              { label: "Id_Mensaje presentes", value: formatNumber(summary.messageIdPresent) },
+              { label: "Read", value: countValue(summary.statusCounts, "read") },
+              { label: "Delivered", value: countValue(summary.statusCounts, "delivered") },
+              { label: "Failed", value: countValue(summary.statusCounts, "failed") },
+            ]}
+            title="Resumen seguro de validacion"
+          />
+        ) : null}
+        {(importModalStatus === "success" || importModalStatus === "error") && importSummary ? (
+          <ImportResultGrid
+            items={[
+              { label: "Batch", value: shortBatchId(importSummary.batchId) },
+              { label: "Status", value: importSummary.status ?? "-" },
+              { label: "Filas recibidas", value: formatNumber(importSummary.rowsReceived) },
+              { label: "Insertadas", value: formatNumber(importSummary.insertedRows) },
+              { label: "Duplicadas omitidas", value: formatNumber(importSummary.skippedDuplicateRows) },
+              { label: "Conflictos", value: formatNumber(importSummary.conflictRows) },
+              { label: "Invalidas", value: formatNumber(importSummary.invalidRows) },
+              { label: "Con sent_at", value: formatNumber(importSummary.messageSentRows) },
+            ]}
+            title="Resultado seguro"
+          />
+        ) : null}
+      </ImportProgressModal>
     </section>
   );
 }
