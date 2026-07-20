@@ -394,7 +394,7 @@ export function MessageMemoryUploadCard() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-medium tracking-tight text-navy">Carga WhatsApp Message Memory</h2>
-            <ValueBadge tone="warning">Validacion e importacion real</ValueBadge>
+            <ValueBadge tone="warning">Importaci?n completa</ValueBadge>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Sube el CSV de memoria de conversaciones para analizar intencion, sentimiento y estado del chat sin

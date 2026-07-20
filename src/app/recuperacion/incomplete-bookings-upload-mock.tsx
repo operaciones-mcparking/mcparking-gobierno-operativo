@@ -272,7 +272,7 @@ export function IncompleteBookingsUploadMock() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-medium tracking-tight text-navy">Carga de carritos perdidos</h2>
-            <ValueBadge tone="warning">Validación real — aún no guarda datos</ValueBadge>
+            <ValueBadge tone="warning">Validaci?n e importaci?n real</ValueBadge>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Sube un CSV de BackendIncompleteBookings2 para validar reservas incompletas, abandonos y

@@ -268,7 +268,7 @@ export function TrackingUploadCard() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-medium tracking-tight text-navy">Carga Seguimiento WhatsApp</h2>
-            <ValueBadge tone="warning">Validacion e importacion real</ValueBadge>
+            <ValueBadge tone="warning">Importaci?n incremental</ValueBadge>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Sube el CSV de n8n Seguimiento para saber si los mensajes fueron enviados, entregados, leidos o
