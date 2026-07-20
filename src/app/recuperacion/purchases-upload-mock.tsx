@@ -250,7 +250,7 @@ export function PurchasesUploadMock() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-medium tracking-tight text-navy">Carga de compras</h2>
-            <ValueBadge tone="warning">Validaci?n e importaci?n real</ValueBadge>
+            <ValueBadge tone="warning">Validación e importación real</ValueBadge>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Sube un CSV de compras para validar columnas, compras validas y montos antes de importarlo al

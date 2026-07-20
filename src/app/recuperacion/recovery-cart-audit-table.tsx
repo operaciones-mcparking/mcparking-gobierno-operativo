@@ -290,7 +290,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
     },
     {
       basis: "de entregados",
-      label: "Le?dos",
+      label: "Leídos",
       metric: formatPercent(ratioPercent(auditSummary.read, auditSummary.delivered)),
       value: formatNumber(auditSummary.read),
     },
