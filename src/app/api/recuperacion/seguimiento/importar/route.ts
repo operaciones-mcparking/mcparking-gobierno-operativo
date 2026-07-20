@@ -13,7 +13,8 @@ const { buildTrackingImportRows, validateTrackingCsv } = requireFromRoute(
 };
 
 const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;
-const TRACKING_IMPORT_CHUNK_SIZE = 5000;
+const TRACKING_IMPORT_CHUNK_SIZE = 1000;
+const TRACKING_WATERMARK_SAFETY_WINDOW_DAYS = 7;
 
 type CountRow = {
   count: number;
@@ -51,6 +52,10 @@ type TrackingCsvReport = {
   statusCounts: CountRow[];
   surveyJsonParseable: number;
   surveyJsonPresent: number;
+};
+
+type TrackingWatermarkRow = {
+  updated_at_source: string | null;
 };
 
 type TrackingImportRow = {
@@ -118,8 +123,8 @@ type FinishImportRpcResult = {
   status?: string;
 };
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message, ok: false }, { status });
+function jsonError(message: string, status: number, stage?: string) {
+  return NextResponse.json({ error: message, ok: false, stage }, { status });
 }
 
 async function requireAdminForApi() {
@@ -264,6 +269,46 @@ function chunkRows(rows: TrackingImportRow[], size: number) {
   return chunks;
 }
 
+function subtractDays(value: string, days: number) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  date.setDate(date.getDate() - days);
+
+  return date;
+}
+
+function filterRowsByWatermark(rows: TrackingImportRow[], watermarkUpdatedAt: string | null) {
+  const cutoffDate = watermarkUpdatedAt
+    ? subtractDays(watermarkUpdatedAt, TRACKING_WATERMARK_SAFETY_WINDOW_DAYS)
+    : null;
+
+  if (!cutoffDate) {
+    return {
+      candidateRows: rows,
+      rowsSkippedByWatermark: 0,
+      watermarkCutoffAt: null,
+    };
+  }
+
+  const candidateRows = rows.filter((row) => {
+    if (!row.updated_at_source) return true;
+
+    const updatedAt = new Date(row.updated_at_source);
+
+    if (Number.isNaN(updatedAt.getTime())) return true;
+
+    return updatedAt >= cutoffDate;
+  });
+
+  return {
+    candidateRows,
+    rowsSkippedByWatermark: rows.length - candidateRows.length,
+    watermarkCutoffAt: cutoffDate.toISOString(),
+  };
+}
+
 export async function POST(request: NextRequest) {
   const admin = await requireAdminForApi();
 
@@ -291,8 +336,36 @@ export async function POST(request: NextRequest) {
   const summary = safeSummary(report);
   const rows = buildTrackingImportRows(csvContent);
   const fileHash = hashContent(csvContent);
-  const chunks = chunkRows(rows, TRACKING_IMPORT_CHUNK_SIZE);
   let batchId: string | null = null;
+  let currentStage = "watermark";
+
+  const { data: watermarkRows, error: watermarkError } = await admin.supabase
+    .from("recovery_whatsapp_tracking_import")
+    .select("updated_at_source")
+    .not("updated_at_source", "is", null)
+    .order("updated_at_source", { ascending: false })
+    .limit(1);
+
+  if (watermarkError) {
+    return jsonError(safeErrorMessage(watermarkError), 500, "watermark");
+  }
+
+  const watermarkUpdatedAt = ((watermarkRows ?? []) as TrackingWatermarkRow[])[0]?.updated_at_source ?? null;
+  const { candidateRows, rowsSkippedByWatermark, watermarkCutoffAt } = filterRowsByWatermark(rows, watermarkUpdatedAt);
+  const deltaSummary = {
+    rowsCandidate: candidateRows.length,
+    rowsSkippedByWatermark,
+    rowsTotal: rows.length,
+    safetyWindowDays: TRACKING_WATERMARK_SAFETY_WINDOW_DAYS,
+    watermarkCutoffAt,
+    watermarkUpdatedAt,
+  };
+  const importSummaryInput = {
+    ...summary,
+    ...deltaSummary,
+  };
+  const chunks = chunkRows(candidateRows, TRACKING_IMPORT_CHUNK_SIZE);
+  currentStage = "start";
 
   try {
     const { data: startData, error: startError } = await admin.supabase.rpc(
@@ -301,33 +374,36 @@ export async function POST(request: NextRequest) {
         p_file_hash: fileHash,
         p_file_name: file.name,
         p_file_size: file.size,
-        p_summary: summary,
+        p_summary: importSummaryInput,
       },
     );
 
     if (startError) {
-      return jsonError(safeErrorMessage(startError), 500);
+      return jsonError(safeErrorMessage(startError), 500, "start");
     }
 
     if (!startData || typeof startData !== "object") {
-      return jsonError("La importacion no devolvio un inicio valido.", 500);
+      return jsonError("La importacion no devolvio un inicio valido.", 500, "start");
     }
 
     const startResult = startData as StartImportRpcResult;
     batchId = startResult.batchId ?? null;
 
     if (!batchId) {
-      return jsonError("La importacion no devolvio un batch valido.", 500);
+      return jsonError("La importacion no devolvio un batch valido.", 500, "start");
     }
 
     if (startResult.fileAlreadyImported === true) {
-      const importResult = safeImportSummary({
-        ...emptyImportSummary(),
-        batchId,
-        fileAlreadyImported: true,
-        rowsTotal: summary.rows,
-        status: startResult.status ?? "imported",
-      });
+      const importResult = {
+        ...safeImportSummary({
+          ...emptyImportSummary(),
+          batchId,
+          fileAlreadyImported: true,
+          rowsTotal: summary.rows,
+          status: startResult.status ?? "imported",
+        }),
+        ...deltaSummary,
+      };
 
       return NextResponse.json({
         batchId,
@@ -339,13 +415,15 @@ export async function POST(request: NextRequest) {
         ok: true,
         status: importResult.status,
         summary: importResult,
-        validation: summary,
+        validation: importSummaryInput,
       });
     }
 
     const accumulated = emptyImportSummary();
 
-    for (const chunk of chunks) {
+    for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+      currentStage = `append:${chunkIndex + 1}/${chunks.length}`;
+      const chunk = chunks[chunkIndex];
       const { data: chunkData, error: chunkError } = await admin.supabase.rpc(
         "append_recovery_whatsapp_tracking_import_rows",
         {
@@ -378,6 +456,8 @@ export async function POST(request: NextRequest) {
       addTrackingStatusCounts(accumulated.trackingStatusCounts ?? {}, chunkResult.trackingStatusCounts);
     }
 
+    currentStage = "finish";
+
     const { data: finishData, error: finishError } = await admin.supabase.rpc(
       "finish_recovery_whatsapp_tracking_import",
       {
@@ -394,18 +474,21 @@ export async function POST(request: NextRequest) {
     }
 
     const finishResult = finishData as FinishImportRpcResult;
-    const importResult = safeImportSummary({
-      ...accumulated,
-      batchId,
-      conflictRows: finishResult.conflictRows ?? accumulated.conflictRows,
-      insertedRows: finishResult.insertedRows ?? accumulated.insertedRows,
-      invalidRows: finishResult.invalidRows ?? accumulated.invalidRows,
-      messageSentRows: finishResult.messageSentRows ?? accumulated.messageSentRows,
-      rowsTotal: summary.rows,
-      skippedDuplicateRows: finishResult.skippedDuplicateRows ?? accumulated.skippedDuplicateRows,
-      status: finishResult.status ?? "imported",
-      trackingStatusCounts: accumulated.trackingStatusCounts,
-    });
+    const importResult = {
+      ...safeImportSummary({
+        ...accumulated,
+        batchId,
+        conflictRows: finishResult.conflictRows ?? accumulated.conflictRows,
+        insertedRows: finishResult.insertedRows ?? accumulated.insertedRows,
+        invalidRows: finishResult.invalidRows ?? accumulated.invalidRows,
+        messageSentRows: finishResult.messageSentRows ?? accumulated.messageSentRows,
+        rowsTotal: summary.rows,
+        skippedDuplicateRows: finishResult.skippedDuplicateRows ?? accumulated.skippedDuplicateRows,
+        status: finishResult.status ?? "imported",
+        trackingStatusCounts: accumulated.trackingStatusCounts,
+      }),
+      ...deltaSummary,
+    };
 
     return NextResponse.json({
       batchId,
@@ -422,18 +505,22 @@ export async function POST(request: NextRequest) {
       ok: true,
       status: importResult.status,
       summary: importResult,
-      validation: summary,
+      validation: importSummaryInput,
     });
   } catch (error) {
     const message = safeErrorMessage(error);
 
     if (batchId) {
-      await admin.supabase.rpc("fail_recovery_whatsapp_tracking_import", {
-        p_batch_id: batchId,
-        p_error_message: message,
-      });
+      try {
+        await admin.supabase.rpc("fail_recovery_whatsapp_tracking_import", {
+          p_batch_id: batchId,
+          p_error_message: `${currentStage}: ${message}`,
+        });
+      } catch {
+        // Best effort: keep the client error safe even if marking the batch failed also times out.
+      }
     }
 
-    return jsonError(message, 500);
+    return jsonError(message, 500, currentStage);
   }
 }
