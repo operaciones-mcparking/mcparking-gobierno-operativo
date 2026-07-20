@@ -80,6 +80,15 @@ function dateInputValue(value: string | null) {
   return `${year}-${month}-${day}`;
 }
 
+function todayInputValue() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function messageSentLabel(value: boolean | null) {
   if (value === true) return "Enviado";
   if (value === false) return "No enviado";
@@ -169,7 +178,7 @@ function quickFilterClass(active: boolean) {
 }
 
 export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTableProps) {
-  const [dateQuery, setDateQuery] = useState("");
+  const [dateQuery, setDateQuery] = useState(() => todayInputValue());
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("none");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -352,8 +361,8 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       </div>
 
       <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
-        <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
-          Fecha carrito
+        <div className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+          <span>Fecha carrito</span>
           <input
             aria-label="Fecha carrito"
             className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
@@ -362,10 +371,26 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
             type="date"
             value={dateQuery}
           />
+          <div className="mt-2 flex flex-wrap gap-2 normal-case tracking-normal">
+            <button
+              className="rounded-full border border-[#d6e1ea] bg-white px-3 py-1 text-xs font-medium text-navy transition hover:border-sea"
+              onClick={() => setDateQuery(todayInputValue())}
+              type="button"
+            >
+              Hoy
+            </button>
+            <button
+              className="rounded-full border border-[#d6e1ea] bg-white px-3 py-1 text-xs font-medium text-slate-600 transition hover:border-sea hover:text-navy"
+              onClick={() => setDateQuery("")}
+              type="button"
+            >
+              Limpiar fecha
+            </button>
+          </div>
           <span className="mt-1 block text-[11px] font-normal normal-case tracking-normal text-slate-500">
             Formato: dd/mm/yyyy{dateQuery ? ` · ${formatDateOnly(dateQuery)}` : ""}
           </span>
-        </label>
+        </div>
 
         <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
           Estado
