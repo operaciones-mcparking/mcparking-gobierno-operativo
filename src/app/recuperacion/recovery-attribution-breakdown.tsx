@@ -85,9 +85,9 @@ export function RecoveryAttributionBreakdown({ breakdown, error }: RecoveryAttri
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
       <div className="flex flex-col justify-between gap-3 border-b border-[#edf2f6] px-5 py-5 lg:flex-row lg:items-start">
         <div>
-          <h2 className="text-base font-medium tracking-tight text-navy">Desglose de recuperacion</h2>
+          <h2 className="text-base font-medium tracking-tight text-navy">Desglose de recuperación</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Detalle agregado de las recuperaciones atribuidas dentro de 7 dias.
+            Carritos de los últimos 7 días y compras atribuidas hasta 7 días después.
           </p>
         </div>
         <ValueBadge tone="info">Solo agregados</ValueBadge>
@@ -96,7 +96,7 @@ export function RecoveryAttributionBreakdown({ breakdown, error }: RecoveryAttri
       {error ? (
         <div className="p-5">
           <p className="rounded-lg border border-[#f2b8b5] bg-[#fff5f5] px-3 py-2 text-sm leading-5 text-[#9a3412]">
-            No se pudo cargar el desglose de recuperacion: {error}
+            No se pudo cargar el desglose de recuperación: {error}
           </p>
         </div>
       ) : null}
@@ -104,7 +104,7 @@ export function RecoveryAttributionBreakdown({ breakdown, error }: RecoveryAttri
       {!error && (!breakdown || breakdown.total_recovered === 0) ? (
         <div className="p-5">
           <p className="rounded-lg border border-[#d6e1ea] bg-[#fbfdfe] px-3 py-3 text-sm text-slate-600">
-            No hay desglose de recuperacion disponible todavia.
+            No hay desglose de recuperación disponible todavía.
           </p>
         </div>
       ) : null}

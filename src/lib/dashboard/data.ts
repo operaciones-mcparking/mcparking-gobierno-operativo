@@ -377,6 +377,61 @@ export type RecoveryCartStatusSummary = Record<RecoveryCartAuditStatus, number> 
   total: number;
 };
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
+function timeZoneParts(timeZone: string, date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(date);
+
+  const valueFor = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  return {
+    day: valueFor("day"),
+    hour: valueFor("hour"),
+    minute: valueFor("minute"),
+    month: valueFor("month"),
+    second: valueFor("second"),
+    year: valueFor("year"),
+  };
+}
+
+function timeZoneOffsetMs(timeZone: string, date: Date) {
+  const parts = timeZoneParts(timeZone, date);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+
+  return asUtc - date.getTime();
+}
+
+function zonedMidnightToUtcIso(timeZone: string, year: number, month: number, day: number) {
+  const guess = new Date(Date.UTC(year, month - 1, day));
+  const firstPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, guess));
+  const secondPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, firstPass));
+
+  return secondPass.toISOString();
+}
+
+function santiagoCalendarDaysAgoStartIso(days: number) {
+  const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
+  const startDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
+  startDate.setUTCDate(startDate.getUTCDate() - Math.max(days - 1, 0));
+
+  return zonedMidnightToUtcIso(
+    RECOVERY_TIME_ZONE,
+    startDate.getUTCFullYear(),
+    startDate.getUTCMonth() + 1,
+    startDate.getUTCDate(),
+  );
+}
+
 export type RecoveryConversationIntentSummaryItem = {
   cart_count: number;
   intent_category: string;
@@ -1301,6 +1356,7 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   };
 
   type CartSegmentRow = {
+    form_datetime: string | null;
     id: string;
     parking_code: string | null;
     type: string | null;
@@ -1313,6 +1369,7 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   };
 
   const pageSize = 1000;
+  const recentCartsStart = santiagoCalendarDaysAgoStartIso(7);
   const supabase = await createSupabaseAuthServerClient();
 
   async function fetchAllRows<T>(queryFactory: () => unknown) {
@@ -1350,19 +1407,22 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   ] = await Promise.all([
     supabase
       .from("recovery_incomplete_bookings_import")
-      .select("id", { count: "exact", head: true }),
+      .select("id", { count: "exact", head: true })
+      .gte("form_datetime", recentCartsStart),
     fetchAllRows<AttributionDashboardRow>(() =>
       supabase
         .from("v_recovery_attribution_cases")
         .select(
           "cart_id,purchase_id,cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
         )
+        .gte("cart_form_datetime", recentCartsStart)
         .order("cart_id", { ascending: true }),
     ),
     fetchAllRows<CartSegmentRow>(() =>
       supabase
         .from("recovery_incomplete_bookings_import")
-        .select("id,type,parking_code")
+        .select("id,type,parking_code,form_datetime")
+        .gte("form_datetime", recentCartsStart)
         .order("id", { ascending: true }),
     ),
   ]);
