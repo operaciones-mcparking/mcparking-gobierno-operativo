@@ -18,7 +18,6 @@ type RecoveryCartAuditTableProps = {
 type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
 type WhatsappFilter = "all" | RecoveryCartWhatsappStatus;
-type QuickFilter = "none" | "not_sent_or_without_tracking" | "sent_and_delivered" | "sent_and_failed" | "sent_and_read";
 type SortDirection = "asc" | "desc";
 type SortKey =
   | "amount"
@@ -168,18 +167,9 @@ function defaultSortDirection(sortKey: SortKey): SortDirection {
   return "asc";
 }
 
-function quickFilterClass(active: boolean) {
-  return [
-    "rounded-full border px-3 py-1.5 text-sm font-medium transition",
-    active
-      ? "border-sea bg-[#eaf6f7] text-navy"
-      : "border-[#d6e1ea] bg-white text-slate-600 hover:border-sea hover:text-navy",
-  ].join(" ");
-}
 
 export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTableProps) {
   const [dateQuery, setDateQuery] = useState(() => todayInputValue());
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>("none");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [whatsappFilter, setWhatsappFilter] = useState<WhatsappFilter>("all");
@@ -194,19 +184,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         if (statusFilter !== "all" && row.audit_status !== statusFilter) return false;
         if (typeFilter !== "all" && row.cart_type !== typeFilter) return false;
         if (whatsappFilter !== "all" && row.whatsappStatus !== whatsappFilter) return false;
-        if (
-          (quickFilter === "sent_and_delivered" || quickFilter === "sent_and_failed" || quickFilter === "sent_and_read") &&
-          row.message_sent !== true
-        ) {
-          return false;
-        }
-        if (
-          quickFilter === "not_sent_or_without_tracking" &&
-          row.message_sent !== false &&
-          row.whatsappStatus !== "sin_seguimiento"
-        ) {
-          return false;
-        }
+
         if (dateQuery && dateInputValue(row.cart_form_datetime) !== dateQuery) {
           return false;
         }
@@ -225,7 +203,7 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
 
         return sortDirection === "desc" ? comparison * -1 : comparison;
       });
-  }, [dateQuery, quickFilter, rows, sortDirection, sortKey, statusFilter, typeFilter, whatsappFilter]);
+  }, [dateQuery, rows, sortDirection, sortKey, statusFilter, typeFilter, whatsappFilter]);
 
   const hasDateFilter = Boolean(dateQuery);
   const totalPages = hasDateFilter ? 1 : Math.max(1, Math.ceil(visibleRows.length / rowsPerPage));
@@ -238,46 +216,31 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
   const auditSummary = useMemo(
     () => {
       const recoveredRows = visibleRows.filter((row) => row.recovered);
-      const rowsWithHours = recoveredRows.filter(
-        (row) => row.hours_to_purchase !== null && row.hours_to_purchase !== undefined,
-      );
-      const totalHours = rowsWithHours.reduce((total, row) => total + Number(row.hours_to_purchase ?? 0), 0);
 
       return {
-        averageHours: rowsWithHours.length > 0 ? totalHours / rowsWithHours.length : null,
-        delivered: visibleRows.filter((row) => row.whatsappStatus === "delivered").length,
-        failed: visibleRows.filter((row) => row.whatsappStatus === "failed").length,
-        notRecovered: visibleRows.filter((row) => row.audit_status === "not_recovered").length,
+        delivered: visibleRows.filter((row) => row.whatsappStatus === "delivered" || row.whatsappStatus === "read").length,
         read: visibleRows.filter((row) => row.whatsappStatus === "read").length,
         recovered: recoveredRows.length,
         recoveredAmount: recoveredRows.reduce((total, row) => total + Number(row.purchase_amount ?? 0), 0),
+        sent: visibleRows.filter((row) => row.message_sent === true).length,
         total: visibleRows.length,
-        withoutTracking: visibleRows.filter((row) => row.whatsappStatus === "sin_seguimiento").length,
       };
     },
     [visibleRows],
   );
   const auditFunnelCards = [
     { label: "Carritos perdidos", value: formatNumber(auditSummary.total) },
-    { label: "No recuperados", value: formatNumber(auditSummary.notRecovered) },
+    { label: "Enviados", value: formatNumber(auditSummary.sent) },
+    { label: "Entregados", value: formatNumber(auditSummary.delivered) },
+    { label: "Leídos", value: formatNumber(auditSummary.read) },
     { label: "Recuperados", value: formatNumber(auditSummary.recovered) },
-    { label: "Horas promedio", value: formatHours(auditSummary.averageHours) },
     { label: "Monto recuperado", value: formatCurrency(auditSummary.recoveredAmount) },
   ];
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [dateQuery, quickFilter, statusFilter, typeFilter, whatsappFilter]);
+  }, [dateQuery, statusFilter, typeFilter, whatsappFilter]);
 
-  function applyQuickFilter(
-    status: StatusFilter,
-    whatsapp: WhatsappFilter = "all",
-    specialFilter: QuickFilter = "none",
-  ) {
-    setQuickFilter(specialFilter);
-    setStatusFilter(status);
-    setWhatsappFilter(whatsapp);
-  }
 
   function handleSort(nextSortKey: SortKey) {
     if (sortKey === nextSortKey) {
@@ -307,60 +270,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
         <ValueBadge tone="info">{visibleRows.length} visibles</ValueBadge>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-[#edf2f6] px-5 py-3">
-        <span className="mr-1 text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
-          Accesos rapidos
-        </span>
-        <button
-          className={quickFilterClass(statusFilter === "not_recovered" && whatsappFilter === "all" && quickFilter === "none")}
-          onClick={() => applyQuickFilter("not_recovered")}
-          type="button"
-        >
-          Pendientes
-        </button>
-        <button
-          className={quickFilterClass(quickFilter === "sent_and_read")}
-          onClick={() => applyQuickFilter("all", "read", "sent_and_read")}
-          type="button"
-        >
-          Enviado + leído
-        </button>
-        <button
-          className={quickFilterClass(quickFilter === "sent_and_delivered")}
-          onClick={() => applyQuickFilter("all", "delivered", "sent_and_delivered")}
-          type="button"
-        >
-          Enviado + entregado
-        </button>
-        <button
-          className={quickFilterClass(quickFilter === "sent_and_failed")}
-          onClick={() => applyQuickFilter("all", "failed", "sent_and_failed")}
-          type="button"
-        >
-          Enviado + fallido
-        </button>
-        <button
-          className={quickFilterClass(quickFilter === "not_sent_or_without_tracking")}
-          onClick={() => applyQuickFilter("all", "all", "not_sent_or_without_tracking")}
-          type="button"
-        >
-          No enviado / sin seguimiento
-        </button>
-        <button
-          className={quickFilterClass(statusFilter === "expired" && quickFilter === "none")}
-          onClick={() => applyQuickFilter("expired")}
-          type="button"
-        >
-          Expirados
-        </button>
-        <button
-          className={quickFilterClass(statusFilter === "all" && whatsappFilter === "all" && quickFilter === "none")}
-          onClick={() => applyQuickFilter("all")}
-          type="button"
-        >
-          Todos
-        </button>
-      </div>
 
       <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
@@ -399,7 +308,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           <select
             className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
             onChange={(event) => {
-              setQuickFilter("none");
               setStatusFilter(event.target.value as StatusFilter);
             }}
             value={statusFilter}
@@ -430,7 +338,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           <select
             className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
             onChange={(event) => {
-              setQuickFilter("none");
               setWhatsappFilter(event.target.value as WhatsappFilter);
             }}
             value={whatsappFilter}
@@ -449,12 +356,12 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       {!error ? (
         <div className="border-b border-[#edf2f6] px-5 py-4">
           <div className="mb-3">
-            <h3 className="text-sm font-medium text-navy">Resumen de auditoria filtrada</h3>
+            <h3 className="text-sm font-medium text-navy">Funnel de auditoria filtrada</h3>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Calculado sobre las filas que cumplen los filtros actuales, antes de la paginacion.
+              Calculado sobre los carritos que cumplen los filtros actuales.
             </p>
           </div>
-          <div className="grid gap-2 lg:grid-cols-5">
+          <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
             {auditFunnelCards.map((item) => (
               <div className="relative rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-3" key={item.label}>
                 <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
