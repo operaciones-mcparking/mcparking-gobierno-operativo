@@ -14,6 +14,7 @@ type CartChatMessage = {
   messageAt: string;
   messageBoundType: string | null;
   messageSentiment: string | null;
+  messageText: string | null;
   messageType: string | null;
   timeOfDay: string | null;
 };
@@ -35,6 +36,7 @@ type CartChatResponse = {
     hasConversation: boolean;
     inboundMessages: number;
     outboundMessages: number;
+    source: "metadata" | "raw";
     totalMessages: number;
   };
 };
@@ -135,6 +137,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
   const messages = data?.messages ?? [];
   const summary = data?.summary;
+  const isRawChat = summary?.source === "raw";
 
   return (
     <div className="fixed inset-0 z-50 bg-[#0f172a]/35">
@@ -143,10 +146,14 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           <div>
             <div className="flex items-center gap-2 text-navy">
               <MessageCircle className="h-4 w-4 text-sea" />
-              <h2 className="text-base font-medium tracking-tight">Chat metadata-only</h2>
+              <h2 className="text-base font-medium tracking-tight">
+                {isRawChat ? "Chat real" : "Chat metadata-only"}
+              </h2>
             </div>
             <p className="mt-1 text-sm leading-5 text-slate-600">
-              Burbujas seguras sin Message raw ni text_summary.
+              {isRawChat
+                ? "Vista admin sensible con texto real de mensajes."
+                : "Burbujas seguras sin Message raw ni text_summary."}
             </p>
           </div>
           <button
@@ -221,7 +228,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                           <ValueBadge tone="warning">Intencion: {message.intentCategory}</ValueBadge>
                         ) : null}
                       </div>
-                      <p className="font-medium text-navy">{genericMessageText(message.direction)}</p>
+                      <p className="whitespace-pre-wrap break-words font-medium text-navy">
+                        {message.messageText || genericMessageText(message.direction)}
+                      </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {message.messageSentiment ? (
                           <ValueBadge tone={sentimentTone(message.messageSentiment)}>
@@ -242,7 +251,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
         <div className="border-t border-[#edf2f6] bg-white px-5 py-3">
           <p className="text-xs leading-5 text-slate-500">
-            Esta vista no incluye texto de mensajes, telefonos, wa_id, api_phone, payloads ni identificadores tecnicos.
+            {isRawChat
+              ? "Vista admin sensible. No incluye telefonos, wa_id, api_phone, payloads ni identificadores tecnicos."
+              : "Esta vista no incluye texto de mensajes, telefonos, wa_id, api_phone, payloads ni identificadores tecnicos."}
           </p>
         </div>
       </div>
