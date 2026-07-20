@@ -72,7 +72,7 @@ function LatestImportCard({
 }: {
   importItem: RecoveryLatestImportSummaryItem | null;
   title: string;
-  type: "carts" | "purchases" | "tracking";
+  type: "carts" | "memory" | "purchases" | "tracking";
 }) {
   const hasPersistedResult = importItem
     ? [
@@ -155,6 +155,75 @@ function LatestImportCard({
   );
 }
 
+function MessageMemoryLatestImportCard({
+  metadata,
+  raw,
+}: {
+  metadata: RecoveryLatestImportSummaryItem | null;
+  raw: RecoveryLatestImportSummaryItem | null;
+}) {
+  const hasAnyImport = Boolean(metadata || raw);
+
+  return (
+    <article className="rounded-xl border border-[#d6e1ea] bg-[#fbfdfe] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea">
+          <FileText className="h-4 w-4" />
+        </span>
+        <ValueBadge tone={hasAnyImport ? "success" : "neutral"}>
+          {hasAnyImport ? "imported" : "Sin carga"}
+        </ValueBadge>
+      </div>
+      <h3 className="mt-4 text-sm font-medium tracking-tight text-navy">Ultima carga de Message Memory</h3>
+
+      {!hasAnyImport ? (
+        <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-3 text-sm leading-5 text-slate-600">
+          No hay cargas importadas todavia para este tipo.
+        </p>
+      ) : (
+        <div className="mt-4 grid gap-3">
+          <MessageMemoryStageRows item={metadata} rowsLabel="Filas insertadas" title="Metadata segura" />
+          <MessageMemoryStageRows item={raw} rowsLabel="Mensajes insertados" title="Chat real admin-only" />
+          <p className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs leading-5 text-slate-500">
+            El texto real solo se usa para Ver chat. No se muestra en reportes ni exportaciones.
+          </p>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function MessageMemoryStageRows({
+  item,
+  rowsLabel,
+  title,
+}: {
+  item: RecoveryLatestImportSummaryItem | null;
+  rowsLabel: string;
+  title: string;
+}) {
+  return (
+    <div className="rounded-lg border border-[#edf2f6] bg-white px-3 py-3">
+      <h4 className="mb-2 text-sm font-medium text-navy">{title}</h4>
+      {!item ? (
+        <p className="text-sm text-slate-600">Sin carga importada.</p>
+      ) : (
+        <>
+          <DetailRow label="Archivo" value={item.file_name} />
+          <DetailRow label="Fecha" value={formatDate(item.confirmed_at ?? item.created_at)} />
+          <DetailRow label="Filas archivo" value={formatNumber(item.rows_total)} />
+          <DetailRow label={rowsLabel} value={formatNumber(item.insertedRows)} />
+          <OptionalDetailRow label="Duplicadas omitidas" value={item.skipped_duplicate_rows} />
+          <OptionalDetailRow label="Conflictos" value={item.conflict_rows} />
+          <OptionalDetailRow label="Invalidas" value={item.invalid_rows} />
+          <DetailRow label="Estado" value={item.status} />
+          <DetailRow label="Batch" value={shortBatchId(item.id)} />
+        </>
+      )}
+    </div>
+  );
+}
+
 export function RecoveryLatestImportsSummary({ error, summary }: RecoveryLatestImportsSummaryProps) {
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
@@ -162,7 +231,8 @@ export function RecoveryLatestImportsSummary({ error, summary }: RecoveryLatestI
         <div>
           <h2 className="text-base font-medium tracking-tight text-navy">Ultima carga</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Ultimos batches importados al staging de recuperacion, sin datos personales ni payloads.
+            Ultimos batches importados al staging de recuperacion. No se muestran mensajes, telefonos, payloads ni
+            datos sensibles en este resumen.
           </p>
         </div>
         <ValueBadge tone="info">
@@ -180,7 +250,7 @@ export function RecoveryLatestImportsSummary({ error, summary }: RecoveryLatestI
       ) : null}
 
       {!error ? (
-        <div className="grid gap-3 p-5 xl:grid-cols-3">
+        <div className="grid gap-3 p-5 xl:grid-cols-2">
           <LatestImportCard
             importItem={summary?.purchases ?? null}
             title="Ultima carga de compras"
@@ -195,6 +265,10 @@ export function RecoveryLatestImportsSummary({ error, summary }: RecoveryLatestI
             importItem={summary?.tracking ?? null}
             title="Ultima carga de Seguimiento WhatsApp"
             type="tracking"
+          />
+          <MessageMemoryLatestImportCard
+            metadata={summary?.messageMemory.metadata ?? null}
+            raw={summary?.messageMemory.raw ?? null}
           />
         </div>
       ) : null}

@@ -280,6 +280,10 @@ export type RecoveryLatestImportSummaryItem = {
 
 export type RecoveryLatestImportsSummary = {
   carts: RecoveryLatestImportSummaryItem | null;
+  messageMemory: {
+    metadata: RecoveryLatestImportSummaryItem | null;
+    raw: RecoveryLatestImportSummaryItem | null;
+  };
   purchases: RecoveryLatestImportSummaryItem | null;
   tracking: RecoveryLatestImportSummaryItem | null;
 };
@@ -924,7 +928,14 @@ export async function getRecoveryLatestImportsSummary() {
 
   const supabase = await createSupabaseAuthServerClient();
 
-  async function getLatestImport(importType: "incomplete_bookings_csv" | "purchases_csv" | "whatsapp_tracking_csv") {
+  type RecoveryLatestImportType =
+    | "incomplete_bookings_csv"
+    | "purchases_csv"
+    | "whatsapp_message_memory_csv"
+    | "whatsapp_message_memory_raw_csv"
+    | "whatsapp_tracking_csv";
+
+  async function getLatestImport(importType: RecoveryLatestImportType) {
     const { data, error } = await supabase
       .from("recovery_import_batches")
       .select(
@@ -950,7 +961,11 @@ export async function getRecoveryLatestImportsSummary() {
         ? "recovery_incomplete_bookings_import"
         : data.import_type === "whatsapp_tracking_csv"
           ? "recovery_whatsapp_tracking_import"
-          : "recovery_bookings_import";
+          : data.import_type === "whatsapp_message_memory_csv"
+            ? "recovery_whatsapp_message_memory_import"
+            : data.import_type === "whatsapp_message_memory_raw_csv"
+              ? "recovery_whatsapp_message_memory_raw_import"
+              : "recovery_bookings_import";
     const { count: insertedRows, error: insertedRowsError } = await supabase
       .from(table)
       .select("id", { count: "exact", head: true })
@@ -1016,13 +1031,20 @@ export async function getRecoveryLatestImportsSummary() {
     };
   }
 
-  const [purchasesResult, cartsResult, trackingResult] = await Promise.all([
+  const [purchasesResult, cartsResult, trackingResult, messageMemoryResult, messageMemoryRawResult] = await Promise.all([
     getLatestImport("purchases_csv"),
     getLatestImport("incomplete_bookings_csv"),
     getLatestImport("whatsapp_tracking_csv"),
+    getLatestImport("whatsapp_message_memory_csv"),
+    getLatestImport("whatsapp_message_memory_raw_csv"),
   ]);
 
-  const error = purchasesResult.error ?? cartsResult.error ?? trackingResult.error;
+  const error =
+    purchasesResult.error ??
+    cartsResult.error ??
+    trackingResult.error ??
+    messageMemoryResult.error ??
+    messageMemoryRawResult.error;
 
   if (error) {
     return { data: null as RecoveryLatestImportsSummary | null, error };
@@ -1031,6 +1053,10 @@ export async function getRecoveryLatestImportsSummary() {
   return {
     data: {
       carts: cartsResult.data,
+      messageMemory: {
+        metadata: messageMemoryResult.data,
+        raw: messageMemoryRawResult.data,
+      },
       purchases: purchasesResult.data,
       tracking: trackingResult.data,
     },
