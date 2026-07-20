@@ -13,6 +13,7 @@ const { buildRecoveryIncompleteBookingImportRows, validateIncompleteBookingsCsv 
 };
 
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const INCOMPLETE_BOOKINGS_WATERMARK_SAFETY_WINDOW_DAYS = 7;
 const CRITICAL_COLUMNS = ["phone", "email"];
 const RECOMMENDED_COLUMNS = ["parking_code", "Message_Sent", "Id_Mensaje", "createdAt", "updatedAt"];
 
@@ -76,6 +77,16 @@ type ImportRpcResult = {
   rowsTotal?: number;
   skippedDuplicateRows?: number;
   sourceDuplicateRows?: number;
+};
+
+type IncompleteBookingsWatermarkRow = {
+  updated_at_source: string | null;
+};
+
+type WatermarkFilterResult = {
+  candidateRows: RecoveryIncompleteBookingImportRow[];
+  rowsSkippedByWatermark: number;
+  watermarkCutoffAt: string | null;
 };
 
 function jsonError(message: string, status: number) {
@@ -151,7 +162,58 @@ function hashContent(content: string) {
   return createHash("sha256").update(content, "utf8").digest("hex");
 }
 
-function safeImportSummary(result: ImportRpcResult) {
+function subtractDays(isoDate: string, days: number) {
+  const date = new Date(isoDate);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  date.setDate(date.getDate() - days);
+
+  return date;
+}
+
+function filterRowsByWatermark(
+  rows: RecoveryIncompleteBookingImportRow[],
+  watermarkUpdatedAt: string | null,
+): WatermarkFilterResult {
+  const cutoffDate = watermarkUpdatedAt
+    ? subtractDays(watermarkUpdatedAt, INCOMPLETE_BOOKINGS_WATERMARK_SAFETY_WINDOW_DAYS)
+    : null;
+
+  if (!cutoffDate) {
+    return {
+      candidateRows: rows,
+      rowsSkippedByWatermark: 0,
+      watermarkCutoffAt: null,
+    };
+  }
+
+  const candidateRows = rows.filter((row) => {
+    if (!row.updated_at_source) return true;
+
+    const updatedAt = new Date(row.updated_at_source);
+    if (Number.isNaN(updatedAt.getTime())) return true;
+
+    return updatedAt >= cutoffDate;
+  });
+
+  return {
+    candidateRows,
+    rowsSkippedByWatermark: rows.length - candidateRows.length,
+    watermarkCutoffAt: cutoffDate.toISOString(),
+  };
+}
+
+function safeImportSummary(
+  result: ImportRpcResult,
+  watermark: {
+    rowsCandidate: number;
+    rowsSkippedByWatermark: number;
+    rowsTotal: number;
+    watermarkCutoffAt: string | null;
+    watermarkUpdatedAt: string | null;
+  },
+) {
   return {
     bookingDuplicateRows: result.bookingDuplicateRows ?? 0,
     conflictRows: result.conflictRows ?? 0,
@@ -162,10 +224,15 @@ function safeImportSummary(result: ImportRpcResult) {
     invalidRows: result.invalidRows ?? 0,
     messageDuplicateRows: result.messageDuplicateRows ?? 0,
     messageSentRows: result.messageSentRows ?? 0,
+    rowsCandidate: watermark.rowsCandidate,
     rowsReceived: result.rowsReceived ?? 0,
-    rowsTotal: result.rowsTotal ?? 0,
+    rowsSkippedByWatermark: watermark.rowsSkippedByWatermark,
+    rowsTotal: watermark.rowsTotal,
+    safetyWindowDays: INCOMPLETE_BOOKINGS_WATERMARK_SAFETY_WINDOW_DAYS,
     skippedDuplicateRows: result.skippedDuplicateRows ?? 0,
     sourceDuplicateRows: result.sourceDuplicateRows ?? 0,
+    watermarkCutoffAt: watermark.watermarkCutoffAt,
+    watermarkUpdatedAt: watermark.watermarkUpdatedAt,
   };
 }
 
@@ -197,12 +264,38 @@ export async function POST(request: NextRequest) {
   const rows = buildRecoveryIncompleteBookingImportRows(csvContent);
   const fileHash = hashContent(csvContent);
 
+  const { data: watermarkRows, error: watermarkError } = await admin.supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("updated_at_source")
+    .not("updated_at_source", "is", null)
+    .order("updated_at_source", { ascending: false })
+    .limit(1);
+
+  if (watermarkError) {
+    return jsonError(watermarkError.message, 500);
+  }
+
+  const watermarkUpdatedAt =
+    ((watermarkRows ?? []) as IncompleteBookingsWatermarkRow[])[0]?.updated_at_source ?? null;
+  const { candidateRows, rowsSkippedByWatermark, watermarkCutoffAt } = filterRowsByWatermark(
+    rows,
+    watermarkUpdatedAt,
+  );
+
   const { data, error } = await admin.supabase.rpc("import_recovery_incomplete_bookings", {
     p_file_hash: fileHash,
     p_file_name: file.name,
     p_file_size: file.size,
-    p_rows: rows,
-    p_summary: summary,
+    p_rows: candidateRows,
+    p_summary: {
+      ...summary,
+      rowsCandidate: candidateRows.length,
+      rowsSkippedByWatermark,
+      rowsTotal: rows.length,
+      safetyWindowDays: INCOMPLETE_BOOKINGS_WATERMARK_SAFETY_WINDOW_DAYS,
+      watermarkCutoffAt,
+      watermarkUpdatedAt,
+    },
   });
 
   if (error) {
@@ -218,6 +311,12 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     batchId: importResult.batchId ?? null,
     ok: true,
-    summary: safeImportSummary(importResult),
+    summary: safeImportSummary(importResult, {
+      rowsCandidate: candidateRows.length,
+      rowsSkippedByWatermark,
+      rowsTotal: rows.length,
+      watermarkCutoffAt,
+      watermarkUpdatedAt,
+    }),
   });
 }
