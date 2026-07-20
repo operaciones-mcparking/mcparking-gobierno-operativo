@@ -170,7 +170,7 @@ function hashNormalizedRow(row) {
 
 function normalizeIncompleteBookingRow(row) {
   const intendedFields = intendedFieldsFromBform(row.bform);
-  const normalized = {
+  const normalizedForHash = {
     booking_id: cleanText(row.booking_id),
     created_at_source: dateTimeValue(row.createdAt),
     email_normalized: normalizeEmail(row.email),
@@ -186,8 +186,9 @@ function normalizeIncompleteBookingRow(row) {
   };
 
   return {
-    ...normalized,
-    row_hash: hashNormalizedRow(normalized),
+    ...normalizedForHash,
+    cms_url: cleanText(row.cms_url),
+    row_hash: hashNormalizedRow(normalizedForHash),
   };
 }
 

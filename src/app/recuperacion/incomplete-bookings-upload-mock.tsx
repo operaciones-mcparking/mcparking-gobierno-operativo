@@ -475,7 +475,7 @@ export function IncompleteBookingsUploadMock() {
 
       <ImportProgressModal
         confirmLabel="Confirmar importacion"
-        description="Guarda los carritos perdidos/cancelados normalizados en staging de recuperacion. No se almacena el CSV completo, cms_url, bform ni PII cruda."
+        description="Guarda los carritos perdidos/cancelados normalizados en staging de recuperacion. cms_url queda restringido al drawer admin; no se almacena el CSV completo, bform ni payloads crudos."
         errorMessage={importError}
         fileName={selectedFile?.name ?? null}
         importTypeLabel="Carritos"

@@ -48,6 +48,7 @@ type IncompleteBookingsCsvReport = {
 
 type RecoveryIncompleteBookingImportRow = {
   booking_id: string;
+  cms_url: string | null;
   created_at_source: string | null;
   email_normalized: string | null;
   form_datetime: string | null;
