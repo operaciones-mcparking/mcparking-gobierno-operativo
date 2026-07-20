@@ -14,13 +14,27 @@ function formatCurrency(value: number) {
   return `$${formatNumber(value)}`;
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "Pendiente";
+function formatDateParts(value: string | null) {
+  if (!value) {
+    return {
+      date: "Pendiente",
+      time: null,
+    };
+  }
 
-  return new Intl.DateTimeFormat("es-CL", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+  const date = new Date(value);
+
+  return {
+    date: new Intl.DateTimeFormat("es-CL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+    }).format(date),
+    time: new Intl.DateTimeFormat("es-CL", {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date),
+  };
 }
 
 function statusTone(status: string): BadgeTone {
@@ -98,7 +112,7 @@ export function RecoveryImportHistory({ error, imports }: RecoveryImportHistoryP
           <table className="min-w-[960px] w-full border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-sm">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Fecha</th>
+                <th className="min-w-[96px] border-b border-[#d6e1ea] px-3 py-3">Fecha</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Tipo</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Archivo</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Estado</th>
@@ -106,16 +120,23 @@ export function RecoveryImportHistory({ error, imports }: RecoveryImportHistoryP
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Filas importadas</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Compras válidas</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Monto válido</th>
-                <th className="border-b border-[#d6e1ea] px-3 py-3">Confirmado</th>
+                <th className="min-w-[96px] border-b border-[#d6e1ea] px-3 py-3">Confirmado</th>
                 <th className="border-b border-[#d6e1ea] px-3 py-3">Batch</th>
               </tr>
             </thead>
             <tbody>
-              {imports.map((item) => (
-                <tr className="bg-white odd:bg-[#fbfdfe]" key={item.id}>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
-                    {formatDate(item.created_at)}
-                  </td>
+              {imports.map((item) => {
+                const createdAt = formatDateParts(item.created_at);
+                const confirmedAt = formatDateParts(item.confirmed_at);
+
+                return (
+                  <tr className="bg-white odd:bg-[#fbfdfe]" key={item.id}>
+                    <td className="min-w-[96px] border-b border-[#edf2f6] px-3 py-3 text-slate-700">
+                      <div className="whitespace-nowrap text-sm">{createdAt.date}</div>
+                      {createdAt.time ? (
+                        <div className="whitespace-nowrap text-xs leading-5 text-slate-500">{createdAt.time}</div>
+                      ) : null}
+                    </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3">
                     <ValueBadge tone={importTypeTone(item.import_type)}>{importTypeLabel(item.import_type)}</ValueBadge>
                   </td>
@@ -140,14 +161,18 @@ export function RecoveryImportHistory({ error, imports }: RecoveryImportHistoryP
                   <td className="border-b border-[#edf2f6] px-3 py-3 font-medium text-navy">
                     {item.import_type === "purchases_csv" ? formatCurrency(item.valid_purchase_amount) : "—"}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-3 py-3 text-slate-700">
-                    {formatDate(item.confirmed_at)}
-                  </td>
+                    <td className="min-w-[96px] border-b border-[#edf2f6] px-3 py-3 text-slate-700">
+                      <div className="whitespace-nowrap text-sm">{confirmedAt.date}</div>
+                      {confirmedAt.time ? (
+                        <div className="whitespace-nowrap text-xs leading-5 text-slate-500">{confirmedAt.time}</div>
+                      ) : null}
+                    </td>
                   <td className="border-b border-[#edf2f6] px-3 py-3 font-mono text-xs text-slate-600">
                     {shortBatchId(item.id)}
                   </td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
