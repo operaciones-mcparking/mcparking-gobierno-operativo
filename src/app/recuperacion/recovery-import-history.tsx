@@ -1,6 +1,8 @@
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import type { RecoveryImportHistoryItem } from "@/lib/dashboard/data";
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 type RecoveryImportHistoryProps = {
   error?: string | null;
   imports: RecoveryImportHistoryItem[];
@@ -28,11 +30,13 @@ function formatDateParts(value: string | null) {
     date: new Intl.DateTimeFormat("es-CL", {
       day: "2-digit",
       month: "2-digit",
+      timeZone: RECOVERY_TIME_ZONE,
       year: "2-digit",
     }).format(date),
     time: new Intl.DateTimeFormat("es-CL", {
       hour: "numeric",
       minute: "2-digit",
+      timeZone: RECOVERY_TIME_ZONE,
     }).format(date),
   };
 }

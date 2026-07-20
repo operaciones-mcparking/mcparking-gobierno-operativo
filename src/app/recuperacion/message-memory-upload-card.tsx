@@ -6,6 +6,8 @@ import { useMemo, useRef, useState } from "react";
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { ImportProgressModal, ImportResultGrid } from "./import-progress-modal";
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 type TextSummarySensitivity = {
   averageLength: number;
   maxLength: number;
@@ -103,6 +105,7 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("es-CL", {
     day: "2-digit",
     month: "2-digit",
+    timeZone: RECOVERY_TIME_ZONE,
     year: "numeric",
   }).format(date);
 }

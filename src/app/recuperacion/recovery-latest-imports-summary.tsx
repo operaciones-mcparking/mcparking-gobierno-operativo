@@ -6,6 +6,8 @@ import type {
   RecoveryLatestImportsSummary,
 } from "@/lib/dashboard/data";
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 type RecoveryLatestImportsSummaryProps = {
   error?: string | null;
   summary: RecoveryLatestImportsSummary | null;
@@ -25,6 +27,7 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: RECOVERY_TIME_ZONE,
   }).format(new Date(value));
 }
 

@@ -1,6 +1,8 @@
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import type { RecentRecoveryAttributionCase } from "@/lib/dashboard/data";
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 type RecoveryAttributionCasesProps = {
   cases: RecentRecoveryAttributionCase[];
   error?: string | null;
@@ -16,6 +18,7 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: RECOVERY_TIME_ZONE,
   }).format(new Date(value));
 }
 

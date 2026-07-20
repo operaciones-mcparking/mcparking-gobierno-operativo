@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 type CartChatMessage = {
   chatState: string | null;
   dayOfWeek: string | null;
@@ -56,6 +58,7 @@ function formatDateTime(value: string | null) {
   return new Intl.DateTimeFormat("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: RECOVERY_TIME_ZONE,
   }).format(date);
 }
 

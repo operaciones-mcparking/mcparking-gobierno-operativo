@@ -10,6 +10,8 @@ import type {
 } from "@/lib/dashboard/data";
 import { RecoveryCartChatDrawer } from "./recovery-cart-chat-drawer";
 
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 type RecoveryCartAuditTableProps = {
   error?: string | null;
   rows: RecoveryCartAuditRow[];
@@ -45,6 +47,7 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: RECOVERY_TIME_ZONE,
   }).format(new Date(value));
 }
 
