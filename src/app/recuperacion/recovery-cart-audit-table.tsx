@@ -71,6 +71,18 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("es-CL").format(value);
 }
 
+function formatPercent(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return "?";
+
+  return `${value.toFixed(1).replace(".", ",")}%`;
+}
+
+function ratioPercent(numerator: number, denominator: number) {
+  if (denominator <= 0) return null;
+
+  return (numerator / denominator) * 100;
+}
+
 function dateInputValue(value: string | null) {
   if (!value) return "";
 
@@ -255,13 +267,45 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
     },
     [visibleRows],
   );
+  const averageRecoveredTicket =
+    auditSummary.recovered > 0 ? auditSummary.recoveredAmount / auditSummary.recovered : null;
   const auditFunnelCards = [
-    { label: "Carritos filtrados", value: formatNumber(auditSummary.total) },
-    { label: "Enviados", value: formatNumber(auditSummary.sent) },
-    { label: "Entregados", value: formatNumber(auditSummary.delivered) },
-    { label: "Leídos", value: formatNumber(auditSummary.read) },
-    { label: "Recuperados", value: formatNumber(auditSummary.recovered) },
-    { label: "Monto recuperado", value: formatCurrency(auditSummary.recoveredAmount) },
+    {
+      basis: auditSummary.total > 0 ? "de carritos" : null,
+      label: "Carritos filtrados",
+      metric: auditSummary.total > 0 ? "100%" : "?",
+      value: formatNumber(auditSummary.total),
+    },
+    {
+      basis: "de carritos",
+      label: "Enviados",
+      metric: formatPercent(ratioPercent(auditSummary.sent, auditSummary.total)),
+      value: formatNumber(auditSummary.sent),
+    },
+    {
+      basis: "de enviados",
+      label: "Entregados",
+      metric: formatPercent(ratioPercent(auditSummary.delivered, auditSummary.sent)),
+      value: formatNumber(auditSummary.delivered),
+    },
+    {
+      basis: "de entregados",
+      label: "Le?dos",
+      metric: formatPercent(ratioPercent(auditSummary.read, auditSummary.delivered)),
+      value: formatNumber(auditSummary.read),
+    },
+    {
+      basis: "de carritos",
+      label: "Recuperados",
+      metric: formatPercent(ratioPercent(auditSummary.recovered, auditSummary.total)),
+      value: formatNumber(auditSummary.recovered),
+    },
+    {
+      basis: "Ticket prom.",
+      label: "Monto recuperado",
+      metric: averageRecoveredTicket === null ? "?" : formatCurrency(averageRecoveredTicket),
+      value: formatCurrency(auditSummary.recoveredAmount),
+    },
   ];
 
   useEffect(() => {
@@ -392,7 +436,13 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
             {auditFunnelCards.map((item) => (
               <div className="relative rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-3" key={item.label}>
                 <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
-                <p className="mt-1 text-lg font-medium text-navy">{item.value}</p>
+                <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                  <span className="text-lg font-medium text-navy">{item.value}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-[#edf2f6]">
+                    {item.metric}
+                  </span>
+                </div>
+                {item.basis ? <p className="mt-1 text-[11px] text-slate-500">{item.basis}</p> : null}
               </div>
             ))}
           </div>
