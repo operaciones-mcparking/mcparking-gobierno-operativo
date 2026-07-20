@@ -204,11 +204,23 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           ) : null}
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-[#eef7f1] px-5 py-5">
+        <div
+          className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+          style={{
+            backgroundColor: "#eef7f1",
+            backgroundImage:
+              "radial-gradient(circle at 16px 16px, rgba(15, 118, 110, 0.08) 0 1px, transparent 1.5px), radial-gradient(circle at 42px 38px, rgba(15, 23, 42, 0.05) 0 1px, transparent 1.5px)",
+            backgroundSize: "56px 56px",
+          }}
+        >
           {isLoading ? (
-            <p className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-3 text-sm text-slate-600">
-              Cargando chat metadata-only...
-            </p>
+            <div className="flex min-h-[320px] items-center justify-center">
+              <div className="rounded-2xl border border-slate-200 bg-white/85 px-6 py-5 text-center shadow-sm backdrop-blur">
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />
+                <p className="text-sm font-semibold text-slate-900">Cargando chat real...</p>
+                <p className="mt-1 text-xs text-slate-500">Buscando mensajes asociados al carrito</p>
+              </div>
+            </div>
           ) : null}
 
           {error ? (
