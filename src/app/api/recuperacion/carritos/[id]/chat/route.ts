@@ -192,6 +192,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     .gte("message_at", windowStart)
     .lt("message_at", windowEnd)
     .order("message_at", { ascending: true })
+    .order("message_bound_type", { ascending: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(MAX_CHAT_MESSAGES);
 
   if (rawMessagesError) {
@@ -216,6 +219,9 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     .gte("message_at", windowStart)
     .lt("message_at", windowEnd)
     .order("message_at", { ascending: true })
+    .order("message_bound_type", { ascending: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
     .limit(MAX_CHAT_MESSAGES);
 
   if (messagesError) {
