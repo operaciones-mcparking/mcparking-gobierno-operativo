@@ -227,12 +227,14 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       });
   }, [dateQuery, quickFilter, rows, sortDirection, sortKey, statusFilter, typeFilter, whatsappFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(visibleRows.length / rowsPerPage));
+  const hasDateFilter = Boolean(dateQuery);
+  const totalPages = hasDateFilter ? 1 : Math.max(1, Math.ceil(visibleRows.length / rowsPerPage));
   const safeCurrentPage = Math.min(currentPage, totalPages);
-  const pageStartIndex = (safeCurrentPage - 1) * rowsPerPage;
-  const pageRows = visibleRows.slice(pageStartIndex, pageStartIndex + rowsPerPage);
+  const pageStartIndex = hasDateFilter ? 0 : (safeCurrentPage - 1) * rowsPerPage;
+  const pageRows = hasDateFilter ? visibleRows : visibleRows.slice(pageStartIndex, pageStartIndex + rowsPerPage);
   const showingFrom = visibleRows.length === 0 ? 0 : pageStartIndex + 1;
-  const showingTo = Math.min(pageStartIndex + rowsPerPage, visibleRows.length);
+  const showingTo = hasDateFilter ? visibleRows.length : Math.min(pageStartIndex + rowsPerPage, visibleRows.length);
+  const shouldShowPaginationControls = !hasDateFilter && totalPages > 1;
   const auditSummary = useMemo(
     () => {
       const recoveredRows = visibleRows.filter((row) => row.recovered);
@@ -561,26 +563,30 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
           </div>
           <div className="mt-4 flex flex-col gap-3 border-t border-[#edf2f6] pt-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-slate-600">
-              Mostrando {showingFrom}-{showingTo} de {visibleRows.length}
+              {hasDateFilter
+                ? `Mostrando ${formatNumber(visibleRows.length)} de ${formatNumber(visibleRows.length)}`
+                : `Mostrando ${formatNumber(showingFrom)}-${formatNumber(showingTo)} de ${formatNumber(visibleRows.length)}`}
             </p>
-            <div className="flex gap-2">
-              <button
-                className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm font-medium text-navy disabled:opacity-45"
-                disabled={safeCurrentPage <= 1}
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                type="button"
-              >
-                Anterior
-              </button>
-              <button
-                className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm font-medium text-navy disabled:opacity-45"
-                disabled={safeCurrentPage >= totalPages}
-                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
-                type="button"
-              >
-                Siguiente
-              </button>
-            </div>
+            {shouldShowPaginationControls ? (
+              <div className="flex gap-2">
+                <button
+                  className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm font-medium text-navy disabled:opacity-45"
+                  disabled={safeCurrentPage <= 1}
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  type="button"
+                >
+                  Anterior
+                </button>
+                <button
+                  className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm font-medium text-navy disabled:opacity-45"
+                  disabled={safeCurrentPage >= totalPages}
+                  onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                  type="button"
+                >
+                  Siguiente
+                </button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
