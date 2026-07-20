@@ -454,13 +454,15 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
                     {row.cart_type ?? "Sin tipo"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
-                    <div className="break-all font-medium text-navy">{row.email ?? "Sin correo"}</div>
-                    <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>
-                    <div className="mt-2">
-                      <ValueBadge tone={row.hasChat ? "info" : "neutral"}>
-                        {row.hasChat ? `Chat: ${formatNumber(row.chatMessageCount)}` : "Sin chat"}
-                      </ValueBadge>
+                    <div className="flex items-center gap-1.5 font-medium text-navy">
+                      <span className="min-w-0 break-all">{row.email ?? "Sin correo"}</span>
+                      <span
+                        aria-label={row.hasChat ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : "Sin chat asociado"}
+                        className={`h-2 w-2 shrink-0 rounded-full ${row.hasChat ? "bg-sea" : "bg-slate-300"}`}
+                        title={row.hasChat ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : "Sin chat asociado"}
+                      />
                     </div>
+                    <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.parking_code ?? "Sin parking"}
