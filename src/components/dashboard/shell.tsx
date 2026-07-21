@@ -7,6 +7,7 @@ import {
   Database,
   GitBranch,
   LogOut,
+  MessageCircle,
   Network,
   PlusCircle,
   Settings,
@@ -32,6 +33,7 @@ const modules = [
     items: [
       { href: "/procesos", icon: GitBranch, label: "Procesos", helper: "Modelo operativo" },
       { href: "/sistemas", icon: Database, label: "Sistemas", helper: "Herramientas" },
+      { href: "/recuperacion", icon: MessageCircle, label: "Carritos perdidos", helper: "Recuperación WhatsApp" },
     ],
     label: "Operacion",
   },
@@ -56,12 +58,14 @@ function BrandLogo({ compact = false }: { compact?: boolean }) {
 }
 
 export async function DashboardShell({
+  activePath,
   background = "mist",
   children,
   eyebrow,
   title,
   description,
 }: {
+  activePath?: string;
   background?: "mist" | "white";
   children: React.ReactNode;
   eyebrow: string;
@@ -121,7 +125,12 @@ export async function DashboardShell({
 
                     return (
                       <Link
-                        className="group flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-700 transition hover:border-[#cbd8e3] hover:bg-[#f6f8fa] hover:text-navy"
+                        aria-current={activePath === module.href ? "page" : undefined}
+                        className={`group flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition ${
+                          activePath === module.href
+                            ? "border-sea bg-[#eef7f8] text-navy"
+                            : "border-transparent text-slate-700 hover:border-[#cbd8e3] hover:bg-[#f6f8fa] hover:text-navy"
+                        }`}
                         href={module.href}
                         key={module.href}
                       >
@@ -134,7 +143,7 @@ export async function DashboardShell({
                             {module.helper}
                           </span>
                         </span>
-                        <span className="h-8 w-1 rounded-full bg-transparent transition group-hover:bg-clay" />
+                        <span className={`h-8 w-1 rounded-full transition ${activePath === module.href ? "bg-clay" : "bg-transparent group-hover:bg-clay"}`} />
                       </Link>
                     );
                   })}
