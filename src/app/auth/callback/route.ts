@@ -35,7 +35,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login?error=not_allowed", requestUrl.origin));
   }
 
-  return NextResponse.redirect(
-    new URL(`/contexto?next=${encodeURIComponent(next)}`, requestUrl.origin),
-  );
+  return NextResponse.redirect(new URL(next, requestUrl.origin));
 }

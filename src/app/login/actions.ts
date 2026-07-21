@@ -34,7 +34,7 @@ export async function signIn(formData: FormData) {
   }
 
   const safeNext = next.startsWith("/") ? next : "/";
-  redirect(`/contexto?next=${encodeURIComponent(safeNext)}`);
+  redirect(safeNext);
 }
 
 export async function signInWithGoogle(formData: FormData) {
