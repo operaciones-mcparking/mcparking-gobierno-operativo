@@ -1700,8 +1700,7 @@ export async function getRecoveryCartAuditRows(limit = 300) {
         .select("wa_id_normalized,message_at,message_bound_type,intent_category,message_sentiment,chat_state")
         .in("wa_id_normalized", chunk)
         .gte("message_at", minDate.toISOString())
-        .lt("message_at", maxDate.toISOString())
-        .order("message_at", { ascending: false });
+        .lt("message_at", maxDate.toISOString());
 
       if (error) {
         return { data: [] as MessageMemoryIntentRow[], error };
@@ -1791,9 +1790,17 @@ export async function getRecoveryCartAuditRows(limit = 300) {
   }
 
   function findLastInboundIntent(cart: CartAuditSourceRow) {
-    return findMessageMemoryRowsForCart(cart).find(
-      (intentRow) => intentRow.message_bound_type === "inbound",
-    ) ?? null;
+    let latestIntent: MessageMemoryIntentRow | null = null;
+
+    for (const intentRow of findMessageMemoryRowsForCart(cart)) {
+      if (intentRow.message_bound_type !== "inbound" || !intentRow.message_at) continue;
+
+      if (!latestIntent?.message_at || new Date(intentRow.message_at) > new Date(latestIntent.message_at)) {
+        latestIntent = intentRow;
+      }
+    }
+
+    return latestIntent;
   }
 
   const auditRows = cartRows.map((cart) => {
