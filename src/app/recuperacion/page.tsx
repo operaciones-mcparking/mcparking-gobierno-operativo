@@ -19,6 +19,17 @@ function logRecoveryTiming(label: string, startedAt: number) {
   console.info(`[recuperacion] ${label}: ${Date.now() - startedAt}ms`);
 }
 
+function RecoveryCompactLoading({ label }: { label: string }) {
+  return (
+    <section className="mt-5 rounded-xl border border-[#d6e1ea] bg-white px-5 py-4 shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
+      <div className="flex items-center gap-3 text-sm text-slate-600">
+        <div className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-[#d6e1ea] border-t-sea" />
+        <span>{label}</span>
+      </div>
+    </section>
+  );
+}
+
 async function RecoveryCartAuditBlock() {
   const startedAt = Date.now();
   const { data: cartAuditRows, error: cartAuditRowsError } = await getRecoveryCartAuditRows();
@@ -59,7 +70,7 @@ export default async function RecuperacionPage() {
         <RecoveryCartAuditBlock />
       </Suspense>
 
-      <Suspense fallback={<RecoveryLoadingCard label="Cargando ultima carga..." steps={["Buscando batches...", "Calculando resumen...", "Preparando tarjetas...", "Finalizando vista..."]} />}>
+      <Suspense fallback={<RecoveryCompactLoading label="Cargando ultima carga..." />}>
         <RecoveryLatestImportsBlock />
       </Suspense>
 
@@ -68,7 +79,7 @@ export default async function RecuperacionPage() {
       <TrackingUploadCard />
       <MessageMemoryUploadCard />
 
-      <Suspense fallback={<RecoveryLoadingCard label="Cargando historial de importaciones..." steps={["Buscando importaciones...", "Ordenando eventos...", "Preparando tabla...", "Finalizando vista..."]} />}>
+      <Suspense fallback={<RecoveryCompactLoading label="Cargando historial de importaciones..." />}>
         <RecoveryImportHistoryBlock />
       </Suspense>
     </DashboardShell>

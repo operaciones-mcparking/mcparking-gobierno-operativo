@@ -14,14 +14,8 @@ export function RecoveryLoadingCard({ label, steps = defaultSteps }: RecoveryLoa
   return (
     <section className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
       <style>{`
-        @keyframes recoveryProgressGuide {
-          0% { width: 18%; }
-          35% { width: 52%; }
-          70% { width: 82%; }
-          100% { width: 92%; }
-        }
         @keyframes recoveryStepPulse {
-          0%, 100% { opacity: .45; transform: translateY(0); }
+          0%, 100% { opacity: .48; transform: translateY(0); }
           35% { opacity: 1; transform: translateY(-1px); }
         }
       `}</style>
@@ -40,13 +34,6 @@ export function RecoveryLoadingCard({ label, steps = defaultSteps }: RecoveryLoa
                 Esto puede tardar unos segundos si hay muchos datos recientes.
               </p>
             </div>
-          </div>
-
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-white ring-1 ring-[#edf2f6]">
-            <div
-              className="h-full rounded-full bg-sea"
-              style={{ animation: "recoveryProgressGuide 2.8s ease-in-out infinite alternate" }}
-            />
           </div>
 
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
