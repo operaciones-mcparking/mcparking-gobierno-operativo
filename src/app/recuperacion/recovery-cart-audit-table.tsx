@@ -638,7 +638,7 @@ function PerformanceLineChart({
   yMax: number;
 }) {
   const width = 520;
-  const height = 230;
+  const height = 320;
   const padding = { bottom: 34, left: 58, right: 18, top: 18 };
   const innerWidth = width - padding.left - padding.right;
   const innerHeight = height - padding.top - padding.bottom;
@@ -666,7 +666,7 @@ function PerformanceLineChart({
 
   return (
     <div className="relative mt-4">
-      <svg aria-label={seriesLabel} className="h-[230px] w-full overflow-visible" role="img" viewBox={`0 0 ${width} ${height}`}>
+      <svg aria-label={seriesLabel} className="h-[320px] w-full overflow-visible" role="img" viewBox={`0 0 ${width} ${height}`}>
         {ticks.map((tick) => {
           const y = toY(tick);
 
@@ -1078,7 +1078,30 @@ function WeeklyBreakdownBlock({
                   </div>
                 ))}
               </div>
-              <div className="grid gap-4 xl:grid-cols-3">
+              <div className="mb-4 rounded-xl border border-[#edf2f6] bg-[#fbfdfe] p-4">
+                <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">Funnel semanal</p>
+                <div className="mt-4 grid gap-3 md:grid-cols-5">
+                  {performanceFunnelCards.map((stage) => (
+                    <div className="rounded-lg border border-[#edf2f6] bg-white px-3 py-3" key={stage.label}>
+                      <div className="flex items-baseline justify-between gap-3 md:block">
+                        <span className="text-xs font-medium text-slate-600">{stage.label}</span>
+                        <span className="text-sm font-medium text-navy md:mt-1 md:block">
+                          {stage.value}{" "}
+                          <span className="text-[11px] font-normal text-slate-500">{stage.metric}</span>
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1.5 rounded-full bg-[#f8fafb] ring-1 ring-[#edf2f6]">
+                        <div
+                          className="h-1.5 rounded-full bg-sea"
+                          style={{ width: `${Math.min(100, stage.barPercent)}%` }}
+                        />
+                      </div>
+                      {stage.basis ? <p className="mt-1 text-[10px] text-slate-500">{stage.basis}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-4 xl:grid-cols-2">
               <div className="flex flex-col rounded-xl border border-[#edf2f6] bg-[#fbfdfe] p-4">
                 <div className="flex min-h-[86px] items-start justify-between gap-3">
                   <div>
@@ -1179,29 +1202,6 @@ function WeeklyBreakdownBlock({
                 />
               </div>
 
-              <div className="rounded-xl border border-[#edf2f6] bg-[#fbfdfe] p-4">
-                <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">Funnel semanal</p>
-                <div className="mt-4 space-y-3">
-                  {performanceFunnelCards.map((stage) => (
-                    <div key={stage.label}>
-                      <div className="mb-1 flex items-baseline justify-between gap-3">
-                        <span className="text-xs font-medium text-slate-600">{stage.label}</span>
-                        <span className="text-sm font-medium text-navy">
-                          {stage.value}{" "}
-                          <span className="text-[11px] font-normal text-slate-500">{stage.metric}</span>
-                        </span>
-                      </div>
-                      <div className="h-2 rounded-full bg-white ring-1 ring-[#edf2f6]">
-                        <div
-                          className="h-2 rounded-full bg-sea"
-                          style={{ width: `${Math.min(100, stage.barPercent)}%` }}
-                        />
-                      </div>
-                      {stage.basis ? <p className="mt-1 text-[10px] text-slate-500">{stage.basis}</p> : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
               </div>
               <div className="mt-4 rounded-xl border border-[#edf2f6] bg-white p-4">
                 <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
