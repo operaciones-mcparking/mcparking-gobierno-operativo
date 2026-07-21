@@ -17,6 +17,19 @@ type RecoveryCartAuditTableProps = {
   rows: RecoveryCartAuditRow[];
 };
 
+type ChatIndicator = Pick<
+  RecoveryCartAuditRow,
+  | "chatMessageCount"
+  | "hasChat"
+  | "lastInboundChatState"
+  | "lastInboundIntentCategory"
+  | "lastInboundMessageAt"
+  | "lastInboundSentiment"
+> & {
+  cartId: string;
+  hasInbound: boolean;
+};
+
 type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
 type WhatsappFilter = "all" | RecoveryCartWhatsappStatus;
@@ -194,7 +207,7 @@ function intentTooltipItems(row: RecoveryCartAuditRow): Array<[string, string]> 
   if (row.lastInboundSentiment) items.push(["Sentimiento", row.lastInboundSentiment]);
   if (row.lastInboundChatState) items.push(["Chat", row.lastInboundChatState]);
   if (row.hasChat === true && row.chatMessageCount !== null) items.push(["Mensajes", formatNumber(row.chatMessageCount)]);
-  if (row.hasChat === null) items.push(["Chat", "Se carga al abrir la fila"]);
+  if (row.hasChat === null) items.push(["Chat", "Se carga al pasar por la pagina"]);
 
   return items;
 }
@@ -826,6 +839,7 @@ function WeeklyBreakdownBlock({
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [sortKey, setSortKey] = useState<SortKey>("cart_date");
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
+  const [chatIndicators, setChatIndicators] = useState<Record<string, ChatIndicator>>({});
 
   const visibleRows = useMemo(() => {
     return [...rows]
@@ -859,6 +873,8 @@ function WeeklyBreakdownBlock({
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const pageStartIndex = hasDateFilter ? 0 : (safeCurrentPage - 1) * rowsPerPage;
   const pageRows = hasDateFilter ? visibleRows : visibleRows.slice(pageStartIndex, pageStartIndex + rowsPerPage);
+  const pageRowIds = useMemo(() => pageRows.slice(0, 100).map((row) => row.id), [pageRows]);
+  const pageRowIdsKey = pageRowIds.join("|");
   const showingFrom = visibleRows.length === 0 ? 0 : pageStartIndex + 1;
   const showingTo = hasDateFilter ? visibleRows.length : Math.min(pageStartIndex + rowsPerPage, visibleRows.length);
   const shouldShowPaginationControls = !hasDateFilter && totalPages > 1;
@@ -999,6 +1015,40 @@ function WeeklyBreakdownBlock({
     setCurrentPage(1);
   }, [dateQuery, statusFilter, typeFilter, whatsappFilter]);
 
+  useEffect(() => {
+    if (pageRowIds.length === 0) return;
+
+    const missingIds = pageRowIds.filter((id) => !chatIndicators[id]);
+
+    if (missingIds.length === 0) return;
+
+    const controller = new AbortController();
+
+    async function loadChatIndicators() {
+      try {
+        const response = await fetch("/api/recuperacion/carritos/chat-indicators", {
+          body: JSON.stringify({ cartIds: missingIds }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+          signal: controller.signal,
+        });
+
+        if (!response.ok) return;
+
+        const payload = (await response.json()) as { indicators?: Record<string, ChatIndicator> };
+
+        if (!payload.indicators) return;
+
+        setChatIndicators((current) => ({ ...current, ...payload.indicators }));
+      } catch (error) {
+        if ((error as { name?: string }).name === "AbortError") return;
+      }
+    }
+
+    void loadChatIndicators();
+
+    return () => controller.abort();
+  }, [chatIndicators, pageRowIds, pageRowIdsKey]);
   useEffect(() => {
     if (weekOptions.length === 0) {
       setSelectedWeekStart("");
@@ -1390,7 +1440,16 @@ function WeeklyBreakdownBlock({
             </thead>
             <tbody>
               {pageRows.map((row) => {
-                const canOpenChat = row.hasChat !== false;
+                const chatIndicator = chatIndicators[row.id];
+                const displayRow: RecoveryCartAuditRow = chatIndicator ? { ...row, ...chatIndicator } : row;
+                const canOpenChat = displayRow.hasChat !== false;
+                const chatDotClass = chatIndicator?.hasInbound
+                  ? "bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]"
+                  : displayRow.hasChat === true
+                    ? "bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.14)]"
+                    : displayRow.hasChat === false
+                      ? "bg-slate-300/70"
+                      : "bg-slate-300/50";
 
                 return (
                 <tr
@@ -1406,7 +1465,7 @@ function WeeklyBreakdownBlock({
                   } : undefined}
                   role={canOpenChat ? "button" : undefined}
                   tabIndex={canOpenChat ? 0 : undefined}
-                  title={intentTooltipTitle(row)}
+                  title={intentTooltipTitle(displayRow)}
                 >
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {row.cart_type ?? "Sin tipo"}
@@ -1415,9 +1474,9 @@ function WeeklyBreakdownBlock({
                     <div className="flex items-center gap-1.5 font-medium text-navy">
                       <span className="min-w-0 break-all">{row.email ?? "Sin correo"}</span>
                       <span
-                        aria-label={row.hasChat === true && row.chatMessageCount !== null ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : row.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
-                        className={`h-2 w-2 shrink-0 rounded-full ${row.hasChat === true ? "bg-sea" : row.hasChat === false ? "bg-slate-300" : "bg-amber-400"}`}
-                        title={row.hasChat === true && row.chatMessageCount !== null ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : row.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
+                        aria-label={displayRow.hasChat === true && displayRow.chatMessageCount !== null ? `Chat disponible: ${formatNumber(displayRow.chatMessageCount)} mensajes` : displayRow.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
+                        className={`h-2 w-2 shrink-0 rounded-full transition ${chatDotClass}`}
+                        title={displayRow.hasChat === true && displayRow.chatMessageCount !== null ? `Chat disponible: ${formatNumber(displayRow.chatMessageCount)} mensajes` : displayRow.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
                       />
                     </div>
                     <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>
@@ -1434,9 +1493,9 @@ function WeeklyBreakdownBlock({
                         {whatsappStatusLabel(row.whatsappStatus)}
                       </ValueBadge>
                     </div>
-                    {intentTooltipItems(row).length > 0 ? (
+                    {intentTooltipItems(displayRow).length > 0 ? (
                       <div className="pointer-events-none absolute left-2 top-full z-30 mt-2 hidden w-56 rounded-lg border border-[#d6e1ea] bg-white p-3 text-[11px] leading-4 text-slate-600 shadow-[0_12px_28px_rgba(2,53,116,0.16)] group-hover:block group-focus:block">
-                        {intentTooltipItems(row).map(([label, value]) => (
+                        {intentTooltipItems(displayRow).map(([label, value]) => (
                           <div key={label}>
                             <span className="font-medium text-navy">{label}:</span> {value}
                           </div>
