@@ -9,6 +9,7 @@ import {
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { MessageMemoryUploadCard } from "./message-memory-upload-card";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
+import { RecoveryAdminDataAccordion } from "./recovery-admin-data-accordion";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
@@ -70,18 +71,20 @@ export default async function RecuperacionPage() {
         <RecoveryCartAuditBlock />
       </Suspense>
 
-      <Suspense fallback={<RecoveryCompactLoading label="Cargando ultima carga..." />}>
-        <RecoveryLatestImportsBlock />
-      </Suspense>
+      <RecoveryAdminDataAccordion>
+        <Suspense fallback={<RecoveryCompactLoading label="Cargando ultima carga..." />}>
+          <RecoveryLatestImportsBlock />
+        </Suspense>
 
-      <PurchasesUploadMock />
-      <IncompleteBookingsUploadMock />
-      <TrackingUploadCard />
-      <MessageMemoryUploadCard />
+        <PurchasesUploadMock />
+        <IncompleteBookingsUploadMock />
+        <TrackingUploadCard />
+        <MessageMemoryUploadCard />
 
-      <Suspense fallback={<RecoveryCompactLoading label="Cargando historial de importaciones..." />}>
-        <RecoveryImportHistoryBlock />
-      </Suspense>
+        <Suspense fallback={<RecoveryCompactLoading label="Cargando historial de importaciones..." />}>
+          <RecoveryImportHistoryBlock />
+        </Suspense>
+      </RecoveryAdminDataAccordion>
     </DashboardShell>
   );
 }
