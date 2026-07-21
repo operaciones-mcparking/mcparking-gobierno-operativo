@@ -334,9 +334,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
       <div className="flex flex-col justify-between gap-3 border-b border-[#edf2f6] px-5 py-5 lg:flex-row lg:items-start">
         <div>
           <h2 className="text-base font-medium tracking-tight text-navy">Auditoria de carritos</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            Vista interna para revisar carritos recuperados y no recuperados. Muestra contacto normalizado; no incluye identificadores de reserva ni payloads.
-          </p>
         </div>
         <ValueBadge tone="info">{visibleRows.length} visibles</ValueBadge>
       </div>
@@ -426,12 +423,6 @@ export function RecoveryCartAuditTable({ error, rows }: RecoveryCartAuditTablePr
 
       {!error ? (
         <div className="border-b border-[#edf2f6] px-5 py-4">
-          <div className="mb-3">
-            <h3 className="text-sm font-medium text-navy">Conversaciones de la auditoria filtrada</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Calculado sobre los carritos que cumplen los filtros actuales.
-            </p>
-          </div>
           <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-6">
             {auditFunnelCards.map((item) => (
               <div className="relative rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-3" key={item.label}>
