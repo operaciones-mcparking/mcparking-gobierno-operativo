@@ -193,7 +193,8 @@ function intentTooltipItems(row: RecoveryCartAuditRow): Array<[string, string]> 
 
   if (row.lastInboundSentiment) items.push(["Sentimiento", row.lastInboundSentiment]);
   if (row.lastInboundChatState) items.push(["Chat", row.lastInboundChatState]);
-  if (row.hasChat) items.push(["Mensajes", formatNumber(row.chatMessageCount)]);
+  if (row.hasChat === true && row.chatMessageCount !== null) items.push(["Mensajes", formatNumber(row.chatMessageCount)]);
+  if (row.hasChat === null) items.push(["Chat", "Se carga al abrir la fila"]);
 
   return items;
 }
@@ -201,7 +202,7 @@ function intentTooltipItems(row: RecoveryCartAuditRow): Array<[string, string]> 
 function intentTooltipTitle(row: RecoveryCartAuditRow) {
   const items = intentTooltipItems(row);
 
-  if (items.length === 0) return row.hasChat ? "Chat disponible" : "Sin chat asociado";
+  if (items.length === 0) return row.hasChat === false ? "Sin chat asociado" : "Chat disponible bajo demanda";
 
   return items.map(([label, value]) => `${label}: ${value}`).join(" | ");
 }
@@ -1389,7 +1390,7 @@ function WeeklyBreakdownBlock({
             </thead>
             <tbody>
               {pageRows.map((row) => {
-                const canOpenChat = row.hasChat === true;
+                const canOpenChat = row.hasChat !== false;
 
                 return (
                 <tr
@@ -1414,9 +1415,9 @@ function WeeklyBreakdownBlock({
                     <div className="flex items-center gap-1.5 font-medium text-navy">
                       <span className="min-w-0 break-all">{row.email ?? "Sin correo"}</span>
                       <span
-                        aria-label={row.hasChat ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : "Sin chat asociado"}
-                        className={`h-2 w-2 shrink-0 rounded-full ${row.hasChat ? "bg-sea" : "bg-slate-300"}`}
-                        title={row.hasChat ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : "Sin chat asociado"}
+                        aria-label={row.hasChat === true && row.chatMessageCount !== null ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : row.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
+                        className={`h-2 w-2 shrink-0 rounded-full ${row.hasChat === true ? "bg-sea" : row.hasChat === false ? "bg-slate-300" : "bg-amber-400"}`}
+                        title={row.hasChat === true && row.chatMessageCount !== null ? `Chat disponible: ${formatNumber(row.chatMessageCount)} mensajes` : row.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
                       />
                     </div>
                     <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>

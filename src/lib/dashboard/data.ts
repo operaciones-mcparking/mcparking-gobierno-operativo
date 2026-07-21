@@ -353,10 +353,10 @@ export type RecoveryCartAuditRow = {
   audit_status: RecoveryCartAuditStatus;
   cart_form_datetime: string | null;
   cart_type: string | null;
-  chatMessageCount: number;
+  chatMessageCount: number | null;
   confidence: string | null;
   email: string | null;
-  hasChat: boolean;
+  hasChat: boolean | null;
   hours_to_purchase: number | null;
   id: string;
   intended_departure_date: string | null;
@@ -1728,15 +1728,6 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     tracking_status: RecoveryCartWhatsappStatus | null;
   };
 
-  type MessageMemoryIntentRow = {
-    chat_state: string | null;
-    intent_category: string | null;
-    message_at: string | null;
-    message_bound_type: string | null;
-    message_sentiment: string | null;
-    wa_id_normalized: string | null;
-  };
-
   function todayDateValue() {
     const today = new Date();
     const year = today.getFullYear();
@@ -1758,7 +1749,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   }
 
   async function fetchTrackingRowsByMessageIds(messageIds: string[]) {
-    const chunkSize = 25;
+    const chunkSize = 250;
     const rows: TrackingByMessageRow[] = [];
 
     for (let index = 0; index < messageIds.length; index += chunkSize) {
@@ -1784,51 +1775,8 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     return { data: rows, error: null };
   }
 
-  async function fetchMessageMemoryRows(cartsToMatch: CartAuditSourceRow[]) {
-    const phoneChunkSize = 25;
-    const cartsWithWindow = cartsToMatch.filter((cart) => cart.phone_normalized && cart.form_datetime);
-
-    if (cartsWithWindow.length === 0) {
-      return { data: [] as MessageMemoryIntentRow[], error: null };
-    }
-
-    const phoneValues = Array.from(
-      new Set(cartsWithWindow.map((cart) => cart.phone_normalized).filter(Boolean) as string[]),
-    );
-    const fromDates = cartsWithWindow
-      .map((cart) => new Date(cart.form_datetime as string))
-      .filter((date) => !Number.isNaN(date.getTime()));
-
-    if (phoneValues.length === 0 || fromDates.length === 0) {
-      return { data: [] as MessageMemoryIntentRow[], error: null };
-    }
-
-    const minDate = new Date(Math.min(...fromDates.map((date) => date.getTime())));
-    const maxDate = new Date(Math.max(...fromDates.map((date) => date.getTime())));
-    maxDate.setDate(maxDate.getDate() + 7);
-
-    const rows: MessageMemoryIntentRow[] = [];
-
-    for (let index = 0; index < phoneValues.length; index += phoneChunkSize) {
-      const chunk = phoneValues.slice(index, index + phoneChunkSize);
-      const { data, error } = await supabase
-        .from("recovery_whatsapp_message_memory_import")
-        .select("wa_id_normalized,message_at,message_bound_type,intent_category,message_sentiment,chat_state")
-        .in("wa_id_normalized", chunk)
-        .gte("message_at", minDate.toISOString())
-        .lt("message_at", maxDate.toISOString());
-
-      if (error) {
-        return { data: [] as MessageMemoryIntentRow[], error };
-      }
-
-      rows.push(...((data ?? []) as MessageMemoryIntentRow[]));
-    }
-
-    return { data: rows, error: null };
-  }
-
   const supabase = await createSupabaseAuthServerClient();
+  const auditStartedAt = Date.now();
   const auditDayStart = santiagoCalendarWeekStartIso(RECOVERY_AUDIT_WEEKS_TO_LOAD - 1);
   const auditDayEnd = santiagoNextCalendarWeekStartIso();
   const purchaseWindowEnd = addIsoDays(auditDayEnd, 7);
@@ -1847,10 +1795,11 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     return { data: [] as RecoveryCartAuditRow[], error: cartsResult.error };
   }
 
+  console.info(`[recuperacion] getRecoveryCartAuditRows:carts ${Date.now() - auditStartedAt}ms rows=${cartsResult.data.length}`);
   const cartRows = cartsResult.data.slice(0, limit);
   const messageIds = Array.from(new Set(cartRows.map((item) => item.message_id).filter(Boolean))) as string[];
 
-  const [purchasesResult, trackingResult, intentResult] = await Promise.all([
+  const [purchasesResult, trackingResult] = await Promise.all([
     cartRows.length > 0
       ? fetchPagedRecoveryRows<RecoveryAttributionPurchaseInput>(() =>
           supabase
@@ -1865,9 +1814,9 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     messageIds.length > 0
       ? fetchTrackingRowsByMessageIds(messageIds)
       : Promise.resolve({ data: [] as TrackingByMessageRow[], error: null }),
-    fetchMessageMemoryRows(cartRows),
   ]);
 
+  console.info(`[recuperacion] getRecoveryCartAuditRows:enrichment ${Date.now() - auditStartedAt}ms carts=${cartRows.length} messages=${messageIds.length}`);
   const attributionsByCartId = new Map(
     buildRecoveryAttributionMatches(
       cartRows,
@@ -1883,69 +1832,25 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     }
   }
 
-  const intentRowsByPhone = new Map<string, MessageMemoryIntentRow[]>();
-
-  if (!intentResult.error) {
-    for (const intentRow of (intentResult.data ?? []) as MessageMemoryIntentRow[]) {
-      if (!intentRow.wa_id_normalized) continue;
-      const rowsForPhone = intentRowsByPhone.get(intentRow.wa_id_normalized) ?? [];
-      rowsForPhone.push(intentRow);
-      intentRowsByPhone.set(intentRow.wa_id_normalized, rowsForPhone);
-    }
-  }
-
-  function findMessageMemoryRowsForCart(cart: CartAuditSourceRow) {
-    if (!cart.phone_normalized || !cart.form_datetime) return [];
-
-    const fromDate = new Date(cart.form_datetime);
-    const toDate = new Date(cart.form_datetime);
-    toDate.setDate(toDate.getDate() + 7);
-
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return [];
-
-    return (intentRowsByPhone.get(cart.phone_normalized) ?? []).filter((intentRow) => {
-      if (!intentRow.message_at) return false;
-      const messageDate = new Date(intentRow.message_at);
-      return messageDate >= fromDate && messageDate < toDate;
-    });
-  }
-
-  function findLastInboundIntent(cart: CartAuditSourceRow) {
-    let latestIntent: MessageMemoryIntentRow | null = null;
-
-    for (const intentRow of findMessageMemoryRowsForCart(cart)) {
-      if (intentRow.message_bound_type !== "inbound" || !intentRow.message_at) continue;
-
-      if (!latestIntent?.message_at || new Date(intentRow.message_at) > new Date(latestIntent.message_at)) {
-        latestIntent = intentRow;
-      }
-    }
-
-    return latestIntent;
-  }
-
   const auditRows = cartRows.map((cart) => {
     const attribution = attributionsByCartId.get(cart.id);
     const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
-    const messageMemoryRows = intentResult.error ? [] : findMessageMemoryRowsForCart(cart);
-    const lastInboundIntent = findLastInboundIntent(cart);
-    const chatMessageCount = messageMemoryRows.length;
 
     return {
       audit_status: resolveAuditStatus(attribution, cart.intended_departure_date),
       cart_form_datetime: cart.form_datetime,
       cart_type: cart.type,
-      chatMessageCount,
+      chatMessageCount: null,
       confidence: attribution?.confidence ?? null,
       email: cart.email_normalized,
-      hasChat: chatMessageCount > 0,
+      hasChat: null,
       hours_to_purchase: attribution?.hours_to_purchase ?? null,
       id: cart.id,
       intended_departure_date: cart.intended_departure_date,
-      lastInboundChatState: lastInboundIntent?.chat_state ?? null,
-      lastInboundIntentCategory: lastInboundIntent?.intent_category ?? null,
-      lastInboundMessageAt: lastInboundIntent?.message_at ?? null,
-      lastInboundSentiment: lastInboundIntent?.message_sentiment ?? null,
+      lastInboundChatState: null,
+      lastInboundIntentCategory: null,
+      lastInboundMessageAt: null,
+      lastInboundSentiment: null,
       message_sent: cart.message_sent,
       parking_code: cart.parking_code,
       phone: cart.phone_normalized,
@@ -1956,6 +1861,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     };
   });
 
+  console.info(`[recuperacion] getRecoveryCartAuditRows:total ${Date.now() - auditStartedAt}ms rows=${auditRows.length}`);
   return { data: auditRows, error: null };
 }
 export async function getRecoveryCartStatusSummary() {
