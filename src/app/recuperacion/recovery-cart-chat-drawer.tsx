@@ -16,9 +16,11 @@ type CartChatMessage = {
   messageAt: string;
   messageBoundType: string | null;
   messageSentiment: string | null;
+  messageSource: string | null;
   messageText: string | null;
   messageType: string | null;
   timeOfDay: string | null;
+  whatsappStatus: string | null;
 };
 
 type CartChatResponse = {
@@ -40,10 +42,19 @@ type CartChatResponse = {
   summary?: {
     hasConversation: boolean;
     inboundMessages: number;
+    liveMessages?: number;
     outboundMessages: number;
-    source: "metadata" | "raw";
+    source: "metadata" | "raw" | "live";
     totalMessages: number;
   };
+};
+
+type SendChatResponse = {
+  error?: string;
+  message?: CartChatMessage;
+  ok: boolean;
+  stage?: string;
+  warning?: string;
 };
 
 type RecoveryCartChatDrawerProps = {
@@ -108,6 +119,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [data, setData] = useState<CartChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!copyFeedback) {
@@ -130,6 +144,8 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     async function loadChat() {
       setData(null);
       setError(null);
+      setSendError(null);
+      setMessageDraft("");
       setIsLoading(true);
 
       try {
@@ -189,6 +205,8 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const messages = data?.messages ?? [];
   const summary = data?.summary;
   const isRawChat = summary?.source === "raw";
+  const hasLiveMessages = (summary?.liveMessages ?? 0) > 0 || summary?.source === "live";
+  const isSensitiveChat = isRawChat || hasLiveMessages;
   const cart = data?.cart;
   const cmsUrl = safeHttpUrl(cart?.cmsUrl);
   const chatUrl = whatsappUrl(cart?.phone);
@@ -204,6 +222,73 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     }
   }
 
+  async function sendMessage() {
+    if (!cartId || isSending) return;
+
+    const messageText = messageDraft.trim();
+
+    if (!messageText) {
+      setSendError("Escribe un mensaje antes de enviar.");
+      return;
+    }
+
+    setIsSending(true);
+    setSendError(null);
+
+    try {
+      const response = await fetch("/api/recuperacion/carritos/" + encodeURIComponent(cartId) + "/chat/send", {
+        body: JSON.stringify({ messageText }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as SendChatResponse;
+
+      if (payload.message) {
+        setData((current) => {
+          if (!current) return current;
+
+          const nextMessages = [...(current.messages ?? []), payload.message as CartChatMessage].sort(
+            (left, right) => new Date(left.messageAt).getTime() - new Date(right.messageAt).getTime(),
+          );
+          const nextSummary = current.summary
+            ? {
+                ...current.summary,
+                hasConversation: true,
+                liveMessages: (current.summary.liveMessages ?? 0) + 1,
+                outboundMessages: current.summary.outboundMessages + 1,
+                source: current.summary.source === "metadata" ? "live" : current.summary.source,
+                totalMessages: current.summary.totalMessages + 1,
+              }
+            : {
+                hasConversation: true,
+                inboundMessages: 0,
+                liveMessages: 1,
+                outboundMessages: 1,
+                source: "live" as const,
+                totalMessages: 1,
+              };
+
+          return { ...current, messages: nextMessages, summary: nextSummary };
+        });
+      }
+
+      if (!response.ok || !payload.ok) {
+        setSendError(payload.error ?? "No se pudo enviar el mensaje.");
+        return;
+      }
+
+      setMessageDraft("");
+
+      if (payload.warning) {
+        setSendError(payload.warning);
+      }
+    } catch {
+      setSendError("No se pudo conectar con el endpoint de envio.");
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-[#0f172a]/35" onClick={onClose}>
       <div
@@ -215,7 +300,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <div className="flex items-center gap-2 text-navy">
               <MessageCircle className="h-4 w-4 text-teal-700" />
               <h2 className="text-base font-medium tracking-tight">
-                {isRawChat ? "Chat real" : "Chat metadata-only"}
+                {isSensitiveChat ? "Chat real" : "Chat metadata-only"}
               </h2>
             </div>
             <p className="mt-1 text-sm leading-5 text-slate-600">
@@ -239,6 +324,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <ValueBadge tone="info">{data?.cart?.type ?? "Carrito"}</ValueBadge>
             <ValueBadge tone="neutral">{data?.cart?.parkingCode ?? "Sin parking"}</ValueBadge>
             {summary ? <ValueBadge tone="success">{formatNumber(summary.totalMessages)} mensajes</ValueBadge> : null}
+            {summary?.liveMessages ? <ValueBadge tone="info">{formatNumber(summary.liveMessages)} live</ValueBadge> : null}
           </div>
           <p className="mt-2 text-xs leading-5 text-slate-500">
             Ventana: {formatDateTime(data?.cart?.windowStart ?? null)} - {formatDateTime(data?.cart?.windowEnd ?? null)}
@@ -380,6 +466,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                         ) : null}
                         {message.chatState ? <ValueBadge tone="neutral">Estado: {message.chatState}</ValueBadge> : null}
                         {message.messageType ? <ValueBadge tone="neutral">Tipo: {message.messageType}</ValueBadge> : null}
+                        {message.whatsappStatus ? <ValueBadge tone="neutral">Estado WhatsApp: {message.whatsappStatus}</ValueBadge> : null}
                       </div>
                       <p className="mt-3 text-right text-[11px] text-slate-500">{formatDateTime(message.messageAt)}</p>
                     </article>
@@ -387,6 +474,45 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 );
               })}
             </div>
+          ) : null}
+        </div>
+
+        <div className="border-t border-[#e7f0ec] bg-white px-5 py-4">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="recovery-chat-message">
+            Responder por WhatsApp
+          </label>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+            <textarea
+              className="min-h-[76px] flex-1 resize-none rounded-xl border border-[#d8e7e1] bg-[#fbfefd] px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400"
+              disabled={isSending || !cart?.phone}
+              id="recovery-chat-message"
+              maxLength={4096}
+              onChange={(event) => setMessageDraft(event.target.value)}
+              placeholder={cart?.phone ? "Escribe una respuesta para el cliente..." : "Este carrito no tiene telefono normalizado."}
+              value={messageDraft}
+            />
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              disabled={isSending || !cart?.phone || messageDraft.trim().length === 0}
+              onClick={() => void sendMessage()}
+              type="button"
+            >
+              {isSending ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Enviar
+            </button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <span>Envio server-side via n8n. No se expone token en el navegador.</span>
+            <span>{messageDraft.length}/4096</span>
+          </div>
+          {sendError ? (
+            <p className="mt-2 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-medium text-[#92400e]">
+              {sendError}
+            </p>
           ) : null}
         </div>
 
