@@ -432,6 +432,163 @@ function santiagoCalendarDaysAgoStartIso(days: number) {
   );
 }
 
+type RecoveryAttributionCartInput = {
+  email_normalized: string | null;
+  form_datetime: string | null;
+  id: string;
+  message_sent: boolean | null;
+  parking_code: string | null;
+  phone_normalized: string | null;
+  type: string | null;
+};
+
+type RecoveryAttributionPurchaseInput = {
+  booking_created_at: string | null;
+  email_normalized: string | null;
+  id: string;
+  phone_normalized: string | null;
+  price: number | null;
+};
+
+type RecoveryAttributionMatch = RecentRecoveryAttributionCase & {
+  cart_id: string;
+  purchase_id: string;
+};
+
+function addIsoDays(isoValue: string, days: number) {
+  const date = new Date(isoValue);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString();
+}
+
+function santiagoCalendarDaysFromNowStartIso(days: number) {
+  const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
+  const startDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
+  startDate.setUTCDate(startDate.getUTCDate() + days);
+
+  return zonedMidnightToUtcIso(
+    RECOVERY_TIME_ZONE,
+    startDate.getUTCFullYear(),
+    startDate.getUTCMonth() + 1,
+    startDate.getUTCDate(),
+  );
+}
+
+function buildRecoveryAttributionMatches(
+  carts: RecoveryAttributionCartInput[],
+  purchases: RecoveryAttributionPurchaseInput[],
+) {
+  type CandidateMatch = RecoveryAttributionMatch & { confidence_rank: number };
+
+  function buildCandidate(
+    cart: RecoveryAttributionCartInput,
+    purchase: RecoveryAttributionPurchaseInput,
+  ): CandidateMatch | null {
+    if (!cart.form_datetime || !purchase.booking_created_at) return null;
+
+    const cartDate = new Date(cart.form_datetime);
+    const purchaseDate = new Date(purchase.booking_created_at);
+
+    if (Number.isNaN(cartDate.getTime()) || Number.isNaN(purchaseDate.getTime())) return null;
+    if (purchaseDate < cartDate) return null;
+
+    const recoveryWindowEnd = new Date(cartDate);
+    recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
+    if (purchaseDate >= recoveryWindowEnd) return null;
+
+    const emailMatches = Boolean(
+      cart.email_normalized && purchase.email_normalized && cart.email_normalized === purchase.email_normalized,
+    );
+    const phoneMatches = Boolean(
+      cart.phone_normalized && purchase.phone_normalized && cart.phone_normalized === purchase.phone_normalized,
+    );
+
+    if (!emailMatches && !phoneMatches) return null;
+
+    const confidence = emailMatches && phoneMatches ? "high" : phoneMatches ? "medium" : "low";
+    const confidenceRank = confidence === "high" ? 1 : confidence === "medium" ? 2 : 3;
+    const hoursToPurchase = Math.round(((purchaseDate.getTime() - cartDate.getTime()) / 3_600_000) * 100) / 100;
+
+    return {
+      cart_form_datetime: cart.form_datetime,
+      cart_id: cart.id,
+      cart_type: cart.type,
+      confidence,
+      confidence_rank: confidenceRank,
+      email: cart.email_normalized ?? purchase.email_normalized ?? null,
+      hours_to_purchase: hoursToPurchase,
+      match_type: confidence === "high" ? "email_phone" : confidence === "medium" ? "phone" : "email",
+      message_sent: cart.message_sent ?? null,
+      parking_code: cart.parking_code,
+      phone: cart.phone_normalized ?? purchase.phone_normalized ?? null,
+      purchase_amount: Number(purchase.price ?? 0),
+      purchase_created_at: purchase.booking_created_at,
+      purchase_id: purchase.id,
+      recovered_24h: hoursToPurchase <= 24,
+      recovered_48h: hoursToPurchase <= 48,
+      recovered_7d: true,
+    };
+  }
+
+  const candidates: CandidateMatch[] = [];
+
+  for (const cart of carts) {
+    for (const purchase of purchases) {
+      const candidate = buildCandidate(cart, purchase);
+      if (candidate) candidates.push(candidate);
+    }
+  }
+
+  const bestByPurchase = new Map<string, CandidateMatch>();
+
+  for (const candidate of candidates) {
+    const current = bestByPurchase.get(candidate.purchase_id);
+
+    if (!current) {
+      bestByPurchase.set(candidate.purchase_id, candidate);
+      continue;
+    }
+
+    const candidateCartTime = candidate.cart_form_datetime ? new Date(candidate.cart_form_datetime).getTime() : 0;
+    const currentCartTime = current.cart_form_datetime ? new Date(current.cart_form_datetime).getTime() : 0;
+
+    if (
+      candidateCartTime > currentCartTime ||
+      (candidateCartTime === currentCartTime && candidate.confidence_rank < current.confidence_rank) ||
+      (candidateCartTime === currentCartTime &&
+        candidate.confidence_rank === current.confidence_rank &&
+        candidate.cart_id.localeCompare(current.cart_id) < 0)
+    ) {
+      bestByPurchase.set(candidate.purchase_id, candidate);
+    }
+  }
+
+  const bestByCart = new Map<string, CandidateMatch>();
+
+  for (const candidate of bestByPurchase.values()) {
+    const current = bestByCart.get(candidate.cart_id);
+
+    if (!current) {
+      bestByCart.set(candidate.cart_id, candidate);
+      continue;
+    }
+
+    const candidatePurchaseTime = candidate.purchase_created_at ? new Date(candidate.purchase_created_at).getTime() : 0;
+    const currentPurchaseTime = current.purchase_created_at ? new Date(current.purchase_created_at).getTime() : 0;
+
+    if (
+      candidatePurchaseTime < currentPurchaseTime ||
+      (candidatePurchaseTime === currentPurchaseTime && candidate.confidence_rank < current.confidence_rank) ||
+      (candidatePurchaseTime === currentPurchaseTime &&
+        candidate.confidence_rank === current.confidence_rank &&
+        candidate.purchase_id.localeCompare(current.purchase_id) < 0)
+    ) {
+      bestByCart.set(candidate.cart_id, candidate);
+    }
+  }
+
+  return Array.from(bestByCart.values());
+}
 export type RecoveryConversationIntentSummaryItem = {
   cart_count: number;
   intent_category: string;
@@ -1350,98 +1507,38 @@ export async function getRecentRecoveryAttributionCases(limit = 20) {
 export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   noStore();
 
-  type AttributionDashboardRow = RecentRecoveryAttributionCase & {
-    cart_id: string | null;
-    purchase_id: string | null;
-  };
+  type CartSegmentRow = RecoveryAttributionCartInput;
+  type PurchaseRow = RecoveryAttributionPurchaseInput;
 
-  type CartSegmentRow = {
-    form_datetime: string | null;
-    id: string;
-    parking_code: string | null;
-    type: string | null;
-  };
-
-  type ContactRow = {
-    email_normalized: string | null;
-    id: string;
-    phone_normalized: string | null;
-  };
-
-  const pageSize = 1000;
   const recentCartsStart = santiagoCalendarDaysAgoStartIso(7);
+  const recentCartsEnd = santiagoCalendarDaysFromNowStartIso(1);
+  const purchasesEnd = addIsoDays(recentCartsEnd, 7);
   const supabase = await createSupabaseAuthServerClient();
 
-  async function fetchAllRows<T>(queryFactory: () => unknown) {
-    const rows: T[] = [];
-    let from = 0;
-
-    while (true) {
-      const query = queryFactory() as {
-        range: (
-          from: number,
-          to: number,
-        ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-      };
-      const { data, error } = await query.range(from, from + pageSize - 1);
-
-      if (error) {
-        return { data: [] as T[], error };
-      }
-
-      const page = data ?? [];
-      rows.push(...page);
-
-      if (page.length < pageSize) {
-        return { data: rows, error: null };
-      }
-
-      from += pageSize;
-    }
-  }
-
-  const [
-    { count: totalCarts, error: totalCartsError },
-    { data: attributionRows, error: attributionError },
-    { data: cartSegments, error: cartSegmentsError },
-  ] = await Promise.all([
+  const [cartsResult, purchasesResult] = await Promise.all([
     supabase
       .from("recovery_incomplete_bookings_import")
-      .select("id", { count: "exact", head: true })
-      .gte("form_datetime", recentCartsStart),
-    fetchAllRows<AttributionDashboardRow>(() =>
-      supabase
-        .from("v_recovery_attribution_cases")
-        .select(
-          "cart_id,purchase_id,cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
-        )
-        .gte("cart_form_datetime", recentCartsStart)
-        .order("cart_id", { ascending: true }),
-    ),
-    fetchAllRows<CartSegmentRow>(() =>
-      supabase
-        .from("recovery_incomplete_bookings_import")
-        .select("id,type,parking_code,form_datetime")
-        .gte("form_datetime", recentCartsStart)
-        .order("id", { ascending: true }),
-    ),
+      .select("id,type,parking_code,form_datetime,message_sent,email_normalized,phone_normalized")
+      .gte("form_datetime", recentCartsStart)
+      .lt("form_datetime", recentCartsEnd)
+      .order("form_datetime", { ascending: true }),
+    supabase
+      .from("recovery_bookings_import")
+      .select("id,booking_created_at,price,email_normalized,phone_normalized")
+      .eq("is_valid_purchase", true)
+      .gte("booking_created_at", recentCartsStart)
+      .lt("booking_created_at", purchasesEnd)
+      .order("booking_created_at", { ascending: true }),
   ]);
 
-  if (totalCartsError) {
-    return { data: null as RecoveryAttributionDashboardData | null, error: totalCartsError };
+  if (cartsResult.error) {
+    return { data: null as RecoveryAttributionDashboardData | null, error: cartsResult.error };
   }
 
-  if (attributionError) {
-    return { data: null as RecoveryAttributionDashboardData | null, error: attributionError };
-  }
-
-  if (cartSegmentsError) {
-    return { data: null as RecoveryAttributionDashboardData | null, error: cartSegmentsError };
-  }
-
-  const cases = attributionRows ?? [];
-  const carts = cartSegments ?? [];
-  const totalCarritos = totalCarts ?? 0;
+  const carts = (cartsResult.data ?? []) as CartSegmentRow[];
+  const purchases = purchasesResult.error ? [] : ((purchasesResult.data ?? []) as PurchaseRow[]);
+  const cases = buildRecoveryAttributionMatches(carts, purchases);
+  const totalCarritos = carts.length;
   const recuperados24h = cases.filter((item) => item.recovered_24h).length;
   const recuperados48h = cases.filter((item) => item.recovered_48h).length;
   const recuperados7d = cases.filter((item) => item.recovered_7d).length;
@@ -1457,7 +1554,7 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   }
 
   function buildGroup(
-    keyForCase: (item: AttributionDashboardRow) => string,
+    keyForCase: (item: RecoveryAttributionMatch) => string,
     preferredOrder: string[] = [],
     segmentTotals?: Map<string, number>,
   ): RecoveryAttributionBreakdownItem[] {
@@ -1497,57 +1594,15 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
       });
   }
 
-  const recentRows = [...cases]
+  const recentCases = [...cases]
     .sort((left, right) => {
       const leftTime = left.purchase_created_at ? new Date(left.purchase_created_at).getTime() : 0;
       const rightTime = right.purchase_created_at ? new Date(right.purchase_created_at).getTime() : 0;
 
       return rightTime - leftTime;
     })
-    .slice(0, recentLimit);
-  const cartIds = Array.from(new Set(recentRows.map((item) => item.cart_id).filter(Boolean))) as string[];
-  const purchaseIds = Array.from(new Set(recentRows.map((item) => item.purchase_id).filter(Boolean))) as string[];
-
-  const [cartContactsResult, purchaseContactsResult] = await Promise.all([
-    cartIds.length > 0
-      ? supabase
-          .from("recovery_incomplete_bookings_import")
-          .select("id,email_normalized,phone_normalized")
-          .in("id", cartIds)
-      : Promise.resolve({ data: [] as ContactRow[], error: null }),
-    purchaseIds.length > 0
-      ? supabase
-          .from("recovery_bookings_import")
-          .select("id,email_normalized,phone_normalized")
-          .in("id", purchaseIds)
-      : Promise.resolve({ data: [] as ContactRow[], error: null }),
-  ]);
-
-  if (cartContactsResult.error) {
-    return { data: null as RecoveryAttributionDashboardData | null, error: cartContactsResult.error };
-  }
-
-  if (purchaseContactsResult.error) {
-    return { data: null as RecoveryAttributionDashboardData | null, error: purchaseContactsResult.error };
-  }
-
-  const cartContacts = new Map(
-    ((cartContactsResult.data ?? []) as ContactRow[]).map((item) => [item.id, item]),
-  );
-  const purchaseContacts = new Map(
-    ((purchaseContactsResult.data ?? []) as ContactRow[]).map((item) => [item.id, item]),
-  );
-  const recentCases = recentRows.map((item) => {
-    const cartContact = item.cart_id ? cartContacts.get(item.cart_id) : undefined;
-    const purchaseContact = item.purchase_id ? purchaseContacts.get(item.purchase_id) : undefined;
-    const { cart_id: _cartId, purchase_id: _purchaseId, ...safeItem } = item;
-
-    return {
-      ...safeItem,
-      email: cartContact?.email_normalized ?? purchaseContact?.email_normalized ?? null,
-      phone: cartContact?.phone_normalized ?? purchaseContact?.phone_normalized ?? null,
-    };
-  });
+    .slice(0, recentLimit)
+    .map(({ cart_id: _cartId, purchase_id: _purchaseId, ...safeItem }) => safeItem);
 
   return {
     data: {
@@ -1581,29 +1636,15 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
     error: null,
   };
 }
-
-export async function getRecoveryCartAuditRows(limit = 300) {
+export async function getRecoveryCartAuditRows(limit = 2000) {
   noStore();
 
-  type CartAuditSourceRow = {
-    email_normalized: string | null;
-    form_datetime: string | null;
-    id: string;
+  type CartAuditSourceRow = RecoveryAttributionCartInput & {
     intended_departure_date: string | null;
     message_id: string | null;
-    message_sent: boolean | null;
-    parking_code: string | null;
-    phone_normalized: string | null;
-    type: string | null;
   };
 
-  type AttributionByCartRow = {
-    cart_id: string | null;
-    confidence: string | null;
-    hours_to_purchase: number | null;
-    purchase_amount: number | null;
-    purchase_created_at: string | null;
-  };
+  type AttributionByCartRow = RecoveryAttributionMatch;
 
   type TrackingByMessageRow = {
     created_at: string | null;
@@ -1667,7 +1708,6 @@ export async function getRecoveryCartAuditRows(limit = 300) {
     return { data: rows, error: null };
   }
 
-
   async function fetchMessageMemoryRows(cartsToMatch: CartAuditSourceRow[]) {
     const phoneChunkSize = 25;
     const cartsWithWindow = cartsToMatch.filter((cart) => cart.phone_normalized && cart.form_datetime);
@@ -1713,11 +1753,16 @@ export async function getRecoveryCartAuditRows(limit = 300) {
   }
 
   const supabase = await createSupabaseAuthServerClient();
+  const auditDayStart = santiagoCalendarDaysAgoStartIso(7);
+  const auditDayEnd = santiagoCalendarDaysFromNowStartIso(1);
+  const purchaseWindowEnd = addIsoDays(auditDayEnd, 7);
   const { data: carts, error: cartsError } = await supabase
     .from("recovery_incomplete_bookings_import")
     .select(
       "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_departure_date",
     )
+    .gte("form_datetime", auditDayStart)
+    .lt("form_datetime", auditDayEnd)
     .order("form_datetime", { ascending: false })
     .limit(limit);
 
@@ -1726,40 +1771,37 @@ export async function getRecoveryCartAuditRows(limit = 300) {
   }
 
   const cartRows = (carts ?? []) as CartAuditSourceRow[];
-  const cartIds = Array.from(new Set(cartRows.map((item) => item.id).filter(Boolean)));
   const messageIds = Array.from(new Set(cartRows.map((item) => item.message_id).filter(Boolean))) as string[];
 
-  const [attributionsResult, trackingResult, intentResult] = await Promise.all([
-    cartIds.length > 0
+  const [purchasesResult, trackingResult, intentResult] = await Promise.all([
+    cartRows.length > 0
       ? supabase
-          .from("v_recovery_attribution_cases")
-          .select("cart_id,purchase_created_at,purchase_amount,hours_to_purchase,confidence")
-          .in("cart_id", cartIds)
-      : Promise.resolve({ data: [] as AttributionByCartRow[], error: null }),
+          .from("recovery_bookings_import")
+          .select("id,booking_created_at,price,email_normalized,phone_normalized")
+          .eq("is_valid_purchase", true)
+          .gte("booking_created_at", auditDayStart)
+          .lt("booking_created_at", purchaseWindowEnd)
+          .order("booking_created_at", { ascending: true })
+      : Promise.resolve({ data: [] as RecoveryAttributionPurchaseInput[], error: null }),
     messageIds.length > 0
       ? fetchTrackingRowsByMessageIds(messageIds)
       : Promise.resolve({ data: [] as TrackingByMessageRow[], error: null }),
     fetchMessageMemoryRows(cartRows),
   ]);
 
-  if (attributionsResult.error) {
-    return { data: [] as RecoveryCartAuditRow[], error: attributionsResult.error };
-  }
-
-  if (trackingResult.error) {
-    return { data: [] as RecoveryCartAuditRow[], error: trackingResult.error };
-  }
-
   const attributionsByCartId = new Map(
-    ((attributionsResult.data ?? []) as AttributionByCartRow[])
-      .filter((item) => item.cart_id)
-      .map((item) => [item.cart_id as string, item]),
+    buildRecoveryAttributionMatches(
+      cartRows,
+      purchasesResult.error ? [] : ((purchasesResult.data ?? []) as RecoveryAttributionPurchaseInput[]),
+    ).map((item) => [item.cart_id, item]),
   );
   const trackingByMessageId = new Map<string, TrackingByMessageRow>();
 
-  for (const tracking of (trackingResult.data ?? []) as TrackingByMessageRow[]) {
-    if (!tracking.message_id || trackingByMessageId.has(tracking.message_id)) continue;
-    trackingByMessageId.set(tracking.message_id, tracking);
+  if (!trackingResult.error) {
+    for (const tracking of (trackingResult.data ?? []) as TrackingByMessageRow[]) {
+      if (!tracking.message_id || trackingByMessageId.has(tracking.message_id)) continue;
+      trackingByMessageId.set(tracking.message_id, tracking);
+    }
   }
 
   const intentRowsByPhone = new Map<string, MessageMemoryIntentRow[]>();
@@ -1837,7 +1879,6 @@ export async function getRecoveryCartAuditRows(limit = 300) {
 
   return { data: auditRows, error: null };
 }
-
 export async function getRecoveryCartStatusSummary() {
   noStore();
 
