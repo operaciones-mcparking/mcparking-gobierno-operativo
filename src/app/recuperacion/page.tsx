@@ -2,14 +2,12 @@ import { DashboardShell } from "@/components/dashboard/shell";
 import { requireAdminAccess } from "@/lib/auth/admin";
 import {
   getRecoveryCartAuditRows,
-  getRecoveryAttributionDashboardData,
   getRecoveryImportHistory,
   getRecoveryLatestImportsSummary,
 } from "@/lib/dashboard/data";
 import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
 import { MessageMemoryUploadCard } from "./message-memory-upload-card";
 import { PurchasesUploadMock } from "./purchases-upload-mock";
-import { RecoveryAttributionBreakdown } from "./recovery-attribution-breakdown";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
@@ -20,12 +18,10 @@ export default async function RecuperacionPage() {
 
   const [
     { data: importHistory, error: importHistoryError },
-    { data: attributionDashboard, error: attributionDashboardError },
     { data: latestImportsSummary, error: latestImportsSummaryError },
     { data: cartAuditRows, error: cartAuditRowsError },
   ] = await Promise.all([
     getRecoveryImportHistory(),
-    getRecoveryAttributionDashboardData(),
     getRecoveryLatestImportsSummary(),
     getRecoveryCartAuditRows(),
   ]);
@@ -37,10 +33,6 @@ export default async function RecuperacionPage() {
       eyebrow="Recuperación"
       title="Recuperación de carritos"
     >
-      <RecoveryAttributionBreakdown
-        breakdown={attributionDashboard?.breakdown ?? null}
-        error={attributionDashboardError?.message ?? null}
-      />
 
       <RecoveryCartAuditTable
         error={cartAuditRowsError?.message ?? null}

@@ -378,6 +378,7 @@ export type RecoveryCartStatusSummary = Record<RecoveryCartAuditStatus, number> 
 };
 
 const RECOVERY_TIME_ZONE = "America/Santiago";
+const RECOVERY_AUDIT_WEEKS_TO_LOAD = 8;
 
 function timeZoneParts(timeZone: string, date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -417,6 +418,26 @@ function zonedMidnightToUtcIso(timeZone: string, year: number, month: number, da
   const secondPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, firstPass));
 
   return secondPass.toISOString();
+}
+
+
+function santiagoCalendarWeekStartIso(weeksAgo: number) {
+  const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
+  const startDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
+  const dayOfWeek = startDate.getUTCDay();
+  const daysSinceMonday = (dayOfWeek + 6) % 7;
+  startDate.setUTCDate(startDate.getUTCDate() - daysSinceMonday - Math.max(weeksAgo, 0) * 7);
+
+  return zonedMidnightToUtcIso(
+    RECOVERY_TIME_ZONE,
+    startDate.getUTCFullYear(),
+    startDate.getUTCMonth() + 1,
+    startDate.getUTCDate(),
+  );
+}
+
+function santiagoNextCalendarWeekStartIso() {
+  return addIsoDays(santiagoCalendarWeekStartIso(0), 7);
 }
 
 function santiagoCalendarDaysAgoStartIso(days: number) {
@@ -1808,8 +1829,8 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   }
 
   const supabase = await createSupabaseAuthServerClient();
-  const auditDayStart = santiagoCalendarDaysAgoStartIso(7);
-  const auditDayEnd = santiagoCalendarDaysFromNowStartIso(1);
+  const auditDayStart = santiagoCalendarWeekStartIso(RECOVERY_AUDIT_WEEKS_TO_LOAD - 1);
+  const auditDayEnd = santiagoNextCalendarWeekStartIso();
   const purchaseWindowEnd = addIsoDays(auditDayEnd, 7);
   const cartsResult = await fetchPagedRecoveryRows<CartAuditSourceRow>(() =>
     supabase
