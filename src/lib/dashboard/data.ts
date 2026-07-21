@@ -461,6 +461,33 @@ function addIsoDays(isoValue: string, days: number) {
   return date.toISOString();
 }
 
+async function fetchPagedRecoveryRows<T>(queryFactory: () => unknown, pageSize = 1000) {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const query = queryFactory() as {
+      range: (
+        from: number,
+        to: number,
+      ) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
+    };
+    const { data, error } = await query.range(from, from + pageSize - 1);
+
+    if (error) {
+      return { data: [] as T[], error };
+    }
+
+    const page = data ?? [];
+    rows.push(...page);
+
+    if (page.length < pageSize) {
+      return { data: rows, error: null };
+    }
+
+    from += pageSize;
+  }
+}
 function santiagoCalendarDaysFromNowStartIso(days: number) {
   const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
   const startDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
@@ -478,7 +505,22 @@ function buildRecoveryAttributionMatches(
   carts: RecoveryAttributionCartInput[],
   purchases: RecoveryAttributionPurchaseInput[],
 ) {
-  type CandidateMatch = RecoveryAttributionMatch & { confidence_rank: number };
+  type CandidateMatch = RecoveryAttributionMatch & { confidence_rank: number; cart_type_rank: number };
+
+  function comparableEmail(value: string | null) {
+    return value?.trim().toLowerCase() || null;
+  }
+
+  function comparablePhone(value: string | null) {
+    const digits = value?.replace(/\D/g, "") ?? "";
+    return digits || null;
+  }
+
+  function cartTypeRank(type: string | null) {
+    if (type === "canceled") return 1;
+    if (type === "abandoned") return 2;
+    return 3;
+  }
 
   function buildCandidate(
     cart: RecoveryAttributionCartInput,
@@ -496,12 +538,12 @@ function buildRecoveryAttributionMatches(
     recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
     if (purchaseDate >= recoveryWindowEnd) return null;
 
-    const emailMatches = Boolean(
-      cart.email_normalized && purchase.email_normalized && cart.email_normalized === purchase.email_normalized,
-    );
-    const phoneMatches = Boolean(
-      cart.phone_normalized && purchase.phone_normalized && cart.phone_normalized === purchase.phone_normalized,
-    );
+    const cartEmail = comparableEmail(cart.email_normalized);
+    const purchaseEmail = comparableEmail(purchase.email_normalized);
+    const cartPhone = comparablePhone(cart.phone_normalized);
+    const purchasePhone = comparablePhone(purchase.phone_normalized);
+    const emailMatches = Boolean(cartEmail && purchaseEmail && cartEmail === purchaseEmail);
+    const phoneMatches = Boolean(cartPhone && purchasePhone && cartPhone === purchasePhone);
 
     if (!emailMatches && !phoneMatches) return null;
 
@@ -515,6 +557,7 @@ function buildRecoveryAttributionMatches(
       cart_type: cart.type,
       confidence,
       confidence_rank: confidenceRank,
+      cart_type_rank: cartTypeRank(cart.type),
       email: cart.email_normalized ?? purchase.email_normalized ?? null,
       hours_to_purchase: hoursToPurchase,
       match_type: confidence === "high" ? "email_phone" : confidence === "medium" ? "phone" : "email",
@@ -557,6 +600,10 @@ function buildRecoveryAttributionMatches(
       (candidateCartTime === currentCartTime && candidate.confidence_rank < current.confidence_rank) ||
       (candidateCartTime === currentCartTime &&
         candidate.confidence_rank === current.confidence_rank &&
+        candidate.cart_type_rank < current.cart_type_rank) ||
+      (candidateCartTime === currentCartTime &&
+        candidate.confidence_rank === current.confidence_rank &&
+        candidate.cart_type_rank === current.cart_type_rank &&
         candidate.cart_id.localeCompare(current.cart_id) < 0)
     ) {
       bestByPurchase.set(candidate.purchase_id, candidate);
@@ -587,7 +634,11 @@ function buildRecoveryAttributionMatches(
     }
   }
 
-  return Array.from(bestByCart.values());
+  return Array.from(bestByCart.values()).map(({
+    confidence_rank: _confidenceRank,
+    cart_type_rank: _cartTypeRank,
+    ...match
+  }) => match);
 }
 export type RecoveryConversationIntentSummaryItem = {
   cart_count: number;
@@ -1516,19 +1567,23 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   const supabase = await createSupabaseAuthServerClient();
 
   const [cartsResult, purchasesResult] = await Promise.all([
-    supabase
-      .from("recovery_incomplete_bookings_import")
-      .select("id,type,parking_code,form_datetime,message_sent,email_normalized,phone_normalized")
-      .gte("form_datetime", recentCartsStart)
-      .lt("form_datetime", recentCartsEnd)
-      .order("form_datetime", { ascending: true }),
-    supabase
-      .from("recovery_bookings_import")
-      .select("id,booking_created_at,price,email_normalized,phone_normalized")
-      .eq("is_valid_purchase", true)
-      .gte("booking_created_at", recentCartsStart)
-      .lt("booking_created_at", purchasesEnd)
-      .order("booking_created_at", { ascending: true }),
+    fetchPagedRecoveryRows<CartSegmentRow>(() =>
+      supabase
+        .from("recovery_incomplete_bookings_import")
+        .select("id,type,parking_code,form_datetime,message_sent,email_normalized,phone_normalized")
+        .gte("form_datetime", recentCartsStart)
+        .lt("form_datetime", recentCartsEnd)
+        .order("form_datetime", { ascending: true }),
+    ),
+    fetchPagedRecoveryRows<PurchaseRow>(() =>
+      supabase
+        .from("recovery_bookings_import")
+        .select("id,booking_created_at,price,email_normalized,phone_normalized")
+        .eq("is_valid_purchase", true)
+        .gte("booking_created_at", recentCartsStart)
+        .lt("booking_created_at", purchasesEnd)
+        .order("booking_created_at", { ascending: true }),
+    ),
   ]);
 
   if (cartsResult.error) {
@@ -1756,32 +1811,35 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   const auditDayStart = santiagoCalendarDaysAgoStartIso(7);
   const auditDayEnd = santiagoCalendarDaysFromNowStartIso(1);
   const purchaseWindowEnd = addIsoDays(auditDayEnd, 7);
-  const { data: carts, error: cartsError } = await supabase
-    .from("recovery_incomplete_bookings_import")
-    .select(
-      "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_departure_date",
-    )
-    .gte("form_datetime", auditDayStart)
-    .lt("form_datetime", auditDayEnd)
-    .order("form_datetime", { ascending: false })
-    .limit(limit);
+  const cartsResult = await fetchPagedRecoveryRows<CartAuditSourceRow>(() =>
+    supabase
+      .from("recovery_incomplete_bookings_import")
+      .select(
+        "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_departure_date",
+      )
+      .gte("form_datetime", auditDayStart)
+      .lt("form_datetime", auditDayEnd)
+      .order("form_datetime", { ascending: false }),
+  );
 
-  if (cartsError) {
-    return { data: [] as RecoveryCartAuditRow[], error: cartsError };
+  if (cartsResult.error) {
+    return { data: [] as RecoveryCartAuditRow[], error: cartsResult.error };
   }
 
-  const cartRows = (carts ?? []) as CartAuditSourceRow[];
+  const cartRows = cartsResult.data.slice(0, limit);
   const messageIds = Array.from(new Set(cartRows.map((item) => item.message_id).filter(Boolean))) as string[];
 
   const [purchasesResult, trackingResult, intentResult] = await Promise.all([
     cartRows.length > 0
-      ? supabase
-          .from("recovery_bookings_import")
-          .select("id,booking_created_at,price,email_normalized,phone_normalized")
-          .eq("is_valid_purchase", true)
-          .gte("booking_created_at", auditDayStart)
-          .lt("booking_created_at", purchaseWindowEnd)
-          .order("booking_created_at", { ascending: true })
+      ? fetchPagedRecoveryRows<RecoveryAttributionPurchaseInput>(() =>
+          supabase
+            .from("recovery_bookings_import")
+            .select("id,booking_created_at,price,email_normalized,phone_normalized")
+            .eq("is_valid_purchase", true)
+            .gte("booking_created_at", auditDayStart)
+            .lt("booking_created_at", purchaseWindowEnd)
+            .order("booking_created_at", { ascending: true }),
+        )
       : Promise.resolve({ data: [] as RecoveryAttributionPurchaseInput[], error: null }),
     messageIds.length > 0
       ? fetchTrackingRowsByMessageIds(messageIds)
