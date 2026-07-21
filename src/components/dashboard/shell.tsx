@@ -16,8 +16,6 @@ import {
 } from "lucide-react";
 
 import { signOut } from "@/app/auth/actions";
-import { ContextSelector } from "@/components/dashboard/context-selector";
-import { getOperationalContextOptions } from "@/lib/dashboard/data";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 const modules = [
@@ -93,7 +91,6 @@ export async function DashboardShell({
     redirect("/login?error=not_allowed");
   }
 
-  const contextOptions = await getOperationalContextOptions();
   const userLabel = user?.email ?? "Usuario interno";
   const isAdmin = profile?.app_role === "admin" && profile.status === "active";
 
@@ -222,12 +219,6 @@ export async function DashboardShell({
                   {description}
                 </p>
               </div>
-              {contextOptions.error ? null : (
-                <ContextSelector
-                  countries={contextOptions.countries}
-                  sites={contextOptions.sites}
-                />
-              )}
             </header>
 
             {children}
