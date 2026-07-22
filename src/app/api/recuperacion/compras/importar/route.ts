@@ -65,6 +65,7 @@ type ImportRpcResult = {
   insertedAmount?: number;
   insertedRows?: number;
   invalidRows?: number;
+  updatedRows?: number;
   ok?: boolean;
   rowsReceived?: number;
   rowsTotal?: number;
@@ -141,6 +142,7 @@ function safeImportSummary(result: ImportRpcResult) {
     insertedAmount: result.insertedAmount ?? 0,
     insertedRows: result.insertedRows ?? 0,
     invalidRows: result.invalidRows ?? 0,
+    updatedRows: result.updatedRows ?? 0,
     rowsReceived: result.rowsReceived ?? 0,
     rowsTotal: result.rowsTotal ?? 0,
     skippedDuplicateRows: result.skippedDuplicateRows ?? 0,

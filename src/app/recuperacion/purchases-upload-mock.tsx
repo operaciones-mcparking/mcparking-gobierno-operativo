@@ -34,6 +34,7 @@ type ImportSummary = {
   insertedAmount: number;
   insertedRows: number;
   invalidRows: number;
+  updatedRows: number;
   rowsReceived: number;
   rowsTotal: number;
   skippedDuplicateRows: number;
@@ -416,6 +417,7 @@ export function PurchasesUploadMock() {
               {importSummary ? (
                 <div className="mt-3 rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-xs leading-5 text-[#86510d]">
                   <p>Filas insertadas: {formatNumber(importSummary.insertedRows)}</p>
+                  <p>Actualizadas: {formatNumber(importSummary.updatedRows)}</p>
                   <p>Duplicadas omitidas: {formatNumber(importSummary.skippedDuplicateRows)}</p>
                   <p>Monto insertado: {formatCurrency(importSummary.insertedAmount)}</p>
                   {importSummary.fileAlreadyImported ? <p>Archivo ya importado anteriormente.</p> : null}
@@ -466,6 +468,7 @@ export function PurchasesUploadMock() {
               { label: "Batch", value: shortBatchId(importSummary.batchId) },
               { label: "Filas recibidas", value: formatNumber(importSummary.rowsReceived) },
               { label: "Insertadas", value: formatNumber(importSummary.insertedRows) },
+              { label: "Actualizadas", value: formatNumber(importSummary.updatedRows) },
               { label: "Duplicadas omitidas", value: formatNumber(importSummary.skippedDuplicateRows) },
               { label: "Conflictos", value: formatNumber(importSummary.conflictRows) },
               { label: "Invalidas", value: formatNumber(importSummary.invalidRows) },
