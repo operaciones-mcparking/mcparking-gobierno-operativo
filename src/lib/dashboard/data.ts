@@ -360,6 +360,8 @@ export type RecoveryCartAuditRow = {
   hasChat: boolean | null;
   hours_to_purchase: number | null;
   id: string;
+  intended_arrival_at: string | null;
+  intended_arrival_date: string | null;
   intended_departure_date: string | null;
   lastInboundChatState: string | null;
   lastInboundIntentCategory: string | null;
@@ -1721,6 +1723,8 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   noStore();
 
   type CartAuditSourceRow = RecoveryAttributionCartInput & {
+    intended_arrival_at: string | null;
+    intended_arrival_date: string | null;
     intended_departure_date: string | null;
     message_id: string | null;
   };
@@ -1734,23 +1738,40 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   };
 
   function todayDateValue() {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, "0");
-    const day = String(today.getDate()).padStart(2, "0");
+    const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
+    const year = today.year;
+    const month = String(today.month).padStart(2, "0");
+    const day = String(today.day).padStart(2, "0");
 
     return `${year}-${month}-${day}`;
+  }
+
+  function hasArrivalExpired(intendedArrivalAt: string | null, intendedArrivalDate: string | null) {
+    if (intendedArrivalAt) {
+      const arrivalAt = new Date(intendedArrivalAt);
+
+      if (!Number.isNaN(arrivalAt.getTime())) {
+        return arrivalAt.getTime() < Date.now();
+      }
+    }
+
+    if (intendedArrivalDate) {
+      return intendedArrivalDate < todayDateValue();
+    }
+
+    return false;
   }
 
   function resolveAuditStatus(
     attribution: AttributionByCartRow | undefined,
     paymentReview: AttributionByCartRow | undefined,
-    intendedDepartureDate: string | null,
+    intendedArrivalAt: string | null,
+    intendedArrivalDate: string | null,
   ): RecoveryCartAuditStatus {
     if (attribution && Number(attribution.purchase_amount ?? 0) > 0) return "recovered_with_amount";
     if (attribution && Number(attribution.purchase_amount ?? 0) === 0) return "recovered_pack";
     if (paymentReview) return "payment_review";
-    if (intendedDepartureDate && intendedDepartureDate < todayDateValue()) return "expired";
+    if (hasArrivalExpired(intendedArrivalAt, intendedArrivalDate)) return "expired";
 
     return "not_recovered";
   }
@@ -1799,7 +1820,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     supabase
       .from("recovery_incomplete_bookings_import")
       .select(
-        "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_departure_date",
+        "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_arrival_at,intended_arrival_date,intended_departure_date",
       )
       .gte("form_datetime", auditDayStart)
       .lt("form_datetime", auditDayEnd)
@@ -1861,7 +1882,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
 
     return {
-      audit_status: resolveAuditStatus(attribution, paymentReview, cart.intended_departure_date),
+      audit_status: resolveAuditStatus(attribution, paymentReview, cart.intended_arrival_at, cart.intended_arrival_date),
       cart_form_datetime: cart.form_datetime,
       cart_type: cart.type,
       chatMessageCount: null,
@@ -1870,6 +1891,8 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       hasChat: null,
       hours_to_purchase: attributionOrReview?.hours_to_purchase ?? null,
       id: cart.id,
+      intended_arrival_at: cart.intended_arrival_at,
+      intended_arrival_date: cart.intended_arrival_date,
       intended_departure_date: cart.intended_departure_date,
       lastInboundChatState: null,
       lastInboundIntentCategory: null,
@@ -1880,7 +1903,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       phone: cart.phone_normalized,
       purchase_amount: attributionOrReview?.purchase_amount ?? null,
       purchase_created_at: attributionOrReview?.purchase_created_at ?? null,
-      recovery_review_note: paymentReview ? "BookingStatus 9 · pago detectado, revisar en backend" : null,
+      recovery_review_note: paymentReview ? "BookingStatus 9" : null,
       recovered: Boolean(attribution),
       whatsappStatus: tracking?.tracking_status ?? "sin_seguimiento",
     };

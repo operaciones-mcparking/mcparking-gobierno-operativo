@@ -1592,7 +1592,7 @@ function WeeklyBreakdownBlock({
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     <div>{formatDate(row.cart_form_datetime)}</div>
                     <div className="mt-1 text-[11px] text-slate-500">
-                      Salida: {formatDateOnly(row.intended_departure_date)}
+                      Entrada: {formatDateOnly(row.intended_arrival_date)}
                     </div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
