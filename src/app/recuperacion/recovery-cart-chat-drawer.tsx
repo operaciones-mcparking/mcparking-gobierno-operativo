@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, ExternalLink, MessageCircle, Send, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 
@@ -122,6 +122,11 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [isSending, setIsSending] = useState(false);
   const [messageDraft, setMessageDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
+  const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(0);
+  const shouldScrollToBottomRef = useRef(false);
 
   useEffect(() => {
     if (!copyFeedback) {
@@ -145,7 +150,10 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setData(null);
       setError(null);
       setSendError(null);
+      setSendStatus(null);
       setMessageDraft("");
+      previousMessageCountRef.current = 0;
+      shouldScrollToBottomRef.current = true;
       setIsLoading(true);
 
       try {
@@ -165,6 +173,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           return;
         }
 
+        shouldScrollToBottomRef.current = true;
         setData(payload);
       } catch (fetchError) {
         if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
@@ -197,6 +206,42 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [cartId, onClose]);
+
+  useEffect(() => {
+    if (isLoading || !data) {
+      return;
+    }
+
+    const messageCount = data.messages?.length ?? 0;
+    const isInitialLoad = previousMessageCountRef.current === 0;
+    const hasNewMessages = messageCount > previousMessageCountRef.current;
+    const shouldScroll = shouldScrollToBottomRef.current || isInitialLoad || hasNewMessages;
+
+    previousMessageCountRef.current = messageCount;
+
+    if (!shouldScroll) {
+      return;
+    }
+
+    shouldScrollToBottomRef.current = false;
+
+    const scrollToBottom = () => {
+      const container = messagesScrollRef.current;
+
+      if (!container) {
+        return;
+      }
+
+      container.scrollTop = container.scrollHeight;
+    };
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      scrollToBottom();
+      window.setTimeout(scrollToBottom, 50);
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [data, isLoading, data?.messages?.length]);
 
   if (!cartId) {
     return null;
@@ -234,6 +279,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
     setIsSending(true);
     setSendError(null);
+    setSendStatus("Enviando mensaje por n8n...");
 
     try {
       const response = await fetch("/api/recuperacion/carritos/" + encodeURIComponent(cartId) + "/chat/send", {
@@ -244,6 +290,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       const payload = (await response.json()) as SendChatResponse;
 
       if (payload.message) {
+        shouldScrollToBottomRef.current = true;
         setData((current) => {
           if (!current) return current;
 
@@ -274,16 +321,19 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
       if (!response.ok || !payload.ok) {
         setSendError(payload.error ?? "No se pudo enviar el mensaje.");
+        setSendStatus(null);
         return;
       }
 
       setMessageDraft("");
+      setSendStatus("Mensaje enviado");
 
       if (payload.warning) {
         setSendError(payload.warning);
       }
     } catch {
       setSendError("No se pudo conectar con el endpoint de envio.");
+      setSendStatus(null);
     } finally {
       setIsSending(false);
     }
@@ -398,7 +448,8 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
         </div>
 
         <div
-          className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+          ref={messagesScrollRef}
+          className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-5 pb-8 pt-5"
           style={{
             backgroundColor: "#edf8f3",
             backgroundImage:
@@ -475,15 +526,16 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
               })}
             </div>
           ) : null}
+          <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-[#e7f0ec] bg-white px-5 py-4">
+        <div className="border-t border-slate-200 bg-white px-5 py-4 shadow-[0_-10px_28px_rgba(15,23,42,0.10)]">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="recovery-chat-message">
             Responder por WhatsApp
           </label>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end">
             <textarea
-              className="min-h-[76px] flex-1 resize-none rounded-xl border border-[#d8e7e1] bg-[#fbfefd] px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 disabled:bg-slate-50 disabled:text-slate-400"
+              className="min-h-[88px] flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:bg-slate-100 disabled:text-slate-500"
               disabled={isSending || !cart?.phone}
               id="recovery-chat-message"
               maxLength={4096}
@@ -492,7 +544,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
               value={messageDraft}
             />
             <button
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className="inline-flex min-w-[120px] items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
               disabled={isSending || !cart?.phone || messageDraft.trim().length === 0}
               onClick={() => void sendMessage()}
               type="button"
@@ -502,13 +554,18 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
               ) : (
                 <Send className="h-4 w-4" />
               )}
-              Enviar
+              {isSending ? "Enviando..." : "Enviar"}
             </button>
           </div>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
             <span>Envio server-side via n8n. No se expone token en el navegador.</span>
             <span>{messageDraft.length}/4096</span>
           </div>
+          {sendStatus ? (
+            <p className="mt-2 rounded-lg border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-medium text-teal-800">
+              {sendStatus}
+            </p>
+          ) : null}
           {sendError ? (
             <p className="mt-2 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-medium text-[#92400e]">
               {sendError}
@@ -518,7 +575,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
         <div className="border-t border-[#e7f0ec] bg-[#fbfefd] px-5 py-3">
           <p className="text-xs leading-5 text-slate-500">
-            {isRawChat
+            {isSensitiveChat
               ? "Vista admin sensible. El contacto solo se muestra aqui; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."
               : "Esta vista no incluye texto de mensajes. El contacto solo se muestra aqui; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."}
           </p>
