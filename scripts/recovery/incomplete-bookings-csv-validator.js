@@ -20,6 +20,7 @@ const EXPECTED_COLUMNS = [
 
 const MANDATORY_COLUMNS = ["id", "booking_id", "type", "form_datetime"];
 const VALID_TYPES = new Set(["abandoned", "canceled"]);
+const RECOVERY_TIME_ZONE = "America/Santiago";
 
 function cleanText(raw) {
   if (raw === null || raw === undefined) return null;
@@ -60,7 +61,63 @@ function dateTimeValue(raw) {
   return date ? date.toISOString() : null;
 }
 
+function dateOnlyParts(raw) {
+  const value = cleanText(raw);
+
+  if (!value) return null;
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    const yearNumber = Number(year);
+    const monthNumber = Number(month);
+    const dayNumber = Number(day);
+    const date = new Date(Date.UTC(yearNumber, monthNumber - 1, dayNumber));
+
+    if (
+      date.getUTCFullYear() === yearNumber &&
+      date.getUTCMonth() === monthNumber - 1 &&
+      date.getUTCDate() === dayNumber
+    ) {
+      return { day: dayNumber, month: monthNumber, year: yearNumber };
+    }
+
+    return null;
+  }
+
+  const localMatch = value.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+
+  if (localMatch) {
+    const [, day, month, year] = localMatch;
+    const yearNumber = Number(year);
+    const monthNumber = Number(month);
+    const dayNumber = Number(day);
+    const date = new Date(Date.UTC(yearNumber, monthNumber - 1, dayNumber));
+
+    if (
+      date.getUTCFullYear() === yearNumber &&
+      date.getUTCMonth() === monthNumber - 1 &&
+      date.getUTCDate() === dayNumber
+    ) {
+      return { day: dayNumber, month: monthNumber, year: yearNumber };
+    }
+  }
+
+  return null;
+}
+
 function dateValue(raw) {
+  const parts = dateOnlyParts(raw);
+
+  if (parts) {
+    return [
+      String(parts.year).padStart(4, "0"),
+      String(parts.month).padStart(2, "0"),
+      String(parts.day).padStart(2, "0"),
+    ].join("-");
+  }
+
   const date = parseDateSafe(raw);
 
   if (!date) return null;
@@ -133,13 +190,55 @@ function normalizeHour(raw) {
   ].join(":");
 }
 
+function timeZoneParts(timeZone, date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(date);
+
+  const valueFor = (type) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  return {
+    day: valueFor("day"),
+    hour: valueFor("hour"),
+    minute: valueFor("minute"),
+    month: valueFor("month"),
+    second: valueFor("second"),
+    year: valueFor("year"),
+  };
+}
+
+function timeZoneOffsetMs(timeZone, date) {
+  const parts = timeZoneParts(timeZone, date);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+
+  return asUtc - date.getTime();
+}
+
+function santiagoWallTimeToUtcIso(year, month, day, hour, minute, second) {
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const firstPass = new Date(guess.getTime() - timeZoneOffsetMs(RECOVERY_TIME_ZONE, guess));
+  const secondPass = new Date(guess.getTime() - timeZoneOffsetMs(RECOVERY_TIME_ZONE, firstPass));
+
+  return secondPass.toISOString();
+}
+
 function intendedTimestamp(dateRaw, hourRaw) {
-  const date = dateValue(dateRaw);
+  const date = dateOnlyParts(dateRaw);
   const hour = normalizeHour(hourRaw);
 
   if (!date || !hour) return null;
 
-  return dateTimeValue(`${date}T${hour}`);
+  const [hourValue, minuteValue, secondValue] = hour.split(":").map(Number);
+
+  return santiagoWallTimeToUtcIso(date.year, date.month, date.day, hourValue, minuteValue, secondValue);
 }
 
 function intendedFieldsFromBform(raw) {
