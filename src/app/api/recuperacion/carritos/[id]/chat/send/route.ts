@@ -1,4 +1,5 @@
-﻿import { NextResponse, type NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
@@ -23,6 +24,13 @@ type CartSendSourceRow = {
   type: string | null;
 };
 
+type SupabaseTechnicalError = {
+  code?: string;
+  details?: string;
+  hint?: string;
+  message?: string;
+};
+
 type SafeSentMessage = {
   chatState: string | null;
   dayOfWeek: string | null;
@@ -41,6 +49,65 @@ type SafeSentMessage = {
 
 function jsonError(message: string, status: number, stage?: string, messagePayload?: SafeSentMessage) {
   return NextResponse.json({ error: message, message: messagePayload, ok: false, stage }, { status });
+}
+
+function sanitizeDebugValue(value: unknown) {
+  const text = safeString(value);
+
+  if (!text) return null;
+  if (/failing row contains/i.test(text)) return "Detalle de fila omitido por seguridad.";
+
+  return text.slice(0, 1000);
+}
+
+function supabaseDebugPayload(error: SupabaseTechnicalError) {
+  return {
+    debugCode: sanitizeDebugValue(error.code),
+    debugDetails: sanitizeDebugValue(error.details),
+    debugHint: sanitizeDebugValue(error.hint),
+    debugMessage: sanitizeDebugValue(error.message),
+  };
+}
+
+function logSupabaseTechnicalError(stage: string, error: SupabaseTechnicalError) {
+  const debug = supabaseDebugPayload(error);
+
+  console.error("[recovery-whatsapp-chat-send]", {
+    debugCode: debug.debugCode,
+    debugDetails: debug.debugDetails,
+    debugHint: debug.debugHint,
+    debugMessage: debug.debugMessage,
+    stage,
+  });
+}
+
+function jsonSupabaseTechnicalError(message: string, status: number, stage: string, error: SupabaseTechnicalError) {
+  logSupabaseTechnicalError(stage, error);
+
+  return NextResponse.json(
+    {
+      error: message,
+      ok: false,
+      stage,
+      ...(process.env.NODE_ENV !== "production" ? supabaseDebugPayload(error) : {}),
+    },
+    { status },
+  );
+}
+
+function createServiceRoleClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Missing Supabase service role environment variables.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+    },
+  });
 }
 
 async function requireAdminForApi() {
@@ -224,7 +291,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
   }
 
-  const { data: insertedMessage, error: insertError } = await admin.supabase
+  let serviceSupabase: ReturnType<typeof createServiceRoleClient>;
+
+  try {
+    serviceSupabase = createServiceRoleClient();
+  } catch (error) {
+    return jsonSupabaseTechnicalError("No se pudo inicializar el cliente de servicio.", 500, "service_role", {
+      message: error instanceof Error ? error.message : "Error desconocido",
+    });
+  }
+
+  const { data: insertedMessage, error: insertError } = await serviceSupabase
     .from("recovery_whatsapp_live_messages")
     .insert({
       cart_id: cart.id,
@@ -235,14 +312,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       phone_normalized: cart.phone_normalized,
       sent_by: admin.user.id,
       sent_by_email: operatorEmail,
-      source: "recovery_web",
+      source: "web_operator",
       whatsapp_status: "pending",
     })
     .select("id,message_at,message_text,whatsapp_status")
     .single();
 
   if (insertError) {
-    return jsonError("No se pudo registrar el mensaje para envio.", 500, "insert");
+    return jsonSupabaseTechnicalError("No se pudo registrar el mensaje para envio.", 500, "insert", insertError);
   }
 
   const pendingMessage = safeMessagePayload(insertedMessage as { message_at: string; message_text: string; whatsapp_status: string | null });
@@ -253,7 +330,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (!n8nResult.ok) {
       const failedStatus = "failed";
 
-      await admin.supabase
+      await serviceSupabase
         .from("recovery_whatsapp_live_messages")
         .update({
           error_message: n8nResult.errorMessage.slice(0, 1000),
@@ -270,7 +347,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const { data: updatedMessage, error: updateError } = await admin.supabase
+    const { data: updatedMessage, error: updateError } = await serviceSupabase
       .from("recovery_whatsapp_live_messages")
       .update({
         n8n_execution_id: n8nResult.n8nExecutionId,
@@ -297,7 +374,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
   } catch (error) {
     const failedStatus = "failed";
 
-    await admin.supabase
+    await serviceSupabase
       .from("recovery_whatsapp_live_messages")
       .update({
         error_message: shortErrorMessage(error),
