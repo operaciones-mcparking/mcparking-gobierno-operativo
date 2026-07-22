@@ -344,6 +344,7 @@ export type RecoveryAttributionDashboardData = {
 export type RecoveryCartAuditStatus =
   | "expired"
   | "not_recovered"
+  | "payment_review"
   | "recovered_pack"
   | "recovered_with_amount";
 
@@ -369,6 +370,7 @@ export type RecoveryCartAuditRow = {
   phone: string | null;
   purchase_amount: number | null;
   purchase_created_at: string | null;
+  recovery_review_note: string | null;
   recovered: boolean;
   whatsappStatus: RecoveryCartWhatsappStatus;
 };
@@ -465,8 +467,11 @@ type RecoveryAttributionCartInput = {
 
 type RecoveryAttributionPurchaseInput = {
   booking_created_at: string | null;
+  booking_status?: number | null;
   email_normalized: string | null;
   id: string;
+  is_valid_purchase?: boolean | null;
+  paying_status?: string | null;
   phone_normalized: string | null;
   price: number | null;
 };
@@ -1739,13 +1744,23 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
 
   function resolveAuditStatus(
     attribution: AttributionByCartRow | undefined,
+    paymentReview: AttributionByCartRow | undefined,
     intendedDepartureDate: string | null,
   ): RecoveryCartAuditStatus {
     if (attribution && Number(attribution.purchase_amount ?? 0) > 0) return "recovered_with_amount";
     if (attribution && Number(attribution.purchase_amount ?? 0) === 0) return "recovered_pack";
+    if (paymentReview) return "payment_review";
     if (intendedDepartureDate && intendedDepartureDate < todayDateValue()) return "expired";
 
     return "not_recovered";
+  }
+
+  function isPaymentReviewPurchase(purchase: RecoveryAttributionPurchaseInput) {
+    return (
+      purchase.is_valid_purchase !== true &&
+      Number(purchase.booking_status) === 9 &&
+      String(purchase.paying_status ?? "").trim() === "1"
+    );
   }
 
   async function fetchTrackingRowsByMessageIds(messageIds: string[]) {
@@ -1804,8 +1819,8 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       ? fetchPagedRecoveryRows<RecoveryAttributionPurchaseInput>(() =>
           supabase
             .from("recovery_bookings_import")
-            .select("id,booking_created_at,price,email_normalized,phone_normalized")
-            .eq("is_valid_purchase", true)
+            .select("id,booking_created_at,booking_status,paying_status,is_valid_purchase,price,email_normalized,phone_normalized")
+            .or("is_valid_purchase.eq.true,and(booking_status.eq.9,paying_status.eq.1)")
             .gte("booking_created_at", auditDayStart)
             .lt("booking_created_at", purchaseWindowEnd)
             .order("booking_created_at", { ascending: true }),
@@ -1817,10 +1832,17 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   ]);
 
   console.info(`[recuperacion] getRecoveryCartAuditRows:enrichment ${Date.now() - auditStartedAt}ms carts=${cartRows.length} messages=${messageIds.length}`);
+  const purchaseRows = purchasesResult.error ? [] : ((purchasesResult.data ?? []) as RecoveryAttributionPurchaseInput[]);
   const attributionsByCartId = new Map(
     buildRecoveryAttributionMatches(
       cartRows,
-      purchasesResult.error ? [] : ((purchasesResult.data ?? []) as RecoveryAttributionPurchaseInput[]),
+      purchaseRows.filter((purchase) => purchase.is_valid_purchase === true),
+    ).map((item) => [item.cart_id, item]),
+  );
+  const paymentReviewsByCartId = new Map(
+    buildRecoveryAttributionMatches(
+      cartRows,
+      purchaseRows.filter(isPaymentReviewPurchase),
     ).map((item) => [item.cart_id, item]),
   );
   const trackingByMessageId = new Map<string, TrackingByMessageRow>();
@@ -1834,17 +1856,19 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
 
   const auditRows = cartRows.map((cart) => {
     const attribution = attributionsByCartId.get(cart.id);
+    const paymentReview = attribution ? undefined : paymentReviewsByCartId.get(cart.id);
+    const attributionOrReview = attribution ?? paymentReview;
     const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
 
     return {
-      audit_status: resolveAuditStatus(attribution, cart.intended_departure_date),
+      audit_status: resolveAuditStatus(attribution, paymentReview, cart.intended_departure_date),
       cart_form_datetime: cart.form_datetime,
       cart_type: cart.type,
       chatMessageCount: null,
-      confidence: attribution?.confidence ?? null,
+      confidence: attributionOrReview?.confidence ?? null,
       email: cart.email_normalized,
       hasChat: null,
-      hours_to_purchase: attribution?.hours_to_purchase ?? null,
+      hours_to_purchase: attributionOrReview?.hours_to_purchase ?? null,
       id: cart.id,
       intended_departure_date: cart.intended_departure_date,
       lastInboundChatState: null,
@@ -1854,8 +1878,9 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       message_sent: cart.message_sent,
       parking_code: cart.parking_code,
       phone: cart.phone_normalized,
-      purchase_amount: attribution?.purchase_amount ?? null,
-      purchase_created_at: attribution?.purchase_created_at ?? null,
+      purchase_amount: attributionOrReview?.purchase_amount ?? null,
+      purchase_created_at: attributionOrReview?.purchase_created_at ?? null,
+      recovery_review_note: paymentReview ? "BookingStatus 9 · pago detectado, revisar en backend" : null,
       recovered: Boolean(attribution),
       whatsappStatus: tracking?.tracking_status ?? "sin_seguimiento",
     };
@@ -1961,6 +1986,7 @@ export async function getRecoveryCartStatusSummary() {
   const summary: RecoveryCartStatusSummary = {
     expired: 0,
     not_recovered: 0,
+    payment_review: 0,
     recovered_pack: 0,
     recovered_with_amount: 0,
     total: 0,

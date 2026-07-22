@@ -96,6 +96,18 @@ function ratioPercent(numerator: number, denominator: number) {
   return (numerator / denominator) * 100;
 }
 
+function isPaymentReview(row: RecoveryCartAuditRow) {
+  return row.audit_status === "payment_review";
+}
+
+function isOperationalRecovered(row: RecoveryCartAuditRow) {
+  return row.recovered || isPaymentReview(row);
+}
+
+function operationalRecoveryAmount(row: RecoveryCartAuditRow) {
+  return isOperationalRecovered(row) ? Number(row.purchase_amount ?? 0) : 0;
+}
+
 function dateInputValue(value: string | null) {
   if (!value) return "";
 
@@ -151,6 +163,7 @@ function whatsappStatusTone(status: RecoveryCartWhatsappStatus): BadgeTone {
 function auditStatusLabel(status: RecoveryCartAuditStatus) {
   if (status === "recovered_with_amount") return "Recuperado con monto";
   if (status === "recovered_pack") return "Recuperado sin monto / pack";
+  if (status === "payment_review") return "Pago en revisión";
   if (status === "expired") return "Carrito expirado";
 
   return "No recuperado";
@@ -159,6 +172,7 @@ function auditStatusLabel(status: RecoveryCartAuditStatus) {
 function auditStatusTone(status: RecoveryCartAuditStatus): BadgeTone {
   if (status === "recovered_with_amount") return "success";
   if (status === "recovered_pack") return "info";
+  if (status === "payment_review") return "warning";
   if (status === "expired") return "warning";
 
   return "neutral";
@@ -207,6 +221,7 @@ function intentTooltipItems(row: RecoveryCartAuditRow): Array<[string, string]> 
   if (row.lastInboundSentiment) items.push(["Sentimiento", row.lastInboundSentiment]);
   if (row.lastInboundChatState) items.push(["Chat", row.lastInboundChatState]);
   if (row.hasChat === true && row.chatMessageCount !== null) items.push(["Mensajes", formatNumber(row.chatMessageCount)]);
+  if (row.recovery_review_note) items.push(["Revisión", row.recovery_review_note]);
   if (row.hasChat === null) items.push(["Chat", "Se carga al pasar por la pagina"]);
 
   return items;
@@ -266,9 +281,9 @@ function buildPerformanceSummary(rows: RecoveryCartAuditRow[]) {
       const current = dayMap.get(key) ?? { amount: 0, recovered: 0, total: 0 };
       current.total += 1;
 
-      if (row.recovered) {
+      if (isOperationalRecovered(row)) {
         current.recovered += 1;
-        current.amount += Number(row.purchase_amount ?? 0);
+        current.amount += operationalRecoveryAmount(row);
       }
 
       dayMap.set(key, current);
@@ -278,9 +293,9 @@ function buildPerformanceSummary(rows: RecoveryCartAuditRow[]) {
     if (row.whatsappStatus === "delivered" || row.whatsappStatus === "read") delivered += 1;
     if (row.whatsappStatus === "read") read += 1;
 
-    if (row.recovered) {
+    if (isOperationalRecovered(row)) {
       recovered += 1;
-      recoveredAmount += Number(row.purchase_amount ?? 0);
+      recoveredAmount += operationalRecoveryAmount(row);
     }
   }
 
@@ -376,10 +391,33 @@ function buildWeekOptions(rows: RecoveryCartAuditRow[]) {
 
 function summarizeRowsForWeek(rows: RecoveryCartAuditRow[], weekStartKey: string) {
   const weekEndKey = addDateKeyDays(weekStartKey, 7);
-  const dayMap = new Map<string, { amount: number; delivered: number; read: number; recovered: number; sent: number; total: number }>();
+  const dayMap = new Map<
+    string,
+    {
+      amount: number;
+      confirmedAmount: number;
+      delivered: number;
+      paymentReview: number;
+      read: number;
+      recovered: number;
+      reviewAmount: number;
+      sent: number;
+      total: number;
+    }
+  >();
 
   for (let index = 0; index < 7; index += 1) {
-    dayMap.set(addDateKeyDays(weekStartKey, index), { amount: 0, delivered: 0, read: 0, recovered: 0, sent: 0, total: 0 });
+    dayMap.set(addDateKeyDays(weekStartKey, index), {
+      amount: 0,
+      confirmedAmount: 0,
+      delivered: 0,
+      paymentReview: 0,
+      read: 0,
+      recovered: 0,
+      reviewAmount: 0,
+      sent: 0,
+      total: 0,
+    });
   }
 
   let sent = 0;
@@ -387,13 +425,26 @@ function summarizeRowsForWeek(rows: RecoveryCartAuditRow[], weekStartKey: string
   let read = 0;
   let recovered = 0;
   let recoveredAmount = 0;
+  let confirmedAmount = 0;
+  let paymentReview = 0;
+  let reviewAmount = 0;
   let total = 0;
 
   for (const row of rows) {
     const dateKey = dateKeyForSantiago(row.cart_form_datetime);
     if (!dateKey || dateKey < weekStartKey || dateKey >= weekEndKey) continue;
 
-    const current = dayMap.get(dateKey) ?? { amount: 0, delivered: 0, read: 0, recovered: 0, sent: 0, total: 0 };
+    const current = dayMap.get(dateKey) ?? {
+      amount: 0,
+      confirmedAmount: 0,
+      delivered: 0,
+      paymentReview: 0,
+      read: 0,
+      recovered: 0,
+      reviewAmount: 0,
+      sent: 0,
+      total: 0,
+    };
     current.total += 1;
     total += 1;
 
@@ -410,11 +461,22 @@ function summarizeRowsForWeek(rows: RecoveryCartAuditRow[], weekStartKey: string
       current.read += 1;
     }
 
-    if (row.recovered) {
+    if (isOperationalRecovered(row)) {
+      const amount = operationalRecoveryAmount(row);
       current.recovered += 1;
-      current.amount += Number(row.purchase_amount ?? 0);
+      current.amount += amount;
       recovered += 1;
-      recoveredAmount += Number(row.purchase_amount ?? 0);
+      recoveredAmount += amount;
+
+      if (isPaymentReview(row)) {
+        current.paymentReview += 1;
+        current.reviewAmount += amount;
+        paymentReview += 1;
+        reviewAmount += amount;
+      } else {
+        current.confirmedAmount += amount;
+        confirmedAmount += amount;
+      }
     }
 
     dayMap.set(dateKey, current);
@@ -435,10 +497,14 @@ function summarizeRowsForWeek(rows: RecoveryCartAuditRow[], weekStartKey: string
     bestDay,
     days,
     funnel: {
+      confirmedAmount,
+      confirmedRecovered: recovered - paymentReview,
       delivered,
+      paymentReview,
       read,
       recovered,
       recoveredAmount,
+      reviewAmount,
       sent,
       total,
     },
@@ -468,7 +534,7 @@ function buildWeeklyBreakdown(rows: RecoveryCartAuditRow[]) {
   const typeMap = new Map<string, WeeklyBreakdownItem>();
   const confidenceMap = new Map<string, WeeklyBreakdownItem>();
   const parkingMap = new Map<string, WeeklyBreakdownItem>();
-  const recoveredRows = rows.filter((row) => row.recovered);
+  const recoveredRows = rows.filter(isOperationalRecovered);
 
   for (const type of ["abandoned", "canceled"]) {
     typeMap.set(type, { amount: 0, label: type, recovered: 0, total: 0 });
@@ -487,8 +553,8 @@ function buildWeeklyBreakdown(rows: RecoveryCartAuditRow[]) {
     const parkingItem = parkingMap.get(parkingLabel) ?? { amount: 0, label: parkingLabel, recovered: 0, total: 0 };
     parkingItem.total += 1;
 
-    if (row.recovered) {
-      const amount = Number(row.purchase_amount ?? 0);
+    if (isOperationalRecovered(row)) {
+      const amount = operationalRecoveryAmount(row);
       typeItem.recovered += 1;
       typeItem.amount += amount;
       parkingItem.recovered += 1;
@@ -880,13 +946,19 @@ function WeeklyBreakdownBlock({
   const shouldShowPaginationControls = !hasDateFilter && totalPages > 1;
   const auditSummary = useMemo(
     () => {
-      const recoveredRows = visibleRows.filter((row) => row.recovered);
+      const recoveredRows = visibleRows.filter(isOperationalRecovered);
+      const paymentReviewRows = visibleRows.filter(isPaymentReview);
+      const confirmedRows = recoveredRows.filter((row) => !isPaymentReview(row));
 
       return {
+        confirmed: confirmedRows.length,
+        confirmedAmount: confirmedRows.reduce((total, row) => total + operationalRecoveryAmount(row), 0),
         delivered: visibleRows.filter((row) => row.whatsappStatus === "delivered" || row.whatsappStatus === "read").length,
+        paymentReview: paymentReviewRows.length,
         read: visibleRows.filter((row) => row.whatsappStatus === "read").length,
         recovered: recoveredRows.length,
-        recoveredAmount: recoveredRows.reduce((total, row) => total + Number(row.purchase_amount ?? 0), 0),
+        recoveredAmount: recoveredRows.reduce((total, row) => total + operationalRecoveryAmount(row), 0),
+        reviewAmount: paymentReviewRows.reduce((total, row) => total + operationalRecoveryAmount(row), 0),
         sent: visibleRows.filter((row) => row.message_sent === true).length,
         total: visibleRows.length,
       };
@@ -921,13 +993,15 @@ function WeeklyBreakdownBlock({
       value: formatNumber(auditSummary.read),
     },
     {
-      basis: "de carritos",
+      basis: auditSummary.paymentReview > 0 ? "de carritos · incluye pagos en revisión" : "de carritos",
       label: "Recuperados",
       metric: formatPercent(ratioPercent(auditSummary.recovered, auditSummary.total)),
       value: formatNumber(auditSummary.recovered),
     },
     {
-      basis: "Ticket prom.",
+      basis: auditSummary.reviewAmount > 0
+        ? `Confirmado: ${formatCurrency(auditSummary.confirmedAmount)} · En revisión: ${formatCurrency(auditSummary.reviewAmount)}`
+        : "Ticket prom.",
       label: "Monto recuperado",
       metric: averageRecoveredTicket === null ? "?" : formatCurrency(averageRecoveredTicket),
       value: formatCurrency(auditSummary.recoveredAmount),
@@ -956,6 +1030,7 @@ function WeeklyBreakdownBlock({
       label: "Tasa recuperación",
       value: formatPercent(performanceSummary.averageRate),
       previous: `Anterior: ${formatPercent(previousPerformanceSummary.averageRate)}`,
+      detail: `Confirmados: ${formatNumber(performanceSummary.funnel.confirmedRecovered)} · En revisión: ${formatNumber(performanceSummary.funnel.paymentReview)}`,
       delta: `${deltaPercentPoints(performanceSummary.averageRate, previousPerformanceSummary.averageRate)} vs semana anterior`,
       tone: recoveryRateDeltaTone(performanceSummary.averageRate, previousPerformanceSummary.averageRate),
     },
@@ -963,6 +1038,7 @@ function WeeklyBreakdownBlock({
       label: "Monto recuperado",
       value: formatCurrency(performanceSummary.totalAmount),
       previous: `Anterior: ${formatCurrency(previousPerformanceSummary.totalAmount)}`,
+      detail: `Confirmado: ${formatCurrency(performanceSummary.funnel.confirmedAmount)} · En revisión: ${formatCurrency(performanceSummary.funnel.reviewAmount)}`,
       delta: `${deltaCurrency(performanceSummary.totalAmount, previousPerformanceSummary.totalAmount)} vs semana anterior`,
       tone: amountDeltaTone(performanceSummary.totalAmount, previousPerformanceSummary.totalAmount),
     },
@@ -1005,7 +1081,7 @@ function WeeklyBreakdownBlock({
     },
     {
       barPercent: ratioPercent(performanceSummary.funnel.recovered, performanceSummary.funnel.total) ?? 0,
-      basis: "de carritos",
+      basis: performanceSummary.funnel.paymentReview > 0 ? "de carritos · incluye pagos en revisión" : "de carritos",
       label: "Recuperados",
       metric: formatPercent(ratioPercent(performanceSummary.funnel.recovered, performanceSummary.funnel.total)),
       value: formatNumber(performanceSummary.funnel.recovered),
@@ -1126,6 +1202,7 @@ function WeeklyBreakdownBlock({
                       </span>
                     </div>
                     <p className="mt-1 text-[11px] text-slate-500">{card.previous}</p>
+                    {"detail" in card ? <p className="mt-1 text-[11px] text-slate-500">{card.detail}</p> : null}
                   </div>
                 ))}
               </div>
@@ -1189,6 +1266,7 @@ function WeeklyBreakdownBlock({
                       ["Tasa recuperación", formatPercent(day.recoveryRate)],
                       ["Carritos", formatNumber(day.total)],
                       ["Recuperados", formatNumber(day.recovered)],
+                      ["En revisión", formatNumber(day.paymentReview)],
                       ["Enviados", formatNumber(day.sent)],
                       ["Entregados", formatNumber(day.delivered)],
                       ["Leídos", formatNumber(day.read)],
@@ -1202,6 +1280,7 @@ function WeeklyBreakdownBlock({
                       ["Tasa recuperación", formatPercent(day.recoveryRate)],
                       ["Carritos", formatNumber(day.total)],
                       ["Recuperados", formatNumber(day.recovered)],
+                      ["En revisión", formatNumber(day.paymentReview)],
                       ["Enviados", formatNumber(day.sent)],
                       ["Entregados", formatNumber(day.delivered)],
                       ["Leídos", formatNumber(day.read)],
@@ -1233,6 +1312,8 @@ function WeeklyBreakdownBlock({
                     meta: `${day.recovered} recuperados`,
                     tooltipItems: [
                       ["Monto recuperado", formatCurrency(day.amount)],
+                      ["Confirmado", formatCurrency(day.confirmedAmount)],
+                      ["En revisión", formatCurrency(day.reviewAmount)],
                       ["Recuperados", formatNumber(day.recovered)],
                       ["Ticket prom.", day.recovered > 0 ? formatCurrency(day.amount / day.recovered) : "-"],
                     ],
@@ -1243,6 +1324,8 @@ function WeeklyBreakdownBlock({
                     meta: `${day.recovered} recuperados`,
                     tooltipItems: [
                       ["Monto recuperado", formatCurrency(day.amount)],
+                      ["Confirmado", formatCurrency(day.confirmedAmount)],
+                      ["En revisión", formatCurrency(day.reviewAmount)],
                       ["Recuperados", formatNumber(day.recovered)],
                       ["Ticket prom.", day.recovered > 0 ? formatCurrency(day.amount / day.recovered) : "-"],
                     ],
@@ -1258,7 +1341,9 @@ function WeeklyBreakdownBlock({
                 <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                   <div>
                     <h4 className="text-sm font-medium tracking-tight text-navy">Detalle de la semana seleccionada</h4>
-                    <p className="mt-1 text-xs text-slate-500">Calculado sobre los carritos de la semana elegida.</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Calculado sobre los carritos de la semana elegida. Incluye pagos en revisión como recuperación operativa.
+                    </p>
                   </div>
                   <ValueBadge tone="info">{formatNumber(weeklyBreakdown.total)} carritos</ValueBadge>
                 </div>
@@ -1347,6 +1432,7 @@ function WeeklyBreakdownBlock({
             <option value="all">Todos</option>
             <option value="recovered_with_amount">Recuperado con monto</option>
             <option value="recovered_pack">Recuperado sin monto / pack</option>
+            <option value="payment_review">Pago en revisión</option>
             <option value="expired">Carrito expirado</option>
             <option value="not_recovered">No recuperado</option>
           </select>
@@ -1513,6 +1599,9 @@ function WeeklyBreakdownBlock({
                     <ValueBadge tone={auditStatusTone(row.audit_status)}>
                       {auditStatusLabel(row.audit_status)}
                     </ValueBadge>
+                    {row.recovery_review_note ? (
+                      <p className="mt-1 text-[11px] leading-4 text-amber-700">{row.recovery_review_note}</p>
+                    ) : null}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {formatDate(row.purchase_created_at)}
@@ -1521,7 +1610,7 @@ function WeeklyBreakdownBlock({
                     {formatHours(row.hours_to_purchase)}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 font-medium text-navy">
-                    {row.recovered ? formatCurrency(row.purchase_amount) : "-"}
+                    {row.recovered || row.audit_status === "payment_review" ? formatCurrency(row.purchase_amount) : "-"}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
                     {row.confidence ? (
