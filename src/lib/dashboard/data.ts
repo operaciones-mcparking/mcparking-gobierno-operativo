@@ -460,6 +460,7 @@ function santiagoCalendarDaysAgoStartIso(days: number) {
 type RecoveryAttributionCartInput = {
   email_normalized: string | null;
   form_datetime: string | null;
+  intended_arrival_at?: string | null;
   id: string;
   message_sent: boolean | null;
   parking_code: string | null;
@@ -562,9 +563,15 @@ function buildRecoveryAttributionMatches(
     if (Number.isNaN(cartDate.getTime()) || Number.isNaN(purchaseDate.getTime())) return null;
     if (purchaseDate < cartDate) return null;
 
-    const recoveryWindowEnd = new Date(cartDate);
-    recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
-    if (purchaseDate >= recoveryWindowEnd) return null;
+    const intendedArrivalDate = cart.intended_arrival_at ? new Date(cart.intended_arrival_at) : null;
+
+    if (intendedArrivalDate && !Number.isNaN(intendedArrivalDate.getTime())) {
+      if (purchaseDate > intendedArrivalDate) return null;
+    } else {
+      const recoveryWindowEnd = new Date(cartDate);
+      recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
+      if (purchaseDate >= recoveryWindowEnd) return null;
+    }
 
     const cartEmail = comparableEmail(cart.email_normalized);
     const purchaseEmail = comparableEmail(purchase.email_normalized);
@@ -1598,7 +1605,7 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
     fetchPagedRecoveryRows<CartSegmentRow>(() =>
       supabase
         .from("recovery_incomplete_bookings_import")
-        .select("id,type,parking_code,form_datetime,message_sent,email_normalized,phone_normalized")
+        .select("id,type,parking_code,form_datetime,intended_arrival_at,message_sent,email_normalized,phone_normalized")
         .gte("form_datetime", recentCartsStart)
         .lt("form_datetime", recentCartsEnd)
         .order("form_datetime", { ascending: true }),
