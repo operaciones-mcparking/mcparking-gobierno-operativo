@@ -912,6 +912,7 @@ function WeeklyBreakdownBlock({
   const [sortKey, setSortKey] = useState<SortKey>("cart_date");
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
   const [chatIndicators, setChatIndicators] = useState<Record<string, ChatIndicator>>({});
+  const [expandedMobileCartIds, setExpandedMobileCartIds] = useState<Record<string, boolean>>({});
 
   const visibleRows = useMemo(() => {
     return [...rows]
@@ -1514,7 +1515,113 @@ function WeeklyBreakdownBlock({
 
       {!error && visibleRows.length > 0 ? (
         <div className="px-5 py-5">
-          <div>
+          <div className="space-y-2.5 md:hidden">
+            {pageRows.map((row) => {
+              const chatIndicator = chatIndicators[row.id];
+              const displayRow: RecoveryCartAuditRow = chatIndicator ? { ...row, ...chatIndicator } : row;
+              const canOpenChat = displayRow.hasChat !== false;
+              const isExpanded = Boolean(expandedMobileCartIds[row.id]);
+              const chatDotClass = chatIndicator?.hasInbound
+                ? "bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]"
+                : displayRow.hasChat === true
+                  ? "bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.14)]"
+                  : displayRow.hasChat === false
+                    ? "bg-slate-300/70"
+                    : "bg-slate-300/50";
+              const chatLabel =
+                displayRow.hasChat === true && displayRow.chatMessageCount !== null
+                  ? `${formatNumber(displayRow.chatMessageCount)} mensajes`
+                  : displayRow.hasChat === false
+                    ? "Sin chat"
+                    : "Chat bajo demanda";
+              const hasPurchase = Boolean(row.purchase_created_at || row.hours_to_purchase !== null || row.purchase_amount !== null || row.confidence);
+              const detailItems = intentTooltipItems(displayRow);
+
+              return (
+                <article
+                  aria-label={canOpenChat ? "Ver chat del carrito" : undefined}
+                  className={`rounded-xl border border-[#d6e1ea] bg-white px-3 py-3 shadow-sm ${canOpenChat ? "cursor-pointer active:bg-[#eef7f8]" : ""}`}
+                  key={row.id}
+                  onClick={canOpenChat ? () => setSelectedChatCartId(row.id) : undefined}
+                  onKeyDown={canOpenChat ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedChatCartId(row.id);
+                    }
+                  } : undefined}
+                  role={canOpenChat ? "button" : undefined}
+                  tabIndex={canOpenChat ? 0 : undefined}
+                  title={intentTooltipTitle(displayRow)}
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <ValueBadge tone="neutral">{row.cart_type ?? "Sin tipo"}</ValueBadge>
+                    <ValueBadge tone={auditStatusTone(row.audit_status)}>{auditStatusLabel(row.audit_status)}</ValueBadge>
+                    {row.recovery_review_note ? <span className="text-[11px] font-medium text-amber-700">{row.recovery_review_note}</span> : null}
+                  </div>
+
+                  <div className="mt-2 flex min-w-0 items-start gap-2">
+                    <p className="min-w-0 flex-1 break-all text-sm font-medium leading-5 text-navy">{row.email ?? "Sin correo"}</p>
+                    <span aria-label={chatLabel} className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${chatDotClass}`} title={chatLabel} />
+                  </div>
+
+                  <div className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
+                    <p className="min-w-0 break-words">
+                      <span className="font-medium text-navy">{row.parking_code ?? "Sin parking"}</span> · {formatDate(row.cart_form_datetime)}
+                    </p>
+                    <p>Entrada {formatDateOnly(row.intended_arrival_date)}</p>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <ValueBadge tone={messageSentTone(row.message_sent)}>{messageSentLabel(row.message_sent)}</ValueBadge>
+                    <span title={whatsappStatusTitle(row.whatsappStatus)}>
+                      <ValueBadge tone={whatsappStatusTone(row.whatsappStatus)}>{whatsappStatusLabel(row.whatsappStatus)}</ValueBadge>
+                    </span>
+                    {displayRow.hasChat === true && displayRow.chatMessageCount !== null ? <ValueBadge tone="info">{formatNumber(displayRow.chatMessageCount)} mensajes</ValueBadge> : null}
+                  </div>
+
+                  <div className="mt-2 text-xs leading-5 text-slate-600">
+                    {hasPurchase ? (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="font-medium text-navy">Compra</span>
+                        <span>{formatDate(row.purchase_created_at)}</span>
+                        <span>{formatHours(row.hours_to_purchase)}</span>
+                        <span className="font-medium text-navy">{row.recovered || row.audit_status === "payment_review" ? formatCurrency(row.purchase_amount) : "-"}</span>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500">Sin compra atribuida</p>
+                    )}
+                  </div>
+
+                  <button
+                    aria-expanded={isExpanded}
+                    className="mt-2 rounded-full border border-[#d6e1ea] px-2.5 py-1 text-[11px] font-medium text-slate-600"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setExpandedMobileCartIds((current) => ({ ...current, [row.id]: !current[row.id] }));
+                    }}
+                    type="button"
+                  >
+                    {isExpanded ? "Ocultar detalles" : "Ver detalles"}
+                  </button>
+
+                  {isExpanded ? (
+                    <div className="mt-2 rounded-lg border border-[#edf2f6] bg-[#fbfdfe] px-3 py-2 text-xs leading-5 text-slate-600">
+                      <p className="break-all"><span className="font-medium text-navy">Telefono:</span> {row.phone ?? "Sin telefono"}</p>
+                      {row.confidence ? <p><span className="font-medium text-navy">Confianza:</span> {row.confidence}</p> : null}
+                      {detailItems.length > 0 ? (
+                        <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                          {detailItems.map(([label, value]) => (
+                            <span key={label}><span className="font-medium text-navy">{label}:</span> {value}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden md:block">
           <table className="w-full table-fixed border-separate border-spacing-0 overflow-hidden rounded-xl border border-[#d6e1ea] text-xs">
             <thead className="bg-[#f8fafb] text-left text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">
               <tr>

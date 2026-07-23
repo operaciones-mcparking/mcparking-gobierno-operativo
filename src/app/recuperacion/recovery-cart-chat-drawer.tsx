@@ -143,6 +143,18 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       return;
     }
 
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [cartId]);
+  useEffect(() => {
+    if (!cartId) {
+      return;
+    }
+
     const activeCartId = cartId;
     const controller = new AbortController();
 
@@ -340,12 +352,12 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0f172a]/35" onClick={onClose}>
+    <div className="fixed inset-0 z-50 overflow-hidden bg-[#0f172a]/35" onClick={onClose}>
       <div
-        className="absolute inset-y-0 right-0 flex w-full max-w-2xl flex-col border-l border-[#d8e7e1] bg-white shadow-2xl"
+        className="absolute inset-0 flex h-[100dvh] w-screen max-w-none flex-col bg-white shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:w-full sm:max-w-2xl sm:border-l sm:border-[#d8e7e1]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-[#e7f0ec] bg-[#fbfefd] px-5 py-4">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#e7f0ec] bg-[#fbfefd] px-4 py-2.5 sm:px-5 sm:py-4">
           <div>
             <div className="flex items-center gap-2 text-navy">
               <MessageCircle className="h-4 w-4 text-teal-700" />
@@ -353,7 +365,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 {isSensitiveChat ? "Chat real" : "Chat metadata-only"}
               </h2>
             </div>
-            <p className="mt-1 text-sm leading-5 text-slate-600">
+            <p className="mt-0.5 text-xs leading-4 text-slate-600 sm:text-sm sm:leading-5">
               {isRawChat
                 ? "Vista admin sensible con texto real de mensajes."
                 : "Burbujas seguras sin Message raw ni text_summary."}
@@ -369,26 +381,26 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           </button>
         </div>
 
-        <div className="border-b border-[#e7f0ec] bg-[#f7fbf9] px-5 py-3">
+        <div className="shrink-0 border-b border-[#e7f0ec] bg-[#f7fbf9] px-4 py-2.5 sm:px-5 sm:py-3">
           <div className="flex flex-wrap items-center gap-2">
             <ValueBadge tone="info">{data?.cart?.type ?? "Carrito"}</ValueBadge>
             <ValueBadge tone="neutral">{data?.cart?.parkingCode ?? "Sin parking"}</ValueBadge>
             {summary ? <ValueBadge tone="success">{formatNumber(summary.totalMessages)} mensajes</ValueBadge> : null}
             {summary?.liveMessages ? <ValueBadge tone="info">{formatNumber(summary.liveMessages)} live</ValueBadge> : null}
           </div>
-          <p className="mt-2 text-xs leading-5 text-slate-500">
+          <p className="mt-1 text-[11px] leading-4 text-slate-500 sm:text-xs sm:leading-5">
             Ventana: {formatDateTime(data?.cart?.windowStart ?? null)} - {formatDateTime(data?.cart?.windowEnd ?? null)}
           </p>
           {summary ? (
-            <p className="mt-1 text-xs leading-5 text-slate-500">
+            <p className="mt-0.5 text-[11px] leading-4 text-slate-500 sm:text-xs sm:leading-5">
               Inbound: {formatNumber(summary.inboundMessages)} · Outbound: {formatNumber(summary.outboundMessages)}
             </p>
           ) : null}
 
           {cart ? (
-            <div className="mt-3 rounded-2xl border border-[#d8e7e1] bg-white/95 px-4 py-3 shadow-sm">
+            <div className="mt-2 rounded-xl border border-[#d8e7e1] bg-white/95 px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-4 sm:py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Contacto</p>
-              <div className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+              <div className="mt-1.5 grid min-w-0 gap-1.5 text-xs text-slate-700 sm:grid-cols-2 sm:text-sm">
                 <div className="min-w-0">
                   <span className="text-xs text-slate-500">Email</span>
                   <p className="break-all font-medium text-slate-900">{cart.email || "-"}</p>
@@ -398,10 +410,10 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                   <p className="break-all font-medium text-slate-900">{cart.phone || "-"}</p>
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                 {chatUrl ? (
                   <a
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#a9dbc3] bg-[#e5f6ee] px-3 py-1.5 text-xs font-semibold text-[#0f766e] hover:bg-[#d8f0e4]"
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#a9dbc3] bg-[#e5f6ee] px-3 py-2 text-center text-xs font-semibold text-[#0f766e] hover:bg-[#d8f0e4]"
                     href={chatUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -412,7 +424,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 ) : null}
                 {cart.phone ? (
                   <button
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
                     onClick={() => void copyValue(cart.phone, "Telefono")}
                     type="button"
                   >
@@ -422,7 +434,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 ) : null}
                 {cart.cmsUrl ? (
                   <button
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
                     onClick={() => void copyValue(cart.cmsUrl, "Reserva")}
                     type="button"
                   >
@@ -432,7 +444,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 ) : null}
                 {cmsUrl ? (
                   <a
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-[#d8e7e1] bg-[#f8fbfa] px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:border-teal-200 hover:bg-teal-50"
                     href={cmsUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -449,7 +461,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
         <div
           ref={messagesScrollRef}
-          className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-5 pb-8 pt-5"
+          className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-3 pb-6 pt-3 sm:px-5 sm:pb-8 sm:pt-5"
           style={{
             backgroundColor: "#edf8f3",
             backgroundImage:
@@ -486,7 +498,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           ) : null}
 
           {!isLoading && !error && messages.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-2 sm:space-y-3">
               {messages.map((message, index) => {
                 const isInbound = message.direction === "inbound";
 
@@ -494,32 +506,28 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                   <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`} key={`${message.messageAt}-${index}`}>
                     <article
                       className={[
-                        "max-w-[82%] rounded-2xl border px-4 py-3 text-sm shadow-sm",
+                        "max-w-[88%] rounded-2xl border px-3 py-2.5 text-sm shadow-sm sm:max-w-[82%] sm:px-4 sm:py-3",
                         isInbound
                           ? "rounded-bl-sm border-slate-200 bg-white text-slate-900"
                           : "rounded-br-sm border-[#a9dbc3] bg-[#dff6e8] text-[#14352b]",
                       ].join(" ")}
                     >
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
                         <ValueBadge tone={directionTone(message.direction)}>{message.label}</ValueBadge>
-                        {message.intentCategory ? (
-                          <ValueBadge tone="warning">Intencion: {message.intentCategory}</ValueBadge>
-                        ) : null}
+                        {message.intentCategory ? <span className="text-[11px] font-medium text-amber-700">Intencion: {message.intentCategory}</span> : null}
                       </div>
-                      <p className="whitespace-pre-wrap break-words font-medium text-navy">
+                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-5 text-navy">
                         {message.messageText || genericMessageText(message.direction)}
                       </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {message.messageSentiment ? (
-                          <ValueBadge tone={sentimentTone(message.messageSentiment)}>
-                            Sentimiento: {message.messageSentiment}
-                          </ValueBadge>
-                        ) : null}
-                        {message.chatState ? <ValueBadge tone="neutral">Estado: {message.chatState}</ValueBadge> : null}
-                        {message.messageType ? <ValueBadge tone="neutral">Tipo: {message.messageType}</ValueBadge> : null}
-                        {message.whatsappStatus ? <ValueBadge tone="neutral">Estado WhatsApp: {message.whatsappStatus}</ValueBadge> : null}
+                      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] leading-4 text-slate-500">
+                        <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1">
+                          {message.messageSentiment ? <span>Sentimiento: {message.messageSentiment}</span> : null}
+                          {message.chatState ? <span>Estado: {message.chatState}</span> : null}
+                          {message.messageType ? <span>Tipo: {message.messageType}</span> : null}
+                          {message.whatsappStatus ? <span>WhatsApp: {message.whatsappStatus}</span> : null}
+                        </div>
+                        <span className="ml-auto shrink-0 text-right">{formatDateTime(message.messageAt)}</span>
                       </div>
-                      <p className="mt-3 text-right text-[11px] text-slate-500">{formatDateTime(message.messageAt)}</p>
                     </article>
                   </div>
                 );
@@ -529,13 +537,13 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="border-t border-slate-200 bg-white px-5 py-4 shadow-[0_-10px_28px_rgba(15,23,42,0.10)]">
+        <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-10px_28px_rgba(15,23,42,0.10)] sm:px-5 sm:py-4" style={{ paddingBottom: "calc(0.625rem + env(safe-area-inset-bottom))" }}>
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="recovery-chat-message">
             Responder por WhatsApp
           </label>
           <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end">
             <textarea
-              className="min-h-[88px] flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:bg-slate-100 disabled:text-slate-500"
+              className="max-h-28 min-h-[60px] flex-1 resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:bg-slate-100 disabled:text-slate-500 sm:max-h-32 sm:min-h-[88px]"
               disabled={isSending || !cart?.phone}
               id="recovery-chat-message"
               maxLength={4096}
@@ -573,7 +581,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           ) : null}
         </div>
 
-        <div className="border-t border-[#e7f0ec] bg-[#fbfefd] px-5 py-3">
+        <div className="hidden shrink-0 border-t border-[#e7f0ec] bg-[#fbfefd] px-5 py-3 sm:block">
           <p className="text-xs leading-5 text-slate-500">
             {isSensitiveChat
               ? "Vista admin sensible. El contacto solo se muestra aqui; no incluye wa_id, api_phone, payloads ni identificadores tecnicos."
