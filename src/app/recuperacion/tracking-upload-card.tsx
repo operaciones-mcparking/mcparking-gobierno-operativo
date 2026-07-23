@@ -46,6 +46,7 @@ type ImportSummary = {
   sourceDuplicateRows: number;
   status: string | null;
   trackingStatusCounts: Record<string, number>;
+  updatedRows: number;
 };
 
 type ImportResponse = {
@@ -474,6 +475,7 @@ export function TrackingUploadCard() {
                     <p>Status: {importSummary.status ?? "-"}</p>
                     <p>Filas recibidas: {formatNumber(importSummary.rowsReceived)}</p>
                     <p>Insertadas: {formatNumber(importSummary.insertedRows)}</p>
+                    <p>Actualizadas: {formatNumber(importSummary.updatedRows)}</p>
                     <p>Duplicadas omitidas: {formatNumber(importSummary.skippedDuplicateRows)}</p>
                     <p>Duplicadas source: {formatNumber(importSummary.sourceDuplicateRows)}</p>
                     <p>Duplicadas mensaje: {formatNumber(importSummary.messageDuplicateRows)}</p>
@@ -536,6 +538,7 @@ export function TrackingUploadCard() {
               { label: "Status", value: importSummary.status ?? "-" },
               { label: "Filas recibidas", value: formatNumber(importSummary.rowsReceived) },
               { label: "Insertadas", value: formatNumber(importSummary.insertedRows) },
+              { label: "Actualizadas", value: formatNumber(importSummary.updatedRows) },
               { label: "Duplicadas omitidas", value: formatNumber(importSummary.skippedDuplicateRows) },
               { label: "Conflictos", value: formatNumber(importSummary.conflictRows) },
               { label: "Invalidas", value: formatNumber(importSummary.invalidRows) },

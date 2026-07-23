@@ -148,7 +148,7 @@ function whatsappStatusLabel(status: RecoveryCartWhatsappStatus) {
   if (status === "sent") return "Enviado";
   if (status === "failed") return "Fallido";
 
-  return "Sin seguimiento";
+  return "Sin tracking";
 }
 
 function whatsappStatusTone(status: RecoveryCartWhatsappStatus): BadgeTone {
@@ -158,6 +158,12 @@ function whatsappStatusTone(status: RecoveryCartWhatsappStatus): BadgeTone {
   if (status === "failed") return "danger";
 
   return "neutral";
+}
+
+function whatsappStatusTitle(status: RecoveryCartWhatsappStatus) {
+  if (status !== "sin_seguimiento") return undefined;
+
+  return "No se encontró estado de entrega para el message_id de este carrito. Esto no significa que el contacto no tenga conversación.";
 }
 
 function auditStatusLabel(status: RecoveryCartAuditStatus) {
@@ -1575,9 +1581,11 @@ function WeeklyBreakdownBlock({
                       <ValueBadge tone={messageSentTone(row.message_sent)}>
                         {messageSentLabel(row.message_sent)}
                       </ValueBadge>
-                      <ValueBadge tone={whatsappStatusTone(row.whatsappStatus)}>
-                        {whatsappStatusLabel(row.whatsappStatus)}
-                      </ValueBadge>
+                      <span title={whatsappStatusTitle(row.whatsappStatus)}>
+                        <ValueBadge tone={whatsappStatusTone(row.whatsappStatus)}>
+                          {whatsappStatusLabel(row.whatsappStatus)}
+                        </ValueBadge>
+                      </span>
                     </div>
                     {intentTooltipItems(displayRow).length > 0 ? (
                       <div className="pointer-events-none absolute left-2 top-full z-30 mt-2 hidden w-56 rounded-lg border border-[#d6e1ea] bg-white p-3 text-[11px] leading-4 text-slate-600 shadow-[0_12px_28px_rgba(2,53,116,0.16)] group-hover:block group-focus:block">

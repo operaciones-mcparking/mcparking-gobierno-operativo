@@ -90,6 +90,7 @@ type ImportRpcResult = {
   sourceDuplicateRows?: number;
   status?: string;
   trackingStatusCounts?: Record<string, number>;
+  updatedRows?: number;
 };
 
 type StartImportRpcResult = {
@@ -110,6 +111,7 @@ type ChunkImportRpcResult = {
   skippedDuplicateRows?: number;
   sourceDuplicateRows?: number;
   trackingStatusCounts?: Record<string, number>;
+  updatedRows?: number;
 };
 
 type FinishImportRpcResult = {
@@ -121,6 +123,7 @@ type FinishImportRpcResult = {
   ok?: boolean;
   skippedDuplicateRows?: number;
   status?: string;
+  updatedRows?: number;
 };
 
 function jsonError(message: string, status: number, stage?: string) {
@@ -216,6 +219,7 @@ function emptyImportSummary(): ImportRpcResult {
     skippedDuplicateRows: 0,
     sourceDuplicateRows: 0,
     trackingStatusCounts: {},
+    updatedRows: 0,
   };
 }
 
@@ -256,6 +260,7 @@ function safeImportSummary(result: ImportRpcResult) {
     sourceDuplicateRows: result.sourceDuplicateRows ?? 0,
     status: result.status ?? null,
     trackingStatusCounts: result.trackingStatusCounts ?? {},
+    updatedRows: result.updatedRows ?? 0,
   };
 }
 
@@ -444,6 +449,7 @@ export async function POST(request: NextRequest) {
 
       accumulated.conflictRows = (accumulated.conflictRows ?? 0) + (chunkResult.conflictRows ?? 0);
       accumulated.insertedRows = (accumulated.insertedRows ?? 0) + (chunkResult.insertedRows ?? 0);
+      accumulated.updatedRows = (accumulated.updatedRows ?? 0) + (chunkResult.updatedRows ?? 0);
       accumulated.invalidRows = (accumulated.invalidRows ?? 0) + (chunkResult.invalidRows ?? 0);
       accumulated.messageDuplicateRows =
         (accumulated.messageDuplicateRows ?? 0) + (chunkResult.messageDuplicateRows ?? 0);
@@ -480,6 +486,7 @@ export async function POST(request: NextRequest) {
         batchId,
         conflictRows: finishResult.conflictRows ?? accumulated.conflictRows,
         insertedRows: finishResult.insertedRows ?? accumulated.insertedRows,
+        updatedRows: finishResult.updatedRows ?? accumulated.updatedRows,
         invalidRows: finishResult.invalidRows ?? accumulated.invalidRows,
         messageSentRows: finishResult.messageSentRows ?? accumulated.messageSentRows,
         rowsTotal: summary.rows,

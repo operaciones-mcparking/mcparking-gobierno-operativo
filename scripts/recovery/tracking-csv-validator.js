@@ -91,8 +91,8 @@ function dateTimeValue(raw) {
 function resolveTrackingStatusFromDates({ delivered_at, failed_at, read_at, sent_at }) {
   if (read_at) return "read";
   if (delivered_at) return "delivered";
-  if (sent_at) return "sent";
   if (failed_at) return "failed";
+  if (sent_at) return "sent";
 
   return "unknown";
 }
