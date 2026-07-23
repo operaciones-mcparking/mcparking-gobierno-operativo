@@ -123,7 +123,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [messageDraft, setMessageDraft] = useState("");
-  const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("message_memory");
+  const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("all");
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -168,7 +168,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setSendError(null);
       setSendStatus(null);
       setMessageDraft("");
-      setMessageSourceFilter("message_memory");
+      setMessageSourceFilter("all");
       previousMessageCountRef.current = 0;
       shouldScrollToBottomRef.current = true;
       setIsLoading(true);
