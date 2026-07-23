@@ -62,6 +62,7 @@ type SafeChatMessagePayload = {
   messageBoundType: string | null;
   messageSentiment: string | null;
   messageSource: string | null;
+  source: "live" | "message_memory";
   messageText: string | null;
   messageType: string | null;
   timeOfDay: string | null;
@@ -145,6 +146,7 @@ function safeMessagePayload(message: MessageMemoryChatRow | RawMessageMemoryChat
     messageBoundType: message.message_bound_type,
     messageSentiment: message.message_sentiment,
     messageSource: null,
+    source: "message_memory",
     messageText: "message_text" in message ? message.message_text : null,
     messageType: message.message_type,
     timeOfDay: "time_of_day" in message ? message.time_of_day : null,
@@ -163,6 +165,7 @@ function safeLiveMessagePayload(message: LiveMessageChatRow): SafeChatMessagePay
     messageBoundType: message.direction,
     messageSentiment: null,
     messageSource: message.source,
+    source: "live",
     messageText: message.message_text,
     messageType: "text",
     timeOfDay: null,

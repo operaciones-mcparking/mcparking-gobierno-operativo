@@ -41,6 +41,7 @@ type SafeSentMessage = {
   messageBoundType: string;
   messageSentiment: string | null;
   messageSource: string;
+  source: "live";
   messageText: string;
   messageType: string;
   timeOfDay: string | null;
@@ -156,6 +157,7 @@ function safeMessagePayload(message: {
     messageBoundType: "outbound",
     messageSentiment: null,
     messageSource: "recovery_web",
+    source: "live",
     messageText: message.message_text,
     messageType: "text",
     timeOfDay: null,
