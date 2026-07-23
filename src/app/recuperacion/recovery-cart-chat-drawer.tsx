@@ -123,7 +123,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [messageDraft, setMessageDraft] = useState("");
-  const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("live");
+  const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("message_memory");
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -168,7 +168,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setSendError(null);
       setSendStatus(null);
       setMessageDraft("");
-      setMessageSourceFilter("live");
+      setMessageSourceFilter("message_memory");
       previousMessageCountRef.current = 0;
       shouldScrollToBottomRef.current = true;
       setIsLoading(true);
@@ -265,7 +265,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   }
 
   const messages = data?.messages ?? [];
-  const shouldShowSourceFilter = messages.length > 0;
+  const hasLiveSource = messages.some((message) => message.source === "live");
+  const hasMessageMemorySource = messages.some((message) => message.source === "message_memory");
+  const shouldShowSourceFilter = hasLiveSource && hasMessageMemorySource;
   const visibleMessages = messageSourceFilter === "all" ? messages : messages.filter((message) => message.source === messageSourceFilter);
   const summary = data?.summary;
   const isRawChat = summary?.source === "raw";
@@ -490,7 +492,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <div className="flex flex-wrap gap-2 text-xs font-medium text-slate-600">
               <button className={`rounded-full px-3 py-1 ${messageSourceFilter === "all" ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMessageSourceFilter("all")} type="button">Todos</button>
               <button className={`rounded-full px-3 py-1 ${messageSourceFilter === "live" ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMessageSourceFilter("live")} type="button">Live</button>
-              <button className={`rounded-full px-3 py-1 ${messageSourceFilter === "message_memory" ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMessageSourceFilter("message_memory")} type="button">Hist&oacute;rico</button>
+              <button className={`rounded-full px-3 py-1 ${messageSourceFilter === "message_memory" ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600"}`} onClick={() => setMessageSourceFilter("message_memory")} type="button">API</button>
             </div>
           </div>
         ) : null}
