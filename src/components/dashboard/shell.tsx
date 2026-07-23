@@ -16,27 +16,28 @@ import {
 } from "lucide-react";
 
 import { signOut } from "@/app/auth/actions";
+import { MobileDashboardNavigation, type MobileNavigationGroup, type MobileNavigationIcon } from "@/components/dashboard/mobile-navigation";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
-const modules = [
+const modules: Array<{ items: Array<{ helper: string; href: string; icon: LucideIcon; iconKey: MobileNavigationIcon; label: string }>; label: string }> = [
   {
     items: [
-      { href: "/estructura", icon: Network, label: "Estructura", helper: "Gobierno operativo" },
-      { href: "/empresas", icon: Building2, label: "Empresas", helper: "McParking y clientes" },
-      { href: "/roles-personas", icon: Users, label: "Roles y personas", helper: "Diccionario vivo" },
+      { href: "/estructura", icon: Network, iconKey: "network", label: "Estructura", helper: "Gobierno operativo" },
+      { href: "/empresas", icon: Building2, iconKey: "building", label: "Empresas", helper: "McParking y clientes" },
+      { href: "/roles-personas", icon: Users, iconKey: "users", label: "Roles y personas", helper: "Diccionario vivo" },
     ],
     label: "Estructura",
   },
   {
     items: [
-      { href: "/procesos", icon: GitBranch, label: "Procesos", helper: "Modelo operativo" },
-      { href: "/sistemas", icon: Database, label: "Sistemas", helper: "Herramientas" },
-      { href: "/recuperacion", icon: MessageCircle, label: "Carritos perdidos", helper: "Recuperación WhatsApp" },
+      { href: "/procesos", icon: GitBranch, iconKey: "git-branch", label: "Procesos", helper: "Modelo operativo" },
+      { href: "/sistemas", icon: Database, iconKey: "database", label: "Sistemas", helper: "Herramientas" },
+      { href: "/recuperacion", icon: MessageCircle, iconKey: "message-circle", label: "Carritos perdidos", helper: "Recuperación WhatsApp" },
     ],
     label: "Operacion",
   },
   {
-    items: [{ href: "/brechas", icon: AlertTriangle, label: "Brechas", helper: "Alertas y riesgos" }],
+    items: [{ href: "/brechas", icon: AlertTriangle, iconKey: "alert-triangle", label: "Brechas", helper: "Alertas y riesgos" }],
     label: "Control",
   },
 ];
@@ -93,6 +94,10 @@ export async function DashboardShell({
 
   const userLabel = user?.email ?? "Usuario interno";
   const isAdmin = profile?.app_role === "admin" && profile.status === "active";
+  const mobileModules: MobileNavigationGroup[] = modules.map((group) => ({
+    items: group.items.map(({ helper, href, iconKey, label }) => ({ helper, href, iconKey, label })),
+    label: group.label,
+  }));
 
   return (
     <main
@@ -181,29 +186,11 @@ export async function DashboardShell({
         </aside>
 
         <div className="min-w-0 flex-1">
-          <div className="border-b border-[#cbd8e3] bg-navy px-4 py-3 lg:hidden">
-            <Link className="inline-flex items-center" href="/">
+          <div className="flex items-center justify-between gap-3 border-b border-[#cbd8e3] bg-navy px-4 py-3 lg:hidden">
+            <Link className="inline-flex min-w-0 items-center" href="/">
               <BrandLogo compact />
             </Link>
-            <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {flatModules.map((module) => (
-                <Link
-                  className="whitespace-nowrap rounded-lg border border-line bg-mist px-3 py-2 text-sm font-semibold text-slate-700"
-                  href={module.href}
-                  key={module.href}
-                >
-                  {module.label}
-                </Link>
-              ))}
-              {isAdmin ? (
-                <Link
-                  className="whitespace-nowrap rounded-lg border border-navy bg-navy px-3 py-2 text-sm font-semibold text-white"
-                  href="/admin"
-                >
-                  Administracion
-                </Link>
-              ) : null}
-            </nav>
+            <MobileDashboardNavigation activePath={activePath} groups={mobileModules} isAdmin={isAdmin} userLabel={userLabel} />
           </div>
 
           <div className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
