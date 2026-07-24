@@ -25,6 +25,7 @@ import {
 } from "@/lib/orquestador/supabase-admin";
 import type { OrchestratorEvent, OrchestratorJob, OrchestratorJobType, OrchestratorWorker } from "@/lib/orquestador/types";
 import { OrquestadorRefreshButton } from "./refresh-button";
+import { SourceConnectionCheckControl } from "./source-connection-check-control";
 import { WorkerHealthCheckButton } from "./worker-health-check-button";
 
 type LoadResult = {
@@ -152,6 +153,7 @@ export default async function OrquestadorPage() {
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1);
+  const sourceConnectionJobType = jobTypes.find((jobType) => jobType.job_type === "source_connection_check");
 
   return (
     <DashboardShell
@@ -166,9 +168,12 @@ export default async function OrquestadorPage() {
         <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">
           Solo lectura
         </span>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-          <OrquestadorRefreshButton />
-          <WorkerHealthCheckButton />
+        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-4xl">
+          <div className="flex flex-col gap-3 sm:items-end">
+            <OrquestadorRefreshButton />
+            <WorkerHealthCheckButton />
+          </div>
+          <SourceConnectionCheckControl enabled={sourceConnectionJobType?.enabled === true} />
         </div>
       </div>
 

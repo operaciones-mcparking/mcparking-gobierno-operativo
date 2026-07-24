@@ -66,6 +66,15 @@ export type HealthCheckResult = {
   real_execution_allowed: boolean | null;
 };
 
+export type SourceConnectionResult = {
+  ok: boolean;
+  source_key: string | null;
+  checked_at: string | null;
+  duration_ms: number | null;
+  read_only: boolean | null;
+  worker_id: string | null;
+};
+
 export type OrchestratorJob = {
   id: string;
   job_type: string;
@@ -78,6 +87,7 @@ export type OrchestratorJob = {
   started_at: string | null;
   finished_at: string | null;
   health_check_result?: HealthCheckResult | null;
+  source_connection_result?: SourceConnectionResult | null;
 };
 
 export type OrchestratorEvent = {
@@ -130,6 +140,10 @@ function safeString(value: unknown) {
   return typeof value === "string" ? sanitizeOperationalText(value) : null;
 }
 
+function safeNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function safeHealthCheckResult(jobType: string, result: JsonRecord | null | undefined): HealthCheckResult | null {
   if (jobType !== "worker_health_check" || !result) {
     return null;
@@ -141,6 +155,21 @@ function safeHealthCheckResult(jobType: string, result: JsonRecord | null | unde
     checked_at: safeString(result.checked_at),
     dry_run: safeBoolean(result.dry_run),
     real_execution_allowed: safeBoolean(result.real_execution_allowed),
+  };
+}
+
+function safeSourceConnectionResult(jobType: string, result: JsonRecord | null | undefined): SourceConnectionResult | null {
+  if (jobType !== "source_connection_check" || !result) {
+    return null;
+  }
+
+  return {
+    ok: result.ok === true,
+    source_key: safeString(result.source_key),
+    checked_at: safeString(result.checked_at),
+    duration_ms: safeNumber(result.duration_ms),
+    read_only: safeBoolean(result.read_only),
+    worker_id: safeString(result.worker_id),
   };
 }
 
@@ -169,6 +198,7 @@ export function safeJobRow(row: RawJobRow): OrchestratorJob {
     started_at: row.started_at ?? null,
     finished_at: row.finished_at ?? null,
     health_check_result: safeHealthCheckResult(row.job_type, row.result),
+    source_connection_result: safeSourceConnectionResult(row.job_type, row.result),
   };
 }
 

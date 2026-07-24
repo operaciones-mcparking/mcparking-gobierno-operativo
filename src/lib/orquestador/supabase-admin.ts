@@ -33,6 +33,10 @@ function emptyResult<T>(): OrquestadorResult<T> {
   return { data: [], error: true };
 }
 
+function singleError<T>(): OrquestadorSingleResult<T> {
+  return { data: null, error: true };
+}
+
 export function createOrquestadorSupabaseAdminClient() {
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Missing Supabase server configuration.");
@@ -100,6 +104,16 @@ export async function listOrchestratorJobTypes(): Promise<OrquestadorResult<Orch
     return emptyResult();
   }
 }
+export async function getOrchestratorJobType(jobType: string): Promise<OrquestadorSingleResult<OrchestratorJobType>> {
+  const { data, error } = await listOrchestratorJobTypes();
+
+  if (error) {
+    return singleError();
+  }
+
+  return { data: data.find((item) => item.job_type === jobType) ?? null, error: false };
+}
+
 export async function createWorkerHealthCheckJob(requestedBy: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
@@ -118,6 +132,28 @@ export async function createWorkerHealthCheckJob(requestedBy: string): Promise<O
 
     return error || !data ? { data: null, error: true } : { data: safeJobRow(data), error: false };
   } catch {
-    return { data: null, error: true };
+    return singleError();
+  }
+}
+
+export async function createSourceConnectionCheckJob(requestedBy: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_job", {
+      p_job_type: "source_connection_check",
+      p_requested_by: requestedBy,
+      p_requested_source: "web",
+      p_target_worker_id: null,
+      p_priority: 100,
+      p_payload: {},
+      p_not_before: new Date().toISOString(),
+    })) as {
+      data: RawJobRow | null;
+      error: { message: string } | null;
+    };
+
+    return error || !data ? singleError() : { data: safeJobRow(data), error: false };
+  } catch {
+    return singleError();
   }
 }
