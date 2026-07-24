@@ -58,6 +58,14 @@ export type OrchestratorWorker = {
   updated_at: string | null;
 };
 
+export type HealthCheckResult = {
+  ok: boolean;
+  worker_id: string | null;
+  checked_at: string | null;
+  dry_run: boolean | null;
+  real_execution_allowed: boolean | null;
+};
+
 export type OrchestratorJob = {
   id: string;
   job_type: string;
@@ -69,6 +77,7 @@ export type OrchestratorJob = {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  health_check_result?: HealthCheckResult | null;
 };
 
 export type OrchestratorEvent = {
@@ -113,6 +122,28 @@ export function sanitizeOperationalText(value: string | null | undefined) {
   return normalized.length > 160 ? `${normalized.slice(0, 157).trimEnd()}...` : normalized;
 }
 
+function safeBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function safeString(value: unknown) {
+  return typeof value === "string" ? sanitizeOperationalText(value) : null;
+}
+
+function safeHealthCheckResult(jobType: string, result: JsonRecord | null | undefined): HealthCheckResult | null {
+  if (jobType !== "worker_health_check" || !result) {
+    return null;
+  }
+
+  return {
+    ok: result.ok === true,
+    worker_id: safeString(result.worker_id),
+    checked_at: safeString(result.checked_at),
+    dry_run: safeBoolean(result.dry_run),
+    real_execution_allowed: safeBoolean(result.real_execution_allowed),
+  };
+}
+
 export function safeWorkerRow(row: RawWorkerRow): OrchestratorWorker {
   return {
     worker_id: row.worker_id,
@@ -137,6 +168,7 @@ export function safeJobRow(row: RawJobRow): OrchestratorJob {
     created_at: row.created_at,
     started_at: row.started_at ?? null,
     finished_at: row.finished_at ?? null,
+    health_check_result: safeHealthCheckResult(row.job_type, row.result),
   };
 }
 

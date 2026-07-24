@@ -25,6 +25,7 @@ import {
 } from "@/lib/orquestador/supabase-admin";
 import type { OrchestratorEvent, OrchestratorJob, OrchestratorJobType, OrchestratorWorker } from "@/lib/orquestador/types";
 import { OrquestadorRefreshButton } from "./refresh-button";
+import { WorkerHealthCheckButton } from "./worker-health-check-button";
 
 type LoadResult = {
   errors: string[];
@@ -160,6 +161,16 @@ export default async function OrquestadorPage() {
       title="Orquestador"
     >
       <ErrorPanel errors={errors} />
+
+      <div className="mt-5 flex flex-col gap-3 border-b border-[#d6e1ea] pb-5 lg:flex-row lg:items-start lg:justify-between">
+        <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">
+          Solo lectura
+        </span>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <OrquestadorRefreshButton />
+          <WorkerHealthCheckButton />
+        </div>
+      </div>
 
       <section className="mt-5 grid gap-4 md:grid-cols-4">
         <KpiCard icon={Server} label="Workers activos" status="Solo lectura" value={`${activeWorkers}/${workers.length}`} />

@@ -24,6 +24,11 @@ type OrquestadorResult<T> = {
   error: boolean;
 };
 
+type OrquestadorSingleResult<T> = {
+  data: T | null;
+  error: boolean;
+};
+
 function emptyResult<T>(): OrquestadorResult<T> {
   return { data: [], error: true };
 }
@@ -93,5 +98,26 @@ export async function listOrchestratorJobTypes(): Promise<OrquestadorResult<Orch
     return error ? emptyResult() : { data: (data ?? []).map(safeJobTypeRow), error: false };
   } catch {
     return emptyResult();
+  }
+}
+export async function createWorkerHealthCheckJob(requestedBy: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_job", {
+      p_job_type: "worker_health_check",
+      p_requested_by: requestedBy,
+      p_requested_source: "web",
+      p_target_worker_id: null,
+      p_priority: 100,
+      p_payload: {},
+      p_not_before: new Date().toISOString(),
+    })) as {
+      data: RawJobRow | null;
+      error: { message: string } | null;
+    };
+
+    return error || !data ? { data: null, error: true } : { data: safeJobRow(data), error: false };
+  } catch {
+    return { data: null, error: true };
   }
 }
