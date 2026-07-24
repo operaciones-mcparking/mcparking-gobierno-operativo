@@ -12,6 +12,7 @@ import {
   PlusCircle,
   Settings,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,7 +20,7 @@ import { signOut } from "@/app/auth/actions";
 import { MobileDashboardNavigation, type MobileNavigationGroup, type MobileNavigationIcon } from "@/components/dashboard/mobile-navigation";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
-const modules: Array<{ items: Array<{ helper: string; href: string; icon: LucideIcon; iconKey: MobileNavigationIcon; label: string }>; label: string }> = [
+const modules: Array<{ items: Array<{ adminOnly?: boolean; helper: string; href: string; icon: LucideIcon; iconKey: MobileNavigationIcon; label: string }>; label: string }> = [
   {
     items: [
       { href: "/estructura", icon: Network, iconKey: "network", label: "Estructura", helper: "Gobierno operativo" },
@@ -37,12 +38,14 @@ const modules: Array<{ items: Array<{ helper: string; href: string; icon: Lucide
     label: "Operacion",
   },
   {
-    items: [{ href: "/brechas", icon: AlertTriangle, iconKey: "alert-triangle", label: "Brechas", helper: "Alertas y riesgos" }],
+    items: [
+      { href: "/brechas", icon: AlertTriangle, iconKey: "alert-triangle", label: "Brechas", helper: "Alertas y riesgos" },
+      { adminOnly: true, href: "/orquestador", icon: Workflow, iconKey: "workflow", label: "Orquestador", helper: "Workers y jobs" },
+    ],
     label: "Control",
   },
 ];
 
-const flatModules = modules.flatMap((group) => group.items);
 
 function BrandLogo({ compact = false }: { compact?: boolean }) {
   return (
@@ -94,7 +97,13 @@ export async function DashboardShell({
 
   const userLabel = user?.email ?? "Usuario interno";
   const isAdmin = profile?.app_role === "admin" && profile.status === "active";
-  const mobileModules: MobileNavigationGroup[] = modules.map((group) => ({
+  const visibleModules = modules
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.adminOnly || isAdmin),
+    }))
+    .filter((group) => group.items.length > 0);
+  const mobileModules: MobileNavigationGroup[] = visibleModules.map((group) => ({
     items: group.items.map(({ helper, href, iconKey, label }) => ({ helper, href, iconKey, label })),
     label: group.label,
   }));
@@ -116,7 +125,7 @@ export async function DashboardShell({
           </div>
 
           <nav className="flex-1 space-y-5 overflow-y-auto p-5">
-            {modules.map((group) => (
+            {visibleModules.map((group) => (
               <div key={group.label}>
                 <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
                   {group.label}

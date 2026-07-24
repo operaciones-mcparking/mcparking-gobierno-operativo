@@ -13,6 +13,7 @@ import {
   PlusCircle,
   Settings,
   Users,
+  Workflow,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -27,7 +28,8 @@ export type MobileNavigationIcon =
   | "git-branch"
   | "message-circle"
   | "network"
-  | "users";
+  | "users"
+  | "workflow";
 
 export type MobileNavigationItem = {
   helper: string;
@@ -49,6 +51,7 @@ const iconByKey: Record<MobileNavigationIcon, LucideIcon> = {
   "message-circle": MessageCircle,
   network: Network,
   users: Users,
+  workflow: Workflow,
 };
 
 export function MobileDashboardNavigation({
