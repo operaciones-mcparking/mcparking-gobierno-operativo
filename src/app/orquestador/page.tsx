@@ -17,6 +17,7 @@ import {
 } from "@/components/dashboard/data-table";
 import { DashboardShell, KpiCard, Panel } from "@/components/dashboard/shell";
 import { requireAdminAccess } from "@/lib/auth/admin";
+import { BANCO_RESERVAS_LAST_WEEK_JOB_TYPE, BANCO_RESERVAS_TARGET_WORKER_ID, getBancoReservasReadiness } from "@/lib/orquestador/banco-reservas-last-week";
 import {
   listOrchestratorEvents,
   listOrchestratorJobs,
@@ -24,6 +25,7 @@ import {
   listOrchestratorWorkers,
 } from "@/lib/orquestador/supabase-admin";
 import type { OrchestratorEvent, OrchestratorJob, OrchestratorJobType, OrchestratorWorker } from "@/lib/orquestador/types";
+import { BancoReservasLastWeekControl } from "./banco-reservas-last-week-control";
 import { OrquestadorRefreshButton } from "./refresh-button";
 import { SourceConnectionCheckControl } from "./source-connection-check-control";
 import { WorkerHealthCheckButton } from "./worker-health-check-button";
@@ -64,7 +66,7 @@ function statusTone(status: string) {
   const normalized = status.toLowerCase();
 
   if (["idle", "succeeded"].includes(normalized)) return "success";
-  if (["queued", "running", "busy"].includes(normalized)) return "info";
+  if (["queued", "claimed", "running", "busy"].includes(normalized)) return "info";
   if (["failed", "error", "offline"].includes(normalized)) return "danger";
   if (["cancelled"].includes(normalized)) return "warning";
 
@@ -147,13 +149,19 @@ export default async function OrquestadorPage() {
   await requireAdminAccess();
   const { errors, events, jobs, jobTypes, workers } = await loadOrquestadorData();
   const activeWorkers = workers.filter((worker) => worker.status !== "offline").length;
-  const activeJobs = jobs.filter((job) => ["queued", "running"].includes(job.status)).length;
+  const activeJobs = jobs.filter((job) => ["queued", "claimed", "running"].includes(job.status)).length;
   const lastHeartbeat = workers
     .map((worker) => worker.last_seen_at)
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1);
   const sourceConnectionJobType = jobTypes.find((jobType) => jobType.job_type === "source_connection_check");
+  const bancoReservasJobType = jobTypes.find((jobType) => jobType.job_type === BANCO_RESERVAS_LAST_WEEK_JOB_TYPE);
+  const bancoReservasReadiness = getBancoReservasReadiness({
+    jobType: bancoReservasJobType,
+    jobs,
+    worker: workers.find((worker) => worker.worker_id === BANCO_RESERVAS_TARGET_WORKER_ID),
+  });
 
   return (
     <DashboardShell
@@ -166,14 +174,15 @@ export default async function OrquestadorPage() {
 
       <div className="mt-5 flex flex-col gap-3 border-b border-[#d6e1ea] pb-5 lg:flex-row lg:items-start lg:justify-between">
         <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">
-          Solo lectura
+          Control seguro
         </span>
-        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-4xl">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 xl:max-w-6xl">
           <div className="flex flex-col gap-3 sm:items-end">
             <OrquestadorRefreshButton />
             <WorkerHealthCheckButton />
           </div>
           <SourceConnectionCheckControl enabled={sourceConnectionJobType?.enabled === true} />
+          <BancoReservasLastWeekControl readinessCode={bancoReservasReadiness.code} />
         </div>
       </div>
 

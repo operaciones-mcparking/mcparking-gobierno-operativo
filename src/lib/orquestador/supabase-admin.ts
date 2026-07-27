@@ -2,6 +2,13 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import {
+  BANCO_RESERVAS_LAST_WEEK_JOB_TYPE,
+  BANCO_RESERVAS_LAST_WEEK_MODE,
+  BANCO_RESERVAS_PRIORITY,
+  BANCO_RESERVAS_REQUESTED_SOURCE,
+  BANCO_RESERVAS_TARGET_WORKER_ID,
+} from "@/lib/orquestador/banco-reservas-last-week";
+import {
   safeEventRow,
   safeJobRow,
   safeJobTypeRow,
@@ -77,6 +84,19 @@ export async function listOrchestratorJobs(): Promise<OrquestadorResult<Orchestr
   }
 }
 
+export async function listOrchestratorJobsForGuard(): Promise<OrquestadorResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_list_jobs", { p_limit: 1000 })) as {
+      data: RawJobRow[] | null;
+      error: { message: string } | null;
+    };
+
+    return error ? emptyResult() : { data: (data ?? []).map(safeJobRow), error: false };
+  } catch {
+    return emptyResult();
+  }
+}
 export async function listOrchestratorEvents(): Promise<OrquestadorResult<OrchestratorEvent>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
@@ -146,6 +166,27 @@ export async function createSourceConnectionCheckJob(requestedBy: string): Promi
       p_target_worker_id: null,
       p_priority: 100,
       p_payload: {},
+      p_not_before: new Date().toISOString(),
+    })) as {
+      data: RawJobRow | null;
+      error: { message: string } | null;
+    };
+
+    return error || !data ? singleError() : { data: safeJobRow(data), error: false };
+  } catch {
+    return singleError();
+  }
+}
+export async function createBancoReservasLastWeekJob(requestedBy: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_job", {
+      p_job_type: BANCO_RESERVAS_LAST_WEEK_JOB_TYPE,
+      p_requested_by: requestedBy,
+      p_requested_source: BANCO_RESERVAS_REQUESTED_SOURCE,
+      p_target_worker_id: BANCO_RESERVAS_TARGET_WORKER_ID,
+      p_priority: BANCO_RESERVAS_PRIORITY,
+      p_payload: { modo: BANCO_RESERVAS_LAST_WEEK_MODE },
       p_not_before: new Date().toISOString(),
     })) as {
       data: RawJobRow | null;

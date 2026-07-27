@@ -75,6 +75,14 @@ export type SourceConnectionResult = {
   worker_id: string | null;
 };
 
+export type BancoReservasLastWeekResult = {
+  ok: boolean | null;
+  duration_seconds: number | null;
+  modo: "last-week" | null;
+  returncode: number | null;
+  timed_out: boolean | null;
+};
+
 export type OrchestratorJob = {
   id: string;
   job_type: string;
@@ -86,6 +94,8 @@ export type OrchestratorJob = {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  duration_seconds: number | null;
+  banco_reservas_last_week_result?: BancoReservasLastWeekResult | null;
   health_check_result?: HealthCheckResult | null;
   source_connection_result?: SourceConnectionResult | null;
 };
@@ -173,6 +183,37 @@ function safeSourceConnectionResult(jobType: string, result: JsonRecord | null |
   };
 }
 
+function safeBancoReservasLastWeekResult(jobType: string, result: JsonRecord | null | undefined): BancoReservasLastWeekResult | null {
+  if (jobType !== "banco_reservas_actualizar" || !result) {
+    return null;
+  }
+
+  const returncode = safeNumber(result.returncode);
+
+  return {
+    ok: safeBoolean(result.ok) ?? (returncode === null ? null : returncode === 0),
+    duration_seconds: safeNumber(result.duration_seconds),
+    modo: result.modo === "last-week" ? "last-week" : null,
+    returncode,
+    timed_out: safeBoolean(result.timed_out),
+  };
+}
+
+function durationSeconds(startedAt: string | null | undefined, finishedAt: string | null | undefined) {
+  if (!startedAt || !finishedAt) {
+    return null;
+  }
+
+  const startMs = new Date(startedAt).getTime();
+  const finishMs = new Date(finishedAt).getTime();
+
+  if (!Number.isFinite(startMs) || !Number.isFinite(finishMs) || finishMs < startMs) {
+    return null;
+  }
+
+  return Math.round((finishMs - startMs) / 1000);
+}
+
 export function safeWorkerRow(row: RawWorkerRow): OrchestratorWorker {
   return {
     worker_id: row.worker_id,
@@ -197,6 +238,8 @@ export function safeJobRow(row: RawJobRow): OrchestratorJob {
     created_at: row.created_at,
     started_at: row.started_at ?? null,
     finished_at: row.finished_at ?? null,
+    duration_seconds: durationSeconds(row.started_at, row.finished_at),
+    banco_reservas_last_week_result: safeBancoReservasLastWeekResult(row.job_type, row.result),
     health_check_result: safeHealthCheckResult(row.job_type, row.result),
     source_connection_result: safeSourceConnectionResult(row.job_type, row.result),
   };
