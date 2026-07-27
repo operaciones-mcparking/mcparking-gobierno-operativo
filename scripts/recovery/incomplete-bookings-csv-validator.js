@@ -19,6 +19,7 @@ const EXPECTED_COLUMNS = [
 ];
 
 const MANDATORY_COLUMNS = ["id", "booking_id", "type", "form_datetime"];
+const MESSAGE_ID_COLUMNS = ["Id_Mensaje", "id_mensaje", "message_id", "Message_ID", "Id Mensaje"];
 const VALID_TYPES = new Set(["abandoned", "canceled"]);
 const RECOVERY_TIME_ZONE = "America/Santiago";
 
@@ -40,6 +41,16 @@ function normalizeParkingCode(raw) {
   const value = cleanText(raw);
 
   return value ? value.toUpperCase() : null;
+}
+
+function firstPresentColumn(row, columns) {
+  for (const column of columns) {
+    const value = cleanText(row[column]);
+
+    if (value) return value;
+  }
+
+  return null;
 }
 
 function parseBoolean(raw) {
@@ -275,7 +286,7 @@ function normalizeIncompleteBookingRow(row) {
     email_normalized: normalizeEmail(row.email),
     form_datetime: dateTimeValue(row.form_datetime),
     ...intendedFields,
-    message_id: cleanText(row.Id_Mensaje),
+    message_id: firstPresentColumn(row, MESSAGE_ID_COLUMNS),
     message_sent: parseBoolean(row.Message_Sent),
     parking_code: normalizeParkingCode(row.parking_code),
     phone_normalized: normalizePhone(row.phone),
@@ -338,6 +349,7 @@ function validateIncompleteBookingsCsv(csvContent) {
   const normalizedTypes = rows.map((row) => normalizeType(row.type));
   const unknownTypes = normalizedTypes.filter((type) => type && !VALID_TYPES.has(type));
   const messageSentValues = rows.map((row) => parseBoolean(row.Message_Sent));
+  const messageIdColumnPresent = MESSAGE_ID_COLUMNS.some((column) => headers.includes(column));
 
   return {
     columns: headers.length,
@@ -349,7 +361,9 @@ function validateIncompleteBookingsCsv(csvContent) {
     emailValid: rows.filter((row) => normalizeEmail(row.email)).length,
     extraColumns,
     maxFormDatetime: parsedFormDates.at(-1) ?? null,
-    messageIdPresent: rows.filter((row) => cleanText(row.Id_Mensaje)).length,
+    messageIdColumnPresent,
+    messageIdPresent: rows.filter((row) => firstPresentColumn(row, MESSAGE_ID_COLUMNS)).length,
+    messageSentWithoutMessageId: rows.filter((row) => parseBoolean(row.Message_Sent) === true && !firstPresentColumn(row, MESSAGE_ID_COLUMNS)).length,
     messageSentFalse: messageSentValues.filter((value) => value === false).length,
     messageSentParseable: messageSentValues.filter((value) => value !== null).length,
     messageSentTrue: messageSentValues.filter((value) => value === true).length,

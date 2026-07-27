@@ -29,7 +29,9 @@ type IncompleteBookingsCsvReport = {
   emailValid: number;
   extraColumns: string[];
   maxFormDatetime: Date | null;
+  messageIdColumnPresent: boolean;
   messageIdPresent: number;
+  messageSentWithoutMessageId: number;
   messageSentFalse: number;
   messageSentParseable: number;
   messageSentTrue: number;
@@ -100,7 +102,9 @@ function safeSummary(report: IncompleteBookingsCsvReport) {
     emailsValid: report.emailValid,
     extraColumnsCount: report.extraColumns.length,
     formDatetimeParseable: report.parseableFormDatetime,
+    messageIdColumnPresent: report.messageIdColumnPresent,
     messageIdPresent: report.messageIdPresent,
+    messageSentWithoutMessageId: report.messageSentWithoutMessageId,
     messageSentCounts: {
       false: report.messageSentFalse,
       true: report.messageSentTrue,

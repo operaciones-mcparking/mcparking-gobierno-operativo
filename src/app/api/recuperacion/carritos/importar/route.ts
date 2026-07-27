@@ -31,7 +31,9 @@ type IncompleteBookingsCsvReport = {
   emailPresent: number;
   emailValid: number;
   extraColumns: string[];
+  messageIdColumnPresent: boolean;
   messageIdPresent: number;
+  messageSentWithoutMessageId: number;
   messageSentFalse: number;
   messageSentParseable: number;
   messageSentTrue: number;
@@ -78,6 +80,7 @@ type ImportRpcResult = {
   rowsTotal?: number;
   skippedDuplicateRows?: number;
   sourceDuplicateRows?: number;
+  updatedRows?: number;
 };
 
 type IncompleteBookingsWatermarkRow = {
@@ -140,7 +143,9 @@ function safeSummary(report: IncompleteBookingsCsvReport) {
     emailsValid: report.emailValid,
     extraColumnsCount: report.extraColumns.length,
     formDatetimeParseable: report.parseableFormDatetime,
+    messageIdColumnPresent: report.messageIdColumnPresent,
     messageIdPresent: report.messageIdPresent,
+    messageSentWithoutMessageId: report.messageSentWithoutMessageId,
     messageSentCounts: {
       false: report.messageSentFalse,
       true: report.messageSentTrue,
@@ -232,6 +237,7 @@ function safeImportSummary(
     safetyWindowDays: INCOMPLETE_BOOKINGS_WATERMARK_SAFETY_WINDOW_DAYS,
     skippedDuplicateRows: result.skippedDuplicateRows ?? 0,
     sourceDuplicateRows: result.sourceDuplicateRows ?? 0,
+    updatedRows: result.updatedRows ?? 0,
     watermarkCutoffAt: watermark.watermarkCutoffAt,
     watermarkUpdatedAt: watermark.watermarkUpdatedAt,
   };

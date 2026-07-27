@@ -14,7 +14,9 @@ type IncompleteBookingsValidationSummary = {
   emailsTotal: number;
   emailsValid: number;
   formDatetimeParseable: number;
+  messageIdColumnPresent: boolean;
   messageSentCounts: Record<string, number>;
+  messageSentWithoutMessageId: number;
   missingCriticalColumns: string[];
   missingRecommendedColumns: string[];
   missingRequiredColumns: string[];
@@ -42,10 +44,13 @@ type ImportSummary = {
   invalidRows: number;
   messageDuplicateRows: number;
   messageSentRows: number;
+  rowsCandidate: number;
   rowsReceived: number;
+  rowsSkippedByWatermark: number;
   rowsTotal: number;
   skippedDuplicateRows: number;
   sourceDuplicateRows: number;
+  updatedRows: number;
 };
 
 type ImportResponse = {
@@ -167,6 +172,21 @@ export function IncompleteBookingsUploadMock() {
       { label: "false", value: counts.false === undefined ? "-" : formatNumber(counts.false), tone: "neutral" as BadgeTone },
       { label: "unknown", value: counts.unknown === undefined ? "-" : formatNumber(counts.unknown), tone: "warning" as BadgeTone },
     ];
+  }, [summary]);
+  const messageIdWarnings = useMemo(() => {
+    if (!summary) return [];
+
+    const warnings: string[] = [];
+
+    if (!summary.messageIdColumnPresent) {
+      warnings.push("El CSV no trae columna Id_Mensaje; los carritos enviados quedaran como Sin tracking hasta corregir la fuente.");
+    }
+
+    if (summary.messageSentWithoutMessageId > 0) {
+      warnings.push(`${formatNumber(summary.messageSentWithoutMessageId)} carritos enviados vienen sin Id_Mensaje; quedaran como Sin tracking hasta corregir la fuente.`);
+    }
+
+    return warnings;
   }, [summary]);
 
   function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -339,9 +359,16 @@ export function IncompleteBookingsUploadMock() {
                 Validación completada. La vista previa muestra solo agregados seguros.
               </p>
             ) : null}
+            {messageIdWarnings.length > 0 ? (
+              <div className="mt-3 rounded-lg border border-[#ffd6b0] bg-[#fff7ef] px-3 py-2 text-sm leading-5 text-[#86510d]">
+                {messageIdWarnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+            ) : null}
             {importSummary ? (
               <p className="mt-3 rounded-lg border border-[#bfe5d2] bg-[#f1fbf6] px-3 py-2 text-sm leading-5 text-[#166534]">
-                Importación preparada en staging. Filas insertadas: {formatNumber(importSummary.insertedRows)}.
+                Importación preparada en staging. Filas procesadas: {formatNumber(importSummary.rowsReceived)} de {formatNumber(importSummary.rowsTotal)}. Omitidas por ventana: {formatNumber(importSummary.rowsSkippedByWatermark)}.
               </p>
             ) : null}
             {importError ? (
@@ -451,10 +478,14 @@ export function IncompleteBookingsUploadMock() {
                 </p>
                 {importSummary ? (
                   <div className="mt-3 rounded-lg border border-[#e8c394] bg-white px-3 py-2 text-xs leading-5 text-[#86510d]">
+                    <p>Filas archivo: {formatNumber(importSummary.rowsTotal)}</p>
+                    <p>Filas procesadas: {formatNumber(importSummary.rowsReceived)}</p>
+                    <p>Omitidas por ventana de actualización: {formatNumber(importSummary.rowsSkippedByWatermark)}</p>
                     <p>Filas insertadas: {formatNumber(importSummary.insertedRows)}</p>
                     <p>Abandoned: {formatNumber(importSummary.insertedAbandonedRows)}</p>
                     <p>Canceled: {formatNumber(importSummary.insertedCanceledRows)}</p>
                     <p>Message_Sent true: {formatNumber(importSummary.messageSentRows)}</p>
+                    <p>Actualizadas: {formatNumber(importSummary.updatedRows)}</p>
                     <p>Duplicadas omitidas: {formatNumber(importSummary.skippedDuplicateRows)}</p>
                     {importSummary.fileAlreadyImported ? <p>Archivo ya importado anteriormente.</p> : null}
                   </div>
@@ -495,6 +526,7 @@ export function IncompleteBookingsUploadMock() {
               { label: "Tipos abandoned", value: formatNumber(summary.typeCounts.abandoned ?? 0) },
               { label: "Tipos canceled", value: formatNumber(summary.typeCounts.canceled ?? 0) },
               { label: "Duplicados Id_Mensaje", value: formatNumber(summary.duplicateMessageIdGroups) },
+              { label: "Enviados sin Id_Mensaje", value: formatNumber(summary.messageSentWithoutMessageId) },
             ]}
             title="Resumen seguro de validacion"
           />
@@ -503,12 +535,17 @@ export function IncompleteBookingsUploadMock() {
           <ImportResultGrid
             items={[
               { label: "Batch", value: shortBatchId(importBatchId) },
-              { label: "Filas recibidas", value: formatNumber(importSummary.rowsReceived) },
+              { label: "Filas archivo", value: formatNumber(importSummary.rowsTotal) },
+              { label: "Filas procesadas", value: formatNumber(importSummary.rowsReceived) },
+              { label: "Omitidas por ventana", value: formatNumber(importSummary.rowsSkippedByWatermark) },
               { label: "Insertadas", value: formatNumber(importSummary.insertedRows) },
+              { label: "Actualizadas", value: formatNumber(importSummary.updatedRows) },
               { label: "Duplicadas omitidas", value: formatNumber(importSummary.skippedDuplicateRows) },
               { label: "Conflictos", value: formatNumber(importSummary.conflictRows) },
               { label: "Invalidas", value: formatNumber(importSummary.invalidRows) },
               { label: "Message_Sent true", value: formatNumber(importSummary.messageSentRows) },
+              { label: "Cuadre procesadas", value: `${formatNumber(importSummary.insertedRows + importSummary.updatedRows + importSummary.skippedDuplicateRows + importSummary.conflictRows + importSummary.invalidRows)} / ${formatNumber(importSummary.rowsReceived)}` },
+              { label: "Cuadre archivo", value: `${formatNumber(importSummary.rowsReceived + importSummary.rowsSkippedByWatermark)} / ${formatNumber(importSummary.rowsTotal)}` },
             ]}
             title="Resultado seguro"
           />
