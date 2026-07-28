@@ -519,29 +519,30 @@ Patron aprobado para replicar un control del orquestador antiguo:
 
 ## 18. Preparacion de Agente 02
 
-Antes de crear controles web para Agente 02, la web necesita conocer:
+Estado PC 1 actualizado para Agente 02:
 
-- job types reales;
-- actions permitidas;
-- si el payload esta cerrado o acepta parametros;
-- target worker;
-- readiness requerido;
-- lock o exclusividad necesaria;
-- timeout esperado;
-- resultado estructurado sanitizable;
-- riesgo operacional;
-- barreras de ejecucion real;
-- si hay dependencia de Agente 01 u otros procesos.
+- Payload estricto confirmado desde PC 1 para `banco_packs_actualizar_sin_consumos` y `banco_packs_actualizar_completo`.
+- Lock operacional confirmado desde PC 1.
+- Commit de referencia PC 1: `89ee185 Harden Agent 02 job execution`.
+- Lock file: `runtime/locks/agente_02_banco_packs.lock`.
+- Script: `scripts/agente_02_lock.ps1`.
+- Exit code de lock ocupado: `74`.
+- Mensaje de lock ocupado: `Agente 02 ya tiene una ejecución en curso.`
+- El lock aplica a todas las acciones del Agente 02.
+- Alcance parcial: protege ejecuciones via wrapper del orquestador, no ejecucion manual directa desde `D:\mcparking-platform`.
 
-No confirmado desde PC 2; debe validarse contra `docs/contexto_pc1_worker_y_agentes.md` o codigo del PC 1:
+Primera acción recomendada para la integración web: `actualizar-packs`, mediante el job type `banco_packs_actualizar_sin_consumos`.
 
-- nombres reales de job types del Agente 02;
-- payloads admitidos;
-- wrappers existentes;
-- locks existentes;
-- estructura de resultado;
-- eventos emitidos;
-- condiciones de seguridad del agente.
+Pendiente para PC 2 antes de crear controles web:
+
+- auditar el contrato exacto de la primera accion web;
+- decidir endpoint dedicado;
+- definir DTO seguro;
+- definir readiness;
+- definir polling;
+- agregar pruebas;
+- validar dry-run;
+- realizar prueba real controlada.
 
 ## 19. Plantilla para futuros agentes
 
@@ -596,12 +597,19 @@ PC 2/Vercel no debe:
 | Worker/agentes PC 1 no auditados aqui | Limitacion explicita |
 | Diferencia de estados activos entre PC 2 y PC 1 | PC 2 incluye `claimed` como compatibilidad defensiva; segun contexto auditado de PC 1, los estados persistidos confirmados son `queued`, `running`, `succeeded`, `failed` y `cancelled`, y la RPC de claim pasa de `queued` a `running` |
 | Vercel project metadata no esta en `.vercel/project.json` | Confirmado previamente; no afecta codigo pero limita trazabilidad local |
+| Lock Agente 02 parcial, no global | Confirmado por PC 1 en `89ee185`; protege wrapper del orquestador, no ejecucion manual directa desde plataforma |
+| Agente 02 aun no tiene control web en PC 2 | Pendiente de diseno e implementacion |
+| Agente 02 no ha sido validado en dry-run desde la nueva web | Pendiente |
+| Agente 02 no ha sido validado en ejecucion real desde la nueva web | Pendiente |
+| Resultado sanitizable de Agente 02 | Pendiente de definir DTO seguro |
 
 ## 22. Preguntas abiertas
 
-- Cuales son los job types reales de Banco de Packs.
-- Si Banco de Packs ya tiene payload estricto en PC 1.
-- Si Agente 02 tiene locks y barreras equivalentes a Agente 01.
+- Cual debe ser el DTO seguro para la primera accion web de Agente 02.
+- Que campos del resultado real de Agente 02 pueden mostrarse sin exponer salida cruda.
+- Si se debe usar el mismo readiness global de Banco de Reservas o uno especifico para Packs.
+- Si el job type debe permanecer `enabled=true` durante pruebas o habilitarse solo por ventanas controladas.
+- Cuando realizar dry-run y prueba real desde PC 2.
 - Si existe una RPC transaccional para crear jobs con guardas atomicas.
 - Si conviene crear endpoint dedicado `GET /api/orquestador/jobs/[id]` para evitar depender de que el job aparezca en los ultimos 20.
 - Si `listOrchestratorJobsForGuard()` debe usar una RPC especifica de jobs activos en vez de `p_limit: 1000`.

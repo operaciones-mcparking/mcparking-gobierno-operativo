@@ -43,6 +43,7 @@ Commits de referencia:
 | Origen | Commit | Nota |
 | --- | --- | --- |
 | PC 1 orquestador funcional | `7f76ef2 Add Agent 01 execution lock` | HEAD funcional del PC 1 al momento de la auditoria original |
+| PC 1 Agente 02 endurecido | `89ee185 Harden Agent 02 job execution` | Commit funcional de referencia del endurecimiento de payload y lock de Agente 02 |
 | PC 1 contexto | `2de0d14 Document PC1 worker and agents context` | Commit que versiono el documento de contexto PC 1 |
 | PC 1 plataforma funcional | `2ae8b60 Expand controlled sample for missing relation cases` | HEAD funcional de plataforma observado en la auditoria original |
 | PC 2 web funcional | `a091de2 Add real last-week reservation update control` | Commit funcional de PC 2 con Banco de Reservas last-week |
@@ -193,12 +194,36 @@ Fuente PC 1: `worker_local/jobs_registry.py`.
 | `worker_health_check` | `{}` exacto | Handler interno, sin comandos |
 | `source_connection_check` | `{}` exacto | Handler interno, read-only, `SELECT 1` |
 | `banco_reservas_actualizar` | `modo` permitido y `confirmar_borrado` solo para rebuild | Wrapper Agente 01 |
-| `banco_packs_actualizar_sin_consumos` | `action='actualizar-packs'` | Wrapper Agente 02 |
-| `banco_packs_actualizar_completo` | `action` en allowlist y confirmaciones segun action | Wrapper Agente 02 |
+| `banco_packs_actualizar_sin_consumos` | `{ "action": "actualizar-packs" }` exacto | Wrapper Agente 02 |
+| `banco_packs_actualizar_completo` | `action` en allowlist con confirmacion exacta segun action | Wrapper Agente 02 |
 | `dashboard_actualizar_metricas` | `agent='dashboard'` y periodo permitido | Handler interno |
 | `banco_personas_placeholder` | No implementado | Deshabilitado localmente |
 
-Reservas tiene contrato estricto contra claves extra. Health y source check aceptan solo payload vacio. Packs valida action y confirmaciones, pero no se confirmo cierre estricto de claves extra equivalente a Reservas.
+Payloads estrictos de Packs confirmados desde PC 1 en `89ee185 Harden Agent 02 job execution`.
+
+Contratos exactos:
+
+```json
+{ "action": "actualizar-packs" }
+```
+
+```json
+{ "action": "actualizar-consumos", "confirmar_actualizacion_consumos": true }
+```
+
+```json
+{ "action": "actualizar-saldos", "confirmar_actualizacion_saldos": true }
+```
+
+```json
+{ "action": "actualizar-packs-consumos-saldos", "confirmar_actualizacion_completa": true }
+```
+
+```json
+{ "action": "rebuild-completo-operativo", "confirmar_borrado_total": true }
+```
+
+Se rechazan claves extra, confirmaciones ausentes, falsas o cruzadas, actions desconocidas y payload no objeto. Reservas tiene contrato estricto contra claves extra. Health y source check aceptan solo payload vacio.
 
 ## 16. Wrappers
 
@@ -224,7 +249,15 @@ Agente 01 tiene lock operacional:
 
 El lock protege ejecuciones via wrapper del orquestador. No protege ejecuciones manuales directas en `D:\mcparking-platform`.
 
-Agente 02 no tiene lock equivalente confirmado. Antes de exponer controles nuevos de Packs en la web, se recomienda agregar lock dedicado o una barrera de concurrencia equivalente.
+Agente 02 ahora tiene lock operacional confirmado desde PC 1 en `89ee185 Harden Agent 02 job execution`.
+
+- Script: `scripts/agente_02_lock.ps1`.
+- Archivo: `runtime/locks/agente_02_banco_packs.lock`.
+- Exclusividad: `FileShare.None`.
+- Exit code ocupado: `74`.
+- Mensaje: `Agente 02 ya tiene una ejecución en curso.`
+- Aplica a todas las acciones del Agente 02.
+- Alcance parcial: no protege ejecucion manual directa en `D:\mcparking-platform`.
 
 ## 18. Barreras de dry-run y ejecucion real
 
@@ -401,13 +434,19 @@ Acciones registry:
 - `actualizar-packs-consumos-saldos`
 - `rebuild-completo-operativo`
 
-Antes de crear botones web:
+Estado actual: el endurecimiento PC 1 esta completado en `89ee185 Harden Agent 02 job execution`. Payload estricto y lock operacional ya estan confirmados. Funcionalmente esta listo para comenzar validacion de integracion web desde PC 2.
 
-- confirmar `enabled` en Supabase.
-- cerrar payload contra claves extra.
-- agregar o confirmar lock operacional.
-- probar dry-run por accion.
-- habilitar real solo para una accion de bajo impacto.
+Primera accion recomendada: `actualizar-packs` mediante `banco_packs_actualizar_sin_consumos`.
+
+Todavia falta en PC 2:
+
+- disenar endpoint dedicado;
+- definir DTO seguro;
+- definir readiness;
+- definir polling;
+- confirmar `enabled` en Supabase durante la ventana de prueba;
+- validar dry-run;
+- realizar prueba real controlada.
 
 ## 28. Agente 03 y futuros agentes
 
@@ -534,8 +573,10 @@ Recuperacion worker:
 | Vercel no puede ejecutar procesos locales | Diseñado así; debe usar Supabase como puente |
 | `claimed` en PC 2 no es estado persistido confirmado | Compatibilidad defensiva |
 | Lock Agente 01 no es global | Protege wrapper del orquestador, no ejecucion manual directa |
-| Agente 02 sin lock confirmado | Requiere correccion antes de botones reales |
-| Payload Packs no cerrado contra extras | Cerrar antes de exponer |
+| Lock Agente 02 parcial, no global | Protege wrapper del orquestador, no ejecucion manual directa desde plataforma |
+| Ejecucion manual directa de Agente 02 puede evitar el lock | Requiere disciplina operacional fuera de PC 2 |
+| Integracion web de Agente 02 aun no validada | Falta endpoint, DTO, readiness, polling, dry-run y prueba real controlada |
+| Resultado seguro de Agente 02 pendiente | Debe disenarse antes de exponer respuesta en navegador |
 | Result Banco con `returncode=0` no garantiza semantica completa | Revisar resultado operacional |
 | Worker no reanuda jobs running tras reinicio | Recuperacion manual controlada |
 
@@ -550,8 +591,11 @@ Recuperacion worker:
 ## 40. Preguntas abiertas
 
 - Si se mantendra `claimed` como compatibilidad defensiva o se alineara estrictamente a estados persistidos.
-- Si Agente 02 recibira lock antes de cualquier control web real.
-- Si el payload de Packs se cerrara contra toda clave desconocida.
+- Cual debe ser el DTO seguro para `actualizar-packs`.
+- Que campos del resultado real de Agente 02 pueden mostrarse sin exponer salida cruda.
+- Si se debe usar el mismo readiness global de Banco de Reservas o uno especifico para Packs.
+- Si el job type debe permanecer `enabled=true` durante pruebas o habilitarse solo por ventanas controladas.
+- Cuando realizar dry-run y prueba real desde PC 2.
 - Si Agente 01 necesita lock global tambien dentro de `D:\mcparking-platform`.
 - Cual linea de Agente 03 sera oficial: v1 o v2.
 - Que job real sera el siguiente despues de Banco Reservas last-week.
