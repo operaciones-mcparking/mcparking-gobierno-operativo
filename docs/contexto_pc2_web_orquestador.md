@@ -252,6 +252,7 @@ Hecho de seguridad:
 | `createWorkerHealthCheckJob()` | `orchestrator_create_job` | contrato fijo health check |
 | `createSourceConnectionCheckJob()` | `orchestrator_create_job` | contrato fijo source check |
 | `createBancoReservasLastWeekJob()` | `orchestrator_create_job` | contrato fijo Banco de Reservas |
+| `createBancoPacksUpdateJob()` | `orchestrator_create_job` | contrato fijo Banco de Packs actualizar-packs |
 
 ### Tablas/vistas
 
@@ -306,6 +307,7 @@ Resultados seguros por job type:
 | `worker_health_check` | `safeHealthCheckResult()` | `ok`, `worker_id`, `checked_at`, `dry_run`, `real_execution_allowed` |
 | `source_connection_check` | `safeSourceConnectionResult()` | `ok`, `source_key`, `checked_at`, `duration_ms`, `read_only`, `worker_id` |
 | `banco_reservas_actualizar` | `safeBancoReservasLastWeekResult()` | `ok`, `duration_seconds`, `modo`, `returncode`, `timed_out` |
+| `banco_packs_actualizar_sin_consumos` | `safeBancoPacksUpdateResult()` | `ok`, `duration_seconds`, `action`, `returncode`, `timed_out` |
 
 No se expone:
 
@@ -393,6 +395,7 @@ Frecuencias observadas:
 | Health Check | 30 | 700 ms | 2000 ms |
 | Source Connection Check | 30 | 700 ms | 2000 ms |
 | Banco Reservas last-week | 60 | 700 ms | 3000 ms |
+| Banco Packs actualizar-packs | 120 | 700 ms | 30000 ms |
 
 ## 14. Health Check
 
@@ -533,6 +536,28 @@ Estado PC 1 actualizado para Agente 02:
 
 Primera acción recomendada para la integración web: `actualizar-packs`, mediante el job type `banco_packs_actualizar_sin_consumos`.
 
+### Control web `actualizar-packs`
+
+Implementacion local PC 2 lista para revision y prueba futura:
+
+| Campo | Valor implementado |
+|---|---|
+| UI | `BancoPacksUpdateControl` |
+| Endpoint | `POST /api/orquestador/banco-packs/actualizar-packs` |
+| Body cliente | `{ "confirm": true }` exacto |
+| Query params | rechazados |
+| Job type | `banco_packs_actualizar_sin_consumos` |
+| Payload server-side | `{ action: "actualizar-packs" }` |
+| requested_source | `web_orchestrator_banco_packs_actualizar_packs` |
+| target_worker_id | `pc_operaciones_01` |
+| priority | `1` |
+| Heartbeat maximo | 120 segundos |
+| Cola activa global | `queued`, `claimed`, `running` |
+| Segunda comprobacion | readiness se ejecuta dos veces antes de `createBancoPacksUpdateJob()` |
+| Resultado seguro | `ok`, `duration_seconds`, `action`, `returncode`, `timed_out` |
+| Pruebas | `scripts/orquestador-banco-packs-actualizar-packs.test.mjs` |
+
+Estado: implementacion local lista. Dry-run desde PC 1 ya validado por contexto operativo; prueba desde web y ejecucion real siguen pendientes. El timeout visual del polling no cancela el job.
 Pendiente para PC 2 antes de crear controles web:
 
 - auditar el contrato exacto de la primera accion web;
@@ -605,8 +630,7 @@ PC 2/Vercel no debe:
 
 ## 22. Preguntas abiertas
 
-- Cual debe ser el DTO seguro para la primera accion web de Agente 02.
-- Que campos del resultado real de Agente 02 pueden mostrarse sin exponer salida cruda.
+- Si el DTO seguro inicial de Agente 02 requiere ajustes despues del primer resultado real.
 - Si se debe usar el mismo readiness global de Banco de Reservas o uno especifico para Packs.
 - Si el job type debe permanecer `enabled=true` durante pruebas o habilitarse solo por ventanas controladas.
 - Cuando realizar dry-run y prueba real desde PC 2.
@@ -654,6 +678,7 @@ PC 2/Vercel no debe:
 | `src/lib/orquestador/types.ts` | `safeEventRow()` | DTO seguro de eventos |
 | `src/lib/orquestador/types.ts` | `safeJobTypeRow()` | DTO seguro de job types |
 | `src/lib/orquestador/banco-reservas-last-week.ts` | `getBancoReservasReadiness()` | readiness Banco Reservas |
+| `src/lib/orquestador/banco-packs-actualizar-packs.ts` | `getBancoPacksUpdateReadiness()` | readiness Banco Packs |
 | `src/lib/orquestador/banco-reservas-last-week.ts` | `isWorkerHeartbeatRecent()` | heartbeat 120 segundos |
 | `src/app/api/orquestador/health-check/route.ts` | `POST()` | endpoint health check |
 | `src/app/api/orquestador/source-connection-check/route.ts` | `POST()` | endpoint source check |
@@ -665,6 +690,8 @@ PC 2/Vercel no debe:
 | `src/app/orquestador/worker-health-check-button.tsx` | `WorkerHealthCheckButton()` | UI/polling health check |
 | `src/app/orquestador/source-connection-check-control.tsx` | `SourceConnectionCheckControl()` | UI/polling source check |
 | `src/app/orquestador/banco-reservas-last-week-control.tsx` | `BancoReservasLastWeekControl()` | UI/polling Banco Reservas |
+| `src/app/orquestador/banco-packs-update-control.tsx` | `BancoPacksUpdateControl()` | UI/polling Banco Packs |
 | `src/app/orquestador/refresh-button.tsx` | `OrquestadorRefreshButton()` | refresh server data |
 | `scripts/orquestador-source-connection-check.test.mjs` | tests | pruebas estaticas source check |
 | `scripts/orquestador-banco-reservas-last-week.test.mjs` | tests A-AA | pruebas estaticas Banco Reservas |
+| `scripts/orquestador-banco-packs-actualizar-packs.test.mjs` | tests A-AI | pruebas estaticas Banco Packs |

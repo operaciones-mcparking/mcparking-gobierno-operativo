@@ -367,6 +367,7 @@ Resultados seguros conocidos:
 - `worker_health_check`: `ok`, `worker_id`, `checked_at`, `dry_run`, `real_execution_allowed`.
 - `source_connection_check`: `ok`, `source_key`, `checked_at`, `duration_ms`, `read_only`, `worker_id`.
 - `banco_reservas_actualizar`: `ok`, `duration_seconds`, `modo`, `returncode`, `timed_out`.
+- `banco_packs_actualizar_sin_consumos`: `ok`, `duration_seconds`, `action`, `returncode`, `timed_out`.
 
 ## 23. Readiness, heartbeat y cola
 
@@ -391,7 +392,8 @@ Controles existentes en la nueva web:
 
 - `worker_health_check`: puente seguro Web -> Supabase -> Worker -> Supabase.
 - `source_connection_check`: conectividad read-only desde PC 1.
-- `banco_reservas_actualizar` modo `last-week`: ejecucion real controlada de Agente 01.
+- anco_reservas_actualizar modo last-week: ejecucion real controlada de Agente 01.
+- anco_packs_actualizar_sin_consumos accion ctualizar-packs: implementacion web local lista, sin prueba real desde web todavia.
 
 Cada control tiene endpoint dedicado. No existe endpoint generico para ejecutar comandos desde la web nueva.
 
@@ -434,19 +436,24 @@ Acciones registry:
 - `actualizar-packs-consumos-saldos`
 - `rebuild-completo-operativo`
 
-Estado actual: el endurecimiento PC 1 esta completado en `89ee185 Harden Agent 02 job execution`. Payload estricto y lock operacional ya estan confirmados. Funcionalmente esta listo para comenzar validacion de integracion web desde PC 2.
+Estado actual: el endurecimiento PC 1 esta completado en `89ee185 Harden Agent 02 job execution`. Payload estricto y lock operacional ya estan confirmados. La integracion web local para `actualizar-packs` esta implementada en PC 2.
 
-Primera accion recomendada: `actualizar-packs` mediante `banco_packs_actualizar_sin_consumos`.
+Primer control web implementado: `actualizar-packs` mediante `banco_packs_actualizar_sin_consumos`.
 
-Todavia falta en PC 2:
+Contrato web PC 2:
 
-- disenar endpoint dedicado;
-- definir DTO seguro;
-- definir readiness;
-- definir polling;
-- confirmar `enabled` en Supabase durante la ventana de prueba;
-- validar dry-run;
-- realizar prueba real controlada.
+- Endpoint: `POST /api/orquestador/banco-packs/actualizar-packs`.
+- Body cliente: `{ "confirm": true }` exacto.
+- Payload server-side: `{ action: "actualizar-packs" }`.
+- requested_source: `web_orchestrator_banco_packs_actualizar_packs`.
+- target_worker_id: `pc_operaciones_01`.
+- priority: `1`.
+- Readiness: job type enabled, worker idle con heartbeat <= 120 segundos, sin `current_job_id`, sin cola global activa.
+- DTO seguro: `ok`, `duration_seconds`, `action`, `returncode`, `timed_out`.
+- Polling: por ID exacto y job type esperado; timeout visual no cancela el job.
+- Pruebas: `scripts/orquestador-banco-packs-actualizar-packs.test.mjs`.
+
+Estado: implementacion local lista. Dry-run desde PC 1 validado por contexto operativo. Prueba desde web y ejecucion real siguen pendientes.
 
 ## 28. Agente 03 y futuros agentes
 
@@ -575,8 +582,8 @@ Recuperacion worker:
 | Lock Agente 01 no es global | Protege wrapper del orquestador, no ejecucion manual directa |
 | Lock Agente 02 parcial, no global | Protege wrapper del orquestador, no ejecucion manual directa desde plataforma |
 | Ejecucion manual directa de Agente 02 puede evitar el lock | Requiere disciplina operacional fuera de PC 2 |
-| Integracion web de Agente 02 aun no validada | Falta endpoint, DTO, readiness, polling, dry-run y prueba real controlada |
-| Resultado seguro de Agente 02 pendiente | Debe disenarse antes de exponer respuesta en navegador |
+| Integracion web de Agente 02 aun no validada en real | Endpoint, DTO, readiness y polling ya implementados localmente; faltan revision visual, dry-run desde web y prueba real controlada |
+| Resultado seguro de Agente 02 puede requerir ajuste | DTO inicial definido sin result crudo; revisar tras primer resultado real |
 | Result Banco con `returncode=0` no garantiza semantica completa | Revisar resultado operacional |
 | Worker no reanuda jobs running tras reinicio | Recuperacion manual controlada |
 
@@ -591,8 +598,7 @@ Recuperacion worker:
 ## 40. Preguntas abiertas
 
 - Si se mantendra `claimed` como compatibilidad defensiva o se alineara estrictamente a estados persistidos.
-- Cual debe ser el DTO seguro para `actualizar-packs`.
-- Que campos del resultado real de Agente 02 pueden mostrarse sin exponer salida cruda.
+- Si el DTO seguro inicial de `actualizar-packs` requiere ajustes despues del primer resultado real.
 - Si se debe usar el mismo readiness global de Banco de Reservas o uno especifico para Packs.
 - Si el job type debe permanecer `enabled=true` durante pruebas o habilitarse solo por ventanas controladas.
 - Cuando realizar dry-run y prueba real desde PC 2.

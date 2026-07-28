@@ -83,6 +83,14 @@ export type BancoReservasLastWeekResult = {
   timed_out: boolean | null;
 };
 
+export type BancoPacksUpdateResult = {
+  ok: boolean | null;
+  action: "actualizar-packs" | null;
+  duration_seconds: number | null;
+  returncode: number | null;
+  timed_out: boolean | null;
+};
+
 export type OrchestratorJob = {
   id: string;
   job_type: string;
@@ -95,6 +103,7 @@ export type OrchestratorJob = {
   started_at: string | null;
   finished_at: string | null;
   duration_seconds: number | null;
+  banco_packs_update_result?: BancoPacksUpdateResult | null;
   banco_reservas_last_week_result?: BancoReservasLastWeekResult | null;
   health_check_result?: HealthCheckResult | null;
   source_connection_result?: SourceConnectionResult | null;
@@ -198,6 +207,21 @@ function safeBancoReservasLastWeekResult(jobType: string, result: JsonRecord | n
     timed_out: safeBoolean(result.timed_out),
   };
 }
+function safeBancoPacksUpdateResult(jobType: string, result: JsonRecord | null | undefined): BancoPacksUpdateResult | null {
+  if (jobType !== "banco_packs_actualizar_sin_consumos" || !result) {
+    return null;
+  }
+
+  const returncode = safeNumber(result.returncode);
+
+  return {
+    ok: safeBoolean(result.ok) ?? (returncode === null ? null : returncode === 0),
+    action: result.action === "actualizar-packs" ? "actualizar-packs" : null,
+    duration_seconds: safeNumber(result.duration_seconds),
+    returncode,
+    timed_out: safeBoolean(result.timed_out),
+  };
+}
 
 function durationSeconds(startedAt: string | null | undefined, finishedAt: string | null | undefined) {
   if (!startedAt || !finishedAt) {
@@ -239,6 +263,7 @@ export function safeJobRow(row: RawJobRow): OrchestratorJob {
     started_at: row.started_at ?? null,
     finished_at: row.finished_at ?? null,
     duration_seconds: durationSeconds(row.started_at, row.finished_at),
+    banco_packs_update_result: safeBancoPacksUpdateResult(row.job_type, row.result),
     banco_reservas_last_week_result: safeBancoReservasLastWeekResult(row.job_type, row.result),
     health_check_result: safeHealthCheckResult(row.job_type, row.result),
     source_connection_result: safeSourceConnectionResult(row.job_type, row.result),

@@ -2,6 +2,13 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import {
+  BANCO_PACKS_PRIORITY,
+  BANCO_PACKS_REQUESTED_SOURCE,
+  BANCO_PACKS_TARGET_WORKER_ID,
+  BANCO_PACKS_UPDATE_ACTION,
+  BANCO_PACKS_UPDATE_JOB_TYPE,
+} from "@/lib/orquestador/banco-packs-actualizar-packs";
+import {
   BANCO_RESERVAS_LAST_WEEK_JOB_TYPE,
   BANCO_RESERVAS_LAST_WEEK_MODE,
   BANCO_RESERVAS_PRIORITY,
@@ -187,6 +194,27 @@ export async function createBancoReservasLastWeekJob(requestedBy: string): Promi
       p_target_worker_id: BANCO_RESERVAS_TARGET_WORKER_ID,
       p_priority: BANCO_RESERVAS_PRIORITY,
       p_payload: { modo: BANCO_RESERVAS_LAST_WEEK_MODE },
+      p_not_before: new Date().toISOString(),
+    })) as {
+      data: RawJobRow | null;
+      error: { message: string } | null;
+    };
+
+    return error || !data ? singleError() : { data: safeJobRow(data), error: false };
+  } catch {
+    return singleError();
+  }
+}
+export async function createBancoPacksUpdateJob(requestedBy: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_job", {
+      p_job_type: BANCO_PACKS_UPDATE_JOB_TYPE,
+      p_requested_by: requestedBy,
+      p_requested_source: BANCO_PACKS_REQUESTED_SOURCE,
+      p_target_worker_id: BANCO_PACKS_TARGET_WORKER_ID,
+      p_priority: BANCO_PACKS_PRIORITY,
+      p_payload: { action: BANCO_PACKS_UPDATE_ACTION },
       p_not_before: new Date().toISOString(),
     })) as {
       data: RawJobRow | null;

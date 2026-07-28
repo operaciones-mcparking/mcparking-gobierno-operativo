@@ -106,8 +106,8 @@ test("Q. segunda comprobacion detecta job activo antes de crear", () => {
 });
 
 test("R. estado limpio crea exactamente un job", () => {
-  const calls = [...supabaseAdmin.matchAll(/orchestrator_create_job/g)].length;
-  assert.equal(calls, 3);
+  const calls = [...supabaseAdmin.matchAll(/export async function createBancoReservasLastWeekJob/g)].length;
+  assert.equal(calls, 1);
   assert.match(supabaseAdmin, /createBancoReservasLastWeekJob/);
 });
 
