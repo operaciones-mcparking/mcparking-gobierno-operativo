@@ -47,6 +47,7 @@ Commits de referencia:
 | PC 1 contexto | `2de0d14 Document PC1 worker and agents context` | Commit que versiono el documento de contexto PC 1 |
 | PC 1 plataforma funcional | `2ae8b60 Expand controlled sample for missing relation cases` | HEAD funcional de plataforma observado en la auditoria original |
 | PC 2 web funcional | `a091de2 Add real last-week reservation update control` | Commit funcional de PC 2 con Banco de Reservas last-week |
+| PC 2 Banco de Packs dry-run UI | `95f633a Show Banco de Packs dry-run result` | Commit funcional que corrige visualizacion del resultado dry-run de Banco de Packs |
 | PC 2 contexto web | `0fdaf58 Document PC2 orchestrator web context` | Commit que versiono el documento de contexto PC 2 |
 
 ## 4. Arquitectura fisica completa
@@ -392,8 +393,8 @@ Controles existentes en la nueva web:
 
 - `worker_health_check`: puente seguro Web -> Supabase -> Worker -> Supabase.
 - `source_connection_check`: conectividad read-only desde PC 1.
-- anco_reservas_actualizar modo last-week: ejecucion real controlada de Agente 01.
-- anco_packs_actualizar_sin_consumos accion ctualizar-packs: implementacion web local lista, sin prueba real desde web todavia.
+- `banco_reservas_actualizar` modo `last-week`: ejecucion real controlada de Agente 01.
+- `banco_packs_actualizar_sin_consumos` accion `actualizar-packs`: control web implementado, desplegado y validado E2E en dry-run.
 
 Cada control tiene endpoint dedicado. No existe endpoint generico para ejecutar comandos desde la web nueva.
 
@@ -436,7 +437,7 @@ Acciones registry:
 - `actualizar-packs-consumos-saldos`
 - `rebuild-completo-operativo`
 
-Estado actual: el endurecimiento PC 1 esta completado en `89ee185 Harden Agent 02 job execution`. Payload estricto y lock operacional ya estan confirmados. La integracion web local para `actualizar-packs` esta implementada en PC 2.
+Estado actual: el endurecimiento PC 1 esta completado en `89ee185 Harden Agent 02 job execution`. Payload estricto y lock operacional ya estan confirmados. La integracion web para `actualizar-packs` esta implementada y desplegada en PC 2, con dry-run web E2E validado.
 
 Primer control web implementado: `actualizar-packs` mediante `banco_packs_actualizar_sin_consumos`.
 
@@ -449,11 +450,27 @@ Contrato web PC 2:
 - target_worker_id: `pc_operaciones_01`.
 - priority: `1`.
 - Readiness: job type enabled, worker idle con heartbeat <= 120 segundos, sin `current_job_id`, sin cola global activa.
-- DTO seguro: `ok`, `duration_seconds`, `action`, `returncode`, `timed_out`.
+- DTO seguro: `ok`, `dry_run`, `message`, `duration_seconds`, `action`, `returncode`, `timed_out`, contadores opcionales si existen.
 - Polling: por ID exacto y job type esperado; timeout visual no cancela el job.
 - Pruebas: `scripts/orquestador-banco-packs-actualizar-packs.test.mjs`.
 
-Estado: implementacion local lista. Dry-run desde PC 1 validado por contexto operativo. Prueba desde web y ejecucion real siguen pendientes.
+Evidencia E2E dry-run desde web:
+
+- Commit PC 2: `95f633a Show Banco de Packs dry-run result`.
+- Job: `fcbc3229-8abf-48e7-a522-7b6fd1d07957`.
+- Estado: `succeeded`.
+- Attempts: `1`.
+- Worker: `pc_operaciones_01`.
+- Duracion aproximada visible: 5 segundos.
+- Resultado visible: dry-run completado correctamente.
+- Accion: `actualizar-packs`.
+- Mensaje visible: `Dry-run: comando real no ejecutado.`.
+- Barreras efectivas: `WORKER_DRY_RUN=true`, `WORKER_ALLOW_REAL_EXECUTION=false`, `ORCHESTRATOR_ALLOW_AGENT02_REAL_EXECUTION=false`.
+- Estado final observado: worker idle, current job vacio, cola `0`, job historico `succeeded`, `attempts=1/1`.
+
+Estado reclasificado: control implementado, desplegado, dry-run web E2E validado y listo para planificar prueba real controlada. No marcar ejecucion real como validada.
+
+Aclaracion: el dry-run valido la arquitectura completa hasta UI, pero no ejecuto wrapper, lock, CLI ni datos reales.
 
 ## 28. Agente 03 y futuros agentes
 
@@ -533,8 +550,9 @@ PC 2 despues:
 - Confirmar claim.
 - Confirmar eventos.
 - Confirmar resultado sanitizado.
-- Confirmar que no se ejecuto subprocess si el job es handler interno.
+- Confirmar que no se ejecuto subprocess si el job es handler interno o que el wrapper real no se ejecuto si el job es dry-run operativo.
 - Confirmar cola final.
+- Confirmar que la UI muestra el DTO seguro y no expone payload/result crudo, stdout, stderr ni `command_preview`.
 
 ## 35. Checklist de prueba real
 
@@ -582,8 +600,10 @@ Recuperacion worker:
 | Lock Agente 01 no es global | Protege wrapper del orquestador, no ejecucion manual directa |
 | Lock Agente 02 parcial, no global | Protege wrapper del orquestador, no ejecucion manual directa desde plataforma |
 | Ejecucion manual directa de Agente 02 puede evitar el lock | Requiere disciplina operacional fuera de PC 2 |
-| Integracion web de Agente 02 aun no validada en real | Endpoint, DTO, readiness y polling ya implementados localmente; faltan revision visual, dry-run desde web y prueba real controlada |
-| Resultado seguro de Agente 02 puede requerir ajuste | DTO inicial definido sin result crudo; revisar tras primer resultado real |
+| Lock Agente 02 durante ejecucion real | Aun no ejercitado desde la nueva web porque el E2E validado fue dry-run |
+| Rollback operacional real de Agente 02 | Pendiente de validar/documentar antes de ejecucion real |
+| Integracion web de Agente 02 en dry-run | Validada E2E desde nueva web; falta prueba real controlada |
+| Resultado seguro de Agente 02 | DTO de Packs soporta dry-run seguro; resultado real y contadores aun deben confirmarse |
 | Result Banco con `returncode=0` no garantiza semantica completa | Revisar resultado operacional |
 | Worker no reanuda jobs running tras reinicio | Recuperacion manual controlada |
 
@@ -598,14 +618,15 @@ Recuperacion worker:
 ## 40. Preguntas abiertas
 
 - Si se mantendra `claimed` como compatibilidad defensiva o se alineara estrictamente a estados persistidos.
-- Si el DTO seguro inicial de `actualizar-packs` requiere ajustes despues del primer resultado real.
-- Si se debe usar el mismo readiness global de Banco de Reservas o uno especifico para Packs.
+- Cuando realizar prueba real controlada de `actualizar-packs` desde PC 2.
+- Que campos reales devolvera Agente 02 despues de una ejecucion real.
+- Como validar SQLite antes/despues de la prueba real.
+- Como cerrar barreras inmediatamente despues de la prueba real.
+- Si documentar un procedimiento operativo de rollback.
 - Si el job type debe permanecer `enabled=true` durante pruebas o habilitarse solo por ventanas controladas.
-- Cuando realizar dry-run y prueba real desde PC 2.
 - Si Agente 01 necesita lock global tambien dentro de `D:\mcparking-platform`.
 - Cual linea de Agente 03 sera oficial: v1 o v2.
 - Que job real sera el siguiente despues de Banco Reservas last-week.
-
 ## 41. Glosario
 
 | Termino | Significado |
