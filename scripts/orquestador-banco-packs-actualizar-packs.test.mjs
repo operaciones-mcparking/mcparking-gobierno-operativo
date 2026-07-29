@@ -209,3 +209,50 @@ test("AI. Banco de Reservas no fue alterado", () => {
 test("AJ. recuperacion no fue alterado", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/recuperacion|^src\/app\/api\/recuperacion|^scripts\/recovery|^supabase\/migrations\/20260727120000_update_recovery/m);
 });
+
+test("AK. DTO de dry-run conserva campos seguros", () => {
+  assert.match(types, /dry_run: safeBoolean\(result\.dry_run\)/);
+  assert.match(types, /message: safeString\(result\.message\)/);
+  assert.match(types, /action: "actualizar-packs"/);
+});
+
+test("AL. UI no muestra Sin registro para result valido", () => {
+  assert.doesNotMatch(control, /Sin registro/);
+  assert.match(control, /resultMessage \?\? "Resultado operacional registrado\."/);
+});
+
+test("AM. UI muestra que fue dry-run", () => {
+  assert.match(control, /Dry-run completado correctamente/);
+  assert.match(control, /comando real no ejecutado/);
+});
+
+test("AN. UI muestra action actualizar-packs", () => {
+  assert.match(control, /Accion: \{result\.action\}/);
+  assert.match(control, /type BancoPacksResult = \{[\s\S]*action: "actualizar-packs" \| null/);
+});
+
+test("AO. DTO de Packs no expone command_preview", () => {
+  assert.doesNotMatch(types, /command_preview/);
+  assert.doesNotMatch(control, /command_preview/);
+});
+
+test("AP. DTO de Packs no expone stdout stderr", () => {
+  assert.doesNotMatch(types, /stdout|stderr/);
+  assert.doesNotMatch(control, /stdout|stderr/);
+});
+
+test("AQ. API general no devuelve result crudo", () => {
+  assert.match(types, /banco_packs_update_result: safeBancoPacksUpdateResult\(row\.job_type, row\.result\)/);
+  assert.doesNotMatch(types, /result: row\.result/);
+});
+
+test("AR. job sin result conserva fallback controlado", () => {
+  assert.match(types, /jobType !== "banco_packs_actualizar_sin_consumos" \|\| !result/);
+  assert.match(control, /Resultado operacional registrado\./);
+});
+
+test("AS. result real futuro mapea duracion returncode y timeout", () => {
+  assert.match(types, /duration_seconds: safeNumber\(result\.duration_seconds\)/);
+  assert.match(types, /returncode,/);
+  assert.match(types, /timed_out: safeBoolean\(result\.timed_out\)/);
+});

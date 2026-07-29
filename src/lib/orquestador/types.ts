@@ -86,9 +86,15 @@ export type BancoReservasLastWeekResult = {
 export type BancoPacksUpdateResult = {
   ok: boolean | null;
   action: "actualizar-packs" | null;
+  dry_run: boolean | null;
+  message: string | null;
   duration_seconds: number | null;
   returncode: number | null;
   timed_out: boolean | null;
+  rows_total?: number | null;
+  rows_inserted?: number | null;
+  rows_updated?: number | null;
+  rows_unchanged?: number | null;
 };
 
 export type OrchestratorJob = {
@@ -216,10 +222,16 @@ function safeBancoPacksUpdateResult(jobType: string, result: JsonRecord | null |
 
   return {
     ok: safeBoolean(result.ok) ?? (returncode === null ? null : returncode === 0),
-    action: result.action === "actualizar-packs" ? "actualizar-packs" : null,
+    action: "actualizar-packs",
+    dry_run: safeBoolean(result.dry_run),
+    message: safeString(result.message),
     duration_seconds: safeNumber(result.duration_seconds),
     returncode,
     timed_out: safeBoolean(result.timed_out),
+    rows_total: safeNumber(result.rows_total),
+    rows_inserted: safeNumber(result.rows_inserted),
+    rows_updated: safeNumber(result.rows_updated),
+    rows_unchanged: safeNumber(result.rows_unchanged),
   };
 }
 

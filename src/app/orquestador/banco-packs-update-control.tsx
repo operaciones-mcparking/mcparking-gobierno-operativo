@@ -17,10 +17,16 @@ type CreatedJob = {
 
 type BancoPacksResult = {
   action: "actualizar-packs" | null;
+  dry_run: boolean | null;
   duration_seconds: number | null;
+  message: string | null;
   ok: boolean | null;
   returncode: number | null;
   timed_out: boolean | null;
+  rows_total?: number | null;
+  rows_inserted?: number | null;
+  rows_updated?: number | null;
+  rows_unchanged?: number | null;
 };
 
 type JobStatus = {
@@ -239,6 +245,8 @@ export function BancoPacksUpdateControl({ readinessCode }: { readinessCode: Banc
   }
 
   const result = jobStatus?.banco_packs_update_result;
+  const resultDuration = result?.duration_seconds ?? jobStatus?.duration_seconds ?? null;
+  const resultMessage = result?.dry_run === true ? "Dry-run completado correctamente" : result?.message;
   const isTerminalFailure = jobStatus?.status === "failed" || jobStatus?.status === "cancelled";
   const isRunning = isSubmitting && !jobStatus?.status.match(/^(succeeded|failed|cancelled)$/);
   const status = isRunning ? "Ejecutando" : jobStatus ? statusLabel(jobStatus.status) : bancoPacksReadinessMessage(readinessCode);
@@ -282,12 +290,14 @@ export function BancoPacksUpdateControl({ readinessCode }: { readinessCode: Banc
             </p>
           ) : null}
           {result && jobStatus?.status === "succeeded" ? (
-            <p>
-              Resultado: {result.ok === true ? "OK" : "Sin registro"}
-              {result.returncode !== null ? ` / returncode ${result.returncode}` : ""}
-              {result.action ? ` / action ${result.action}` : ""}
-              {result.timed_out === true ? " / timeout reportado" : ""}
-            </p>
+            <div>
+              <p>Resultado: {resultMessage ?? "Resultado operacional registrado."}</p>
+              {result.dry_run === true ? <p>Dry-run: comando real no ejecutado.</p> : null}
+              {result.action ? <p>Accion: {result.action}</p> : null}
+              {resultDuration !== null ? <p>Duracion: {resultDuration}s</p> : null}
+              {result.returncode !== null ? <p>returncode: {result.returncode}</p> : null}
+              {result.timed_out === true ? <p>Timeout reportado.</p> : null}
+            </div>
           ) : null}
           {isTerminalFailure ? <p>No fue posible completar la actualizacion de packs.</p> : null}
           {jobStatus?.error_message ? <p>{jobStatus.error_message}</p> : null}
