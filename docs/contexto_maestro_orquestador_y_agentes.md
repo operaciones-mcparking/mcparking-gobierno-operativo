@@ -512,6 +512,21 @@ PC 2 cuenta ahora con un componente local reutilizable para visualizar ejecucion
 
 El viewer recibe un `CompositeRunViewModel` por props y no inicia ejecuciones. El mapeador trabaja con filas seguras de lectura de composite runs, sin `payload` ni `result` crudos, ordena etapas por `sequence_index`, crea placeholders para pasos faltantes, calcula estado/progreso/duracion y reutiliza sanitizacion operacional para textos visibles.
 
+
+### Endpoints compuestos `Actualizar datos operacionales`
+
+PC 2 tiene endpoints locales server-side para iniciar, avanzar y consultar el run compuesto `actualizar_datos_operacionales_last_month`. Estos endpoints usan las RPC `orchestrator_create_composite_job_step` y `orchestrator_list_composite_run_jobs`; no llaman wrappers ni agentes y no aceptan payload operacional libre desde el navegador.
+
+| Etapa | Job type | Payload server-side | requested_source | priority |
+| ---: | --- | --- | --- | ---: |
+| 1 | `banco_reservas_actualizar` | `{ "modo": "last-month" }` | `web_orchestrator_operaciones_last_month_reservas` | 90 |
+| 2 | `banco_packs_actualizar_sin_consumos` | `{ "action": "actualizar-packs" }` | `web_orchestrator_operaciones_last_month_packs` | 91 |
+| 3 | `dashboard_actualizar_metricas` | `{ "agent": "dashboard", "action": "actualizar-metricas", "periodo": "last-month" }` | `web_orchestrator_operaciones_last_month_dashboard` | 92 |
+
+El inicio crea solo etapa 1 con `composite_run_id` generado server-side. El avance lista el run, valida `composite_kind`, espera que la etapa actual termine en `succeeded` y crea solo la etapa siguiente. Las guardas revisan los tres job types, `enabled=true`, worker `pc_operaciones_01`, heartbeat reciente, worker idle, `locked_job_id` vacio y ausencia de cola global activa. El GET devuelve `CompositeRunViewModel` seguro.
+
+Estado: endpoints locales listos; boton UI pendiente; integracion `CompositeRunViewer` pendiente; dry-run web pendiente; ejecucion real pendiente.
+
 ## 29. Agente 03 y futuros agentes
 
 Agente 03 Banco de Personas existe en plataforma, con SQLite local y comandos de diagnostico/lectura. El worker solo tiene `banco_personas_placeholder`, deshabilitado y sin comando operativo. Agente 03 v2 es desarrollo paralelo para relaciones e identidades tecnicas y no debe conectarse al worker sin etapa separada.

@@ -38,6 +38,8 @@ import {
   type RawJobTypeRow,
   type RawWorkerRow,
 } from "@/lib/orquestador/types";
+import type { RawCompositeRunJobRow } from "@/lib/orquestador/composite-runs";
+import type { ActualizarDatosStep } from "@/lib/orquestador/actualizar-datos-operacionales";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -258,5 +260,52 @@ export async function createDashboardLastMonthJob(requestedBy: string): Promise<
     return error || !data ? singleError() : { data: safeJobRow(data), error: false };
   } catch {
     return singleError();
+  }
+}
+export async function createCompositeJobStep(input: {
+  compositeKind: string;
+  compositeRunId: string;
+  requestedBy: string;
+  sequenceTotal: number;
+  step: ActualizarDatosStep;
+}): Promise<OrquestadorSingleResult<RawCompositeRunJobRow>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_composite_job_step", {
+      p_composite_kind: input.compositeKind,
+      p_composite_run_id: input.compositeRunId,
+      p_job_type: input.step.jobType,
+      p_payload: input.step.payload,
+      p_priority: input.step.priority,
+      p_requested_by: input.requestedBy,
+      p_requested_source: input.step.requestedSource,
+      p_sequence_index: input.step.sequenceIndex,
+      p_sequence_total: input.sequenceTotal,
+      p_target_worker_id: input.step.targetWorkerId,
+      p_not_before: new Date().toISOString(),
+    })) as {
+      data: RawCompositeRunJobRow | null;
+      error: { message: string } | null;
+    };
+
+    return error || !data ? singleError() : { data, error: false };
+  } catch {
+    return singleError();
+  }
+}
+
+export async function listCompositeRunJobs(runId: string): Promise<OrquestadorResult<RawCompositeRunJobRow>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_list_composite_run_jobs", {
+      p_composite_run_id: runId,
+    })) as {
+      data: RawCompositeRunJobRow[] | null;
+      error: { message: string } | null;
+    };
+
+    return error ? emptyResult() : { data: data ?? [], error: false };
+  } catch {
+    return emptyResult();
   }
 }

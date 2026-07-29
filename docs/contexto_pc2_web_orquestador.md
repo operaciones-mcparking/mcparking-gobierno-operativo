@@ -634,6 +634,29 @@ Componente local reutilizable implementado para visualizar ejecuciones compuesta
 
 El modelo no incluye `payload`, `result` crudo, `stdout`, `stderr`, `command_preview`, rutas locales, metadata sensible, secretos ni PII. El mapeador ordena por `sequence_index`, crea placeholders para pasos faltantes, marca pasos posteriores a fallo como `blocked`, calcula progreso/duracion y reutiliza sanitizacion operacional existente para mensajes y errores.
 
+
+### Endpoints compuestos `Actualizar datos operacionales`
+
+Implementacion local server-side agregada para coordinar el flujo compuesto `actualizar_datos_operacionales_last_month`. La web no recrea logica, wrappers, filtros ni calculos; solo crea pasos correlacionados mediante RPC composite y consulta estado seguro.
+
+| Etapa | Job type | Payload server-side | requested_source | priority |
+|---:|---|---|---|---:|
+| 1 | `banco_reservas_actualizar` | `{ "modo": "last-month" }` | `web_orchestrator_operaciones_last_month_reservas` | 90 |
+| 2 | `banco_packs_actualizar_sin_consumos` | `{ "action": "actualizar-packs" }` | `web_orchestrator_operaciones_last_month_packs` | 91 |
+| 3 | `dashboard_actualizar_metricas` | `{ "agent": "dashboard", "action": "actualizar-metricas", "periodo": "last-month" }` | `web_orchestrator_operaciones_last_month_dashboard` | 92 |
+
+Constantes y guardas: `src/lib/orquestador/actualizar-datos-operacionales.ts`.
+
+Endpoints locales:
+
+- `POST /api/orquestador/operaciones/actualizar-datos`: exige `{ "confirm": true }`, valida admin activo, readiness de tres job types, worker `pc_operaciones_01`, heartbeat <= 120 segundos, worker idle, sin `locked_job_id` y cola global vacia; repite readiness y crea solo etapa 1.
+- `POST /api/orquestador/operaciones/actualizar-datos/advance`: exige `{ "run_id": "<uuid>" }`, valida composite kind, no avanza si la etapa actual esta activa o terminal, y crea solo la siguiente etapa si corresponde.
+- `GET /api/orquestador/operaciones/actualizar-datos/[runId]`: valida admin activo y devuelve DTO seguro del run.
+
+RPC usadas: `orchestrator_create_composite_job_step` y `orchestrator_list_composite_run_jobs`. El DTO reutiliza `CompositeRunViewModel` y no devuelve `payload`, `result` crudo, stdout/stderr, `command_preview`, rutas locales, metadata sensible, secretos ni PII.
+
+Estado: endpoints locales listos; boton UI pendiente; integracion `CompositeRunViewer` pendiente; dry-run web pendiente; ejecucion real pendiente.
+
 ## 20. Plantilla para futuros agentes
 
 ```text
