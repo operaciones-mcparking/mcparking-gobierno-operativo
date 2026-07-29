@@ -19,6 +19,7 @@ import { DashboardShell, KpiCard, Panel } from "@/components/dashboard/shell";
 import { requireAdminAccess } from "@/lib/auth/admin";
 import { BANCO_PACKS_TARGET_WORKER_ID, BANCO_PACKS_UPDATE_JOB_TYPE, getBancoPacksUpdateReadiness } from "@/lib/orquestador/banco-packs-actualizar-packs";
 import { BANCO_RESERVAS_LAST_WEEK_JOB_TYPE, BANCO_RESERVAS_TARGET_WORKER_ID, getBancoReservasReadiness } from "@/lib/orquestador/banco-reservas-last-week";
+import { DASHBOARD_LAST_MONTH_JOB_TYPE, DASHBOARD_TARGET_WORKER_ID, getDashboardLastMonthReadiness } from "@/lib/orquestador/dashboard-last-month";
 import {
   listOrchestratorEvents,
   listOrchestratorJobs,
@@ -28,6 +29,7 @@ import {
 import type { OrchestratorEvent, OrchestratorJob, OrchestratorJobType, OrchestratorWorker } from "@/lib/orquestador/types";
 import { BancoPacksUpdateControl } from "./banco-packs-update-control";
 import { BancoReservasLastWeekControl } from "./banco-reservas-last-week-control";
+import { DashboardLastMonthControl } from "./dashboard-last-month-control";
 import { OrquestadorRefreshButton } from "./refresh-button";
 import { SourceConnectionCheckControl } from "./source-connection-check-control";
 import { WorkerHealthCheckButton } from "./worker-health-check-button";
@@ -164,6 +166,12 @@ export default async function OrquestadorPage() {
     jobs,
     worker: workers.find((worker) => worker.worker_id === BANCO_PACKS_TARGET_WORKER_ID),
   });
+  const dashboardLastMonthJobType = jobTypes.find((jobType) => jobType.job_type === DASHBOARD_LAST_MONTH_JOB_TYPE);
+  const dashboardLastMonthReadiness = getDashboardLastMonthReadiness({
+    jobType: dashboardLastMonthJobType,
+    jobs,
+    worker: workers.find((worker) => worker.worker_id === DASHBOARD_TARGET_WORKER_ID),
+  });
   const bancoReservasJobType = jobTypes.find((jobType) => jobType.job_type === BANCO_RESERVAS_LAST_WEEK_JOB_TYPE);
   const bancoReservasReadiness = getBancoReservasReadiness({
     jobType: bancoReservasJobType,
@@ -184,7 +192,7 @@ export default async function OrquestadorPage() {
         <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">
           Control seguro
         </span>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 xl:max-w-7xl">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:max-w-7xl">
           <div className="flex flex-col gap-3 sm:items-end">
             <OrquestadorRefreshButton />
             <WorkerHealthCheckButton />
@@ -192,6 +200,7 @@ export default async function OrquestadorPage() {
           <SourceConnectionCheckControl enabled={sourceConnectionJobType?.enabled === true} />
           <BancoReservasLastWeekControl readinessCode={bancoReservasReadiness.code} />
           <BancoPacksUpdateControl readinessCode={bancoPacksReadiness.code} />
+          <DashboardLastMonthControl readinessCode={dashboardLastMonthReadiness.code} />
         </div>
       </div>
 

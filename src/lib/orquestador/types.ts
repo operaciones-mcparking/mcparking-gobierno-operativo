@@ -97,6 +97,18 @@ export type BancoPacksUpdateResult = {
   rows_unchanged?: number | null;
 };
 
+export type DashboardMetricsResult = {
+  ok: boolean | null;
+  dry_run: boolean | null;
+  message: string | null;
+  duration_seconds: number | null;
+  periodo: "last-month" | null;
+  returncode: number | null;
+  timed_out: boolean | null;
+  rows_written?: number | null;
+  dates_processed?: number | null;
+};
+
 export type OrchestratorJob = {
   id: string;
   job_type: string;
@@ -110,6 +122,7 @@ export type OrchestratorJob = {
   finished_at: string | null;
   duration_seconds: number | null;
   banco_packs_update_result?: BancoPacksUpdateResult | null;
+  dashboard_metrics_result?: DashboardMetricsResult | null;
   banco_reservas_last_week_result?: BancoReservasLastWeekResult | null;
   health_check_result?: HealthCheckResult | null;
   source_connection_result?: SourceConnectionResult | null;
@@ -235,6 +248,25 @@ function safeBancoPacksUpdateResult(jobType: string, result: JsonRecord | null |
   };
 }
 
+function safeDashboardMetricsResult(jobType: string, result: JsonRecord | null | undefined): DashboardMetricsResult | null {
+  if (jobType !== "dashboard_actualizar_metricas" || !result) {
+    return null;
+  }
+
+  const returncode = safeNumber(result.returncode);
+
+  return {
+    ok: safeBoolean(result.ok) ?? (returncode === null ? null : returncode === 0),
+    dry_run: safeBoolean(result.dry_run),
+    message: safeString(result.message),
+    duration_seconds: safeNumber(result.duration_seconds),
+    periodo: result.periodo === "last-month" ? "last-month" : null,
+    returncode,
+    timed_out: safeBoolean(result.timed_out),
+    rows_written: safeNumber(result.rows_written),
+    dates_processed: safeNumber(result.dates_processed),
+  };
+}
 function durationSeconds(startedAt: string | null | undefined, finishedAt: string | null | undefined) {
   if (!startedAt || !finishedAt) {
     return null;
@@ -276,6 +308,7 @@ export function safeJobRow(row: RawJobRow): OrchestratorJob {
     finished_at: row.finished_at ?? null,
     duration_seconds: durationSeconds(row.started_at, row.finished_at),
     banco_packs_update_result: safeBancoPacksUpdateResult(row.job_type, row.result),
+    dashboard_metrics_result: safeDashboardMetricsResult(row.job_type, row.result),
     banco_reservas_last_week_result: safeBancoReservasLastWeekResult(row.job_type, row.result),
     health_check_result: safeHealthCheckResult(row.job_type, row.result),
     source_connection_result: safeSourceConnectionResult(row.job_type, row.result),

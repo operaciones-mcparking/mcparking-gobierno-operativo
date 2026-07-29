@@ -2,6 +2,15 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 import {
+  DASHBOARD_LAST_MONTH_ACTION,
+  DASHBOARD_LAST_MONTH_AGENT,
+  DASHBOARD_LAST_MONTH_JOB_TYPE,
+  DASHBOARD_LAST_MONTH_PERIOD,
+  DASHBOARD_LAST_MONTH_PRIORITY,
+  DASHBOARD_LAST_MONTH_REQUESTED_SOURCE,
+  DASHBOARD_TARGET_WORKER_ID,
+} from "@/lib/orquestador/dashboard-last-month";
+import {
   BANCO_PACKS_PRIORITY,
   BANCO_PACKS_REQUESTED_SOURCE,
   BANCO_PACKS_TARGET_WORKER_ID,
@@ -215,6 +224,31 @@ export async function createBancoPacksUpdateJob(requestedBy: string): Promise<Or
       p_target_worker_id: BANCO_PACKS_TARGET_WORKER_ID,
       p_priority: BANCO_PACKS_PRIORITY,
       p_payload: { action: BANCO_PACKS_UPDATE_ACTION },
+      p_not_before: new Date().toISOString(),
+    })) as {
+      data: RawJobRow | null;
+      error: { message: string } | null;
+    };
+
+    return error || !data ? singleError() : { data: safeJobRow(data), error: false };
+  } catch {
+    return singleError();
+  }
+}
+export async function createDashboardLastMonthJob(requestedBy: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_job", {
+      p_job_type: DASHBOARD_LAST_MONTH_JOB_TYPE,
+      p_requested_by: requestedBy,
+      p_requested_source: DASHBOARD_LAST_MONTH_REQUESTED_SOURCE,
+      p_target_worker_id: DASHBOARD_TARGET_WORKER_ID,
+      p_priority: DASHBOARD_LAST_MONTH_PRIORITY,
+      p_payload: {
+        agent: DASHBOARD_LAST_MONTH_AGENT,
+        action: DASHBOARD_LAST_MONTH_ACTION,
+        periodo: DASHBOARD_LAST_MONTH_PERIOD,
+      },
       p_not_before: new Date().toISOString(),
     })) as {
       data: RawJobRow | null;

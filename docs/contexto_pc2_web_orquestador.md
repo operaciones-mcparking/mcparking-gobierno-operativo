@@ -26,7 +26,7 @@ Incluye:
 - Funcionamiento observado del modulo `/orquestador`.
 - Contrato de RPC usado por la web.
 - Patrones de autenticacion, admin activo, DTO seguro, sanitizacion, polling y readiness.
-- Controles implementados: Health Check, Source Connection Check, Banco de Reservas last-week y Banco de Packs actualizar-packs.
+- Controles implementados: Health Check, Source Connection Check, Banco de Reservas last-week, Banco de Packs actualizar-packs y Dashboard last-month.
 - Patron recomendado para replicar Banco de Packs y futuros controles.
 - Responsabilidades del PC 2/Vercel, Supabase y PC 1.
 
@@ -584,7 +584,40 @@ Pendiente para PC 2 antes de ejecucion real:
 - definir como validar SQLite antes/despues;
 - cerrar barreras inmediatamente despues de la prueba;
 - documentar si corresponde un procedimiento operativo de rollback.
-## 19. Plantilla para futuros agentes
+
+## 19. Dashboard last-month
+
+Control individual implementado localmente para actualizar metricas operacionales del ultimo mes mediante el job existente `dashboard_actualizar_metricas`. La web no recrea calculos, filtros ni logica del dashboard; solo crea el job en Supabase para que el worker `pc_operaciones_01` lo ejecute.
+
+| Campo | Valor implementado |
+|---|---|
+| UI | `DashboardLastMonthControl` |
+| Endpoint | `POST /api/orquestador/dashboard/last-month` |
+| Body cliente | `{ "confirm": true }` exacto |
+| Query params | rechazados |
+| Job type | `dashboard_actualizar_metricas` |
+| Payload server-side | `{ agent: "dashboard", action: "actualizar-metricas", periodo: "last-month" }` |
+| requested_source | `web_orchestrator_dashboard_last_month` |
+| target_worker_id | `pc_operaciones_01` |
+| priority | `1` |
+| Heartbeat maximo | 120 segundos |
+| Cola activa global | `queued`, `claimed`, `running` |
+| Segunda comprobacion | readiness se ejecuta dos veces antes de `createDashboardLastMonthJob()` |
+| Resultado seguro | `ok`, `dry_run`, `message`, `duration_seconds`, `periodo`, `returncode`, `timed_out`, `rows_written`, `dates_processed` si existen |
+| Pruebas | `scripts/orquestador-dashboard-last-month.test.mjs` |
+
+UI/polling:
+
+- Control separado bajo titulo `Dashboard` y accion `Actualizar metricas ultimo mes`.
+- Badge `Ejecucion real`.
+- Modal de confirmacion que aclara que no actualiza previamente Reservas ni Packs.
+- Envia solo `JSON.stringify({ confirm: true })`.
+- Bloquea doble clic, usa `AbortController`, evita setState tras unmount, pausa con pestana oculta y hace polling por ID exacto y `job_type === "dashboard_actualizar_metricas"`.
+- Se detiene en `succeeded`, `failed` o `cancelled`; el timeout visual no cancela el job.
+
+Estado: implementacion local lista. Dry-run web pendiente, ejecucion real pendiente y boton compuesto pendiente.
+
+## 20. Plantilla para futuros agentes
 
 ```text
 Nombre del control:
@@ -609,7 +642,7 @@ Riesgos:
 Hechos no confirmados:
 ```
 
-## 20. Que no debe modificarse
+## 21. Que no debe modificarse
 
 PC 2/Vercel no debe:
 
@@ -626,7 +659,7 @@ PC 2/Vercel no debe:
 - usar el dashboard antiguo como parte de los nuevos controles;
 - tocar `/recuperacion` para cambios del orquestador.
 
-## 21. Riesgos y limitaciones
+## 22. Riesgos y limitaciones
 
 | Riesgo | Estado |
 |---|---|
@@ -644,10 +677,12 @@ PC 2/Vercel no debe:
 | Agente 02 `actualizar-packs` dry-run desde nueva web | Validado E2E con job `fcbc3229-8abf-48e7-a522-7b6fd1d07957`, `succeeded`, `attempts=1` |
 | Agente 02 no ha sido validado en ejecucion real desde la nueva web | Pendiente; el dry-run no ejecuto wrapper, CLI, SQLite, MySQL ni outputs reales |
 | Resultado seguro de Agente 02 | DTO de Packs soporta dry-run seguro; resultado real y contadores aun deben confirmarse |
+| Dashboard last-month | Implementacion local lista; dry-run web, ejecucion real y boton compuesto pendientes |
 
-## 22. Preguntas abiertas
+## 23. Preguntas abiertas
 
 - Cuando realizar prueba real controlada de `actualizar-packs` desde PC 2.
+- Cuando realizar dry-run web de Dashboard last-month.
 - Que campos reales devolvera Agente 02 despues de una ejecucion real.
 - Como validar SQLite antes/despues de la prueba real.
 - Como cerrar barreras inmediatamente despues de la prueba real.
@@ -657,7 +692,7 @@ PC 2/Vercel no debe:
 - Si conviene crear endpoint dedicado `GET /api/orquestador/jobs/[id]` para evitar depender de que el job aparezca en los ultimos 20.
 - Si `listOrchestratorJobsForGuard()` debe usar una RPC especifica de jobs activos en vez de `p_limit: 1000`.
 - Si conviene mantener `claimed` como compatibilidad defensiva en PC 2 o alinear la web a los estados persistidos reales confirmados por PC 1.
-## 23. Glosario
+## 24. Glosario
 
 | Termino | Definicion |
 |---|---|

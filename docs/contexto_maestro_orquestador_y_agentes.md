@@ -395,6 +395,7 @@ Controles existentes en la nueva web:
 - `source_connection_check`: conectividad read-only desde PC 1.
 - `banco_reservas_actualizar` modo `last-week`: ejecucion real controlada de Agente 01.
 - `banco_packs_actualizar_sin_consumos` accion `actualizar-packs`: control web implementado, desplegado y validado E2E en dry-run.
+- `dashboard_actualizar_metricas` periodo `last-month`: control web individual implementado localmente; dry-run web y ejecucion real pendientes.
 
 Cada control tiene endpoint dedicado. No existe endpoint generico para ejecutar comandos desde la web nueva.
 
@@ -472,11 +473,33 @@ Estado reclasificado: control implementado, desplegado, dry-run web E2E validado
 
 Aclaracion: el dry-run valido la arquitectura completa hasta UI, pero no ejecuto wrapper, lock, CLI ni datos reales.
 
-## 28. Agente 03 y futuros agentes
+
+## 28. Dashboard last-month
+
+Control individual implementado localmente en PC 2 para el job existente `dashboard_actualizar_metricas`.
+
+Contrato web PC 2:
+
+- Endpoint: `POST /api/orquestador/dashboard/last-month`.
+- Body cliente: `{ "confirm": true }` exacto.
+- Payload server-side: `{ agent: "dashboard", action: "actualizar-metricas", periodo: "last-month" }`.
+- requested_source: `web_orchestrator_dashboard_last_month`.
+- target_worker_id: `pc_operaciones_01`.
+- priority: `1`.
+- Readiness: job type enabled, worker idle con heartbeat <= 120 segundos, sin `current_job_id`, sin cola global activa.
+- DTO seguro: `ok`, `dry_run`, `message`, `duration_seconds`, `periodo`, `returncode`, `timed_out`, `rows_written`, `dates_processed` si existen.
+- Polling: por ID exacto y job type esperado; timeout visual no cancela el job.
+- Pruebas: `scripts/orquestador-dashboard-last-month.test.mjs`.
+
+Este boton es individual: no ejecuta Reservas ni Packs, no acepta `agent`, `action`, `periodo`, `job_type`, target, prioridad, comandos, rutas ni payload libre desde el navegador.
+
+Estado: implementacion local lista. Dry-run web pendiente, ejecucion real pendiente y boton compuesto pendiente.
+
+## 29. Agente 03 y futuros agentes
 
 Agente 03 Banco de Personas existe en plataforma, con SQLite local y comandos de diagnostico/lectura. El worker solo tiene `banco_personas_placeholder`, deshabilitado y sin comando operativo. Agente 03 v2 es desarrollo paralelo para relaciones e identidades tecnicas y no debe conectarse al worker sin etapa separada.
 
-## 29. Patron para replicar un boton
+## 30. Patron para replicar un boton
 
 1. Definir un unico caso de uso.
 2. Confirmar job type y payload en PC 1.
@@ -491,7 +514,7 @@ Agente 03 Banco de Personas existe en plataforma, con SQLite local y comandos de
 11. Devolver DTO seguro.
 12. Crear UI con confirmacion, doble-click guard y polling aislado.
 
-## 30. Procedimiento para integrar un agente nuevo
+## 31. Procedimiento para integrar un agente nuevo
 
 PC 1 primero:
 
@@ -510,7 +533,7 @@ PC 2 despues:
 - control UI sin parametros libres.
 - pruebas estaticas del contrato.
 
-## 31. Checklist PC 1
+## 32. Checklist PC 1
 
 - Worker corre con ID esperado.
 - Heartbeat visible.
@@ -522,7 +545,7 @@ PC 2 despues:
 - Timeout definido.
 - Resultado no contiene secretos.
 
-## 32. Checklist PC 2
+## 33. Checklist PC 2
 
 - Pagina y API son admin-only.
 - Endpoint dedicado.
@@ -534,7 +557,7 @@ PC 2 despues:
 - No usa endpoint antiguo generico.
 - No toca `/recuperacion`.
 
-## 33. Checklist Supabase
+## 34. Checklist Supabase
 
 - Job type registrado.
 - `enabled=false` hasta validacion.
@@ -543,7 +566,7 @@ PC 2 despues:
 - Cola sin jobs activos antes de pruebas reales.
 - Recuperacion disponible solo por procedimiento controlado.
 
-## 34. Checklist de prueba dry-run
+## 35. Checklist de prueba dry-run
 
 - Mantener barreras reales cerradas.
 - Crear job unico y controlado.
@@ -554,7 +577,7 @@ PC 2 despues:
 - Confirmar cola final.
 - Confirmar que la UI muestra el DTO seguro y no expone payload/result crudo, stdout, stderr ni `command_preview`.
 
-## 35. Checklist de prueba real
+## 36. Checklist de prueba real
 
 - Probar una accion de bajo impacto.
 - Abrir barreras solo en sesion controlada.
@@ -566,7 +589,7 @@ PC 2 despues:
 - Cerrar barreras al terminar.
 - Verificar cola final.
 
-## 36. Rollback y recuperacion
+## 37. Rollback y recuperacion
 
 Rollback web:
 
@@ -581,7 +604,7 @@ Recuperacion worker:
 - usar procedimiento controlado con `orchestrator_recover_stuck_worker`.
 - no recuperar automaticamente sin revisar job, worker y eventos.
 
-## 37. Que no debe modificarse
+## 38. Que no debe modificarse
 
 - Durante la migración gradual, no modificar ni reemplazar el proyecto antiguo `mcparking-orquestador` en Vercel sin una decisión futura explícita.
 - `D:\mcparking-orquestador` desde tareas de la web PC 2.
@@ -591,7 +614,7 @@ Recuperacion worker:
 - Migraciones aplicadas manualmente desde Codex sin instruccion explicita.
 - Comandos libres, payloads arbitrarios o endpoints genericos de ejecucion.
 
-## 38. Riesgos y limitaciones
+## 39. Riesgos y limitaciones
 
 | Riesgo | Estado |
 | --- | --- |
@@ -604,10 +627,11 @@ Recuperacion worker:
 | Rollback operacional real de Agente 02 | Pendiente de validar/documentar antes de ejecucion real |
 | Integracion web de Agente 02 en dry-run | Validada E2E desde nueva web; falta prueba real controlada |
 | Resultado seguro de Agente 02 | DTO de Packs soporta dry-run seguro; resultado real y contadores aun deben confirmarse |
+| Dashboard last-month | Implementacion local lista; dry-run web, ejecucion real y boton compuesto pendientes |
 | Result Banco con `returncode=0` no garantiza semantica completa | Revisar resultado operacional |
 | Worker no reanuda jobs running tras reinicio | Recuperacion manual controlada |
 
-## 39. Diferencias de contrato conocidas
+## 40. Diferencias de contrato conocidas
 
 - PC 1 es canonico para estados persistidos: `queued`, `running`, `succeeded`, `failed`, `cancelled`.
 - PC 2 incluye `claimed` como estado activo defensivo.
@@ -615,10 +639,11 @@ Recuperacion worker:
 - PC 2 convierte `current_job_id` del worker a `locked_job_id` para la UI.
 - PC 2 consulta jobs con limites de UI y, para readiness de Banco, con limite amplio para detectar cola activa.
 
-## 40. Preguntas abiertas
+## 41. Preguntas abiertas
 
 - Si se mantendra `claimed` como compatibilidad defensiva o se alineara estrictamente a estados persistidos.
 - Cuando realizar prueba real controlada de `actualizar-packs` desde PC 2.
+- Cuando realizar dry-run web de Dashboard last-month.
 - Que campos reales devolvera Agente 02 despues de una ejecucion real.
 - Como validar SQLite antes/despues de la prueba real.
 - Como cerrar barreras inmediatamente despues de la prueba real.
@@ -642,7 +667,7 @@ Recuperacion worker:
 | Lock operacional | Mecanismo para evitar ejecuciones simultaneas por wrapper |
 | Heartbeat | Senal periodica del worker hacia Supabase |
 
-## 42. Referencias cruzadas
+## 43. Referencias cruzadas
 
 PC 2 web:
 
