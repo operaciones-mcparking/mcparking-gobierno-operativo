@@ -27,6 +27,7 @@ import {
   listOrchestratorWorkers,
 } from "@/lib/orquestador/supabase-admin";
 import type { OrchestratorEvent, OrchestratorJob, OrchestratorJobType, OrchestratorWorker } from "@/lib/orquestador/types";
+import { ActualizarDatosOperacionalesControl } from "./actualizar-datos-operacionales-control";
 import { BancoPacksUpdateControl } from "./banco-packs-update-control";
 import { BancoReservasLastWeekControl } from "./banco-reservas-last-week-control";
 import { DashboardLastMonthControl } from "./dashboard-last-month-control";
@@ -203,6 +204,8 @@ export default async function OrquestadorPage() {
           <DashboardLastMonthControl readinessCode={dashboardLastMonthReadiness.code} />
         </div>
       </div>
+
+      <ActualizarDatosOperacionalesControl />
 
       <section className="mt-5 grid gap-4 md:grid-cols-4">
         <KpiCard icon={Server} label="Workers activos" status="Solo lectura" value={`${activeWorkers}/${workers.length}`} />

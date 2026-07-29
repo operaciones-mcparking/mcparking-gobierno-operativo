@@ -26,7 +26,7 @@ Incluye:
 - Funcionamiento observado del modulo `/orquestador`.
 - Contrato de RPC usado por la web.
 - Patrones de autenticacion, admin activo, DTO seguro, sanitizacion, polling y readiness.
-- Controles implementados: Health Check, Source Connection Check, Banco de Reservas last-week, Banco de Packs actualizar-packs y Dashboard last-month.
+- Controles implementados: Health Check, Source Connection Check, Banco de Reservas last-week, Banco de Packs actualizar-packs, Dashboard last-month y Actualizar datos operacionales.
 - Patron recomendado para replicar Banco de Packs y futuros controles.
 - Responsabilidades del PC 2/Vercel, Supabase y PC 1.
 
@@ -165,7 +165,7 @@ La pagina:
 - exige `requireAdminAccess()` antes de cargar datos;
 - carga workers, jobs, eventos y tipos de job con `loadOrquestadorData()`;
 - renderiza KPIs, tablas y controles;
-- monta `WorkerHealthCheckButton`, `SourceConnectionCheckControl`, `BancoReservasLastWeekControl` y `OrquestadorRefreshButton`.
+- monta `WorkerHealthCheckButton`, `SourceConnectionCheckControl`, `BancoReservasLastWeekControl`, `BancoPacksUpdateControl`, `DashboardLastMonthControl`, `ActualizarDatosOperacionalesControl` y `OrquestadorRefreshButton`.
 
 ### Carga de datos
 
@@ -530,11 +530,11 @@ Estado PC 1 actualizado para Agente 02:
 - Lock file: `runtime/locks/agente_02_banco_packs.lock`.
 - Script: `scripts/agente_02_lock.ps1`.
 - Exit code de lock ocupado: `74`.
-- Mensaje de lock ocupado: `Agente 02 ya tiene una ejecución en curso.`
+- Mensaje de lock ocupado: `Agente 02 ya tiene una ejecuciÃ³n en curso.`
 - El lock aplica a todas las acciones del Agente 02.
 - Alcance parcial: protege ejecuciones via wrapper del orquestador, no ejecucion manual directa desde `D:\mcparking-platform`.
 
-Primera acción recomendada para la integración web: `actualizar-packs`, mediante el job type `banco_packs_actualizar_sin_consumos`.
+Primera acciÃ³n recomendada para la integraciÃ³n web: `actualizar-packs`, mediante el job type `banco_packs_actualizar_sin_consumos`.
 
 ### Control web `actualizar-packs`
 
@@ -615,7 +615,7 @@ UI/polling:
 - Bloquea doble clic, usa `AbortController`, evita setState tras unmount, pausa con pestana oculta y hace polling por ID exacto y `job_type === "dashboard_actualizar_metricas"`.
 - Se detiene en `succeeded`, `failed` o `cancelled`; el timeout visual no cancela el job.
 
-Estado: implementacion local lista. Dry-run web pendiente, ejecucion real pendiente y boton compuesto pendiente.
+Estado: implementacion local lista. Dry-run web y ejecucion real pendientes; boton compuesto integrado localmente.
 
 
 ## 19.1 CompositeRunViewer
@@ -630,7 +630,7 @@ Componente local reutilizable implementado para visualizar ejecuciones compuesta
 | Primer consumidor previsto | `Actualizar datos operacionales` |
 | Supabase real | No llamado por esta implementacion |
 | Creacion de jobs | No implementada en este componente |
-| Estado | viewer local listo; endpoints compuestos pendientes; integracion real pendiente; dry-run pendiente |
+| Estado | viewer local integrado al control compuesto; dry-run web pendiente; ejecucion real pendiente |
 
 El modelo no incluye `payload`, `result` crudo, `stdout`, `stderr`, `command_preview`, rutas locales, metadata sensible, secretos ni PII. El mapeador ordena por `sequence_index`, crea placeholders para pasos faltantes, marca pasos posteriores a fallo como `blocked`, calcula progreso/duracion y reutiliza sanitizacion operacional existente para mensajes y errores.
 
@@ -655,7 +655,19 @@ Endpoints locales:
 
 RPC usadas: `orchestrator_create_composite_job_step` y `orchestrator_list_composite_run_jobs`. El DTO reutiliza `CompositeRunViewModel` y no devuelve `payload`, `result` crudo, stdout/stderr, `command_preview`, rutas locales, metadata sensible, secretos ni PII.
 
-Estado: endpoints locales listos; boton UI pendiente; integracion `CompositeRunViewer` pendiente; dry-run web pendiente; ejecucion real pendiente.
+UI integrada localmente:
+
+- Control: `src/app/orquestador/actualizar-datos-operacionales-control.tsx`.
+- Hook: `src/app/orquestador/use-composite-operations-run.ts`.
+- Test estatico: `scripts/orquestador-actualizar-datos-ui.test.mjs`.
+- El modal exige confirmacion y el cliente envia solo `{ "confirm": true }` al endpoint de inicio.
+- El avance automatico envia solo `{ "run_id": "<uuid>" }`; el servidor decide la etapa siguiente.
+- El `run_id` se persiste como unico valor en `localStorage` con la clave `orquestador:actualizar-datos:last-month:run-id:v1` para recuperar la visualizacion tras recargar.
+- El polling usa GET por `run_id`, `AbortController`, evita requests superpuestos, pausa con pestana oculta y se detiene visualmente en `succeeded`, `failed` o `cancelled`.
+- `Cerrar resultado` solo limpia UI/localStorage; no cancela jobs ni modifica Supabase.
+- La UI no envia `stage`, `job_type`, payload operacional, prioridad, source, target, command ni argumentos.
+
+Estado: endpoints locales listos; UI compuesta integrada localmente con `CompositeRunViewer`; dry-run web, validacion web real, deploy y ejecucion real pendientes.
 
 ## 20. Plantilla para futuros agentes
 
@@ -717,7 +729,8 @@ PC 2/Vercel no debe:
 | Agente 02 `actualizar-packs` dry-run desde nueva web | Validado E2E con job `fcbc3229-8abf-48e7-a522-7b6fd1d07957`, `succeeded`, `attempts=1` |
 | Agente 02 no ha sido validado en ejecucion real desde la nueva web | Pendiente; el dry-run no ejecuto wrapper, CLI, SQLite, MySQL ni outputs reales |
 | Resultado seguro de Agente 02 | DTO de Packs soporta dry-run seguro; resultado real y contadores aun deben confirmarse |
-| Dashboard last-month | Implementacion local lista; dry-run web, ejecucion real y boton compuesto pendientes |
+| Dashboard last-month | Implementacion local lista; dry-run web y ejecucion real pendientes |
+| Actualizar datos operacionales | UI compuesta integrada localmente; dry-run web, validacion web real, deploy y ejecucion real pendientes |
 
 ## 23. Preguntas abiertas
 

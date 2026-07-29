@@ -1,4 +1,4 @@
-﻿# Contexto maestro: orquestador, web y agentes McParking
+# Contexto maestro: orquestador, web y agentes McParking
 
 Fecha de consolidacion: 2026-07-28
 
@@ -396,6 +396,7 @@ Controles existentes en la nueva web:
 - `banco_reservas_actualizar` modo `last-week`: ejecucion real controlada de Agente 01.
 - `banco_packs_actualizar_sin_consumos` accion `actualizar-packs`: control web implementado, desplegado y validado E2E en dry-run.
 - `dashboard_actualizar_metricas` periodo `last-month`: control web individual implementado localmente; dry-run web y ejecucion real pendientes.
+- `actualizar_datos_operacionales_last_month`: UI compuesta integrada localmente en PC 2; usa endpoints server-side existentes y `CompositeRunViewer`; dry-run web, validacion web real, deploy y ejecucion real pendientes.
 
 Cada control tiene endpoint dedicado. No existe endpoint generico para ejecutar comandos desde la web nueva.
 
@@ -493,7 +494,7 @@ Contrato web PC 2:
 
 Este boton es individual: no ejecuta Reservas ni Packs, no acepta `agent`, `action`, `periodo`, `job_type`, target, prioridad, comandos, rutas ni payload libre desde el navegador.
 
-Estado: implementacion local lista. Dry-run web pendiente, ejecucion real pendiente y boton compuesto pendiente.
+Estado: implementacion local lista. Dry-run web y ejecucion real pendientes; boton compuesto integrado localmente.
 
 
 ## 28.1 CompositeRunViewer
@@ -508,7 +509,7 @@ PC 2 cuenta ahora con un componente local reutilizable para visualizar ejecucion
 | Primer consumidor previsto | `Actualizar datos operacionales` |
 | Supabase real | No llamado por el viewer ni por el mapper |
 | Jobs | No crea jobs ni ejecuta POST |
-| Estado | viewer local listo; endpoints compuestos pendientes; integracion real pendiente; dry-run pendiente |
+| Estado | viewer local integrado al control compuesto; dry-run web pendiente; ejecucion real pendiente |
 
 El viewer recibe un `CompositeRunViewModel` por props y no inicia ejecuciones. El mapeador trabaja con filas seguras de lectura de composite runs, sin `payload` ni `result` crudos, ordena etapas por `sequence_index`, crea placeholders para pasos faltantes, calcula estado/progreso/duracion y reutiliza sanitizacion operacional para textos visibles.
 
@@ -525,7 +526,19 @@ PC 2 tiene endpoints locales server-side para iniciar, avanzar y consultar el ru
 
 El inicio crea solo etapa 1 con `composite_run_id` generado server-side. El avance lista el run, valida `composite_kind`, espera que la etapa actual termine en `succeeded` y crea solo la etapa siguiente. Las guardas revisan los tres job types, `enabled=true`, worker `pc_operaciones_01`, heartbeat reciente, worker idle, `locked_job_id` vacio y ausencia de cola global activa. El GET devuelve `CompositeRunViewModel` seguro.
 
-Estado: endpoints locales listos; boton UI pendiente; integracion `CompositeRunViewer` pendiente; dry-run web pendiente; ejecucion real pendiente.
+UI compuesta PC 2:
+
+- Control: `src/app/orquestador/actualizar-datos-operacionales-control.tsx`.
+- Hook: `src/app/orquestador/use-composite-operations-run.ts`.
+- Test estatico: `scripts/orquestador-actualizar-datos-ui.test.mjs`.
+- Modal accesible de confirmacion antes de iniciar.
+- Inicio: cliente envia solo `{ "confirm": true }`.
+- Avance automatico: cliente envia solo `{ "run_id": "<uuid>" }`; no envia etapa, job type, payload, prioridad, source ni target.
+- Persistencia: solo `run_id` en `localStorage` con clave `orquestador:actualizar-datos:last-month:run-id:v1`.
+- Polling: GET por `run_id`, `AbortController`, sin requests superpuestos, pausa con pestana oculta y detencion en estados terminales.
+- `Cerrar resultado` solo limpia UI/localStorage; no cancela jobs.
+
+Estado: endpoints locales listos; UI compuesta integrada localmente con `CompositeRunViewer`; dry-run web, validacion web real, deploy y ejecucion real pendientes.
 
 ## 29. Agente 03 y futuros agentes
 
@@ -659,7 +672,8 @@ Recuperacion worker:
 | Rollback operacional real de Agente 02 | Pendiente de validar/documentar antes de ejecucion real |
 | Integracion web de Agente 02 en dry-run | Validada E2E desde nueva web; falta prueba real controlada |
 | Resultado seguro de Agente 02 | DTO de Packs soporta dry-run seguro; resultado real y contadores aun deben confirmarse |
-| Dashboard last-month | Implementacion local lista; dry-run web, ejecucion real y boton compuesto pendientes |
+| Dashboard last-month | Implementacion local lista; dry-run web y ejecucion real pendientes |
+| Actualizar datos operacionales | UI compuesta integrada localmente; dry-run web, validacion web real, deploy y ejecucion real pendientes |
 | Result Banco con `returncode=0` no garantiza semantica completa | Revisar resultado operacional |
 | Worker no reanuda jobs running tras reinicio | Recuperacion manual controlada |
 
@@ -731,5 +745,3 @@ PC 1 plataforma:
 - `agentes/agente_02_banco_packs/cli.py`
 - `agentes/agente_03_banco_personas/cli.py`
 - `agentes/agente_03_banco_personas_v2/cli.py`
-
-

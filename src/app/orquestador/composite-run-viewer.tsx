@@ -108,7 +108,7 @@ export function CompositeRunViewer({
         <div>
           <h2 className="text-base font-medium text-navy">{title}</h2>
           <p className="mt-1 text-xs leading-5">
-            Run {run.run_id ? shortCompositeJobId(run.run_id) : "-"} · {run.kind || "sin tipo"}
+            Run {run.run_id ? shortCompositeJobId(run.run_id) : "-"} - {run.kind || "sin tipo"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
