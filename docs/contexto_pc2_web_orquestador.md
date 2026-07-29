@@ -617,6 +617,23 @@ UI/polling:
 
 Estado: implementacion local lista. Dry-run web pendiente, ejecucion real pendiente y boton compuesto pendiente.
 
+
+## 19.1 CompositeRunViewer
+
+Componente local reutilizable implementado para visualizar ejecuciones compuestas sin conectarse todavia a un flujo real.
+
+| Campo | Estado |
+|---|---|
+| Componente | `src/app/orquestador/composite-run-viewer.tsx` |
+| Mapeador seguro | `src/lib/orquestador/composite-runs.ts` |
+| Fixture/test local | `scripts/fixtures/composite-run-viewer-fixtures.mjs` y `scripts/orquestador-composite-run-viewer.test.mjs` |
+| Primer consumidor previsto | `Actualizar datos operacionales` |
+| Supabase real | No llamado por esta implementacion |
+| Creacion de jobs | No implementada en este componente |
+| Estado | viewer local listo; endpoints compuestos pendientes; integracion real pendiente; dry-run pendiente |
+
+El modelo no incluye `payload`, `result` crudo, `stdout`, `stderr`, `command_preview`, rutas locales, metadata sensible, secretos ni PII. El mapeador ordena por `sequence_index`, crea placeholders para pasos faltantes, marca pasos posteriores a fallo como `blocked`, calcula progreso/duracion y reutiliza sanitizacion operacional existente para mensajes y errores.
+
 ## 20. Plantilla para futuros agentes
 
 ```text

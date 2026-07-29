@@ -495,6 +495,23 @@ Este boton es individual: no ejecuta Reservas ni Packs, no acepta `agent`, `acti
 
 Estado: implementacion local lista. Dry-run web pendiente, ejecucion real pendiente y boton compuesto pendiente.
 
+
+## 28.1 CompositeRunViewer
+
+PC 2 cuenta ahora con un componente local reutilizable para visualizar ejecuciones compuestas del orquestador.
+
+| Campo | Estado |
+| --- | --- |
+| Componente | `src/app/orquestador/composite-run-viewer.tsx` |
+| Tipos y mapeador seguro | `src/lib/orquestador/composite-runs.ts` |
+| Pruebas locales | `scripts/orquestador-composite-run-viewer.test.mjs` |
+| Primer consumidor previsto | `Actualizar datos operacionales` |
+| Supabase real | No llamado por el viewer ni por el mapper |
+| Jobs | No crea jobs ni ejecuta POST |
+| Estado | viewer local listo; endpoints compuestos pendientes; integracion real pendiente; dry-run pendiente |
+
+El viewer recibe un `CompositeRunViewModel` por props y no inicia ejecuciones. El mapeador trabaja con filas seguras de lectura de composite runs, sin `payload` ni `result` crudos, ordena etapas por `sequence_index`, crea placeholders para pasos faltantes, calcula estado/progreso/duracion y reutiliza sanitizacion operacional para textos visibles.
+
 ## 29. Agente 03 y futuros agentes
 
 Agente 03 Banco de Personas existe en plataforma, con SQLite local y comandos de diagnostico/lectura. El worker solo tiene `banco_personas_placeholder`, deshabilitado y sin comando operativo. Agente 03 v2 es desarrollo paralelo para relaciones e identidades tecnicas y no debe conectarse al worker sin etapa separada.
