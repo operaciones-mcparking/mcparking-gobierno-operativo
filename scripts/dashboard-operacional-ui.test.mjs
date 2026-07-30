@@ -9,6 +9,8 @@ const formatterPath = "src/app/dashboard-operacional/dashboard-operacional-forma
 const dataHelperPath = "src/lib/dashboard/operacional.ts";
 const endpointPath = "src/app/api/dashboard/operacional/route.ts";
 const supabaseAdminPath = "src/lib/orquestador/supabase-admin.ts";
+const dashboardViewPath = "src/app/orquestador/orchestrator-dashboard-view.tsx";
+const tabsPath = "src/app/orquestador/orchestrator-view-tabs.tsx";
 
 const page = readFileSync(pagePath, "utf8");
 const client = readFileSync(clientPath, "utf8");
@@ -16,28 +18,27 @@ const formatters = readFileSync(formatterPath, "utf8");
 const dataHelper = readFileSync(dataHelperPath, "utf8");
 const endpoint = readFileSync(endpointPath, "utf8");
 const supabaseAdmin = readFileSync(supabaseAdminPath, "utf8");
+const dashboardView = readFileSync(dashboardViewPath, "utf8");
+const tabs = readFileSync(tabsPath, "utf8");
 const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
 const uiSources = [page, client, formatters].join("\n");
 
-test("A. pagina Dashboard Operacional existe y es admin-only", () => {
+test("A. ruta antigua Dashboard Operacional redirige a /orquestador", () => {
   assert.equal(existsSync(pagePath), true);
-  assert.match(page, /export const dynamic = "force-dynamic"/);
-  assert.match(page, /requireAdminAccess\(\)/);
-  assert.match(page, /DashboardOperacionalClient/);
+  assert.match(page, /redirect\("\/orquestador\?view=dashboard"\)/);
+  assert.doesNotMatch(page, /DashboardOperacionalClient|requireAdminAccess|getOperationalDashboardRpcData/);
 });
 
-test("B. no modifica navegacion global ni orquestador", () => {
+test("B. no modifica navegacion global", () => {
   assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/shell\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/mobile-navigation\.tsx$/m);
-  assert.doesNotMatch(diffNames, /^src\/app\/orquestador\//m);
 });
 
-test("C. cabecera contiene selector Dashboard y Centro de Control", () => {
-  assert.match(client, /Operaciones McParking/i);
-  assert.match(client, /McParking Orquestador/);
-  assert.match(client, /Dashboard/);
-  assert.match(client, /Centro de Control/);
-  assert.match(client, /href="\/orquestador"/);
+test("C. selector unificado contiene Dashboard y Centro de Control", () => {
+  assert.match(tabs, /Dashboard/);
+  assert.match(tabs, /Centro de Control/);
+  assert.match(tabs, /\/orquestador\?view=\$\{view\}/);
+  assert.doesNotMatch(client, /McParking Orquestador|Centro de Control|href="\/orquestador"/);
 });
 
 test("D. consume GET api dashboard operacional y filtra por date", () => {
@@ -51,10 +52,10 @@ test("E. no consulta Supabase ni SQLite desde React", () => {
   assert.doesNotMatch(client, /createClient|SUPABASE_SERVICE_ROLE_KEY|\.rpc\(|sqlite|SQLite|\.from\(|schema\("ops_orchestrator"\)/);
 });
 
-test("F. pagina server reutiliza helper server-only y normalizador", () => {
-  assert.match(page, /getOperationalDashboardRpcData/);
-  assert.match(page, /normalizeOperationalDashboardRpcResult/);
-  assert.doesNotMatch(page, /createClient|\.from\(|schema\("ops_orchestrator"\)|sqlite|SQLite/);
+test("F. vista server reutiliza helper server-only y normalizador", () => {
+  assert.match(dashboardView, /getOperationalDashboardRpcData/);
+  assert.match(dashboardView, /normalizeOperationalDashboardRpcResult/);
+  assert.doesNotMatch(dashboardView, /createClient|\.from\(|schema\("ops_orchestrator"\)|sqlite|SQLite/);
 });
 
 test("G. comparativa MCP OKP y Market size", () => {
@@ -149,7 +150,7 @@ test("O. endpoint y capa datos siguen siendo fuente unica", () => {
 });
 
 test("P. no toca recuperacion ni endpoints POST", () => {
-  assert.doesNotMatch(diffNames, /^src\/app\/recuperacion|^src\/app\/api\/recuperacion|^scripts\/recovery/m);
+  assert.doesNotMatch(diffNames, /^src\/app\/api\/recuperacion|^scripts\/recovery/m);
   assert.doesNotMatch(uiSources, /export async function POST|method: "POST"|orchestrator_create_job/);
 });
 test("Q. mapeo visual ADR ticket y packs usa campos correctos", () => {

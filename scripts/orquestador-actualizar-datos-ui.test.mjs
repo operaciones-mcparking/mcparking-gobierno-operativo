@@ -4,11 +4,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const pagePath = "src/app/orquestador/page.tsx";
+const controlCenterPath = "src/app/orquestador/orchestrator-control-center.tsx";
 const controlPath = "src/app/orquestador/actualizar-datos-operacionales-control.tsx";
 const hookPath = "src/app/orquestador/use-composite-operations-run.ts";
 const viewerPath = "src/app/orquestador/composite-run-viewer.tsx";
 
 const page = readFileSync(pagePath, "utf8");
+const controlCenter = readFileSync(controlCenterPath, "utf8");
 const control = readFileSync(controlPath, "utf8");
 const hook = readFileSync(hookPath, "utf8");
 const viewer = readFileSync(viewerPath, "utf8");
@@ -42,9 +44,10 @@ test("B. hook dedicado existe", () => {
   assert.match(hook, /export function useCompositeOperationsRun/);
 });
 
-test("C. pagina integra el control", () => {
-  assert.match(page, /ActualizarDatosOperacionalesControl/);
-  assert.match(page, /\.\/actualizar-datos-operacionales-control/);
+test("C. centro de control integra el control", () => {
+  assert.match(page, /OrchestratorControlCenter/);
+  assert.match(controlCenter, /ActualizarDatosOperacionalesControl/);
+  assert.match(controlCenter, /\.\/actualizar-datos-operacionales-control/);
 });
 
 test("D. usa CompositeRunViewer reusable", () => {

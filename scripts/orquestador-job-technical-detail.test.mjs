@@ -7,6 +7,7 @@ const helperPath = "src/lib/orquestador/job-technical-detail.ts";
 const routePath = "src/app/api/orquestador/jobs/[jobId]/detail/route.ts";
 const buttonPath = "src/app/orquestador/job-technical-detail-button.tsx";
 const pagePath = "src/app/orquestador/page.tsx";
+const controlCenterPath = "src/app/orquestador/orchestrator-control-center.tsx";
 const supabaseAdminPath = "src/lib/orquestador/supabase-admin.ts";
 const migrationPath = "supabase/migrations/20260730120000_create_orchestrator_job_technical_detail_rpc.sql";
 const authPath = "src/lib/orquestador/auth.ts";
@@ -16,6 +17,7 @@ const helper = readFileSync(helperPath, "utf8");
 const route = readFileSync(routePath, "utf8");
 const button = readFileSync(buttonPath, "utf8");
 const page = readFileSync(pagePath, "utf8");
+const controlCenter = readFileSync(controlCenterPath, "utf8");
 const supabaseAdmin = readFileSync(supabaseAdminPath, "utf8");
 const migration = readFileSync(migrationPath, "utf8");
 const auth = readFileSync(authPath, "utf8");
@@ -146,8 +148,8 @@ test("L. sanitiza rutas emails telefonos secretos y limita lineas", () => {
 });
 
 test("M. UI agrega boton Ver detalle", () => {
-  assert.match(page, /JobTechnicalDetailButton/);
-  assert.match(page, /<DataTableHeaderCell>Detalle<\/DataTableHeaderCell>/);
+  assert.match(controlCenter, /JobTechnicalDetailButton/);
+  assert.match(controlCenter, /<DataTableHeaderCell>Detalle<\/DataTableHeaderCell>/);
   assert.match(button, /Ver detalle/);
   assert.match(button, /operationalResultTitle\(detail\.job_type\)/);
   assert.match(button, /banco_reservas_actualizar: "Banco de Reservas"/);

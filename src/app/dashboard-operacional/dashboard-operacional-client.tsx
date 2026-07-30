@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -231,34 +230,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   }
 
   return (
-    <main className="min-h-screen bg-[#f4f7fa] text-ink">
-      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <header className="rounded-2xl border border-[#d6e1ea] bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-sea">Operaciones McParking</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-navy sm:text-3xl">McParking Orquestador</h1>
-              <p className="mt-2 text-sm text-slate-600">Ultima actualizacion: {formatDateTime(dashboard?.lastUpdate?.calculated_at ?? dashboard?.lastUpdate?.updated_at ?? null)}</p>
-            </div>
-            <nav className="flex flex-wrap items-center gap-2" aria-label="Navegacion del modulo operacional">
-              <span className="rounded-lg bg-navy px-4 py-2 text-sm font-semibold text-white">Dashboard</span>
-              <Link className="rounded-lg border border-[#cbd8e3] bg-white px-4 py-2 text-sm font-semibold text-navy transition hover:border-sea" href="/orquestador">
-                Centro de Control
-              </Link>
-              <button
-                aria-label="Refrescar dashboard operacional"
-                className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-semibold text-navy transition hover:border-sea disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isLoading}
-                onClick={() => loadByDate(selectedDate)}
-                type="button"
-              >
-                <RefreshCw className={`h-4 w-4 text-sea ${isLoading ? "animate-spin" : ""}`} />
-                Refrescar
-              </button>
-            </nav>
-          </div>
-        </header>
-
+    <>
         <section className="mt-5 rounded-2xl border border-[#d6e1ea] bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
@@ -284,6 +256,18 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
                 type="button"
               >
                 Actualizar datos operacionales
+              </button>
+              <button
+                aria-label="Refrescar dashboard operacional"
+                className="h-10 rounded-lg border border-[#cbd8e3] bg-white px-4 text-sm font-semibold text-navy transition hover:border-sea disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isLoading}
+                onClick={() => loadByDate(selectedDate)}
+                type="button"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <RefreshCw className={`h-4 w-4 text-sea ${isLoading ? "animate-spin" : ""}`} />
+                  Refrescar
+                </span>
               </button>
             </div>
           </div>
@@ -351,7 +335,6 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
             </div>
           )}
         </section>
-      </div>
-    </main>
+    </>
   );
 }
