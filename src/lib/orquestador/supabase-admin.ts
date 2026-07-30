@@ -46,6 +46,8 @@ import {
   type RawJobTechnicalDetailRow,
 } from "@/lib/orquestador/job-technical-detail";
 
+import type { OperationalDashboardQuery } from "@/lib/dashboard/operacional";
+
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -393,5 +395,25 @@ export async function listCompositeRunJobs(runId: string): Promise<OrquestadorRe
     return error ? emptyResult() : { data: data ?? [], error: false };
   } catch {
     return emptyResult();
+  }
+}
+export async function getOperationalDashboardRpcData(query: OperationalDashboardQuery): Promise<OrquestadorSingleResult<unknown>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_dashboard_get_operacional", {
+      p_from: query.from,
+      p_to: query.to,
+      p_date: query.date,
+      p_parking_codigo: query.parking_codigo,
+      p_sistema_grupo: query.sistema_grupo,
+      p_source_run_id: query.source_run_id,
+    })) as {
+      data: unknown;
+      error: { message: string } | null;
+    };
+
+    return error ? singleError() : { data, error: false };
+  } catch {
+    return singleError();
   }
 }
