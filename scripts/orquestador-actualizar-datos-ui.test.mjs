@@ -14,6 +14,23 @@ const hook = readFileSync(hookPath, "utf8");
 const viewer = readFileSync(viewerPath, "utf8");
 const clientSources = [control, hook].join("\n");
 const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
+const realCompositeRunId = "498a3a70-dbb0-4999-bab6-d85bc9eb07c4";
+
+function getUuidPatternFromHook() {
+  const match = hook.match(/const uuidPattern = (\/.+\/[a-z]*);/);
+  assert.ok(match);
+  return Function(`"use strict"; return ${match[1]};`)();
+}
+
+function normalizeRunIdLikeHook(value) {
+  const trimmed = value.trim();
+  const unquoted =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1).trim()
+      : trimmed;
+
+  return getUuidPatternFromHook().test(unquoted) ? unquoted : null;
+}
 
 test("A. control principal existe", () => {
   assert.equal(existsSync(controlPath), true);
@@ -84,7 +101,37 @@ test("M. cliente consulta estado por run_id", () => {
 
 test("N. valida UUID antes de consultar o avanzar", () => {
   assert.match(hook, /uuidPattern/);
-  assert.match(hook, /!uuidPattern\.test\(runId\)/);
+  assert.match(hook, /function isValidUuid\(value: string\)/);
+  assert.match(hook, /!isValidUuid\(runId\)/);
+});
+
+test("N1. UUID real del run devuelve valido", () => {
+  assert.equal(getUuidPatternFromHook().test(realCompositeRunId), true);
+});
+
+test("N2. dos llamadas consecutivas a la validacion devuelven true", () => {
+  const pattern = getUuidPatternFromHook();
+  assert.equal(pattern.test(realCompositeRunId), true);
+  assert.equal(pattern.test(realCompositeRunId), true);
+});
+
+test("N3. UUID con espacios exteriores devuelve valido", () => {
+  assert.equal(normalizeRunIdLikeHook(`  ${realCompositeRunId}  `), realCompositeRunId);
+});
+
+test("N4. UUID con comillas exteriores devuelve valido", () => {
+  assert.equal(normalizeRunIdLikeHook(`"${realCompositeRunId}"`), realCompositeRunId);
+  assert.equal(normalizeRunIdLikeHook(`'${realCompositeRunId}'`), realCompositeRunId);
+});
+
+test("N5. UUID realmente invalido devuelve false", () => {
+  assert.equal(getUuidPatternFromHook().test("498a3a70-dbb0-9999-zab6-d85bc9eb07c4"), false);
+});
+
+test("N6. uuidPattern no usa flags global ni sticky", () => {
+  const pattern = getUuidPatternFromHook();
+  assert.equal(pattern.global, false);
+  assert.equal(pattern.sticky, false);
 });
 
 test("O. persiste solo run_id", () => {
@@ -95,12 +142,66 @@ test("O. persiste solo run_id", () => {
 
 test("P. recupera tras recarga", () => {
   assert.match(hook, /window\.localStorage\.getItem\(storageKey\)/);
-  assert.match(hook, /loadRun\(storedRunId, \{ allowNotFoundReset: true \}\)/);
+  assert.match(hook, /normalizeStoredRunId\(storedRunId\)/);
+  assert.match(hook, /loadRun\(normalizedStoredRunId, \{ allowNotFoundReset: true \}\)/);
 });
 
-test("Q. 404 limpia run guardado", () => {
-  assert.match(hook, /response\.status === 404/);
-  assert.match(hook, /clearStoredRun\(\)/);
+test("P2. montaje con UUID real inicia GET antes de cualquier clearStoredRun", () => {
+  assert.match(hook, /function normalizeStoredRunId\(value: string\)/);
+  assert.match(hook, /const normalizedStoredRunId = storedRunId \? normalizeStoredRunId\(storedRunId\) : null/);
+  assert.ok(hook.indexOf("if (normalizedStoredRunId) {") < hook.indexOf("} else if (storedRunId) {"));
+  assert.ok(hook.indexOf("loadRun(normalizedStoredRunId, { allowNotFoundReset: true })") < hook.indexOf("} else if (storedRunId) {"));
+  assert.ok(hook.indexOf("loadRun(normalizedStoredRunId, { allowNotFoundReset: true })") < hook.indexOf('clearStoredRun("invalid_stored_run_id")', hook.indexOf("} else if (storedRunId) {")));
+});
+
+test("P3. GET 200 waiting conserva storage asigna run y permite advance", () => {
+  assert.match(hook, /runStatuses = new Set\(\["ready", "running", "waiting", "succeeded", "failed", "cancelled"\]\)/);
+  assert.match(hook, /isCompositeRunViewModel\(responseBody\.run\)/);
+  assert.ok(hook.indexOf("persistRunId(responseBody.run.run_id)") < hook.indexOf("setRun(responseBody.run)"));
+  assert.match(hook, /setRun\(responseBody\.run\)/);
+  assert.match(control, /run \? <CompositeRunViewer/);
+  assert.match(hook, /if \(isTerminalRun\(nextRun\)\) \{\s*return;\s*\}\s*await advanceRun\(nextRun\.run_id\)/s);
+});
+test("P4. cleanup de Strict Mode solo aborta y conserva storage", () => {
+  const cleanupMatch = hook.match(/return \(\) => \{\s*isMountedRef\.current = false;\s*stopRequests\("effect_cleanup"\);\s*recoveryStartedRef\.current = false;\s*\};/);
+  assert.ok(cleanupMatch);
+  assert.doesNotMatch(cleanupMatch[0], /clearStoredRun|localStorage\.removeItem|setRun\(null\)|setStatus\("idle"\)/);
+});
+
+test("P5. GET abortado no borra localStorage", () => {
+  const abortIndex = hook.indexOf('error.name === "AbortError"');
+  assert.ok(abortIndex >= 0);
+  const abortBlock = hook.slice(abortIndex, abortIndex + 260);
+  assert.doesNotMatch(abortBlock, /clearStoredRun|localStorage\.removeItem|setRun\(null\)|setStatus\("idle"\)/);
+});
+
+test("P6. recuperacion GET 200 waiting conserva run_id y habilita avance", () => {
+  assert.ok(hook.indexOf("persistRunId(responseBody.run.run_id)") < hook.indexOf("setRun(responseBody.run)"));
+  assert.ok(hook.indexOf("setRun(responseBody.run)") < hook.indexOf("return responseBody.run"));
+  assert.match(hook, /await advanceRun\(nextRun\.run_id\)/);
+});
+
+test("P7. GET 404 confirmado es la unica limpieza automatica de recuperacion", () => {
+  assert.match(hook, /response\.status === 404 && options\.allowNotFoundReset/);
+  assert.match(hook, /clearStoredRun\("recovery_404"\)/);
+});
+
+test("P8. cerrar resultado elimina localStorage de forma explicita", () => {
+  assert.match(control, /Cerrar resultado/);
+  assert.match(control, /onClick=\{clearRun\}/);
+  assert.match(hook, /clearStoredRun\("user_close_result"\)/);
+});
+
+test("Q. 404 de recuperacion limpia run guardado", () => {
+  assert.match(hook, /response\.status === 404 && options\.allowNotFoundReset/);
+  assert.match(hook, /clearStoredRun\("recovery_404"\)/);
+});
+
+test("Q2. 404 durante polling vivo reintenta y conserva run_id", () => {
+  assert.match(hook, /if \(response\.status === 404\) \{/);
+  assert.match(hook, /shouldRetryRef\.current = true/);
+  assert.match(hook, /retryDelayRef\.current = Math\.min\(retryDelayRef\.current \* 2, 10000\)/);
+  assert.ok(hook.indexOf("response.status === 404 && options.allowNotFoundReset") < hook.indexOf("if (response.status === 404) {"));
 });
 
 test("R. polling cada dos o tres segundos", () => {
@@ -125,7 +226,7 @@ test("U. usa AbortController", () => {
 
 test("V. se detiene al desmontar", () => {
   assert.match(hook, /return \(\) => \{/);
-  assert.match(hook, /stopRequests\(\)/);
+  assert.match(hook, /stopRequests\("effect_cleanup"\)/);
 });
 
 test("W. se detiene en estados terminales", () => {
@@ -151,7 +252,7 @@ test("Z. no cierra modal si start falla", () => {
 test("AA. cerrar resultado solo limpia UI y localStorage", () => {
   assert.match(control, /Cerrar resultado/);
   assert.match(control, /onClick=\{clearRun\}/);
-  assert.match(hook, /clearStoredRun\(\)/);
+  assert.match(hook, /clearStoredRun\("user_close_result"\)/);
   assert.doesNotMatch(clientSources, /cancel.*fetch|method:\s*"DELETE"|method:\s*"PATCH"/i);
 });
 
@@ -170,6 +271,9 @@ test("AD. no recrea contratos de jobs en cliente", () => {
 
 test("AE. no usa Supabase ni secrets en cliente", () => {
   assert.doesNotMatch(clientSources, /SUPABASE_SERVICE_ROLE_KEY|createClient|\.rpc\(|supabase/i);
+});
+test("AE2. no conserva logs temporales de diagnostico", () => {
+  assert.doesNotMatch(hook, /console\.|logDevelopmentLifecycle|GET iniciado|GET status|GET abortado|stored run encontrado|advance iniciado/);
 });
 
 test("AF. no muestra payload ni result crudo", () => {

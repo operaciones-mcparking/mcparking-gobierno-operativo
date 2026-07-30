@@ -6,12 +6,14 @@ import type { CompositeRunViewModel } from "@/lib/orquestador/composite-runs";
 
 const storageKey = "orquestador:actualizar-datos:last-month:run-id:v1";
 const terminalStatuses = new Set(["succeeded", "failed", "cancelled"]);
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RunResponse = {
   ok?: boolean;
   run?: CompositeRunViewModel;
 };
+
+const runStatuses = new Set(["ready", "running", "waiting", "succeeded", "failed", "cancelled"]);
 
 type CompositeOperationsStatus =
   | "idle"
@@ -35,6 +37,35 @@ function statusFromRun(run: CompositeRunViewModel | null): CompositeOperationsSt
   if (run.status === "failed") return "failed";
   if (run.status === "cancelled") return "cancelled";
   return "running";
+}
+
+function isValidUuid(value: string) {
+  return uuidPattern.test(value);
+}
+
+function normalizeStoredRunId(value: string) {
+  const trimmed = value.trim();
+  const unquoted =
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))
+      ? trimmed.slice(1, -1).trim()
+      : trimmed;
+
+  return isValidUuid(unquoted) ? unquoted : null;
+}
+
+function isCompositeRunViewModel(value: unknown): value is CompositeRunViewModel {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<CompositeRunViewModel>;
+  return (
+    typeof candidate.run_id === "string" &&
+    isValidUuid(candidate.run_id) &&
+    typeof candidate.status === "string" &&
+    runStatuses.has(candidate.status) &&
+    Array.isArray(candidate.steps)
+  );
 }
 
 function publicErrorMessage(status: number) {
@@ -74,6 +105,7 @@ export function useCompositeOperationsRun() {
   const advanceControllerRef = useRef<AbortController | null>(null);
   const isRefreshingRef = useRef(false);
   const isAdvancingRef = useRef(false);
+  const recoveryStartedRef = useRef(false);
   const shouldRetryRef = useRef(false);
   const retryDelayRef = useRef(2500);
   const timeoutRef = useRef<number | null>(null);
@@ -89,24 +121,27 @@ export function useCompositeOperationsRun() {
     window.localStorage.setItem(storageKey, runId);
   }, []);
 
-  const clearStoredRun = useCallback(() => {
+  const clearStoredRun = useCallback((_reason: "invalid_stored_run_id" | "recovery_404" | "user_close_result") => {
     window.localStorage.removeItem(storageKey);
   }, []);
 
-  const stopRequests = useCallback(() => {
-    getControllerRef.current?.abort();
-    advanceControllerRef.current?.abort();
-    getControllerRef.current = null;
-    advanceControllerRef.current = null;
-    isRefreshingRef.current = false;
-    isAdvancingRef.current = false;
-    shouldRetryRef.current = false;
-    clearTimer();
-  }, [clearTimer]);
+  const stopRequests = useCallback(
+    (_reason: string) => {
+      getControllerRef.current?.abort();
+      advanceControllerRef.current?.abort();
+      getControllerRef.current = null;
+      advanceControllerRef.current = null;
+      isRefreshingRef.current = false;
+      isAdvancingRef.current = false;
+      shouldRetryRef.current = false;
+      clearTimer();
+    },
+    [clearTimer],
+  );
 
   const clearRun = useCallback(() => {
-    stopRequests();
-    clearStoredRun();
+    stopRequests("user_close_result");
+    clearStoredRun("user_close_result");
     setRun(null);
     setMessage(null);
     setStatus("idle");
@@ -115,7 +150,7 @@ export function useCompositeOperationsRun() {
 
   const loadRun = useCallback(
     async (runId: string, options: { allowNotFoundReset?: boolean } = {}) => {
-      if (!uuidPattern.test(runId) || isRefreshingRef.current) {
+      if (!isValidUuid(runId) || isRefreshingRef.current) {
         return null;
       }
 
@@ -130,13 +165,23 @@ export function useCompositeOperationsRun() {
           signal: controller.signal,
         });
 
-        if (response.status === 404) {
+        if (response.status === 404 && options.allowNotFoundReset) {
           shouldRetryRef.current = false;
-          clearStoredRun();
+          clearStoredRun("recovery_404");
           if (isMountedRef.current) {
             setRun(null);
             setStatus("idle");
-            setMessage(options.allowNotFoundReset ? null : "No se encontro la ejecucion guardada.");
+            setMessage(null);
+          }
+          return null;
+        }
+
+        if (response.status === 404) {
+          shouldRetryRef.current = true;
+          retryDelayRef.current = Math.min(retryDelayRef.current * 2, 10000);
+          if (isMountedRef.current) {
+            setMessage("No fue posible consultar la ejecucion.");
+            setStatus("network_error");
           }
           return null;
         }
@@ -153,7 +198,7 @@ export function useCompositeOperationsRun() {
         }
 
         const responseBody = (await response.json()) as RunResponse;
-        if (!responseBody.ok || !responseBody.run) {
+        if (!responseBody.ok || !isCompositeRunViewModel(responseBody.run)) {
           shouldRetryRef.current = true;
           retryDelayRef.current = Math.min(retryDelayRef.current * 2, 10000);
           if (isMountedRef.current) {
@@ -163,6 +208,7 @@ export function useCompositeOperationsRun() {
           return null;
         }
 
+        persistRunId(responseBody.run.run_id);
         if (isMountedRef.current) {
           setRun(responseBody.run);
           setStatus(statusFromRun(responseBody.run));
@@ -191,11 +237,11 @@ export function useCompositeOperationsRun() {
         isRefreshingRef.current = false;
       }
     },
-    [clearStoredRun],
+    [clearStoredRun, persistRunId],
   );
 
   const advanceRun = useCallback(async (runId: string) => {
-    if (!uuidPattern.test(runId) || isAdvancingRef.current) {
+    if (!isValidUuid(runId) || isAdvancingRef.current) {
       return null;
     }
 
@@ -222,7 +268,7 @@ export function useCompositeOperationsRun() {
       }
 
       const responseBody = (await response.json()) as RunResponse;
-      if (!responseBody.ok || !responseBody.run) {
+      if (!responseBody.ok || !isCompositeRunViewModel(responseBody.run)) {
         if (isMountedRef.current) {
           setMessage("No fue posible avanzar la ejecucion.");
           setStatus("network_error");
@@ -283,22 +329,38 @@ export function useCompositeOperationsRun() {
     isMountedRef.current = true;
 
     const storedRunId = window.localStorage.getItem(storageKey);
-    if (storedRunId && uuidPattern.test(storedRunId)) {
+    const normalizedStoredRunId = storedRunId ? normalizeStoredRunId(storedRunId) : null;
+
+    if (normalizedStoredRunId) {
+      if (normalizedStoredRunId !== storedRunId) {
+        persistRunId(normalizedStoredRunId);
+      }
+
+      if (recoveryStartedRef.current) {
+        return () => {
+          isMountedRef.current = false;
+          stopRequests("effect_cleanup_after_duplicate_recovery");
+          recoveryStartedRef.current = false;
+        };
+      }
+
+      recoveryStartedRef.current = true;
       setStatus("loading");
-      void loadRun(storedRunId, { allowNotFoundReset: true }).then((loadedRun) => {
+      void loadRun(normalizedStoredRunId, { allowNotFoundReset: true }).then((loadedRun) => {
         if (loadedRun && !isTerminalRun(loadedRun)) {
           scheduleNext(loadedRun.run_id, 1000);
         }
       });
     } else if (storedRunId) {
-      clearStoredRun();
+      clearStoredRun("invalid_stored_run_id");
     }
 
     return () => {
       isMountedRef.current = false;
-      stopRequests();
+      stopRequests("effect_cleanup");
+      recoveryStartedRef.current = false;
     };
-  }, [clearStoredRun, loadRun, scheduleNext, stopRequests]);
+  }, [clearStoredRun, loadRun, persistRunId, scheduleNext, stopRequests]);
 
   useEffect(() => {
     if (!run || isTerminalRun(run)) {
@@ -314,7 +376,7 @@ export function useCompositeOperationsRun() {
       return false;
     }
 
-    stopRequests();
+    stopRequests("start_run");
     setIsStarting(true);
     setStatus("starting");
     setMessage(null);
@@ -340,7 +402,7 @@ export function useCompositeOperationsRun() {
       }
 
       const responseBody = (await response.json()) as RunResponse;
-      if (!responseBody.ok || !responseBody.run || !uuidPattern.test(responseBody.run.run_id)) {
+      if (!responseBody.ok || !isCompositeRunViewModel(responseBody.run)) {
         if (isMountedRef.current) {
           setMessage("No fue posible iniciar la ejecucion.");
           setStatus("network_error");
