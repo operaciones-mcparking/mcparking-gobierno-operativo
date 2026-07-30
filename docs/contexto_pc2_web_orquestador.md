@@ -801,3 +801,39 @@ PC 2/Vercel no debe:
 | `scripts/orquestador-source-connection-check.test.mjs` | tests | pruebas estaticas source check |
 | `scripts/orquestador-banco-reservas-last-week.test.mjs` | tests A-AA | pruebas estaticas Banco Reservas |
 | `scripts/orquestador-banco-packs-actualizar-packs.test.mjs` | tests A-AI | pruebas estaticas Banco Packs |
+
+## Ficha tecnica segura de jobs
+
+PC 2 incorpora una ficha tecnica local para filas de `Ultimos jobs` en `/orquestador`.
+
+- UI: boton `Ver detalle` por job en `src/app/orquestador/page.tsx`.
+- Componente: `src/app/orquestador/job-technical-detail-button.tsx`.
+- Endpoint seguro: `GET /api/orquestador/jobs/[jobId]/detail`.
+- Helper server-side: `src/lib/orquestador/job-technical-detail.ts`.
+- Fuente server-side: `ops_orchestrator.orchestrator_jobs.result`.
+
+La ficha tecnica exige admin activo server-side y valida UUID. El cliente nunca llama Supabase ni recibe `payload`, `result`, `stdout`, `stderr` o `command_preview` crudos.
+
+El parser trabaja solo en backend con el `result` del job. Para `banco_reservas_actualizar`, intenta localizar el JSON final del Agente 01 aun cuando exista log alrededor y extrae, si estan disponibles:
+
+- `datos.modo`.
+- `datos.fecha_desde`.
+- `datos.started_at`.
+- `datos.ended_at`.
+- `datos.duracion_segundos`.
+- `datos.validacion.total_validas`.
+- `datos.upsert.insertadas`.
+- `datos.upsert.actualizadas`.
+- `datos.upsert.sin_cambios`.
+- `datos.errores`.
+- `datos.fuentes.MCP.leidas`.
+- `datos.fuentes.MCP_BORRADOR.leidas`.
+- `datos.fuentes.OKP.leidas`.
+
+Si no hay metricas estructuradas, la UI muestra: `El resultado tecnico no contiene metricas estructuradas disponibles.`
+
+Las lineas tecnicas visibles se sanitizan y limitan: se eliminan rutas locales, emails, telefonos, posibles secretos y JSON crudo. Packs y Dashboard pueden reutilizar el mismo patron con extractores especificos futuros.
+
+Validacion objetivo sin crear jobs: consultar por GET el job real `3612af0c-8a61-4f0d-bcc6-a59b0b68955c` y mostrar solo los campos existentes en el DTO seguro.
+
+PC 1, worker, agentes, wrappers, migraciones y `/recuperacion` no forman parte de esta implementacion.

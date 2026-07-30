@@ -31,6 +31,7 @@ import { ActualizarDatosOperacionalesControl } from "./actualizar-datos-operacio
 import { BancoPacksUpdateControl } from "./banco-packs-update-control";
 import { BancoReservasLastWeekControl } from "./banco-reservas-last-week-control";
 import { DashboardLastMonthControl } from "./dashboard-last-month-control";
+import { JobTechnicalDetailButton } from "./job-technical-detail-button";
 import { OrquestadorRefreshButton } from "./refresh-button";
 import { SourceConnectionCheckControl } from "./source-connection-check-control";
 import { WorkerHealthCheckButton } from "./worker-health-check-button";
@@ -246,7 +247,7 @@ export default async function OrquestadorPage() {
 
       <Panel count={`${jobs.length} jobs`} title="Ultimos jobs">
         <div className="mt-5">
-          <DataTable minWidth="1080px">
+          <DataTable minWidth="1160px">
             <DataTableHead>
               <tr>
                 <DataTableHeaderCell>ID</DataTableHeaderCell>
@@ -258,6 +259,7 @@ export default async function OrquestadorPage() {
                 <DataTableHeaderCell>Inicio</DataTableHeaderCell>
                 <DataTableHeaderCell>Fin</DataTableHeaderCell>
                 <DataTableHeaderCell>Error</DataTableHeaderCell>
+                <DataTableHeaderCell>Detalle</DataTableHeaderCell>
               </tr>
             </DataTableHead>
             <DataTableBody>
@@ -274,6 +276,9 @@ export default async function OrquestadorPage() {
                   <DataTableCell>{formatDate(job.started_at)}</DataTableCell>
                   <DataTableCell>{formatDate(job.finished_at)}</DataTableCell>
                   <DataTableCell>{job.error_message ?? "-"}</DataTableCell>
+                  <DataTableCell>
+                    <JobTechnicalDetailButton jobId={job.id} />
+                  </DataTableCell>
                 </DataTableRow>
               ))}
             </DataTableBody>
