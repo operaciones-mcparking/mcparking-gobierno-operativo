@@ -185,3 +185,38 @@ test("R. formula ADR usa valores crudos antes de formatear", () => {
   assert.equal(formatAdrForTest(22842.49, Number.POSITIVE_INFINITY), "No disponible");
   assert.equal(formatAdrForTest(101.6, 4.1), 25);
 });
+test("S. anticipacion y estadia muestran unidad dias", () => {
+  assert.match(formatters, /export function formatDays\(value: number \| null \| undefined\)/);
+  assert.match(formatters, /value === 1 \? "día" : "días"/);
+  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{formatDays\(main\)\}<\/p>/);
+  assert.match(client, /\{ticketLabel\}: \{formatDays\(ticket\)\}/);
+  assert.match(client, /Pack: \{formatDays\(pack\)\}/);
+  assert.match(client, /<AverageBlock label="Anticipacion promedio" main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
+  assert.match(client, /<AverageBlock label="Estadia promedio" main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
+  assert.match(client, /<SystemColumn label="OKP"/);
+  assert.match(client, /<SystemColumn label="MCP"/);
+  assert.doesNotMatch(client, /formatDays\(totals\.precio|formatDays\(totals\.venta|formatDays\(totals\.reserva|formatDays\(totals\.pack_vendido/);
+  assert.doesNotMatch(client + formatters, /No disponible días/);
+});
+
+test("T. formatDays singular plural y valores invalidos", () => {
+  const decimalFormatterForTest = new Intl.NumberFormat("es-CL", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  });
+  const formatDaysForTest = (value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return "No disponible";
+
+    return `${decimalFormatterForTest.format(value)} ${value === 1 ? "día" : "días"}`;
+  };
+
+  assert.equal(formatDaysForTest(1), "1 día");
+  assert.equal(formatDaysForTest(2.3), "2,3 días");
+  assert.equal(formatDaysForTest(0), "0 días");
+  assert.equal(formatDaysForTest(0.5), "0,5 días");
+  assert.equal(formatDaysForTest(null), "No disponible");
+  assert.equal(formatDaysForTest(undefined), "No disponible");
+  assert.equal(formatDaysForTest(Number.NaN), "No disponible");
+  assert.equal(formatDaysForTest(Number.POSITIVE_INFINITY), "No disponible");
+  assert.notEqual(formatDaysForTest(null), "No disponible días");
+});

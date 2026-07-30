@@ -53,6 +53,14 @@ export function formatDecimal(value: number | null | undefined, suffix = "") {
   return isFiniteNumber(value) ? `${decimalFormatter.format(value)}${suffix}` : "No disponible";
 }
 
+export function formatDays(value: number | null | undefined) {
+  if (!isFiniteNumber(value)) {
+    return "No disponible";
+  }
+
+  return `${decimalFormatter.format(value)} ${value === 1 ? "día" : "días"}`;
+}
+
 export function formatPercent(value: number | null | undefined) {
   return isFiniteNumber(value) ? `${percentFormatter.format(value)}%` : "0%";
 }

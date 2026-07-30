@@ -12,7 +12,7 @@ import {
   formatCurrency,
   formatDate,
   formatDateTime,
-  formatDecimal,
+  formatDays,
   formatInteger,
   formatPercent,
 } from "./dashboard-operacional-formatters";
@@ -70,10 +70,10 @@ function AverageBlock({ label, main, pack, ticket, ticketLabel = "Boleta" }: { l
   return (
     <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-navy">{formatDecimal(main)}</p>
+      <p className="mt-1 text-lg font-semibold text-navy">{formatDays(main)}</p>
       <div className="mt-2 grid gap-1 text-xs text-slate-600">
-        <span>{ticketLabel}: {formatDecimal(ticket)}</span>
-        <span>Pack: {formatDecimal(pack)}</span>
+        <span>{ticketLabel}: {formatDays(ticket)}</span>
+        <span>Pack: {formatDays(pack)}</span>
       </div>
     </div>
   );
