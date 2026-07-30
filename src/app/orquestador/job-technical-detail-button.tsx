@@ -35,6 +35,20 @@ function formatDuration(value: number | null | undefined) {
   return value === null || value === undefined ? "-" : `${Math.round(value)}s`;
 }
 
+const operationalResultNames: Record<string, string> = {
+  banco_reservas_actualizar: "Banco de Reservas",
+  banco_packs_actualizar: "Banco de Packs",
+  banco_packs_actualizar_sin_consumos: "Banco de Packs",
+  banco_personas_actualizar: "Banco de Personas",
+  dashboard_actualizar: "Dashboard",
+  dashboard_actualizar_metricas: "Dashboard",
+};
+
+function operationalResultTitle(jobType: string) {
+  const name = operationalResultNames[jobType];
+  return name ? `Resultado operacional \u00b7 ${name}` : "Resultado operacional";
+}
+
 function DetailRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3 border-b border-[#e6eef4] py-2 text-xs last:border-b-0">
@@ -209,7 +223,7 @@ export function JobTechnicalDetailButton({ jobId }: JobTechnicalDetailButtonProp
                 </section>
 
                 <section className="rounded-lg border border-[#d6e1ea] bg-white p-3">
-                  <h3 className="font-medium text-navy">Resultado operacional Reservas</h3>
+                  <h3 className="font-medium text-navy">{operationalResultTitle(detail.job_type)}</h3>
                   {detail.operational_summary ? (
                     <SummaryGrid summary={detail.operational_summary} />
                   ) : (
