@@ -40,6 +40,11 @@ import {
 } from "@/lib/orquestador/types";
 import type { RawCompositeRunJobRow } from "@/lib/orquestador/composite-runs";
 import type { ActualizarDatosStep } from "@/lib/orquestador/actualizar-datos-operacionales";
+import {
+  mapJobTechnicalDetail,
+  type JobTechnicalDetailViewModel,
+  type RawJobTechnicalDetailRow,
+} from "@/lib/orquestador/job-technical-detail";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -53,6 +58,63 @@ type OrquestadorSingleResult<T> = {
   data: T | null;
   error: boolean;
 };
+
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStringOrNull(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
+function isNumberOrNull(value: unknown): value is number | null {
+  return (typeof value === "number" && Number.isFinite(value)) || value === null;
+}
+
+function isJsonRecordOrNull(value: unknown): value is Record<string, unknown> | null {
+  return isRecord(value) || value === null;
+}
+
+function normalizeJobTechnicalDetailRpcResult(data: unknown): RawJobTechnicalDetailRow | null {
+  if (!isRecord(data)) {
+    return null;
+  }
+
+  if (
+    typeof data.id !== "string" ||
+    typeof data.job_type !== "string" ||
+    typeof data.status !== "string" ||
+    !isStringOrNull(data.requested_source) ||
+    !isStringOrNull(data.target_worker_id) ||
+    !isStringOrNull(data.locked_by_worker_id) ||
+    !isNumberOrNull(data.attempts) ||
+    !isNumberOrNull(data.max_attempts) ||
+    typeof data.created_at !== "string" ||
+    !isStringOrNull(data.started_at) ||
+    !isStringOrNull(data.finished_at) ||
+    !isStringOrNull(data.error_message) ||
+    !isJsonRecordOrNull(data.result)
+  ) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    job_type: data.job_type,
+    status: data.status,
+    requested_source: data.requested_source,
+    target_worker_id: data.target_worker_id,
+    locked_by_worker_id: data.locked_by_worker_id,
+    attempts: data.attempts,
+    max_attempts: data.max_attempts,
+    created_at: data.created_at,
+    started_at: data.started_at,
+    finished_at: data.finished_at,
+    error_message: data.error_message,
+    result: data.result,
+  };
+}
 
 function emptyResult<T>(): OrquestadorResult<T> {
   return { data: [], error: true };
@@ -140,6 +202,30 @@ export async function listOrchestratorJobTypes(): Promise<OrquestadorResult<Orch
     return error ? emptyResult() : { data: (data ?? []).map(safeJobTypeRow), error: false };
   } catch {
     return emptyResult();
+  }
+}
+export async function getOrchestratorJobTechnicalDetail(jobId: string): Promise<OrquestadorSingleResult<JobTechnicalDetailViewModel>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_get_job_technical_detail", {
+      p_job_id: jobId,
+    })) as {
+      data: unknown;
+      error: { message?: string } | null;
+    };
+    if (error) {
+      return singleError();
+    }
+
+    if (data === null) {
+      return { data: null, error: false };
+    }
+
+    const row = normalizeJobTechnicalDetailRpcResult(data);
+
+    return row ? { data: mapJobTechnicalDetail(row), error: false } : singleError();
+  } catch {
+    return singleError();
   }
 }
 export async function getOrchestratorJobType(jobType: string): Promise<OrquestadorSingleResult<OrchestratorJobType>> {

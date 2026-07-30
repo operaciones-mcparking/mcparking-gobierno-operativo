@@ -745,3 +745,22 @@ PC 1 plataforma:
 - `agentes/agente_02_banco_packs/cli.py`
 - `agentes/agente_03_banco_personas/cli.py`
 - `agentes/agente_03_banco_personas_v2/cli.py`
+
+## Ficha tecnica segura de jobs en PC 2
+
+La web PC 2 agrega una ficha tecnica segura para jobs del orquestador desde `/orquestador`.
+
+- Endpoint: `GET /api/orquestador/jobs/[jobId]/detail`.
+- UI: boton `Ver detalle` en la tabla `Ultimos jobs`.
+- Fuente: `ops_orchestrator.orchestrator_jobs.result`, leida solo server-side con service role.
+- DTO: `JobTechnicalDetailViewModel` en `src/lib/orquestador/job-technical-detail.ts`.
+
+La ficha reutiliza conceptualmente la lectura tecnica del orquestador antiguo, pero no copia el cliente Supabase antiguo, payloads legacy ni `commandCatalog`. No crea jobs, no ejecuta POST y no modifica PC 1.
+
+El parser seguro busca JSON estructurado dentro de `stdout/result`, tolera logs alrededor y extrae resumen operacional de Reservas cuando existe: modo, fecha desde, duracion interna, total validas, insertadas, actualizadas, sin cambios, errores y fuentes `MCP`, `MCP_BORRADOR`, `OKP`.
+
+La salida al navegador no incluye `payload`, `result`, `stdout`, `stderr`, `command_preview`, rutas locales, emails, telefonos, secretos ni stack traces. Solo se muestran lineas tecnicas sanitizadas y limitadas.
+
+Primer job real de validacion por GET: `3612af0c-8a61-4f0d-bcc6-a59b0b68955c`, sin crear jobs nuevos.
+
+Packs y Dashboard pueden reutilizar este patron agregando extractores operacionales especificos mas adelante.
