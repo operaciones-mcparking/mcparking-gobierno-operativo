@@ -149,6 +149,11 @@ test("M. UI agrega boton Ver detalle", () => {
   assert.match(page, /JobTechnicalDetailButton/);
   assert.match(page, /<DataTableHeaderCell>Detalle<\/DataTableHeaderCell>/);
   assert.match(button, /Ver detalle/);
+  assert.match(button, /operationalResultTitle\(detail\.job_type\)/);
+  assert.match(button, /banco_reservas_actualizar: "Banco de Reservas"/);
+  assert.match(button, /banco_packs_actualizar: "Banco de Packs"/);
+  assert.match(button, /banco_personas_actualizar: "Banco de Personas"/);
+  assert.match(button, /dashboard_actualizar: "Dashboard"/);
 });
 
 test("N. UI abre modal accesible", () => {
@@ -159,7 +164,7 @@ test("N. UI abre modal accesible", () => {
 });
 
 test("O. UI muestra secciones esperadas", () => {
-  for (const label of ["Resumen", "Ejecucion", "Resultado operacional Reservas", "Log tecnico sanitizado", "Return code", "Timeout", "Requested source"]) {
+  for (const label of ["Resumen", "Ejecucion", "Resultado operacional", "Log tecnico sanitizado", "Return code", "Timeout", "Requested source"]) {
     assert.match(button, new RegExp(label));
   }
 });
