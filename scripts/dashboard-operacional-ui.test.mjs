@@ -393,6 +393,20 @@ test("Z3. seccion intermedia no aparece en Dashboard y el control queda en cabec
   assert.doesNotMatch(client, /Ejecucion real[\s\S]*Actualizar Reservas ultimo mes[\s\S]*Actualizar Banco de Packs[\s\S]*Actualizar metricas Dashboard ultimo mes/);
 });
 
+test("Z3b. cabecera movil conserva solo titulo fecha y accion principal", () => {
+  assert.match(client, /<p className="text-xs font-semibold uppercase tracking-\[0\.14em\] text-sea">Dashboard operacional<\/p>/);
+  assert.match(client, /<div className="hidden lg:block">\s*<h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP<\/h2>\s*<LastUpdateSummary dashboard=\{dashboard\} \/>\s*<\/div>/);
+  assert.match(client, /Filtro Fecha/);
+  assert.match(client, /<ActualizarDatosOperacionalesControl/);
+  assert.match(client, /presentation="overlay"/);
+  assert.match(client, /function LastUpdateSummary/);
+  assert.match(client, /Ultima actualizacion: \{updateDate\}/);
+  assert.match(client, /Estado: \{updateStatusLabel\(lastUpdate\.estado\)\}/);
+  assert.match(client, /Datos disponibles: \{formatDate\(lastUpdate\.periodo_desde\)\} al \{formatDate\(lastUpdate\.periodo_hasta\)\}/);
+  const desktopOnlyHeader = client.match(/<div className="hidden lg:block">[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.doesNotMatch(desktopOnlyHeader, /Filtro Fecha|ActualizarDatosOperacionalesControl/);
+});
+
 test("Z4. ultima actualizacion usa textos operativos", () => {
   assert.match(client, /function updateStatusLabel/);
   assert.match(client, /succeeded"\) return "Actualizado correctamente"/);

@@ -349,8 +349,10 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sea">Dashboard operacional</p>
+            <div className="hidden lg:block">
             <h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP</h2>
             <LastUpdateSummary dashboard={dashboard} />
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end">
             <label className="grid gap-1 text-sm font-medium text-navy">
