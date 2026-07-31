@@ -37,8 +37,12 @@ test("A. ruta antigua Dashboard Operacional redirige a /orquestador", () => {
   assert.doesNotMatch(page, /DashboardOperacionalClient|requireAdminAccess|getOperationalDashboardRpcData/);
 });
 
-test("B. no modifica navegacion global", () => {
-  assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/shell\.tsx$/m);
+test("B. navegacion muestra Operaciones sin cambiar ruta", () => {
+  const shell = readFileSync("src/components/dashboard/shell.tsx", "utf8");
+  assert.match(shell, /href: "\/orquestador"/);
+  assert.match(shell, /label: "Operaciones"/);
+  assert.match(shell, /helper: "Dashboard y monitoreo"/);
+  assert.doesNotMatch(shell, /label: "Orquestador"|helper: "Workers y jobs"/);
   assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/mobile-navigation\.tsx$/m);
 });
 
@@ -48,7 +52,8 @@ test("C. selector unificado contiene Dashboard y Centro de Control", () => {
   assert.match(tabs, /\/orquestador\?view=\$\{view\}/);
   assert.match(orquestadorPage, /eyebrow="Operaciones McParking"/);
   assert.match(orquestadorPage, /title="McParking Dashboard"/);
-  assert.doesNotMatch(orquestadorPage, /title="McParking Orquestador"/);
+  assert.match(orquestadorPage, /description="Monitoreo operacional y control de procesos\."/);
+  assert.doesNotMatch(orquestadorPage, /McParking Orquestador|centro de control seguro del orquestador existente/);
   assert.doesNotMatch(client, /McParking Orquestador|Centro de Control|href="\/orquestador"/);
 });
 

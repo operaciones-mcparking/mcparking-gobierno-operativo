@@ -40,7 +40,7 @@ const modules: Array<{ items: Array<{ adminOnly?: boolean; helper: string; href:
   {
     items: [
       { href: "/brechas", icon: AlertTriangle, iconKey: "alert-triangle", label: "Brechas", helper: "Alertas y riesgos" },
-      { adminOnly: true, href: "/orquestador", icon: Workflow, iconKey: "workflow", label: "Orquestador", helper: "Workers y jobs" },
+      { adminOnly: true, href: "/orquestador", icon: Workflow, iconKey: "workflow", label: "Operaciones", helper: "Dashboard y monitoreo" },
     ],
     label: "Control",
   },

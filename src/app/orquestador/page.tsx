@@ -25,7 +25,7 @@ export default async function OrquestadorPage({ searchParams }: OrquestadorPageP
   return (
     <DashboardShell
       activePath="/orquestador"
-      description="Dashboard operacional y centro de control seguro del orquestador existente."
+      description="Monitoreo operacional y control de procesos."
       eyebrow="Operaciones McParking"
       title="McParking Dashboard"
     >
