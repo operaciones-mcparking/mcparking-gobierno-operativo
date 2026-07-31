@@ -81,10 +81,37 @@ test("G. comparativa MCP OKP y Market size", () => {
   assert.match(client, /marketShare\?\.venta_total_operacional/);
   assert.match(client, /marketShare\?\.reserva_total_dbi/);
   assert.match(client, /marketShare\?\.reserva_total_q/);
-  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>[\s\S]*aria-label=\{`\$\{label\} MCP vs OKP`\}[\s\S]*<p>OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p>MCP \{formatPercent\(safeMcp\)\}<\/p>/);
+  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>[\s\S]*aria-label=\{`\$\{label\} OKP vs MCP`\}[\s\S]*<p>OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p>MCP \{formatPercent\(safeMcp\)\}<\/p>/);
   assert.doesNotMatch(client, /OTRO existe en los totales por grupo/);
 });
 
+
+test("G1. barras Market size conectan colores con porcentajes correctos", () => {
+  assert.match(client, /const safeMcp = Number\.isFinite\(mcp\) \? Math\.max\(0, Math\.min\(100, mcp\)\) : 0/);
+  assert.match(client, /const safeOkp = Number\.isFinite\(okp\) \? Math\.max\(0, Math\.min\(100, okp\)\) : 0/);
+  assert.match(client, /<div className="bg-sea" style=\{\{ width: `\$\{safeOkp\}%` \}\} \/>/);
+  assert.match(client, /<div className="bg-clay" style=\{\{ width: `\$\{safeMcp\}%` \}\} \/>/);
+  assert.doesNotMatch(client, /<div className="bg-sea" style=\{\{ width: `\$\{safeMcp\}%` \}\} \/>/);
+  assert.doesNotMatch(client, /<div className="bg-clay" style=\{\{ width: `\$\{safeOkp\}%` \}\} \/>/);
+  assert.doesNotMatch(client, /w-1\/4|w-3\/4|w-\[[0-9]+%\]/);
+  for (const label of ["Venta total operacional", "DBI reservas total", "Q reservas total"]) {
+    assert.match(client, new RegExp(`ShareBar label="${label}"`));
+  }
+});
+
+test("G2. calculo visual de barras cubre proporciones y limites", () => {
+  const safePercentForTest = (value) => (Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : 0);
+  assert.equal(safePercentForTest(28.63), 28.63);
+  assert.equal(safePercentForTest(71.37), 71.37);
+  assert.equal(safePercentForTest(28.63) + safePercentForTest(71.37), 100);
+  assert.equal(safePercentForTest(0), 0);
+  assert.equal(safePercentForTest(100), 100);
+  assert.equal(safePercentForTest(-5), 0);
+  assert.equal(safePercentForTest(125), 100);
+  assert.equal(safePercentForTest(Number.NaN), 0);
+  assert.equal(safePercentForTest(Number.POSITIVE_INFINITY), 0);
+  assert.equal(safePercentForTest(0) + safePercentForTest(0), 0);
+});
 test("H. metricas principales solicitadas visibles", () => {
   for (const token of [
     "venta_total_operacional",

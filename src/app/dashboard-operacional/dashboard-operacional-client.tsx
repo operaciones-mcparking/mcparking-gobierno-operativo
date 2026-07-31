@@ -247,9 +247,9 @@ function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp:
     <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
       <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
       <p className="mt-1 text-lg font-semibold text-navy">{total}</p>
-      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-[#dfe9f0]" aria-label={`${label} MCP vs OKP`}>
-        <div className="bg-sea" style={{ width: `${safeMcp}%` }} />
-        <div className="bg-clay" style={{ width: `${safeOkp}%` }} />
+      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-[#dfe9f0]" aria-label={`${label} OKP vs MCP`}>
+        <div className="bg-sea" style={{ width: `${safeOkp}%` }} />
+        <div className="bg-clay" style={{ width: `${safeMcp}%` }} />
       </div>
       <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <p>OKP {formatPercent(safeOkp)}</p>
