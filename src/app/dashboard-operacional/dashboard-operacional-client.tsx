@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  OperationalDashboardRow,
   OperationalDashboardTotals,
   OperationalDashboardViewModel,
 } from "@/lib/dashboard/operacional";
@@ -98,6 +99,10 @@ function groupTotals(dashboard: OperationalDashboardViewModel | null, group: "MC
 
 type MetricLayout = "normal" | "mirror";
 type TextAlignment = "left" | "right";
+type ParkingSummaryTotals = Pick<
+  OperationalDashboardRow,
+  "pack_vendido_q" | "reserva_total_dbi" | "reserva_total_q" | "venta_total_operacional"
+>;
 
 function KpiLine({ label, layout = "normal", value }: { label: string; layout?: MetricLayout; value: string }) {
   return (
@@ -280,6 +285,274 @@ function LoadingOverlay() {
     </div>
   );
 }
+function getParkingSummaryKey(row: OperationalDashboardRow) {
+  return `${row.fecha}:${row.parking_codigo}:${row.sistema_grupo}:${row.id}`;
+}
+
+function getParkingDetailId(prefix: string, key: string) {
+  return `${prefix}-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function calculateParkingSummaryTotals(rows: OperationalDashboardRow[]): ParkingSummaryTotals {
+  const totals: ParkingSummaryTotals = {
+    pack_vendido_q: 0,
+    reserva_total_dbi: 0,
+    reserva_total_q: 0,
+    venta_total_operacional: 0,
+  };
+
+  for (const row of rows) {
+    totals.pack_vendido_q += row.pack_vendido_q;
+    totals.reserva_total_dbi += row.reserva_total_dbi;
+    totals.reserva_total_q += row.reserva_total_q;
+    totals.venta_total_operacional += row.venta_total_operacional;
+  }
+
+  return totals;
+}
+
+function ParkingDetailSection({ items, title }: { items: Array<[string, string]>; title: string }) {
+  return (
+    <div>
+      <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</h4>
+      <dl className="mt-2 grid gap-1 text-sm">
+        {items.map(([label, value]) => (
+          <div className="flex items-center justify-between gap-3" key={label}>
+            <dt className="text-slate-600">{label}</dt>
+            <dd className="font-medium text-navy">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function ParkingDetail({ row }: { row: OperationalDashboardRow }) {
+  return (
+    <div className="grid gap-4 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <ParkingDetailSection
+        items={[
+          ["Venta boleta", formatCurrency(row.reserva_boleta_venta)],
+          ["Venta packs", formatCurrency(row.pack_vendido_venta)],
+        ]}
+        title="Ventas"
+      />
+      <ParkingDetailSection
+        items={[
+          ["Q boleta", formatInteger(row.reserva_boleta_q)],
+          ["Q reservas pack", formatInteger(row.reserva_pack_q)],
+          ["Q total reservas", formatInteger(row.reserva_total_q)],
+        ]}
+        title="Reservas"
+      />
+      <ParkingDetailSection
+        items={[
+          ["DBI boleta", formatInteger(row.reserva_boleta_dbi)],
+          ["DBI reservas pack", formatInteger(row.reserva_pack_dbi)],
+          ["DBI total reservas", formatInteger(row.reserva_total_dbi)],
+        ]}
+        title="DBI"
+      />
+      <ParkingDetailSection items={[["Q packs vendidos", formatInteger(row.pack_vendido_q)]]} title="Packs" />
+      <ParkingDetailSection items={[["Fecha del registro", formatDate(row.fecha)]]} title="Fecha" />
+    </div>
+  );
+}
+
+function ParkingSummaryToggle({
+  detailId,
+  isExpanded,
+  onToggle,
+  parkingName,
+}: {
+  detailId: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+  parkingName: string;
+}) {
+  return (
+    <button
+      aria-controls={detailId}
+      aria-expanded={isExpanded}
+      aria-label={`${isExpanded ? "Ocultar" : "Ver"} detalle de ${parkingName}`}
+      className="rounded-md border border-[#d7e3ec] bg-white px-2.5 py-1 text-xs font-medium text-navy transition hover:bg-[#f8fbfd]"
+      onClick={onToggle}
+      type="button"
+    >
+      {isExpanded ? "Ocultar detalle" : "Ver detalle"}
+    </button>
+  );
+}
+
+function ParkingSummaryTable({
+  expandedKeys,
+  onToggle,
+  rows,
+  totals,
+}: {
+  expandedKeys: Set<string>;
+  onToggle: (key: string) => void;
+  rows: OperationalDashboardRow[];
+  totals: ParkingSummaryTotals;
+}) {
+  return (
+    <div className="mt-5 hidden lg:block">
+      <table className="w-full border-separate border-spacing-0 text-left text-sm">
+        <thead>
+          <tr className="text-xs uppercase tracking-[0.08em] text-slate-500">
+            {["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acción"].map((header) => (
+              <th className="border-b border-[#d6e1ea] bg-[#f8fbfd] px-3 py-3 font-semibold" key={header}>{header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const key = getParkingSummaryKey(row);
+            const detailId = getParkingDetailId("parking-detail", key);
+            const isExpanded = expandedKeys.has(key);
+
+            return (
+              <Fragment key={key}>
+                <tr>
+                  <td className="border-b border-[#e4edf4] px-3 py-3 font-medium text-navy">{row.parking_nombre}</td>
+                  <td className="border-b border-[#e4edf4] px-3 py-3">
+                    <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-1 text-xs font-medium text-slate-600">{row.sistema_grupo}</span>
+                  </td>
+                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatCurrency(row.venta_total_operacional)}</td>
+                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_q)}</td>
+                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_dbi)}</td>
+                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.pack_vendido_q)}</td>
+                  <td className="border-b border-[#e4edf4] px-3 py-3">
+                    <ParkingSummaryToggle
+                      detailId={detailId}
+                      isExpanded={isExpanded}
+                      onToggle={() => onToggle(key)}
+                      parkingName={row.parking_nombre}
+                    />
+                  </td>
+                </tr>
+                {isExpanded ? (
+                  <tr>
+                    <td className="border-b border-[#e4edf4] px-3 py-3" colSpan={7}>
+                      <div id={detailId}>
+                        <ParkingDetail row={row} />
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
+            );
+          })}
+          <tr className="font-semibold text-navy">
+            <td className="border-t border-[#cbd8e3] px-3 py-3">TOTAL</td>
+            <td className="border-t border-[#cbd8e3] px-3 py-3 text-slate-500">-</td>
+            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatCurrency(totals.venta_total_operacional)}</td>
+            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatInteger(totals.reserva_total_q)}</td>
+            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatInteger(totals.reserva_total_dbi)}</td>
+            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatInteger(totals.pack_vendido_q)}</td>
+            <td className="border-t border-[#cbd8e3] px-3 py-3" />
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ParkingSummaryCard({
+  isExpanded,
+  onToggle,
+  row,
+}: {
+  isExpanded: boolean;
+  onToggle: () => void;
+  row: OperationalDashboardRow;
+}) {
+  const key = getParkingSummaryKey(row);
+  const detailId = getParkingDetailId("parking-card-detail", key);
+
+  return (
+    <article className="rounded-xl border border-[#e4edf4] bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-navy">{row.parking_nombre}</h3>
+          <span className="mt-2 inline-flex rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-1 text-xs font-medium text-slate-600">{row.sistema_grupo}</span>
+        </div>
+        <ParkingSummaryToggle detailId={detailId} isExpanded={isExpanded} onToggle={onToggle} parkingName={row.parking_nombre} />
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Venta</dt>
+          <dd className="mt-1 font-semibold text-navy">{formatCurrency(row.venta_total_operacional)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Reservas</dt>
+          <dd className="mt-1 font-semibold text-navy">{formatInteger(row.reserva_total_q)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">DBI</dt>
+          <dd className="mt-1 font-semibold text-navy">{formatInteger(row.reserva_total_dbi)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Packs vendidos</dt>
+          <dd className="mt-1 font-semibold text-navy">{formatInteger(row.pack_vendido_q)}</dd>
+        </div>
+      </dl>
+      {isExpanded ? (
+        <div className="mt-4" id={detailId}>
+          <ParkingDetail row={row} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function ParkingTotalsCard({ totals }: { totals: ParkingSummaryTotals }) {
+  return (
+    <article className="rounded-xl border border-[#cbd8e3] bg-[#f8fbfd] p-4 font-semibold text-navy">
+      <h3>TOTAL</h3>
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">Venta</dt>
+          <dd className="mt-1">{formatCurrency(totals.venta_total_operacional)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">Reservas</dt>
+          <dd className="mt-1">{formatInteger(totals.reserva_total_q)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">DBI</dt>
+          <dd className="mt-1">{formatInteger(totals.reserva_total_dbi)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">Packs vendidos</dt>
+          <dd className="mt-1">{formatInteger(totals.pack_vendido_q)}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+
+function ParkingSummaryCards({
+  expandedKeys,
+  onToggle,
+  rows,
+  totals,
+}: {
+  expandedKeys: Set<string>;
+  onToggle: (key: string) => void;
+  rows: OperationalDashboardRow[];
+  totals: ParkingSummaryTotals;
+}) {
+  return (
+    <div className="mt-5 grid gap-3 lg:hidden">
+      {rows.map((row) => {
+        const key = getParkingSummaryKey(row);
+        return <ParkingSummaryCard isExpanded={expandedKeys.has(key)} key={key} onToggle={() => onToggle(key)} row={row} />;
+      })}
+      <ParkingTotalsCard totals={totals} />
+    </div>
+  );
+}
 
 export function DashboardOperacionalClient({ initialDashboard, initialError }: DashboardOperacionalClientProps) {
   const initialDateRef = useRef(getTodayLocalDate());
@@ -288,6 +561,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [selectedDate, setSelectedDate] = useState(initialDateRef.current);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(initialError);
+  const [expandedParkingKeys, setExpandedParkingKeys] = useState<Set<string>>(() => new Set());
 
   const rows = useMemo(() => {
     return [...(dashboard?.rows ?? [])].sort((left, right) => {
@@ -298,6 +572,18 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       return left.parking_nombre.localeCompare(right.parking_nombre);
     });
   }, [dashboard]);
+  const parkingSummaryTotals = useMemo(() => calculateParkingSummaryTotals(rows), [rows]);
+  const toggleParkingDetail = useCallback((key: string) => {
+    setExpandedParkingKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   const loadByDate = useCallback(async (date: string) => {
     const requestId = activeRequestRef.current + 1;
@@ -342,6 +628,10 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   useEffect(() => {
     void loadByDate(initialDateRef.current);
   }, [loadByDate]);
+
+  useEffect(() => {
+    setExpandedParkingKeys(new Set());
+  }, [selectedDate]);
 
   return (
     <>
@@ -401,46 +691,19 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       <section className="mt-5 rounded-2xl border border-[#d6e1ea] bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-navy">Detalle operativo por parking</h2>
-            <p className="mt-1 text-sm text-slate-600">{rows.length} filas operacionales visibles.</p>
+            <h2 className="text-lg font-semibold text-navy">Resumen por estacionamiento</h2>
+            <p className="mt-1 text-sm text-slate-600">{rows.length} estacionamientos para la fecha seleccionada.</p>
           </div>
           <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">Solo lectura</span>
         </div>
 
         {rows.length === 0 ? (
-          <p className="mt-5 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">No hay filas para el filtro seleccionado.</p>
+          <p className="mt-5 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">No hay estacionamientos para la fecha seleccionada.</p>
         ) : (
-          <div className="mt-5 overflow-x-auto">
-            <table className="min-w-[1180px] w-full border-separate border-spacing-0 text-left text-sm">
-              <thead>
-                <tr className="text-xs uppercase tracking-[0.08em] text-slate-500">
-                  {["Fecha", "Parking", "Sistema", "Venta operacional", "Venta boleta", "Venta packs vendidos", "Q boleta", "Q reservas pack", "Q total reservas", "DBI boleta", "DBI reservas pack", "DBI total reservas", "Q packs vendidos", "DBI packs vendidos"].map((header) => (
-                    <th className="border-b border-[#d6e1ea] bg-[#f8fbfd] px-3 py-3 font-semibold" key={header}>{header}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr className="border-b border-[#e4edf4]" key={row.id}>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatDate(row.fecha)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3 font-medium text-navy">{row.parking_nombre}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{row.sistema_grupo}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatCurrency(row.venta_total_operacional)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatCurrency(row.reserva_boleta_venta)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatCurrency(row.pack_vendido_venta)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_boleta_q)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_pack_q)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_q)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_boleta_dbi)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_pack_dbi)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_dbi)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.pack_vendido_q)}</td>
-                    <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.pack_vendido_dbi)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <ParkingSummaryTable expandedKeys={expandedParkingKeys} onToggle={toggleParkingDetail} rows={rows} totals={parkingSummaryTotals} />
+            <ParkingSummaryCards expandedKeys={expandedParkingKeys} onToggle={toggleParkingDetail} rows={rows} totals={parkingSummaryTotals} />
+          </>
         )}
       </section>
     </>

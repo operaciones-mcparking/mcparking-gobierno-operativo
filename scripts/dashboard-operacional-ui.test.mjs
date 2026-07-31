@@ -108,29 +108,80 @@ test("H. metricas principales solicitadas visibles", () => {
   }
 });
 
-test("I. detalle por parking contiene columnas solicitadas", () => {
+test("I. resumen por estacionamiento usa tabla desktop resumida", () => {
+  assert.match(client, /Resumen por estacionamiento/);
+  assert.match(client, /estacionamientos para la fecha seleccionada/);
+  assert.doesNotMatch(client, /Detalle operativo por parking|filas operacionales visibles/);
+  assert.match(client, /function ParkingSummaryTable/);
+  assert.match(client, /className="mt-5 hidden lg:block"/);
+  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acción"]) {
+    assert.match(client, new RegExp(label));
+  }
+  assert.match(client, /row\.parking_nombre/);
+  assert.match(client, /row\.sistema_grupo/);
+  assert.match(client, /formatCurrency\(row\.venta_total_operacional\)/);
+  assert.match(client, /formatInteger\(row\.reserva_total_q\)/);
+  assert.match(client, /formatInteger\(row\.reserva_total_dbi\)/);
+  assert.match(client, /formatInteger\(row\.pack_vendido_q\)/);
+  assert.doesNotMatch(client, /min-w-\[1180px\]|overflow-x-auto/);
+});
+
+test("I1. detalle expandible conserva los desgloses operativos", () => {
+  assert.match(client, /function ParkingDetail/);
+  assert.match(client, /function ParkingSummaryToggle/);
+  assert.match(client, /aria-expanded=\{isExpanded\}/);
+  assert.match(client, /aria-controls=\{detailId\}/);
+  assert.match(client, /aria-label=\{`\$\{isExpanded \? "Ocultar" : "Ver"\} detalle de \$\{parkingName\}`\}/);
+  assert.match(client, /Ver detalle/);
+  assert.match(client, /Ocultar detalle/);
   for (const label of [
-    "Fecha",
-    "Parking",
-    "Sistema",
-    "Venta operacional",
+    "Ventas",
     "Venta boleta",
-    "Venta packs vendidos",
+    "Venta packs",
+    "Reservas",
     "Q boleta",
     "Q reservas pack",
     "Q total reservas",
     "DBI boleta",
     "DBI reservas pack",
     "DBI total reservas",
+    "Packs",
     "Q packs vendidos",
-    "DBI packs vendidos",
+    "Fecha",
+    "Fecha del registro",
   ]) {
     assert.match(client, new RegExp(label));
   }
 });
 
+test("I2. filas totales visibles se calculan localmente sin tocar metricas base", () => {
+  assert.match(client, /type ParkingSummaryTotals = Pick/);
+  assert.match(client, /function calculateParkingSummaryTotals\(rows: OperationalDashboardRow\[\]\)/);
+  assert.match(client, /for \(const row of rows\)/);
+  assert.match(client, /totals\.venta_total_operacional \+= row\.venta_total_operacional/);
+  assert.match(client, /totals\.reserva_total_q \+= row\.reserva_total_q/);
+  assert.match(client, /totals\.reserva_total_dbi \+= row\.reserva_total_dbi/);
+  assert.match(client, /totals\.pack_vendido_q \+= row\.pack_vendido_q/);
+  assert.match(client, /<td className="border-t border-\[#cbd8e3\] px-3 py-3">TOTAL<\/td>/);
+  assert.match(client, /<ParkingTotalsCard totals=\{totals\} \/>/);
+  assert.doesNotMatch(client, /TOTAL[\s\S]{0,240}<ParkingSummaryToggle/);
+});
+
+test("I3. mobile usa tarjetas y conserva orden del dashboard", () => {
+  assert.match(client, /function ParkingSummaryCards/);
+  assert.match(client, /function ParkingSummaryCard/);
+  assert.match(client, /className="mt-5 grid gap-3 lg:hidden"/);
+  assert.match(client, /<ParkingTotalsCard totals=\{totals\} \/>/);
+  for (const label of ["Venta", "Reservas", "DBI", "Packs vendidos"]) {
+    assert.match(client, new RegExp(label));
+  }
+  assert.match(client, /<div className="order-1 xl:order-2">\s*<MarketColumn dashboard=\{dashboard\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-2 xl:order-1">\s*<SystemColumn label="OKP" totals=\{groupTotals\(dashboard, "OKP"\)\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
+});
+
 test("J. no recalcula metricas base en UI", () => {
-  assert.doesNotMatch(client, /reduce\(|calculateOperationalDashboardTotals|calculateTotalsByGroup|calculateMarketShare/);
+  assert.doesNotMatch(client, /calculateOperationalDashboardTotals|calculateTotalsByGroup|calculateMarketShare/);
   assert.match(client, /dashboard\?\.totals/);
   assert.match(client, /dashboard\?\.totalsByGroup/);
 });
@@ -140,7 +191,7 @@ test("K. maneja estados loading empty error y rows vacias", () => {
   assert.match(client, /LoadingOverlay/);
   assert.match(client, /initialError/);
   assert.match(client, /No hay una corrida operacional disponible/);
-  assert.match(client, /No hay filas para el filtro seleccionado/);
+  assert.match(client, /No hay estacionamientos para la fecha seleccionada/);
 });
 
 test("L. Dashboard reutiliza el control compuesto existente", () => {
