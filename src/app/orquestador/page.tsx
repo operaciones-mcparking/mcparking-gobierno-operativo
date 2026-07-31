@@ -7,9 +7,9 @@ import { OrchestratorDashboardView } from "./orchestrator-dashboard-view";
 import { OrchestratorViewTabs, type OrchestratorView } from "./orchestrator-view-tabs";
 
 type OrquestadorPageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     view?: string | string[];
-  };
+  }>;
 };
 
 function resolveView(value?: string | string[]): OrchestratorView {
@@ -20,7 +20,8 @@ function resolveView(value?: string | string[]): OrchestratorView {
 
 export default async function OrquestadorPage({ searchParams }: OrquestadorPageProps) {
   await requireAdminAccess();
-  const activeView = resolveView(searchParams?.view);
+  const resolvedSearchParams = await searchParams;
+  const activeView = resolveView(resolvedSearchParams?.view);
 
   return (
     <DashboardShell

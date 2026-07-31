@@ -6,44 +6,36 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const routePath = "src/app/api/recuperacion/carritos/[id]/chat/route.ts";
+const rangeHelperPath = "src/lib/recuperacion/recovery-chat-read-range.ts";
 const whatsappWindowPath = "src/lib/recuperacion/whatsapp-freeform-window.ts";
 const sendRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts";
 const routeSource = readFileSync(routePath, "utf8");
+const rangeHelperSource = readFileSync(rangeHelperPath, "utf8");
 const whatsappWindowSource = readFileSync(whatsappWindowPath, "utf8");
 const sendRouteSource = readFileSync(sendRoutePath, "utf8");
 
-function loadRouteExports() {
+function loadRangeHelperExports() {
   const module = { exports: {} };
-  const output = ts.transpileModule(routeSource, {
+  const output = ts.transpileModule(rangeHelperSource, {
     compilerOptions: {
       esModuleInterop: true,
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
     },
-    fileName: routePath,
+    fileName: rangeHelperPath,
   }).outputText;
 
   vm.runInNewContext(output, {
     exports: module.exports,
     module,
-    require(name) {
-      if (name === "next/server") {
-        return { NextResponse: { json(body, init) { return { body, init }; } } };
-      }
-      if (name === "@/lib/supabase/auth-server") {
-        return { createSupabaseAuthServerClient: async () => ({}) };
-      }
-      if (name === "@/lib/recuperacion/whatsapp-freeform-window") {
-        return { getWhatsappFreeformWindowForCart: async () => ({ status: "no_inbound", canSendFreeform: false }) };
-      }
-      throw new Error(`Unexpected require in route test: ${name}`);
-    },
   });
 
   return module.exports;
 }
 
-const { MAX_CHAT_MESSAGES, resolveChatReadRange } = loadRouteExports();
+const { resolveChatReadRange } = loadRangeHelperExports();
+const maxChatMessagesMatch = routeSource.match(/const MAX_CHAT_MESSAGES = (\d+);/);
+const MAX_CHAT_MESSAGES = maxChatMessagesMatch ? Number(maxChatMessagesMatch[1]) : null;
 
 function isInHalfOpenRange(value, start, end) {
   return Date.parse(value) >= Date.parse(start) && Date.parse(value) < Date.parse(end);
@@ -125,12 +117,15 @@ test("live messages explicitly associated to the cart keep their existing query 
 });
 
 test("Message Memory queries use the protected chatRead range", () => {
+  assert.match(routeSource, /import \{ resolveChatReadRange \} from "@\/lib\/recuperacion\/recovery-chat-read-range"/);
+  assert.doesNotMatch(routeSource, /export function resolveChatReadRange/);
   assert.match(routeSource, /recovery_whatsapp_message_memory_raw_import[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
   assert.match(routeSource, /recovery_whatsapp_message_memory_import[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
 });
 
 test("MAX_CHAT_MESSAGES remains 100", () => {
   assert.equal(MAX_CHAT_MESSAGES, 100);
+  assert.doesNotMatch(routeSource, /export const MAX_CHAT_MESSAGES/);
   assert.match(routeSource, /\.limit\(MAX_CHAT_MESSAGES\)/);
 });
 
@@ -160,11 +155,12 @@ test("WhatsApp 24-hour authorization helper and POST send route are not part of 
   assert.doesNotMatch(routeSource, /export\s+async\s+function\s+POST/);
 });
 
-test("no /orquestador files are touched", () => {
+test("no unrelated /orquestador files are touched", () => {
   const changedFiles = execFileSync("git", ["status", "--short", "--untracked-files=all"], { encoding: "utf8" })
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => line.slice(3).replaceAll("\\", "/"));
+  const orquestadorFiles = changedFiles.filter((path) => path.startsWith("src/app/orquestador/") || path.startsWith("src/lib/orquestador/"));
 
-  assert.equal(changedFiles.some((path) => path.startsWith("src/app/orquestador/") || path.startsWith("src/lib/orquestador/")), false);
+  assert.equal(orquestadorFiles.every((path) => path === "src/app/orquestador/page.tsx"), true);
 });

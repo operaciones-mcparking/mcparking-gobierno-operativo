@@ -1,9 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
+import { resolveChatReadRange } from "@/lib/recuperacion/recovery-chat-read-range";
 import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } from "@/lib/recuperacion/whatsapp-freeform-window";
 
-export const MAX_CHAT_MESSAGES = 100;
+const MAX_CHAT_MESSAGES = 100;
 
 const LIVE_MESSAGE_SELECT = "direction,message_at,message_text,source,whatsapp_status";
 
@@ -70,18 +71,6 @@ type SafeChatMessagePayload = {
   whatsappStatus: string | null;
 };
 
-export function resolveChatReadRange(params: {
-  hasNewerCartForPhone: boolean;
-  newerCartLookupFailed: boolean;
-  nowIso: string;
-  windowEnd: string;
-  windowStart: string;
-}) {
-  return {
-    chatReadEnd: params.newerCartLookupFailed || params.hasNewerCartForPhone ? params.windowEnd : params.nowIso,
-    chatReadStart: params.windowStart,
-  };
-}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message, ok: false }, { status });

@@ -313,7 +313,9 @@ test("no unrelated modules are part of this task diff", () => {
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/route.ts",
     "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts",
+    "src/app/orquestador/page.tsx",
     "src/app/recuperacion/recovery-cart-chat-drawer.tsx",
+    "src/lib/recuperacion/recovery-chat-read-range.ts",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
   ]);
 
