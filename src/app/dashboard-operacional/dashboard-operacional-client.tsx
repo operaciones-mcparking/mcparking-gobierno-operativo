@@ -1,6 +1,5 @@
-﻿"use client";
+"use client";
 
-import { RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -12,7 +11,6 @@ import {
   formatAdrCurrency,
   formatCurrency,
   formatDate,
-  formatDateTime,
   formatDays,
   formatInteger,
   formatPercent,
@@ -63,69 +61,179 @@ function getTodayLocalDate() {
   return `${year}-${month}-${day}`;
 }
 
-function groupTotals(dashboard: OperationalDashboardViewModel | null, group: "MCP" | "OKP") {
-  return dashboard?.totalsByGroup[group] ?? emptyTotals;
+function updateStatusLabel(status: string | null | undefined) {
+  if (status === "succeeded") return "Actualizado correctamente";
+  if (status === "failed") return "Actualizacion con error";
+  if (status === "cancelled") return "Actualizacion cancelada";
+  if (status === "running") return "Actualizacion en curso";
+  if (status === "waiting" || status === "queued" || status === "claimed") return "Actualizacion pendiente";
+
+  return "Estado no disponible";
 }
 
-function KpiLine({ label, value }: { label: string; value: string }) {
+function LastUpdateSummary({ dashboard }: { dashboard: OperationalDashboardViewModel | null }) {
+  const lastUpdate = dashboard?.lastUpdate;
+
+  if (!lastUpdate) {
+    return <p className="mt-2 text-sm text-slate-600">Sin actualizaciones registradas</p>;
+  }
+
+  const updateDate = lastUpdate.periodo_hasta ? formatDate(lastUpdate.periodo_hasta) : "Sin fecha";
+  const hasRange = Boolean(lastUpdate.periodo_desde && lastUpdate.periodo_hasta);
+
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[#e4edf4] py-2 last:border-b-0">
-      <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">{label}</dt>
-      <dd className="text-right text-sm font-semibold text-navy">{value}</dd>
+    <div className="mt-2 grid gap-1 text-sm text-slate-600">
+      <p>Ultima actualizacion: {updateDate}</p>
+      <p>Estado: {updateStatusLabel(lastUpdate.estado)}</p>
+      {hasRange ? (
+        <p className="text-xs">Datos disponibles: {formatDate(lastUpdate.periodo_desde)} al {formatDate(lastUpdate.periodo_hasta)}</p>
+      ) : null}
     </div>
   );
 }
 
-function AverageBlock({ label, main, pack, ticket, ticketLabel = "Boleta" }: { label: string; main: number | null; pack: number | null; ticket: number | null; ticketLabel?: string }) {
+function groupTotals(dashboard: OperationalDashboardViewModel | null, group: "MCP" | "OKP") {
+  return dashboard?.totalsByGroup[group] ?? emptyTotals;
+}
+
+type MetricLayout = "normal" | "mirror";
+
+function KpiLine({ label, layout = "normal", value }: { label: string; layout?: MetricLayout; value: string }) {
+  return (
+    <div className={`flex items-center justify-between gap-3 border-b border-[#e4edf4] py-2 last:border-b-0 ${layout === "mirror" ? "flex-row-reverse" : ""}`}>
+      <dt className={`text-xs font-medium uppercase tracking-[0.08em] text-slate-500 ${layout === "mirror" ? "text-right" : ""}`}>{label}</dt>
+      <dd className={`text-sm font-semibold text-navy ${layout === "mirror" ? "text-left" : "text-right"}`}>{value}</dd>
+    </div>
+  );
+}
+
+function SecondaryMetricCard({ label, layout = "normal", value }: { label: string; layout?: MetricLayout; value: string }) {
   return (
     <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-navy">{formatDays(main)}</p>
-      <div className="mt-2 grid gap-1 text-xs text-slate-600">
-        <span>{ticketLabel}: {formatDays(ticket)}</span>
-        <span>Pack: {formatDays(pack)}</span>
+      <p className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${layout === "mirror" ? "text-right" : ""}`}>{label}</p>
+      <p className={`mt-1 text-sm font-semibold text-navy ${layout === "mirror" ? "text-right" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function GroupedMetricBlock({
+  leftLabel,
+  leftValue,
+  layout = "normal",
+  mainValue,
+  rightLabel,
+  rightValue,
+  title,
+}: {
+  leftLabel: string;
+  leftValue: string;
+  layout?: MetricLayout;
+  mainValue: string;
+  rightLabel: string;
+  rightValue: string;
+  title: string;
+}) {
+  return (
+    <section className="border-b border-[#e4edf4] py-3 last:border-b-0">
+      <div className={`flex items-start justify-between gap-3 ${layout === "mirror" ? "flex-row-reverse" : ""}`}>
+        <h3 className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${layout === "mirror" ? "text-right" : ""}`}>{title}</h3>
+        <p className={`text-base font-semibold text-navy ${layout === "mirror" ? "text-left" : "text-right"}`}>{mainValue}</p>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {layout === "mirror" ? (
+          <>
+            <SecondaryMetricCard label={rightLabel} layout={layout} value={rightValue} />
+            <SecondaryMetricCard label={leftLabel} layout={layout} value={leftValue} />
+          </>
+        ) : (
+          <>
+            <SecondaryMetricCard label={leftLabel} value={leftValue} />
+            <SecondaryMetricCard label={rightLabel} value={rightValue} />
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AverageBlock({ label, layout = "normal", main, pack, ticket, ticketLabel = "Boleta" }: { label: string; layout?: MetricLayout; main: number | null; pack: number | null; ticket: number | null; ticketLabel?: string }) {
+  return (
+    <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
+      <p className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${layout === "mirror" ? "text-right" : ""}`}>{label}</p>
+      <p className={`mt-1 text-lg font-semibold text-navy ${layout === "mirror" ? "text-left" : ""}`}>{formatDays(main)}</p>
+      <div className={`mt-2 grid gap-1 text-xs text-slate-600 ${layout === "mirror" ? "text-right" : ""}`}>
+        {layout === "mirror" ? (
+          <>
+            <span>Pack: {formatDays(pack)}</span>
+            <span>{ticketLabel}: {formatDays(ticket)}</span>
+          </>
+        ) : (
+          <>
+            <span>{ticketLabel}: {formatDays(ticket)}</span>
+            <span>Pack: {formatDays(pack)}</span>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+  const layout: MetricLayout = label === "MCP" ? "mirror" : "normal";
+
   return (
     <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
+      <div className={`flex items-center justify-between gap-3 ${layout === "mirror" ? "flex-row-reverse" : ""}`}>
         <h2 className="text-lg font-semibold text-navy">{label}</h2>
         <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">Sistema</span>
       </div>
 
-      <dl className="mt-4">
-        <KpiLine label="Venta total" value={formatCurrency(totals.venta_total_operacional)} />
-        <KpiLine label="Venta boleta" value={formatCurrency(totals.reserva_boleta_venta)} />
-        <KpiLine label="Venta pack" value={formatCurrency(totals.pack_vendido_venta)} />
-        <KpiLine label="DBI total reservas" value={formatInteger(totals.reserva_total_dbi)} />
-        <KpiLine label="DBI boleta" value={formatInteger(totals.reserva_boleta_dbi)} />
-        <KpiLine label="DBI pack" value={formatInteger(totals.reserva_pack_dbi)} />
-        <KpiLine label="Q reservas total" value={formatInteger(totals.reserva_total_q)} />
-        <KpiLine label="Q boleta" value={formatInteger(totals.reserva_boleta_q)} />
-        <KpiLine label="Q pack" value={formatInteger(totals.reserva_pack_q)} />
-      </dl>
+      <div className="mt-4 grid gap-2">
+        <GroupedMetricBlock
+          leftLabel="Venta boleta"
+          leftValue={formatCurrency(totals.reserva_boleta_venta)}
+          layout={layout}
+          mainValue={formatCurrency(totals.venta_total_operacional)}
+          rightLabel="Venta pack"
+          rightValue={formatCurrency(totals.pack_vendido_venta)}
+          title="Venta total"
+        />
+        <GroupedMetricBlock
+          leftLabel="DBI boleta"
+          leftValue={formatInteger(totals.reserva_boleta_dbi)}
+          layout={layout}
+          mainValue={formatInteger(totals.reserva_total_dbi)}
+          rightLabel="DBI pack"
+          rightValue={formatInteger(totals.reserva_pack_dbi)}
+          title="DBI total reservas"
+        />
+        <GroupedMetricBlock
+          leftLabel="Q boleta"
+          leftValue={formatInteger(totals.reserva_boleta_q)}
+          layout={layout}
+          mainValue={formatInteger(totals.reserva_total_q)}
+          rightLabel="Q pack"
+          rightValue={formatInteger(totals.reserva_pack_q)}
+          title="Q reservas total"
+        />
+      </div>
 
       <div className="mt-4 grid gap-3">
-        <AverageBlock label="Anticipacion promedio" main={totals.advanced_book_days_total_avg} pack={totals.advanced_book_days_pack_avg} ticket={totals.advanced_book_days_boleta_avg} />
-        <AverageBlock label="Estadia promedio" main={totals.duration_stay_total_avg} pack={totals.duration_stay_pack_avg} ticket={totals.duration_stay_boleta_avg} />
+        <AverageBlock label="Anticipacion promedio" layout={layout} main={totals.advanced_book_days_total_avg} pack={totals.advanced_book_days_pack_avg} ticket={totals.advanced_book_days_boleta_avg} />
+        <AverageBlock label="Estadia promedio" layout={layout} main={totals.duration_stay_total_avg} pack={totals.duration_stay_pack_avg} ticket={totals.duration_stay_boleta_avg} />
       </div>
 
       <dl className="mt-4">
-        <KpiLine label="ADR pagado" value={formatAdrCurrency(totals.precio_pagado_boleta_avg, totals.duration_stay_boleta_avg)} />
-        <KpiLine label="ADR lista" value={formatAdrCurrency(totals.precio_lista_boleta_avg, totals.duration_stay_boleta_avg)} />
-        <KpiLine label="Ticket pagado" value={formatCurrency(totals.precio_pagado_boleta_avg)} />
-        <KpiLine label="Ticket lista" value={formatCurrency(totals.precio_lista_boleta_avg)} />
-        <KpiLine label="Pack pagado prom." value={formatCurrency(totals.pack_vendido_precio_pagado_avg)} />
-        <KpiLine label="Pack lista prom." value={formatCurrency(totals.pack_vendido_precio_lista_avg)} />
+        <KpiLine label="ADR pagado" layout={layout} value={formatAdrCurrency(totals.precio_pagado_boleta_avg, totals.duration_stay_boleta_avg)} />
+        <KpiLine label="ADR lista" layout={layout} value={formatAdrCurrency(totals.precio_lista_boleta_avg, totals.duration_stay_boleta_avg)} />
+        <KpiLine label="Ticket pagado" layout={layout} value={formatCurrency(totals.precio_pagado_boleta_avg)} />
+        <KpiLine label="Ticket lista" layout={layout} value={formatCurrency(totals.precio_lista_boleta_avg)} />
+        <KpiLine label="Pack pagado prom." layout={layout} value={formatCurrency(totals.pack_vendido_precio_pagado_avg)} />
+        <KpiLine label="Pack lista prom." layout={layout} value={formatCurrency(totals.pack_vendido_precio_lista_avg)} />
       </dl>
     </section>
   );
 }
-
 function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp: number; total: string }) {
   const safeMcp = Number.isFinite(mcp) ? Math.max(0, Math.min(100, mcp)) : 0;
   const safeOkp = Number.isFinite(okp) ? Math.max(0, Math.min(100, okp)) : 0;
@@ -184,6 +292,7 @@ function LoadingOverlay() {
 
 export function DashboardOperacionalClient({ initialDashboard, initialError }: DashboardOperacionalClientProps) {
   const initialDateRef = useRef(getTodayLocalDate());
+  const activeRequestRef = useRef(0);
   const [dashboard, setDashboard] = useState(initialDashboard);
   const [selectedDate, setSelectedDate] = useState(initialDateRef.current);
   const [isLoading, setIsLoading] = useState(false);
@@ -200,6 +309,8 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   }, [dashboard]);
 
   const loadByDate = useCallback(async (date: string) => {
+    const requestId = activeRequestRef.current + 1;
+    activeRequestRef.current = requestId;
     setSelectedDate(date);
     setIsLoading(true);
     setError(null);
@@ -212,6 +323,10 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       });
       const body = (await response.json()) as EndpointResponse;
 
+      if (requestId !== activeRequestRef.current) {
+        return false;
+      }
+
       if (!response.ok || !body.ok || !body.dashboard) {
         setError(body.error ?? "No fue posible consultar el dashboard operacional.");
         return false;
@@ -220,10 +335,16 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       setDashboard(body.dashboard);
       return true;
     } catch {
+      if (requestId !== activeRequestRef.current) {
+        return false;
+      }
+
       setError("No fue posible consultar el dashboard operacional.");
       return false;
     } finally {
-      setIsLoading(false);
+      if (requestId === activeRequestRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
@@ -238,9 +359,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sea">Dashboard operacional</p>
             <h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP</h2>
-            <p className="mt-2 text-sm text-slate-600">
-              Ultima corrida: {dashboard?.lastUpdate ? `${dashboard.lastUpdate.estado} / ${dashboard.lastUpdate.periodo_desde} a ${dashboard.lastUpdate.periodo_hasta}` : "Sin corrida registrada"}
-            </p>
+            <LastUpdateSummary dashboard={dashboard} />
           </div>
           <div className="grid gap-3 sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end">
             <label className="grid gap-1 text-sm font-medium text-navy">
@@ -253,27 +372,16 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
               />
             </label>
 
-            <button
-              aria-label="Refrescar dashboard operacional"
-              className="h-10 rounded-lg border border-[#cbd8e3] bg-white px-4 text-sm font-semibold text-navy transition hover:border-sea disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={isLoading}
-              onClick={() => loadByDate(selectedDate)}
-              type="button"
-            >
-              <span className="inline-flex items-center gap-2">
-                <RefreshCw className={`h-4 w-4 text-sea ${isLoading ? "animate-spin" : ""}`} />
-                Refrescar
-              </span>
-            </button>
+            <ActualizarDatosOperacionalesControl
+              controlHref="/orquestador?view=control"
+              onSucceeded={() => loadByDate(selectedDate)}
+              presentation="overlay"
+            />
           </div>
         </div>
       </section>
 
-      <ActualizarDatosOperacionalesControl
-        controlHref="/orquestador?view=control"
-        onSucceeded={() => loadByDate(selectedDate)}
-        presentation="overlay"
-      />
+
 
       {error ? (
         <div className="mt-5 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-4 text-sm font-medium text-[#8a4a00]">{error}</div>

@@ -166,16 +166,80 @@ test("Q. mapeo visual ADR ticket y packs usa campos correctos", () => {
   assert.match(formatters, /formatAdrCurrency\(priceAverage: number \| null \| undefined, stayAverage: number \| null \| undefined\)/);
   assert.match(formatters, /stayAverage <= 0/);
   assert.match(formatters, /formatCurrency\(priceAverage \/ stayAverage\)/);
-  assert.match(client, /ADR pagado" value=\{formatAdrCurrency\(totals\.precio_pagado_boleta_avg, totals\.duration_stay_boleta_avg\)\}/);
-  assert.match(client, /ADR lista" value=\{formatAdrCurrency\(totals\.precio_lista_boleta_avg, totals\.duration_stay_boleta_avg\)\}/);
-  assert.match(client, /Ticket pagado" value=\{formatCurrency\(totals\.precio_pagado_boleta_avg\)\}/);
-  assert.match(client, /Ticket lista" value=\{formatCurrency\(totals\.precio_lista_boleta_avg\)\}/);
-  assert.match(client, /Pack pagado prom\." value=\{formatCurrency\(totals\.pack_vendido_precio_pagado_avg\)\}/);
-  assert.match(client, /Pack lista prom\." value=\{formatCurrency\(totals\.pack_vendido_precio_lista_avg\)\}/);
+  assert.match(client, /ADR pagado" layout=\{layout\} value=\{formatAdrCurrency\(totals\.precio_pagado_boleta_avg, totals\.duration_stay_boleta_avg\)\}/);
+  assert.match(client, /ADR lista" layout=\{layout\} value=\{formatAdrCurrency\(totals\.precio_lista_boleta_avg, totals\.duration_stay_boleta_avg\)\}/);
+  assert.match(client, /Ticket pagado" layout=\{layout\} value=\{formatCurrency\(totals\.precio_pagado_boleta_avg\)\}/);
+  assert.match(client, /Ticket lista" layout=\{layout\} value=\{formatCurrency\(totals\.precio_lista_boleta_avg\)\}/);
+  assert.match(client, /Pack pagado prom\." layout=\{layout\} value=\{formatCurrency\(totals\.pack_vendido_precio_pagado_avg\)\}/);
+  assert.match(client, /Pack lista prom\." layout=\{layout\} value=\{formatCurrency\(totals\.pack_vendido_precio_lista_avg\)\}/);
   assert.doesNotMatch(client, /ADR pagado" value=\{formatCurrency\(totals\.precio_pagado_boleta_avg\)\}/);
   assert.doesNotMatch(client, /Ticket lista" value="No disponible"/);
 });
 
+
+test("Q1. columnas OKP MCP agrupan venta DBI y reservas", () => {
+  assert.match(client, /function GroupedMetricBlock/);
+  assert.match(client, /function SecondaryMetricCard/);
+  assert.match(client, /title="Venta total"/);
+  assert.match(client, /leftLabel="Venta boleta"/);
+  assert.match(client, /rightLabel="Venta pack"/);
+  assert.match(client, /mainValue=\{formatCurrency\(totals\.venta_total_operacional\)\}/);
+  assert.match(client, /leftValue=\{formatCurrency\(totals\.reserva_boleta_venta\)\}/);
+  assert.match(client, /rightValue=\{formatCurrency\(totals\.pack_vendido_venta\)\}/);
+  assert.match(client, /title="DBI total reservas"/);
+  assert.match(client, /leftLabel="DBI boleta"/);
+  assert.match(client, /rightLabel="DBI pack"/);
+  assert.match(client, /mainValue=\{formatInteger\(totals\.reserva_total_dbi\)\}/);
+  assert.match(client, /leftValue=\{formatInteger\(totals\.reserva_boleta_dbi\)\}/);
+  assert.match(client, /rightValue=\{formatInteger\(totals\.reserva_pack_dbi\)\}/);
+  assert.match(client, /title="Q reservas total"/);
+  assert.match(client, /leftLabel="Q boleta"/);
+  assert.match(client, /rightLabel="Q pack"/);
+  assert.match(client, /mainValue=\{formatInteger\(totals\.reserva_total_q\)\}/);
+  assert.match(client, /leftValue=\{formatInteger\(totals\.reserva_boleta_q\)\}/);
+  assert.match(client, /rightValue=\{formatInteger\(totals\.reserva_pack_q\)\}/);
+});
+
+test("Q2. bloques agrupados aplican a OKP y MCP sin cambiar market size", () => {
+  assert.match(client, /<SystemColumn label="OKP"/);
+  assert.match(client, /<SystemColumn label="MCP"/);
+  assert.match(client, /<SystemColumn label="OKP" totals=\{groupTotals\(dashboard, "OKP"\)\} \/>/);
+  assert.match(client, /<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>/);
+  assert.match(client, /Total \/ Market size/);
+  assert.match(client, /ShareBar label="Venta total operacional"/);
+  assert.match(client, /ShareBar label="DBI reservas total"/);
+  assert.match(client, /ShareBar label="Q reservas total"/);
+});
+
+test("Q3. bloques mantienen estetica sobria sin colores fuertes por sistema", () => {
+  const groupedBlockMatch = client.match(/function GroupedMetricBlock[\s\S]*?function AverageBlock/);
+  assert.ok(groupedBlockMatch);
+  const groupedBlock = groupedBlockMatch[0];
+  assert.match(groupedBlock, /border-\[#e4edf4\]/);
+  assert.match(client, /bg-\[#f8fbfd\]/);
+  assert.match(groupedBlock, /text-navy/);
+  assert.doesNotMatch(groupedBlock, /border-l|bg-green|text-green|border-green|bg-blue|text-blue|border-blue|gradient|shadow-lg|shadow-xl/);
+  assert.doesNotMatch(client, /OKP[\s\S]{0,120}(green|emerald|blue|border-l)|MCP[\s\S]{0,120}(green|emerald|blue|border-l)/i);
+});
+
+test("Q4. MCP usa composicion visual espejo sin invertir datos", () => {
+  assert.match(client, /type MetricLayout = "normal" \| "mirror"/);
+  assert.match(client, /const layout: MetricLayout = label === "MCP" \? "mirror" : "normal"/);
+  assert.match(client, /layout === "mirror" \? "flex-row-reverse"/);
+  assert.match(client, /<SecondaryMetricCard label=\{rightLabel\} layout=\{layout\} value=\{rightValue\} \/>/);
+  assert.match(client, /<SecondaryMetricCard label=\{leftLabel\} layout=\{layout\} value=\{leftValue\} \/>/);
+  assert.match(client, /leftLabel="Venta boleta"[\s\S]*leftValue=\{formatCurrency\(totals\.reserva_boleta_venta\)\}[\s\S]*rightLabel="Venta pack"[\s\S]*rightValue=\{formatCurrency\(totals\.pack_vendido_venta\)\}/);
+  assert.match(client, /leftLabel="DBI boleta"[\s\S]*leftValue=\{formatInteger\(totals\.reserva_boleta_dbi\)\}[\s\S]*rightLabel="DBI pack"[\s\S]*rightValue=\{formatInteger\(totals\.reserva_pack_dbi\)\}/);
+  assert.match(client, /leftLabel="Q boleta"[\s\S]*leftValue=\{formatInteger\(totals\.reserva_boleta_q\)\}[\s\S]*rightLabel="Q pack"[\s\S]*rightValue=\{formatInteger\(totals\.reserva_pack_q\)\}/);
+});
+
+test("Q5. promedios y filas finales tambien respetan modo espejo", () => {
+  assert.match(client, /function AverageBlock\(\{ label, layout = "normal"/);
+  assert.match(client, /<span>Pack: \{formatDays\(pack\)\}<\/span>[\s\S]*<span>\{ticketLabel\}: \{formatDays\(ticket\)\}<\/span>/);
+  assert.match(client, /function KpiLine\(\{ label, layout = "normal", value \}/);
+  assert.match(client, /<KpiLine label="ADR pagado" layout=\{layout\}/);
+  assert.match(client, /<KpiLine label="Pack lista prom\." layout=\{layout\}/);
+});
 test("R. formula ADR usa valores crudos antes de formatear", () => {
   const formatAdrForTest = (priceAverage, stayAverage) => {
     if (typeof priceAverage !== "number" || !Number.isFinite(priceAverage)) return "No disponible";
@@ -196,16 +260,17 @@ test("R. formula ADR usa valores crudos antes de formatear", () => {
 });
 test("S. anticipacion y estadia muestran unidad dias", () => {
   assert.match(formatters, /export function formatDays\(value: number \| null \| undefined\)/);
-  assert.match(formatters, /value === 1 \? "día" : "días"/);
-  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{formatDays\(main\)\}<\/p>/);
+  assert.match(formatters, /value === 1 \?/);
+  assert.match(formatters, /"d.as"/);
+  assert.match(client, /\{formatDays\(main\)\}/);
   assert.match(client, /\{ticketLabel\}: \{formatDays\(ticket\)\}/);
   assert.match(client, /Pack: \{formatDays\(pack\)\}/);
-  assert.match(client, /<AverageBlock label="Anticipacion promedio" main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
-  assert.match(client, /<AverageBlock label="Estadia promedio" main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
+  assert.match(client, /<AverageBlock label="Anticipacion promedio" layout=\{layout\} main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
+  assert.match(client, /<AverageBlock label="Estadia promedio" layout=\{layout\} main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
   assert.match(client, /<SystemColumn label="OKP"/);
   assert.match(client, /<SystemColumn label="MCP"/);
   assert.doesNotMatch(client, /formatDays\(totals\.precio|formatDays\(totals\.venta|formatDays\(totals\.reserva|formatDays\(totals\.pack_vendido/);
-  assert.doesNotMatch(client + formatters, /No disponible días/);
+  assert.doesNotMatch(client + formatters, /No disponible dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as/);
 });
 
 test("T. formatDays singular plural y valores invalidos", () => {
@@ -228,8 +293,7 @@ test("T. formatDays singular plural y valores invalidos", () => {
   assert.equal(formatDaysForTest(Number.NaN), "No disponible");
   assert.equal(formatDaysForTest(Number.POSITIVE_INFINITY), "No disponible");
   assert.notEqual(formatDaysForTest(null), "No disponible días");
-});
-test("U. control exige confirmacion y bloquea doble creacion", () => {
+});test("U. control exige confirmacion y bloquea doble creacion", () => {
   assert.match(compositeControl, /setIsConfirming\(true\)/);
   assert.match(compositeControl, /Confirmacion requerida/);
   assert.match(compositeControl, /Confirmar ejecucion/);
@@ -279,10 +343,48 @@ test("Y. fecha inicial usa hoy local sin toISOString", () => {
 
 test("Z. fecha seleccionada sigue siendo mutable y se usa en refresh final", () => {
   assert.match(client, /onChange=\{\(event\) => loadByDate\(event\.target\.value\)\}/);
-  assert.match(client, /onClick=\{\(\) => loadByDate\(selectedDate\)\}/);
   assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
   assert.doesNotMatch(client, /initialDashboard\?\.filters\?\.date \?\?/);
-  assert.doesNotMatch(client, /lastUpdate[\s\S]*setSelectedDate/);
+});
+
+test("Z1. no existe boton visual Refrescar y el cambio de fecha solo consulta GET", () => {
+  assert.doesNotMatch(client, /RefreshCw|Refrescar dashboard operacional|>\s*Refrescar\s*</);
+  assert.match(client, /onChange=\{\(event\) => loadByDate\(event\.target\.value\)\}/);
+  assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{query\}`/);
+  assert.match(client, /method: "GET"/);
+  assert.doesNotMatch(client, /method: "POST"|startRun\(|\/api\/orquestador\/operaciones\/actualizar-datos/);
+});
+
+test("Z2. cambio de fecha evita doble GET y respuestas antiguas", () => {
+  const dateChangeCalls = client.match(/loadByDate\(event\.target\.value\)/g) ?? [];
+  assert.equal(dateChangeCalls.length, 1);
+  assert.match(client, /activeRequestRef = useRef\(0\)/);
+  assert.match(client, /requestId !== activeRequestRef\.current/);
+  assert.doesNotMatch(client, /void loadByDate\(selectedDate\)/);
+});
+
+test("Z3. seccion intermedia no aparece en Dashboard y el control queda en cabecera", () => {
+  const headerStart = client.indexOf("Dashboard operacional");
+  const controlStart = client.indexOf("<ActualizarDatosOperacionalesControl");
+  const firstSectionEnd = client.indexOf("</section>", headerStart);
+  assert.ok(headerStart >= 0);
+  assert.ok(controlStart > headerStart);
+  assert.ok(controlStart < firstSectionEnd);
+  assert.match(client, /presentation="overlay"/);
+  assert.doesNotMatch(client, /Ejecucion real[\s\S]*Actualizar Reservas ultimo mes[\s\S]*Actualizar Banco de Packs[\s\S]*Actualizar metricas Dashboard ultimo mes/);
+});
+
+test("Z4. ultima actualizacion usa textos operativos", () => {
+  assert.match(client, /function updateStatusLabel/);
+  assert.match(client, /succeeded"\) return "Actualizado correctamente"/);
+  assert.match(client, /failed"\) return "Actualizacion con error"/);
+  assert.match(client, /cancelled"\) return "Actualizacion cancelada"/);
+  assert.match(client, /running"\) return "Actualizacion en curso"/);
+  assert.match(client, /waiting" \|\| status === "queued" \|\| status === "claimed"\) return "Actualizacion pendiente"/);
+  assert.match(client, /Estado no disponible/);
+  assert.match(client, /Sin actualizaciones registradas/);
+  assert.match(client, /Datos disponibles:/);
+  assert.doesNotMatch(client, /Ultima corrida|Sin corrida registrada|\$\{dashboard\.lastUpdate\.estado\}/);
 });
 
 test("AA. overlay usa dialog accesible y se recupera cuando existe run", () => {
@@ -310,6 +412,7 @@ test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () 
   assert.match(compositeControl, /Los datos operacionales se actualizaron correctamente/);
   assert.match(compositeControl, /Dashboard actualizado correctamente/);
   assert.match(compositeControl, /no fue posible recargar los indicadores/);
+  assert.doesNotMatch(compositeControl, /usar Refrescar/);
   assert.match(compositeControl, /No se pudo completar la actualizacion/);
   assert.match(compositeControl, /Etapa afectada/);
   assert.match(compositeControl, /Actualizacion cancelada/);

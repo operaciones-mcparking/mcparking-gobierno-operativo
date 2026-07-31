@@ -57,7 +57,7 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
         : refreshStatus === "success"
           ? "Dashboard actualizado correctamente."
           : refreshStatus === "failed"
-            ? "Los procesos terminaron correctamente, pero no fue posible recargar los indicadores. Puedes cerrar esta ventana y usar Refrescar."
+            ? "Los procesos terminaron correctamente, pero no fue posible recargar los indicadores. Puedes cerrar esta ventana y cambiar la fecha para volver a consultar."
             : "Los datos operacionales se actualizaron correctamente.";
 
     return {
@@ -228,7 +228,19 @@ export function ActualizarDatosOperacionalesControl({
 
   const viewer = run ? <CompositeRunViewer className="mt-4" run={run} title="Progreso de actualizacion operacional" /> : null;
 
-  return (
+  const triggerButton = (
+    <button
+      className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
+      disabled={!canStart}
+      onClick={openConfirmation}
+      type="button"
+    >
+      <DatabaseZap className="h-4 w-4" />
+      {isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales"}
+    </button>
+  );
+
+  const inlineControl = !useOverlay ? (
     <section className={`mt-5 rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm ${className}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
@@ -252,16 +264,8 @@ export function ActualizarDatosOperacionalesControl({
           <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600" aria-live="polite">
             {statusLabel(status)}
           </span>
-          <button
-            className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!canStart}
-            onClick={openConfirmation}
-            type="button"
-          >
-            <DatabaseZap className="h-4 w-4" />
-            {isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales"}
-          </button>
-          {!useOverlay ? actions : null}
+          {triggerButton}
+          {actions}
         </div>
       </div>
 
@@ -271,7 +275,13 @@ export function ActualizarDatosOperacionalesControl({
         </p>
       ) : null}
 
-      {!useOverlay ? viewer : null}
+      {viewer}
+    </section>
+  ) : null;
+
+  return (
+    <>
+      {useOverlay ? <div className={className}>{triggerButton}</div> : inlineControl}
 
       {isConfirming && !useOverlay ? (
         <div
@@ -408,6 +418,6 @@ export function ActualizarDatosOperacionalesControl({
           </div>
         </div>
       ) : null}
-    </section>
+    </>
   );
 }
