@@ -385,9 +385,15 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       ) : null}
 
       <section className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.86fr)_minmax(0,1fr)]">
-        <SystemColumn label="OKP" totals={groupTotals(dashboard, "OKP")} />
-        <MarketColumn dashboard={dashboard} />
-        <SystemColumn label="MCP" totals={groupTotals(dashboard, "MCP")} />
+        <div className="order-2 xl:order-1">
+          <SystemColumn label="OKP" totals={groupTotals(dashboard, "OKP")} />
+        </div>
+        <div className="order-1 xl:order-2">
+          <MarketColumn dashboard={dashboard} />
+        </div>
+        <div className="order-3 xl:order-3">
+          <SystemColumn label="MCP" totals={groupTotals(dashboard, "MCP")} />
+        </div>
       </section>
 
       <section className="mt-5 rounded-2xl border border-[#d6e1ea] bg-white p-5 shadow-sm">

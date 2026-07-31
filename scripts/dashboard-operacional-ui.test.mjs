@@ -207,11 +207,13 @@ test("Q1. columnas OKP MCP agrupan venta DBI y reservas", () => {
   assert.match(client, /rightValue=\{formatInteger\(totals\.reserva_pack_q\)\}/);
 });
 
-test("Q2. bloques agrupados aplican a OKP y MCP sin cambiar market size", () => {
-  assert.match(client, /<SystemColumn label="OKP"/);
-  assert.match(client, /<SystemColumn label="MCP"/);
-  assert.match(client, /<SystemColumn label="OKP" totals=\{groupTotals\(dashboard, "OKP"\)\} \/>/);
-  assert.match(client, /<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>/);
+test("Q2. columnas usan orden movil y escritorio sin duplicar contenido", () => {
+  assert.match(client, /<div className="order-2 xl:order-1">\s*<SystemColumn label="OKP" totals=\{groupTotals\(dashboard, "OKP"\)\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-1 xl:order-2">\s*<MarketColumn dashboard=\{dashboard\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
+  assert.equal([...client.matchAll(/<SystemColumn label="OKP"/g)].length, 1);
+  assert.equal([...client.matchAll(/<MarketColumn dashboard=\{dashboard\}/g)].length, 1);
+  assert.equal([...client.matchAll(/<SystemColumn label="MCP"/g)].length, 1);
   assert.match(client, /Total \/ Market size/);
   assert.match(client, /ShareBar label="Venta total operacional"/);
   assert.match(client, /ShareBar label="DBI reservas total"/);
