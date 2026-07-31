@@ -11,6 +11,9 @@ const endpointPath = "src/app/api/dashboard/operacional/route.ts";
 const supabaseAdminPath = "src/lib/orquestador/supabase-admin.ts";
 const dashboardViewPath = "src/app/orquestador/orchestrator-dashboard-view.tsx";
 const tabsPath = "src/app/orquestador/orchestrator-view-tabs.tsx";
+const compositeControlPath = "src/app/orquestador/actualizar-datos-operacionales-control.tsx";
+const compositeHookPath = "src/app/orquestador/use-composite-operations-run.ts";
+const compositeViewerPath = "src/app/orquestador/composite-run-viewer.tsx";
 
 const page = readFileSync(pagePath, "utf8");
 const client = readFileSync(clientPath, "utf8");
@@ -20,6 +23,9 @@ const endpoint = readFileSync(endpointPath, "utf8");
 const supabaseAdmin = readFileSync(supabaseAdminPath, "utf8");
 const dashboardView = readFileSync(dashboardViewPath, "utf8");
 const tabs = readFileSync(tabsPath, "utf8");
+const compositeControl = readFileSync(compositeControlPath, "utf8");
+const compositeHook = readFileSync(compositeHookPath, "utf8");
+const compositeViewer = readFileSync(compositeViewerPath, "utf8");
 const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
 const uiSources = [page, client, formatters].join("\n");
 
@@ -125,10 +131,13 @@ test("K. maneja estados loading empty error y rows vacias", () => {
   assert.match(client, /No hay filas para el filtro seleccionado/);
 });
 
-test("L. boton actualizar datos operacionales es solo visual", () => {
-  assert.match(client, /Actualizar datos operacionales/);
-  assert.match(client, /disabled/);
-  assert.match(client, /Conexion operativa en siguiente etapa/);
+test("L. Dashboard reutiliza el control compuesto existente", () => {
+  assert.match(client, /ActualizarDatosOperacionalesControl/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.match(compositeControl, /useCompositeOperationsRun/);
+  assert.match(compositeControl, /CompositeRunViewer/);
+  assert.doesNotMatch(client, /Conexion operativa en siguiente etapa/);
+  assert.doesNotMatch(client, /className="h-10 rounded-lg border border-\[#d6e1ea\] bg-\[#f8fbfd\][\s\S]*Actualizar datos operacionales/);
   assert.doesNotMatch(client, /orchestrator_create_job|createCompositeJobStep|\/api\/orquestador\/operaciones|method: "POST"/);
 });
 
@@ -219,4 +228,39 @@ test("T. formatDays singular plural y valores invalidos", () => {
   assert.equal(formatDaysForTest(Number.NaN), "No disponible");
   assert.equal(formatDaysForTest(Number.POSITIVE_INFINITY), "No disponible");
   assert.notEqual(formatDaysForTest(null), "No disponible días");
+});
+test("U. control exige confirmacion y bloquea doble creacion", () => {
+  assert.match(compositeControl, /setIsConfirming\(true\)/);
+  assert.match(compositeControl, /Confirmacion requerida/);
+  assert.match(compositeControl, /Confirmar ejecucion/);
+  assert.match(compositeControl, /Cancelar/);
+  assert.match(compositeControl, /const canStart = !isStarting && !run/);
+  assert.match(compositeControl, /disabled=\{!canStart\}/);
+  assert.match(compositeHook, /JSON\.stringify\(\{ confirm: true \}\)/);
+  assert.match(compositeHook, /fetch\("\/api\/orquestador\/operaciones\/actualizar-datos"/);
+});
+
+test("V. progreso y enlace al Centro de Control se reutilizan desde Dashboard", () => {
+  assert.match(client, /controlHref="\/orquestador\?view=control"/);
+  assert.match(compositeControl, /Ver en Centro de Control/);
+  assert.match(compositeControl, /href=\{controlHref\}/);
+  assert.match(compositeControl, /run \? <CompositeRunViewer/);
+  assert.match(compositeViewer, /export function CompositeRunViewer/);
+});
+
+test("W. refresh automatico ocurre una sola vez por run succeeded", () => {
+  assert.match(compositeControl, /completedRunRef/);
+  assert.match(compositeControl, /run\?\.status !== "succeeded"/);
+  assert.match(compositeControl, /completedRunRef\.current === run\.run_id/);
+  assert.match(compositeControl, /completedRunRef\.current = run\.run_id/);
+  assert.match(compositeControl, /void onSucceededRef\.current\?\.\(\)/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.doesNotMatch(compositeControl, /run\?\.status === "failed"[\s\S]*onSucceeded|run\?\.status === "cancelled"[\s\S]*onSucceeded/);
+});
+
+test("X. no duplica rutas ni contratos del composite run en Dashboard", () => {
+  assert.doesNotMatch(client, /\/api\/orquestador\/operaciones\/actualizar-datos|\/advance|method: "POST"|startRun\(/);
+  assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/\$\{runId\}/);
+  assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/advance/);
+  assert.match(compositeHook, /orquestador:actualizar-datos:last-month:run-id:v1/);
 });

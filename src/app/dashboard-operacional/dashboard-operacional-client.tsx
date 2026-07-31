@@ -7,6 +7,7 @@ import type {
   OperationalDashboardTotals,
   OperationalDashboardViewModel,
 } from "@/lib/dashboard/operacional";
+import { ActualizarDatosOperacionalesControl } from "../orquestador/actualizar-datos-operacionales-control";
 import {
   formatAdrCurrency,
   formatCurrency,
@@ -250,13 +251,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
                   value={selectedDate}
                 />
               </label>
-              <button
-                className="h-10 rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] px-4 text-sm font-semibold text-slate-500"
-                disabled
-                type="button"
-              >
-                Actualizar datos operacionales
-              </button>
+
               <button
                 aria-label="Refrescar dashboard operacional"
                 className="h-10 rounded-lg border border-[#cbd8e3] bg-white px-4 text-sm font-semibold text-navy transition hover:border-sea disabled:cursor-not-allowed disabled:opacity-60"
@@ -271,8 +266,13 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
               </button>
             </div>
           </div>
-          <p className="mt-3 text-xs text-slate-500">Conexion operativa en siguiente etapa. Este boton no ejecuta procesos.</p>
+
         </section>
+
+        <ActualizarDatosOperacionalesControl
+          controlHref="/orquestador?view=control"
+          onSucceeded={() => loadByDate(selectedDate)}
+        />
 
         {error ? (
           <div className="mt-5 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-4 text-sm font-medium text-[#8a4a00]">{error}</div>

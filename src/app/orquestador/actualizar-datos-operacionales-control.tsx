@@ -1,6 +1,7 @@
 "use client";
 
 import { DatabaseZap, X } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { CompositeRunViewer } from "./composite-run-viewer";
@@ -25,12 +26,37 @@ function statusLabel(status: ReturnType<typeof useCompositeOperationsRun>["statu
   return "Listo";
 }
 
-export function ActualizarDatosOperacionalesControl() {
+type ActualizarDatosOperacionalesControlProps = {
+  className?: string;
+  controlHref?: string;
+  onSucceeded?: () => Promise<void> | void;
+};
+
+export function ActualizarDatosOperacionalesControl({
+  className = "",
+  controlHref,
+  onSucceeded,
+}: ActualizarDatosOperacionalesControlProps) {
   const { clearRun, isStarting, message, run, startRun, status } = useCompositeOperationsRun();
   const [isConfirming, setIsConfirming] = useState(false);
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const completedRunRef = useRef<string | null>(null);
+  const onSucceededRef = useRef(onSucceeded);
   const canStart = !isStarting && !run;
   const isBusy = isStarting || status === "starting";
+
+  useEffect(() => {
+    onSucceededRef.current = onSucceeded;
+  }, [onSucceeded]);
+
+  useEffect(() => {
+    if (run?.status !== "succeeded" || completedRunRef.current === run.run_id) {
+      return;
+    }
+
+    completedRunRef.current = run.run_id;
+    void onSucceededRef.current?.();
+  }, [run?.run_id, run?.status]);
 
   useEffect(() => {
     if (!isConfirming) {
@@ -67,7 +93,7 @@ export function ActualizarDatosOperacionalesControl() {
   }
 
   return (
-    <section className="mt-5 rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm">
+    <section className={`mt-5 rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm ${className}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
@@ -100,14 +126,24 @@ export function ActualizarDatosOperacionalesControl() {
             {isStarting ? "Iniciando..." : "Actualizar datos operacionales"}
           </button>
           {run ? (
-            <button
-              className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]"
-              onClick={clearRun}
-              type="button"
-            >
-              <X className="h-4 w-4 text-sea" />
-              Cerrar resultado
-            </button>
+            <>
+              {controlHref ? (
+                <Link
+                  className="inline-flex h-9 w-fit items-center rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]"
+                  href={controlHref}
+                >
+                  Ver en Centro de Control
+                </Link>
+              ) : null}
+              <button
+                className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]"
+                onClick={clearRun}
+                type="button"
+              >
+                <X className="h-4 w-4 text-sea" />
+                Cerrar resultado
+              </button>
+            </>
           ) : null}
         </div>
       </div>
@@ -141,18 +177,18 @@ export function ActualizarDatosOperacionalesControl() {
                 Confirmacion requerida
               </span>
             </div>
-            <p className="mt-3 leading-6">Esta operacion ejecutara:</p>
+            <p className="mt-3 leading-6">Se actualizaran Banco de Reservas, Banco de Packs y las metricas del Dashboard.</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
               {steps.map((step) => (
                 <li key={step}>{step}</li>
               ))}
             </ul>
             <p className="mt-3 text-xs leading-5" aria-live="polite">
-              {isBusy ? "Iniciando ejecucion..." : "El avance real queda controlado por el servidor y el worker."}
+              {isBusy ? "Iniciando actualizacion..." : "El avance real queda controlado por el servidor y el worker."}
             </p>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
-                className="inline-flex h-9 items-center rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-slate-600 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isBusy}
                 onClick={() => setIsConfirming(false)}
                 ref={cancelButtonRef}
@@ -161,12 +197,12 @@ export function ActualizarDatosOperacionalesControl() {
                 Cancelar
               </button>
               <button
-                className="inline-flex h-9 items-center rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={!canStart}
                 onClick={confirmRun}
                 type="button"
               >
-                {isBusy ? "Iniciando..." : "Confirmar ejecucion"}
+                {isBusy ? "Iniciando actualizacion..." : "Confirmar ejecucion"}
               </button>
             </div>
           </div>
