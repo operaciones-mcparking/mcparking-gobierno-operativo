@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 
 const RECOVERY_TIME_ZONE = "America/Santiago";
+const WINDOW_TIMER_INTERVAL_MS = 60 * 1000;
 
 type CartChatMessage = {
   chatState: string | null;
@@ -40,6 +41,7 @@ type CartChatResponse = {
   messages?: CartChatMessage[];
   ok: boolean;
   reason?: string;
+  whatsappWindow?: WhatsappFreeformWindowPayload;
   summary?: {
     hasConversation: boolean;
     inboundMessages: number;
@@ -51,16 +53,35 @@ type CartChatResponse = {
 };
 
 type SendChatResponse = {
+  code?: string;
   error?: string;
   message?: CartChatMessage;
   ok: boolean;
   stage?: string;
   warning?: string;
+  whatsappWindow?: WhatsappFreeformWindowPayload;
 };
 
 type RecoveryCartChatDrawerProps = {
   cartId: string | null;
   onClose: () => void;
+};
+
+type WhatsappFreeformWindowStatus = "open" | "expiring" | "closed" | "no_inbound" | "unverifiable";
+
+type WhatsappFreeformWindowPayload = {
+  canSendFreeform: boolean;
+  expiresAt: string | null;
+  lastInboundAt: string | null;
+  remainingSeconds: number | null;
+  status: WhatsappFreeformWindowStatus;
+};
+
+type WhatsappFreeformWindowView = {
+  canSendFreeform: boolean;
+  kind: "checking" | WhatsappFreeformWindowStatus;
+  label: string;
+  tone: BadgeTone;
 };
 
 function formatDateTime(value: string | null) {
@@ -115,6 +136,98 @@ function safeHttpUrl(value: string | null | undefined) {
   }
 }
 
+function formatRemainingTime(milliseconds: number) {
+  const totalMinutes = Math.max(0, Math.ceil(milliseconds / (60 * 1000)));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) return `${minutes} min`;
+
+  return `${hours} h ${minutes} min`;
+}
+
+function remainingMilliseconds(windowState: WhatsappFreeformWindowPayload, nowMs: number) {
+  const expiresAtMs = windowState.expiresAt ? new Date(windowState.expiresAt).getTime() : Number.NaN;
+
+  if (Number.isFinite(expiresAtMs)) {
+    return expiresAtMs - nowMs;
+  }
+
+  return typeof windowState.remainingSeconds === "number" ? windowState.remainingSeconds * 1000 : 0;
+}
+
+function getWhatsappFreeformWindowView(
+  windowState: WhatsappFreeformWindowPayload | null | undefined,
+  nowMs: number,
+  isLoading: boolean,
+  hasLoadError: boolean,
+): WhatsappFreeformWindowView {
+  if (isLoading) {
+    return {
+      canSendFreeform: false,
+      kind: "checking",
+      label: "Verificando ventana...",
+      tone: "neutral",
+    };
+  }
+
+  if (hasLoadError || !windowState) {
+    return {
+      canSendFreeform: false,
+      kind: "unverifiable",
+      label: "No se pudo verificar ventana",
+      tone: "neutral",
+    };
+  }
+
+  if (windowState.status === "open" || windowState.status === "expiring") {
+    const remainingMs = remainingMilliseconds(windowState, nowMs);
+
+    if (remainingMs <= 0) {
+      return {
+        canSendFreeform: false,
+        kind: "closed",
+        label: "Ventana cerrada · requiere plantilla",
+        tone: "danger",
+      };
+    }
+
+    const remainingLabel = formatRemainingTime(remainingMs);
+    const isExpiring = windowState.status === "expiring";
+
+    return {
+      canSendFreeform: true,
+      kind: windowState.status,
+      label: isExpiring ? `Ventana por vencer · ${remainingLabel} restantes` : `Ventana abierta · ${remainingLabel} restantes`,
+      tone: isExpiring ? "warning" : "success",
+    };
+  }
+
+  if (windowState.status === "closed") {
+    return {
+      canSendFreeform: false,
+      kind: "closed",
+      label: "Ventana cerrada · requiere plantilla",
+      tone: "danger",
+    };
+  }
+
+  if (windowState.status === "no_inbound") {
+    return {
+      canSendFreeform: false,
+      kind: "no_inbound",
+      label: "Sin inbound válido · requiere plantilla",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    canSendFreeform: false,
+    kind: "unverifiable",
+    label: "No se pudo verificar ventana",
+    tone: "neutral",
+  };
+}
 export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDrawerProps) {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [data, setData] = useState<CartChatResponse | null>(null);
@@ -124,8 +237,10 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [isSending, setIsSending] = useState(false);
   const [messageDraft, setMessageDraft] = useState("");
   const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("all");
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [whatsappWindowOverride, setWhatsappWindowOverride] = useState<WhatsappFreeformWindowPayload | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const previousMessageCountRef = useRef(0);
@@ -146,6 +261,18 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       return;
     }
 
+    setNowMs(Date.now());
+
+    const interval = window.setInterval(() => setNowMs(Date.now()), WINDOW_TIMER_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, [cartId]);
+
+  useEffect(() => {
+    if (!cartId) {
+      return;
+    }
+
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -160,6 +287,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
     const activeCartId = cartId;
     const controller = new AbortController();
+    let isActive = true;
 
     async function loadChat() {
       setData(null);
@@ -169,6 +297,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setSendStatus(null);
       setMessageDraft("");
       setMessageSourceFilter("all");
+      setWhatsappWindowOverride(null);
       previousMessageCountRef.current = 0;
       shouldScrollToBottomRef.current = true;
       setIsLoading(true);
@@ -182,30 +311,43 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
         if (!response.ok || !payload.ok) {
           if (response.status === 401 || response.status === 403) {
-            setError("No tienes permisos para ver el chat metadata-only.");
+            if (isActive) {
+              setError("No tienes permisos para ver el chat metadata-only.");
+            }
             return;
           }
 
-          setError(payload.error ?? "No se pudo cargar el chat metadata-only.");
+          if (isActive) {
+            setError(payload.error ?? "No se pudo cargar el chat metadata-only.");
+          }
           return;
         }
 
-        shouldScrollToBottomRef.current = true;
-        setData(payload);
+        if (isActive) {
+          shouldScrollToBottomRef.current = true;
+          setData(payload);
+        }
       } catch (fetchError) {
         if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
           return;
         }
 
-        setError("No se pudo conectar con el endpoint de chat.");
+        if (isActive) {
+          setError("No se pudo conectar con el endpoint de chat.");
+        }
       } finally {
-        setIsLoading(false);
+        if (isActive) {
+          setIsLoading(false);
+        }
       }
     }
 
     void loadChat();
 
-    return () => controller.abort();
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
   }, [cartId]);
 
   useEffect(() => {
@@ -264,20 +406,34 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     return null;
   }
 
-  const messages = data?.messages ?? [];
+  const isDataForCurrentCart = data?.cart?.id === cartId;
+  const shouldVerifyCurrentCart = !error && (!data || !isDataForCurrentCart);
+  const messages = isDataForCurrentCart ? data?.messages ?? [] : [];
   const hasLiveSource = messages.some((message) => message.source === "live");
   const hasMessageMemorySource = messages.some((message) => message.source === "message_memory");
   const shouldShowSourceFilter = hasLiveSource && hasMessageMemorySource;
   const visibleMessages = messageSourceFilter === "all" ? messages : messages.filter((message) => message.source === messageSourceFilter);
-  const summary = data?.summary;
+  const summary = isDataForCurrentCart ? data?.summary : undefined;
   const isRawChat = summary?.source === "raw";
   const hasLiveMessages = (summary?.liveMessages ?? 0) > 0 || summary?.source === "live";
   const isSensitiveChat = isRawChat || hasLiveMessages;
-  const cart = data?.cart;
+  const cart = isDataForCurrentCart ? data?.cart : undefined;
   const cmsUrl = safeHttpUrl(cart?.cmsUrl);
   const chatUrl = whatsappUrl(cart?.phone);
   const contactLabel = cart?.email || cart?.phone || "Contacto";
-  const canSendMessage = !isSending && Boolean(cart?.phone) && messageDraft.trim().length > 0;
+  const serverWhatsappWindow = whatsappWindowOverride ?? (isDataForCurrentCart ? data?.whatsappWindow : null);
+  const freeformWindow = getWhatsappFreeformWindowView(serverWhatsappWindow, nowMs, isLoading || shouldVerifyCurrentCart, Boolean(error));
+  const isFreeformBlocked = !freeformWindow.canSendFreeform;
+  const canSendMessage = !isSending && !isFreeformBlocked && Boolean(cart?.phone) && messageDraft.trim().length > 0;
+  const messagePlaceholder = (() => {
+    if (freeformWindow.kind === "checking") return "Verificando ventana de atención...";
+    if (freeformWindow.kind === "closed") return "La ventana de atención está cerrada";
+    if (freeformWindow.kind === "no_inbound") return "Se requiere una plantilla aprobada";
+    if (freeformWindow.kind === "unverifiable") return "No fue posible verificar la ventana";
+    if (!cart?.phone) return "Sin teléfono normalizado";
+
+    return "Escribe un mensaje...";
+  })();
 
   async function copyValue(value: string | null | undefined, label: string) {
     if (!value) return;
@@ -292,6 +448,17 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
   async function sendMessage() {
     if (!cartId || isSending) return;
+
+    if (isFreeformBlocked) {
+      const blockedMessage = freeformWindow.kind === "closed"
+        ? "La ventana de atención está cerrada. Para volver a contactar se requiere una plantilla aprobada."
+        : freeformWindow.kind === "no_inbound"
+          ? "No se encontró una ventana iniciada por el cliente. Para contactarlo se requiere una plantilla aprobada."
+          : "No fue posible verificar la ventana de atención. Recarga el chat antes de intentar enviar.";
+
+      setSendError(blockedMessage);
+      return;
+    }
 
     const messageText = messageDraft.trim();
 
@@ -343,6 +510,10 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       }
 
       if (!response.ok || !payload.ok) {
+        if (payload.whatsappWindow) {
+          setWhatsappWindowOverride(payload.whatsappWindow);
+        }
+
         setSendError(payload.error ?? "No se pudo enviar el mensaje.");
         setSendStatus(null);
         return;
@@ -355,7 +526,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
         setSendError(payload.warning);
       }
     } catch {
-      setSendError("No se pudo conectar con el endpoint de envio.");
+      setSendError("No se pudo conectar con el endpoint de envío.");
       setSendStatus(null);
     } finally {
       setIsSending(false);
@@ -430,7 +601,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                   type="button"
                 >
                   <Copy className="h-3.5 w-3.5 text-slate-500" />
-                  Copiar telefono
+                  Copiar teléfono
                 </button>
               ) : null}
               {cart?.cmsUrl ? (
@@ -477,12 +648,16 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             </div>
           ) : null}
           <div className="mt-2 hidden flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-4 text-slate-500 sm:flex">
-            <ValueBadge tone="info">{data?.cart?.type ?? "Carrito"}</ValueBadge>
-            <ValueBadge tone="neutral">{data?.cart?.parkingCode ?? "Sin parking"}</ValueBadge>
+            <ValueBadge tone="info">{cart?.type ?? "Carrito"}</ValueBadge>
+            <ValueBadge tone="neutral">{cart?.parkingCode ?? "Sin parking"}</ValueBadge>
+            <ValueBadge tone={freeformWindow.tone}>{freeformWindow.label}</ValueBadge>
             {summary ? <ValueBadge tone="success">{formatNumber(summary.totalMessages)} mensajes</ValueBadge> : null}
             {summary?.liveMessages ? <ValueBadge tone="info">{formatNumber(summary.liveMessages)} live</ValueBadge> : null}
-            <span>Ventana: {formatDateTime(data?.cart?.windowStart ?? null)} - {formatDateTime(data?.cart?.windowEnd ?? null)}</span>
+            <span>Ventana: {formatDateTime(cart?.windowStart ?? null)} - {formatDateTime(cart?.windowEnd ?? null)}</span>
             {summary ? <span>Inbound: {formatNumber(summary.inboundMessages)} - Outbound: {formatNumber(summary.outboundMessages)}</span> : null}
+          </div>
+          <div className="mt-2 flex sm:hidden">
+            <ValueBadge tone={freeformWindow.tone}>{freeformWindow.label}</ValueBadge>
           </div>
           {copyFeedback ? <p className="mt-1 text-xs font-medium text-teal-700">{copyFeedback}</p> : null}
         </div>
@@ -586,7 +761,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-1.5 shadow-inner focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
             <textarea
               className="max-h-24 min-h-8 flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-500 disabled:text-slate-500"
-              disabled={isSending || !cart?.phone}
+              disabled={isSending || !cart?.phone || isFreeformBlocked}
               id="recovery-chat-message"
               maxLength={4096}
               onChange={(event) => setMessageDraft(event.target.value)}
@@ -595,7 +770,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 event.preventDefault();
                 if (canSendMessage) void sendMessage();
               }}
-              placeholder={cart?.phone ? "Escribe un mensaje..." : "Sin telefono normalizado"}
+              placeholder={messagePlaceholder}
               rows={1}
               value={messageDraft}
             />
@@ -612,6 +787,21 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <span>Via n8n server-side</span>
             <span>{messageDraft.length}/4096</span>
           </div>
+          {freeformWindow.kind === "closed" ? (
+            <p className="mt-1 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-2 py-1 text-[11px] font-medium text-[#92400e] sm:text-xs">
+              Han pasado más de 24 horas desde el último mensaje del cliente. Para volver a contactarlo se requiere una plantilla aprobada.
+            </p>
+          ) : null}
+          {freeformWindow.kind === "no_inbound" ? (
+            <p className="mt-1 rounded-lg border border-[#d6e1ea] bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 sm:text-xs">
+              No hay mensajes inbound válidos para iniciar la ventana de atención. Para contactar se requiere una plantilla aprobada.
+            </p>
+          ) : null}
+          {freeformWindow.kind === "unverifiable" ? (
+            <p className="mt-1 rounded-lg border border-[#d6e1ea] bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 sm:text-xs">
+              No fue posible verificar la ventana de atención. Recarga el chat antes de intentar enviar.
+            </p>
+          ) : null}
           {sendStatus ? <p className="mt-1 rounded-lg border border-teal-100 bg-teal-50 px-2 py-1 text-[11px] font-medium text-teal-800 sm:text-xs">{sendStatus}</p> : null}
           {sendError ? <p className="mt-1 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-2 py-1 text-[11px] font-medium text-[#92400e] sm:text-xs">{sendError}</p> : null}
         </form>

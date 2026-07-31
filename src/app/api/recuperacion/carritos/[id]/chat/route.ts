@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
+import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } from "@/lib/recuperacion/whatsapp-freeform-window";
 
 const MAX_CHAT_MESSAGES = 100;
 
@@ -282,6 +283,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const windowEndDate = cart.form_datetime ? addDays(cart.form_datetime, 7) : null;
   const windowEnd = windowEndDate ? windowEndDate.toISOString() : null;
 
+  const whatsappWindow = await getWhatsappFreeformWindowForCart(admin.supabase, cartId);
+
   if (!cart.phone_normalized) {
     return NextResponse.json({
       cart: safeCartPayload(cart, windowStart, windowEnd),
@@ -289,6 +292,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       ok: true,
       reason: "El carrito no tiene telefono normalizado para cruzar conversaciones.",
       summary: buildSummary([], "metadata"),
+      whatsappWindow,
     });
   }
 
@@ -299,6 +303,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       ok: true,
       reason: "El carrito no tiene fecha form_datetime valida para construir la ventana de chat.",
       summary: buildSummary([], "metadata"),
+      whatsappWindow,
     });
   }
 
@@ -337,6 +342,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       messages,
       ok: true,
       summary: buildSummary(messages, "raw"),
+      whatsappWindow,
     });
   }
 
@@ -364,5 +370,6 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     messages: safeMessages,
     ok: true,
     summary: buildSummary(safeMessages, messages.length > 0 ? "metadata" : "live"),
+    whatsappWindow,
   });
 }

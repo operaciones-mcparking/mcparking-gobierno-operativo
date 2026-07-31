@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 const MAX_MESSAGE_TEXT_LENGTH = 4096;
@@ -24,6 +25,10 @@ type CartSendSourceRow = {
   type: string | null;
 };
 
+type WhatsappWindowErrorCode =
+  | "WHATSAPP_FREEFORM_WINDOW_CLOSED"
+  | "WHATSAPP_FREEFORM_WINDOW_NOT_OPEN"
+  | "WHATSAPP_FREEFORM_WINDOW_UNVERIFIABLE";
 type SupabaseTechnicalError = {
   code?: string;
   details?: string;
@@ -52,6 +57,29 @@ function jsonError(message: string, status: number, stage?: string, messagePaylo
   return NextResponse.json({ error: message, message: messagePayload, ok: false, stage }, { status });
 }
 
+function whatsappWindowError(windowState: WhatsappFreeformWindowState) {
+  const code: WhatsappWindowErrorCode = windowState.status === "closed"
+    ? "WHATSAPP_FREEFORM_WINDOW_CLOSED"
+    : windowState.status === "unverifiable"
+      ? "WHATSAPP_FREEFORM_WINDOW_UNVERIFIABLE"
+      : "WHATSAPP_FREEFORM_WINDOW_NOT_OPEN";
+  const error = windowState.status === "closed"
+    ? "La ventana de atención está cerrada. Debes utilizar una plantilla de WhatsApp."
+    : windowState.status === "unverifiable"
+      ? "No fue posible verificar la ventana de atención. Intenta recargar el chat antes de enviar."
+      : "La ventana de atención no está abierta. Debes utilizar una plantilla de WhatsApp.";
+
+  return NextResponse.json(
+    {
+      code,
+      error,
+      ok: false,
+      stage: "whatsapp_window",
+      whatsappWindow: windowState,
+    },
+    { status: 409 },
+  );
+}
 function sanitizeDebugValue(value: unknown) {
   const text = safeString(value);
 
@@ -276,6 +304,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   if (!cart.phone_normalized) {
     return jsonError("El carrito no tiene telefono normalizado.", 400, "cart");
+  }
+
+  const whatsappWindow = await getWhatsappFreeformWindowForCart(admin.supabase, cart.id);
+
+  if (!whatsappWindow.canSendFreeform) {
+    return whatsappWindowError(whatsappWindow);
   }
 
   const sentAt = new Date().toISOString();
