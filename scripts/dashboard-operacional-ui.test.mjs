@@ -253,7 +253,7 @@ test("W. refresh automatico ocurre una sola vez por run succeeded", () => {
   assert.match(compositeControl, /run\?\.status !== "succeeded"/);
   assert.match(compositeControl, /completedRunRef\.current === run\.run_id/);
   assert.match(compositeControl, /completedRunRef\.current = run\.run_id/);
-  assert.match(compositeControl, /void onSucceededRef\.current\?\.\(\)/);
+  assert.match(compositeControl, /Promise\.resolve\(onSucceededRef\.current\?\.\(\)\)/);
   assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
   assert.doesNotMatch(compositeControl, /run\?\.status === "failed"[\s\S]*onSucceeded|run\?\.status === "cancelled"[\s\S]*onSucceeded/);
 });
@@ -263,4 +263,65 @@ test("X. no duplica rutas ni contratos del composite run en Dashboard", () => {
   assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/\$\{runId\}/);
   assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/advance/);
   assert.match(compositeHook, /orquestador:actualizar-datos:last-month:run-id:v1/);
+});
+test("Y. fecha inicial usa hoy local sin toISOString", () => {
+  assert.match(client, /function getTodayLocalDate\(\)/);
+  assert.match(client, /today\.getFullYear\(\)/);
+  assert.match(client, /today\.getMonth\(\) \+ 1/);
+  assert.match(client, /today\.getDate\(\)/);
+  assert.match(client, /padStart\(2, "0"\)/);
+  assert.match(client, /return `\$\{year\}-\$\{month\}-\$\{day\}`/);
+  assert.match(client, /initialDateRef = useRef\(getTodayLocalDate\(\)\)/);
+  assert.match(client, /useState\(initialDateRef\.current\)/);
+  assert.match(client, /loadByDate\(initialDateRef\.current\)/);
+  assert.doesNotMatch(client, /toISOString\(\)\.slice\(0, 10\)/);
+});
+
+test("Z. fecha seleccionada sigue siendo mutable y se usa en refresh final", () => {
+  assert.match(client, /onChange=\{\(event\) => loadByDate\(event\.target\.value\)\}/);
+  assert.match(client, /onClick=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.doesNotMatch(client, /initialDashboard\?\.filters\?\.date \?\?/);
+  assert.doesNotMatch(client, /lastUpdate[\s\S]*setSelectedDate/);
+});
+
+test("AA. overlay usa dialog accesible y se recupera cuando existe run", () => {
+  assert.match(compositeControl, /presentation\?: "inline" \| "overlay"/);
+  assert.match(compositeControl, /presentation = "inline"/);
+  assert.match(compositeControl, /const useOverlay = presentation === "overlay"/);
+  assert.match(compositeControl, /const showOverlay = useOverlay && \(isConfirming \|\| isStarting \|\| hasRun \|\| isOverlayOpen\)/);
+  assert.match(compositeControl, /aria-labelledby="actualizar-datos-overlay-title"/);
+  assert.match(compositeControl, /aria-modal="true"/);
+  assert.match(compositeControl, /role="dialog"/);
+  assert.match(compositeControl, /fixed inset-0 z-50/);
+});
+
+test("AB. overlay muestra carga real y reutiliza CompositeRunViewer", () => {
+  assert.match(compositeControl, /Actualizando datos operacionales/);
+  assert.match(compositeControl, /No cierres esta ventana/);
+  assert.match(compositeControl, /Loader2/);
+  assert.match(compositeControl, /animate-spin/);
+  assert.match(compositeControl, /const viewer = run \? <CompositeRunViewer/);
+  assert.doesNotMatch(compositeControl, /barra falsa|fake|setInterval/);
+});
+
+test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () => {
+  assert.match(compositeControl, /Actualizacion completada/);
+  assert.match(compositeControl, /Los datos operacionales se actualizaron correctamente/);
+  assert.match(compositeControl, /Dashboard actualizado correctamente/);
+  assert.match(compositeControl, /no fue posible recargar los indicadores/);
+  assert.match(compositeControl, /No se pudo completar la actualizacion/);
+  assert.match(compositeControl, /Etapa afectada/);
+  assert.match(compositeControl, /Actualizacion cancelada/);
+  assert.match(compositeControl, /run\.status === "failed"/);
+  assert.match(compositeControl, /run\.status === "succeeded"/);
+  assert.doesNotMatch(compositeControl, /payload|stack trace|stdout|stderr|SUPABASE/);
+});
+
+test("AD. cierre del overlay solo se habilita en terminal", () => {
+  assert.match(compositeControl, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\)\)/);
+  assert.match(compositeControl, /disabled=\{!canCloseOverlay\}/);
+  assert.match(compositeControl, /if \(!canCloseOverlay\) \{/);
+  assert.match(compositeControl, /Cerrar resultado/);
+  assert.match(compositeControl, /Cerrar/);
 });
