@@ -4,6 +4,7 @@ import {
   Clock,
   Server,
 } from "lucide-react";
+import type { ReactNode } from "react";
 
 import {
   DataTable,
@@ -124,6 +125,37 @@ function ErrorPanel({ errors }: { errors: string[] }) {
   );
 }
 
+function ControlCenterSection({
+  children,
+  description,
+  title,
+}: {
+  children: ReactNode;
+  description?: string;
+  title: string;
+}) {
+  return (
+    <section className="mt-5">
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold tracking-tight text-navy">{title}</h2>
+        {description ? <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function OperationStatusBadge({ label, tone }: { label: string; tone: "danger" | "info" | "success" | "warning" }) {
+  const classes = {
+    danger: "border-[#ffd4a3] bg-[#fff8ef] text-[#8a4a00]",
+    info: "border-[#c9d8e4] bg-[#eef4f8] text-[#023574]",
+    success: "border-[#cfeeda] bg-[#f1fbf4] text-[#22613b]",
+    warning: "border-[#ffe699] bg-[#fffaf0] text-[#765900]",
+  }[tone];
+
+  return <span className={`w-fit rounded-md border px-2.5 py-1 text-xs font-medium ${classes}`}>{label}</span>;
+}
+
 async function loadOrquestadorData(): Promise<LoadResult> {
   const [workers, jobs, events, jobTypes] = await Promise.all([
     listOrchestratorWorkers(),
@@ -152,11 +184,21 @@ export async function OrchestratorControlCenter() {
   const { errors, events, jobs, jobTypes, workers } = await loadOrquestadorData();
   const activeWorkers = workers.filter((worker) => worker.status !== "offline").length;
   const activeJobs = jobs.filter((job) => ["queued", "claimed", "running"].includes(job.status)).length;
+  const runningJobs = jobs.filter((job) => ["claimed", "running"].includes(job.status)).length;
+  const queuedJobs = jobs.filter((job) => job.status === "queued").length;
   const lastHeartbeat = workers
     .map((worker) => worker.last_seen_at)
     .filter((value): value is string => Boolean(value))
     .sort()
     .at(-1);
+  const operationStatus =
+    activeWorkers === 0
+      ? { label: "Equipo local desconectado", tone: "danger" as const }
+      : activeJobs > 0
+        ? { label: "Proceso en curso", tone: "info" as const }
+        : errors.length > 0
+          ? { label: "Requiere atencion", tone: "warning" as const }
+          : { label: "Operacion disponible", tone: "success" as const };
   const sourceConnectionJobType = jobTypes.find((jobType) => jobType.job_type === "source_connection_check");
   const bancoPacksJobType = jobTypes.find((jobType) => jobType.job_type === BANCO_PACKS_UPDATE_JOB_TYPE);
   const bancoPacksReadiness = getBancoPacksUpdateReadiness({
@@ -181,120 +223,139 @@ export async function OrchestratorControlCenter() {
     <>
       <ErrorPanel errors={errors} />
 
-      <div className="mt-5 flex flex-col gap-3 border-b border-[#d6e1ea] pb-5 lg:flex-row lg:items-start lg:justify-between">
-        <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">
-          Control seguro
-        </span>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5 xl:max-w-7xl">
-          <div className="flex flex-col gap-3 sm:items-end">
-            <OrquestadorRefreshButton />
-            <WorkerHealthCheckButton />
+      <ControlCenterSection title="Estado operacional">
+        <div className="rounded-xl border border-[#d6e1ea] bg-white p-5 shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-slate-600">Resumen del sistema</p>
+              <p className="mt-1 text-xl font-semibold tracking-tight text-navy">{operationStatus.label}</p>
+            </div>
+            <OperationStatusBadge label={operationStatus.label} tone={operationStatus.tone} />
           </div>
-          <SourceConnectionCheckControl enabled={sourceConnectionJobType?.enabled === true} />
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <KpiCard icon={Server} label="Equipos activos" status="Solo lectura" value={`${activeWorkers}/${workers.length}`} />
+            <KpiCard icon={Activity} label="Procesos en curso" value={runningJobs} />
+            <KpiCard icon={Activity} label="Cola pendiente" value={queuedJobs} />
+            <KpiCard icon={Boxes} label="Tipos de proceso" value={jobTypes.length} />
+            <KpiCard icon={Clock} label="Ultima señal" value={formatDate(lastHeartbeat)} />
+          </div>
+        </div>
+      </ControlCenterSection>
+
+      <ControlCenterSection title="Actualizar datos operacionales">
+        <ActualizarDatosOperacionalesControl />
+      </ControlCenterSection>
+
+      <ControlCenterSection title="Acciones individuales">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <BancoReservasLastWeekControl readinessCode={bancoReservasReadiness.code} />
           <BancoPacksUpdateControl readinessCode={bancoPacksReadiness.code} />
           <DashboardLastMonthControl readinessCode={dashboardLastMonthReadiness.code} />
         </div>
-      </div>
+      </ControlCenterSection>
 
-      <ActualizarDatosOperacionalesControl />
-
-      <section className="mt-5 grid gap-4 md:grid-cols-4">
-        <KpiCard icon={Server} label="Workers activos" status="Solo lectura" value={`${activeWorkers}/${workers.length}`} />
-        <KpiCard icon={Activity} label="Jobs en curso o cola" value={activeJobs} />
-        <KpiCard icon={Boxes} label="Tipos de job" value={jobTypes.length} />
-        <KpiCard icon={Clock} label="Ultimo heartbeat" value={formatDate(lastHeartbeat)} />
-      </section>
-
-      <Panel count={`${workers.length} workers`} title="Workers">
-        <div className="mt-5">
-          <DataTable minWidth="760px">
-            <DataTableHead>
-              <tr>
-                <DataTableHeaderCell>Worker</DataTableHeaderCell>
-                <DataTableHeaderCell>Nombre</DataTableHeaderCell>
-                <DataTableHeaderCell>Estado</DataTableHeaderCell>
-                <DataTableHeaderCell>Heartbeat</DataTableHeaderCell>
-                <DataTableHeaderCell>Job actual</DataTableHeaderCell>
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {workers.map((worker) => (
-                <DataTableRow key={worker.worker_id}>
-                  <DataTableCell strong>{worker.worker_id}</DataTableCell>
-                  <DataTableCell>{worker.display_name ?? "Sin nombre"}</DataTableCell>
-                  <DataTableCell>
-                    <StatusBadge value={worker.status} />
-                  </DataTableCell>
-                  <DataTableCell>{formatDate(worker.last_seen_at)}</DataTableCell>
-                  <DataTableCell>{shortId(worker.locked_job_id)}</DataTableCell>
-                </DataTableRow>
-              ))}
-            </DataTableBody>
-          </DataTable>
-          {workers.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay workers registrados.</p> : null}
+      <ControlCenterSection description="Usar para validar el estado tecnico del sistema." title="Herramientas de comprobacion">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="flex max-w-md flex-col gap-3 rounded-lg border border-[#d6e1ea] bg-white p-3 text-sm text-slate-600 shadow-sm">
+            <p className="font-medium text-navy">Estado de pantalla</p>
+            <OrquestadorRefreshButton />
+            <WorkerHealthCheckButton />
+          </div>
+          <SourceConnectionCheckControl enabled={sourceConnectionJobType?.enabled === true} />
         </div>
-      </Panel>
+      </ControlCenterSection>
 
       <Panel count={`${jobs.length} procesos`} title="Procesos recientes">
         <RecentProcesses jobs={jobs} />
       </Panel>
 
-      <Panel count={`${events.length} eventos`} title="Eventos recientes">
-        <div className="mt-5">
-          <DataTable minWidth="920px">
-            <DataTableHead>
-              <tr>
-                <DataTableHeaderCell>Fecha</DataTableHeaderCell>
-                <DataTableHeaderCell>Evento</DataTableHeaderCell>
-                <DataTableHeaderCell>Job</DataTableHeaderCell>
-                <DataTableHeaderCell>Worker</DataTableHeaderCell>
-                <DataTableHeaderCell>Mensaje</DataTableHeaderCell>
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {events.map((event) => (
-                <DataTableRow key={event.id}>
-                  <DataTableCell>{formatDate(event.created_at)}</DataTableCell>
-                  <DataTableCell strong>{event.event_type}</DataTableCell>
-                  <DataTableCell>{shortId(event.job_id)}</DataTableCell>
-                  <DataTableCell>{event.worker_id ?? "-"}</DataTableCell>
-                  <DataTableCell>{event.message ?? "-"}</DataTableCell>
-                </DataTableRow>
-              ))}
-            </DataTableBody>
-          </DataTable>
-          {events.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay eventos recientes.</p> : null}
-        </div>
-      </Panel>
+      <ControlCenterSection title="Diagnostico tecnico">
+        <Panel count={`${workers.length} workers`} title="Equipos conectados / Workers">
+          <div className="mt-5">
+            <DataTable minWidth="760px">
+              <DataTableHead>
+                <tr>
+                  <DataTableHeaderCell>Worker</DataTableHeaderCell>
+                  <DataTableHeaderCell>Nombre</DataTableHeaderCell>
+                  <DataTableHeaderCell>Estado</DataTableHeaderCell>
+                  <DataTableHeaderCell>Heartbeat</DataTableHeaderCell>
+                  <DataTableHeaderCell>Job actual</DataTableHeaderCell>
+                </tr>
+              </DataTableHead>
+              <DataTableBody>
+                {workers.map((worker) => (
+                  <DataTableRow key={worker.worker_id}>
+                    <DataTableCell strong>{worker.worker_id}</DataTableCell>
+                    <DataTableCell>{worker.display_name ?? "Sin nombre"}</DataTableCell>
+                    <DataTableCell>
+                      <StatusBadge value={worker.status} />
+                    </DataTableCell>
+                    <DataTableCell>{formatDate(worker.last_seen_at)}</DataTableCell>
+                    <DataTableCell>{shortId(worker.locked_job_id)}</DataTableCell>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
+            {workers.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay workers registrados.</p> : null}
+          </div>
+        </Panel>
 
-      <Panel count={`${jobTypes.length} tipos`} title="Tipos de job">
-        <div className="mt-5">
-          <DataTable minWidth="900px">
-            <DataTableHead>
-              <tr>
-                <DataTableHeaderCell>Tipo</DataTableHeaderCell>
-                <DataTableHeaderCell>Nombre</DataTableHeaderCell>
-                <DataTableHeaderCell>Estado</DataTableHeaderCell>
-                <DataTableHeaderCell>Descripcion</DataTableHeaderCell>
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {jobTypes.map((jobType) => (
-                <DataTableRow key={jobType.job_type}>
-                  <DataTableCell strong>{jobType.job_type}</DataTableCell>
-                  <DataTableCell>{jobType.name}</DataTableCell>
-                  <DataTableCell>
-                    <EnabledBadge enabled={jobType.enabled} />
-                  </DataTableCell>
-                  <DataTableCell>{jobType.description ?? "Sin descripcion"}</DataTableCell>
-                </DataTableRow>
-              ))}
-            </DataTableBody>
-          </DataTable>
-          {jobTypes.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay tipos de job registrados.</p> : null}
-        </div>
-      </Panel>
+        <Panel count={`${events.length} eventos`} title="Registro tecnico / Eventos recientes">
+          <div className="mt-5">
+            <DataTable minWidth="920px">
+              <DataTableHead>
+                <tr>
+                  <DataTableHeaderCell>Fecha</DataTableHeaderCell>
+                  <DataTableHeaderCell>Evento</DataTableHeaderCell>
+                  <DataTableHeaderCell>Job</DataTableHeaderCell>
+                  <DataTableHeaderCell>Worker</DataTableHeaderCell>
+                  <DataTableHeaderCell>Mensaje</DataTableHeaderCell>
+                </tr>
+              </DataTableHead>
+              <DataTableBody>
+                {events.map((event) => (
+                  <DataTableRow key={event.id}>
+                    <DataTableCell>{formatDate(event.created_at)}</DataTableCell>
+                    <DataTableCell strong>{event.event_type}</DataTableCell>
+                    <DataTableCell>{shortId(event.job_id)}</DataTableCell>
+                    <DataTableCell>{event.worker_id ?? "-"}</DataTableCell>
+                    <DataTableCell>{event.message ?? "-"}</DataTableCell>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
+            {events.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay eventos recientes.</p> : null}
+          </div>
+        </Panel>
+
+        <Panel count={`${jobTypes.length} tipos`} title="Procesos disponibles / Tipos de job">
+          <div className="mt-5">
+            <DataTable minWidth="900px">
+              <DataTableHead>
+                <tr>
+                  <DataTableHeaderCell>Tipo</DataTableHeaderCell>
+                  <DataTableHeaderCell>Nombre</DataTableHeaderCell>
+                  <DataTableHeaderCell>Estado</DataTableHeaderCell>
+                  <DataTableHeaderCell>Descripcion</DataTableHeaderCell>
+                </tr>
+              </DataTableHead>
+              <DataTableBody>
+                {jobTypes.map((jobType) => (
+                  <DataTableRow key={jobType.job_type}>
+                    <DataTableCell strong>{jobType.job_type}</DataTableCell>
+                    <DataTableCell>{jobType.name}</DataTableCell>
+                    <DataTableCell>
+                      <EnabledBadge enabled={jobType.enabled} />
+                    </DataTableCell>
+                    <DataTableCell>{jobType.description ?? "Sin descripcion"}</DataTableCell>
+                  </DataTableRow>
+                ))}
+              </DataTableBody>
+            </DataTable>
+            {jobTypes.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay tipos de job registrados.</p> : null}
+          </div>
+        </Panel>
+      </ControlCenterSection>
     </>
   );
 }

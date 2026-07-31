@@ -373,6 +373,68 @@ test("AH. status visible no depende solo del color", () => {
   assert.match(control, /aria-live="polite"/);
 });
 
+
+test("AH2. Centro de Control define secciones operacionales en orden", () => {
+  for (const label of [
+    "Estado operacional",
+    "Actualizar datos operacionales",
+    "Acciones individuales",
+    "Herramientas de comprobacion",
+    "Procesos recientes",
+    "Diagnostico tecnico",
+  ]) {
+    assert.match(controlCenter, new RegExp(label));
+  }
+
+  const order = [
+    "Estado operacional",
+    "Actualizar datos operacionales",
+    "Acciones individuales",
+    "Herramientas de comprobacion",
+    "Procesos recientes",
+    "Diagnostico tecnico",
+  ].map((label) => controlCenter.indexOf(label));
+
+  assert.ok(order.every((index) => index >= 0));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
+});
+
+test("AH3. Estado operacional resume informacion existente", () => {
+  assert.match(controlCenter, /function OperationStatusBadge/);
+  assert.match(controlCenter, /activeWorkers === 0/);
+  assert.match(controlCenter, /activeJobs > 0/);
+  assert.match(controlCenter, /errors\.length > 0/);
+  assert.match(controlCenter, /Operacion disponible/);
+  assert.match(controlCenter, /Equipo local desconectado/);
+  assert.match(controlCenter, /Proceso en curso/);
+  assert.match(controlCenter, /Requiere atencion/);
+  assert.match(controlCenter, /Equipos activos/);
+  assert.match(controlCenter, /Procesos en curso/);
+  assert.match(controlCenter, /Cola pendiente/);
+  assert.match(controlCenter, /Tipos de proceso/);
+  assert.match(controlCenter, /Ultima señal/);
+});
+
+test("AH4. acciones individuales y herramientas quedan agrupadas sin eliminar controles", () => {
+  assert.ok(controlCenter.indexOf("<BancoReservasLastWeekControl") > controlCenter.indexOf('title="Acciones individuales"'));
+  assert.ok(controlCenter.indexOf("<BancoPacksUpdateControl") > controlCenter.indexOf('title="Acciones individuales"'));
+  assert.ok(controlCenter.indexOf("<DashboardLastMonthControl") > controlCenter.indexOf('title="Acciones individuales"'));
+  assert.ok(controlCenter.indexOf("<OrquestadorRefreshButton") > controlCenter.indexOf('title="Herramientas de comprobacion"'));
+  assert.ok(controlCenter.indexOf("<WorkerHealthCheckButton") > controlCenter.indexOf('title="Herramientas de comprobacion"'));
+  assert.ok(controlCenter.indexOf("<SourceConnectionCheckControl") > controlCenter.indexOf('title="Herramientas de comprobacion"'));
+  assert.match(controlCenter, /Usar para validar el estado tecnico del sistema/);
+  assert.match(controlCenter, /md:grid-cols-2 xl:grid-cols-3/);
+});
+
+test("AH5. diagnostico tecnico conserva tablas existentes al final", () => {
+  assert.ok(controlCenter.indexOf('title="Equipos conectados \/ Workers"') > controlCenter.indexOf('title="Diagnostico tecnico"'));
+  assert.ok(controlCenter.indexOf('title="Registro tecnico \/ Eventos recientes"') > controlCenter.indexOf('title="Diagnostico tecnico"'));
+  assert.ok(controlCenter.indexOf('title="Procesos disponibles \/ Tipos de job"') > controlCenter.indexOf('title="Diagnostico tecnico"'));
+  assert.match(controlCenter, /<DataTable minWidth="760px">/);
+  assert.match(controlCenter, /<DataTable minWidth="920px">/);
+  assert.match(controlCenter, /<DataTable minWidth="900px">/);
+  assert.ok(controlCenter.indexOf('title="Diagnostico tecnico"') > controlCenter.indexOf('title="Procesos recientes"'));
+});
 test("AI. no altera controles individuales existentes", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/worker-health-check-button\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/source-connection-check-control\.tsx$/m);
