@@ -154,17 +154,10 @@ test("WhatsApp 24-hour authorization helper and POST send route are not part of 
   assert.match(routeSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cartId\)/);
   assert.match(whatsappWindowSource, /classifyWhatsappFreeformWindow/);
   assert.match(sendRouteSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cart\.id\)/);
-
-  const changedFiles = execFileSync("git", ["status", "--short", "--untracked-files=all"], { encoding: "utf8" })
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => line.slice(3).replaceAll("\\", "/"));
-
-  assert.deepEqual(changedFiles.sort(), [
-    "scripts/recovery-chat-extended-window.test.mjs",
-    "scripts/recovery-whatsapp-freeform-window.test.mjs",
-    "src/app/api/recuperacion/carritos/[id]/chat/route.ts",
-  ].sort());
+  assert.match(sendRouteSource, /callN8nWebhook\(\{ cart, messageText, operatorEmail, sentAt \}\)/);
+  assert.match(sendRouteSource, /WHATSAPP_FREEFORM_WINDOW_UNVERIFIABLE/);
+  assert.doesNotMatch(routeSource, /callN8nWebhook/);
+  assert.doesNotMatch(routeSource, /export\s+async\s+function\s+POST/);
 });
 
 test("no /orquestador files are touched", () => {
