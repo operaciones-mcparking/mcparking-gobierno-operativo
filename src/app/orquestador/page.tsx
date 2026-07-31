@@ -27,7 +27,7 @@ export default async function OrquestadorPage({ searchParams }: OrquestadorPageP
       activePath="/orquestador"
       description="Dashboard operacional y centro de control seguro del orquestador existente."
       eyebrow="Operaciones McParking"
-      title="McParking Orquestador"
+      title="McParking Dashboard"
     >
       <OrchestratorViewTabs activeView={activeView} />
       {activeView === "control" ? <OrchestratorControlCenter /> : <OrchestratorDashboardView />}

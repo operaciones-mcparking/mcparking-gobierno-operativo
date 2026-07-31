@@ -240,19 +240,15 @@ function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp:
 
   return (
     <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-          <p className="mt-1 text-lg font-semibold text-navy">{total}</p>
-        </div>
-        <div className="text-right text-xs text-slate-500">
-          <p>MCP {formatPercent(safeMcp)}</p>
-          <p>OKP {formatPercent(safeOkp)}</p>
-        </div>
-      </div>
+      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-navy">{total}</p>
       <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-[#dfe9f0]" aria-label={`${label} MCP vs OKP`}>
         <div className="bg-sea" style={{ width: `${safeMcp}%` }} />
         <div className="bg-clay" style={{ width: `${safeOkp}%` }} />
+      </div>
+      <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <p>OKP {formatPercent(safeOkp)}</p>
+        <p>MCP {formatPercent(safeMcp)}</p>
       </div>
     </div>
   );
@@ -273,11 +269,6 @@ function MarketColumn({ dashboard }: { dashboard: OperationalDashboardViewModel 
         <ShareBar label="DBI reservas total" mcp={marketShare?.reserva_total_dbi.MCP ?? 0} okp={marketShare?.reserva_total_dbi.OKP ?? 0} total={formatInteger(totals.reserva_total_dbi)} />
         <ShareBar label="Q reservas total" mcp={marketShare?.reserva_total_q.MCP ?? 0} okp={marketShare?.reserva_total_q.OKP ?? 0} total={formatInteger(totals.reserva_total_q)} />
       </div>
-      {dashboard?.totalsByGroup.OTRO ? (
-        <p className="mt-4 rounded-lg border border-[#e4edf4] bg-[#fbfdff] p-3 text-xs leading-5 text-slate-600">
-          OTRO existe en los totales por grupo, pero no participa en las barras MCP/OKP.
-        </p>
-      ) : null}
     </section>
   );
 }

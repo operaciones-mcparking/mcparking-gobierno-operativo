@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const pagePath = "src/app/dashboard-operacional/page.tsx";
+const orquestadorPagePath = "src/app/orquestador/page.tsx";
 const clientPath = "src/app/dashboard-operacional/dashboard-operacional-client.tsx";
 const formatterPath = "src/app/dashboard-operacional/dashboard-operacional-formatters.ts";
 const dataHelperPath = "src/lib/dashboard/operacional.ts";
@@ -16,6 +17,7 @@ const compositeHookPath = "src/app/orquestador/use-composite-operations-run.ts";
 const compositeViewerPath = "src/app/orquestador/composite-run-viewer.tsx";
 
 const page = readFileSync(pagePath, "utf8");
+const orquestadorPage = readFileSync(orquestadorPagePath, "utf8");
 const client = readFileSync(clientPath, "utf8");
 const formatters = readFileSync(formatterPath, "utf8");
 const dataHelper = readFileSync(dataHelperPath, "utf8");
@@ -44,6 +46,9 @@ test("C. selector unificado contiene Dashboard y Centro de Control", () => {
   assert.match(tabs, /Dashboard/);
   assert.match(tabs, /Centro de Control/);
   assert.match(tabs, /\/orquestador\?view=\$\{view\}/);
+  assert.match(orquestadorPage, /eyebrow="Operaciones McParking"/);
+  assert.match(orquestadorPage, /title="McParking Dashboard"/);
+  assert.doesNotMatch(orquestadorPage, /title="McParking Orquestador"/);
   assert.doesNotMatch(client, /McParking Orquestador|Centro de Control|href="\/orquestador"/);
 });
 
@@ -71,6 +76,8 @@ test("G. comparativa MCP OKP y Market size", () => {
   assert.match(client, /marketShare\?\.venta_total_operacional/);
   assert.match(client, /marketShare\?\.reserva_total_dbi/);
   assert.match(client, /marketShare\?\.reserva_total_q/);
+  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>[\s\S]*aria-label=\{`\$\{label\} MCP vs OKP`\}[\s\S]*<p>OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p>MCP \{formatPercent\(safeMcp\)\}<\/p>/);
+  assert.doesNotMatch(client, /OTRO existe en los totales por grupo/);
 });
 
 test("H. metricas principales solicitadas visibles", () => {
