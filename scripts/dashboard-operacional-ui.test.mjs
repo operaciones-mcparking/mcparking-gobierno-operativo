@@ -226,18 +226,22 @@ test("Q4. MCP usa composicion visual espejo sin invertir datos", () => {
   assert.match(client, /type MetricLayout = "normal" \| "mirror"/);
   assert.match(client, /const layout: MetricLayout = label === "MCP" \? "mirror" : "normal"/);
   assert.match(client, /layout === "mirror" \? "flex-row-reverse"/);
-  assert.match(client, /<SecondaryMetricCard label=\{rightLabel\} layout=\{layout\} value=\{rightValue\} \/>/);
-  assert.match(client, /<SecondaryMetricCard label=\{leftLabel\} layout=\{layout\} value=\{leftValue\} \/>/);
+  assert.match(client, /const secondaryAlignment: TextAlignment = layout === "mirror" \? "left" : "right"/);
+  assert.match(client, /<SecondaryMetricCard alignment=\{secondaryAlignment\} label=\{rightLabel\} value=\{rightValue\} \/>/);
+  assert.match(client, /<SecondaryMetricCard alignment=\{secondaryAlignment\} label=\{leftLabel\} value=\{leftValue\} \/>/);
   assert.match(client, /leftLabel="Venta boleta"[\s\S]*leftValue=\{formatCurrency\(totals\.reserva_boleta_venta\)\}[\s\S]*rightLabel="Venta pack"[\s\S]*rightValue=\{formatCurrency\(totals\.pack_vendido_venta\)\}/);
   assert.match(client, /leftLabel="DBI boleta"[\s\S]*leftValue=\{formatInteger\(totals\.reserva_boleta_dbi\)\}[\s\S]*rightLabel="DBI pack"[\s\S]*rightValue=\{formatInteger\(totals\.reserva_pack_dbi\)\}/);
   assert.match(client, /leftLabel="Q boleta"[\s\S]*leftValue=\{formatInteger\(totals\.reserva_boleta_q\)\}[\s\S]*rightLabel="Q pack"[\s\S]*rightValue=\{formatInteger\(totals\.reserva_pack_q\)\}/);
+  assert.match(client, /function SecondaryMetricCard\(\{ alignment = "left", label, value \}/);
+  assert.match(client, /const textAlignment = alignment === "right" \? "text-right" : "text-left"/);
+  assert.match(client, /<p className=\{`text-xs font-semibold uppercase tracking-\[0\.08em\] text-slate-500 \$\{textAlignment\}`\}>\{label\}<\/p>[\s\S]*<p className=\{`mt-1 text-sm font-semibold text-navy \$\{textAlignment\}`\}>\{value\}<\/p>/);
 });
 
 test("Q5. promedios miran hacia la columna central y filas finales siguen en espejo", () => {
-  assert.match(client, /type AverageAlignment = "left" \| "right"/);
+  assert.match(client, /type TextAlignment = "left" \| "right"/);
   assert.match(client, /function AverageBlock\(\{ alignment = "left", label/);
   assert.match(client, /const textAlignment = alignment === "right" \? "text-right" : "text-left"/);
-  assert.match(client, /const averageAlignment: AverageAlignment = label === "OKP" \? "right" : "left"/);
+  assert.match(client, /const averageAlignment: TextAlignment = label === "OKP" \? "right" : "left"/);
   assert.match(client, /<p className=\{`text-xs font-semibold uppercase tracking-\[0\.08em\] text-slate-500 \$\{textAlignment\}`\}>\{label\}<\/p>[\s\S]*<p className=\{`mt-1 text-lg font-semibold text-navy \$\{textAlignment\}`\}>\{formatDays\(main\)\}<\/p>[\s\S]*<span>\{ticketLabel\}: \{formatDays\(ticket\)\}<\/span>[\s\S]*<span>Pack: \{formatDays\(pack\)\}<\/span>/);
   assert.match(client, /<AverageBlock alignment=\{averageAlignment\} label="Anticipacion promedio" main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
   assert.match(client, /<AverageBlock alignment=\{averageAlignment\} label="Estadia promedio" main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);

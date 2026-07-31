@@ -97,6 +97,7 @@ function groupTotals(dashboard: OperationalDashboardViewModel | null, group: "MC
 }
 
 type MetricLayout = "normal" | "mirror";
+type TextAlignment = "left" | "right";
 
 function KpiLine({ label, layout = "normal", value }: { label: string; layout?: MetricLayout; value: string }) {
   return (
@@ -107,11 +108,13 @@ function KpiLine({ label, layout = "normal", value }: { label: string; layout?: 
   );
 }
 
-function SecondaryMetricCard({ label, layout = "normal", value }: { label: string; layout?: MetricLayout; value: string }) {
+function SecondaryMetricCard({ alignment = "left", label, value }: { alignment?: TextAlignment; label: string; value: string }) {
+  const textAlignment = alignment === "right" ? "text-right" : "text-left";
+
   return (
     <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
-      <p className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${layout === "mirror" ? "text-right" : ""}`}>{label}</p>
-      <p className={`mt-1 text-sm font-semibold text-navy ${layout === "mirror" ? "text-right" : ""}`}>{value}</p>
+      <p className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${textAlignment}`}>{label}</p>
+      <p className={`mt-1 text-sm font-semibold text-navy ${textAlignment}`}>{value}</p>
     </div>
   );
 }
@@ -133,6 +136,8 @@ function GroupedMetricBlock({
   rightValue: string;
   title: string;
 }) {
+  const secondaryAlignment: TextAlignment = layout === "mirror" ? "left" : "right";
+
   return (
     <section className="border-b border-[#e4edf4] py-3 last:border-b-0">
       <div className={`flex items-start justify-between gap-3 ${layout === "mirror" ? "flex-row-reverse" : ""}`}>
@@ -142,13 +147,13 @@ function GroupedMetricBlock({
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         {layout === "mirror" ? (
           <>
-            <SecondaryMetricCard label={rightLabel} layout={layout} value={rightValue} />
-            <SecondaryMetricCard label={leftLabel} layout={layout} value={leftValue} />
+            <SecondaryMetricCard alignment={secondaryAlignment} label={rightLabel} value={rightValue} />
+            <SecondaryMetricCard alignment={secondaryAlignment} label={leftLabel} value={leftValue} />
           </>
         ) : (
           <>
-            <SecondaryMetricCard label={leftLabel} value={leftValue} />
-            <SecondaryMetricCard label={rightLabel} value={rightValue} />
+            <SecondaryMetricCard alignment={secondaryAlignment} label={leftLabel} value={leftValue} />
+            <SecondaryMetricCard alignment={secondaryAlignment} label={rightLabel} value={rightValue} />
           </>
         )}
       </div>
@@ -156,9 +161,7 @@ function GroupedMetricBlock({
   );
 }
 
-type AverageAlignment = "left" | "right";
-
-function AverageBlock({ alignment = "left", label, main, pack, ticket, ticketLabel = "Boleta" }: { alignment?: AverageAlignment; label: string; main: number | null; pack: number | null; ticket: number | null; ticketLabel?: string }) {
+function AverageBlock({ alignment = "left", label, main, pack, ticket, ticketLabel = "Boleta" }: { alignment?: TextAlignment; label: string; main: number | null; pack: number | null; ticket: number | null; ticketLabel?: string }) {
   const textAlignment = alignment === "right" ? "text-right" : "text-left";
 
   return (
@@ -175,7 +178,7 @@ function AverageBlock({ alignment = "left", label, main, pack, ticket, ticketLab
 
 function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
   const layout: MetricLayout = label === "MCP" ? "mirror" : "normal";
-  const averageAlignment: AverageAlignment = label === "OKP" ? "right" : "left";
+  const averageAlignment: TextAlignment = label === "OKP" ? "right" : "left";
 
   return (
     <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
@@ -230,6 +233,7 @@ function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: Operati
     </section>
   );
 }
+
 function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp: number; total: string }) {
   const safeMcp = Number.isFinite(mcp) ? Math.max(0, Math.min(100, mcp)) : 0;
   const safeOkp = Number.isFinite(okp) ? Math.max(0, Math.min(100, okp)) : 0;
