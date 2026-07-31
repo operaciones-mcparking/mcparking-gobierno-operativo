@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 const helperPath = "src/lib/orquestador/job-technical-detail.ts";
 const routePath = "src/app/api/orquestador/jobs/[jobId]/detail/route.ts";
 const buttonPath = "src/app/orquestador/job-technical-detail-button.tsx";
+const recentProcessesPath = "src/app/orquestador/recent-processes.tsx";
 const pagePath = "src/app/orquestador/page.tsx";
 const controlCenterPath = "src/app/orquestador/orchestrator-control-center.tsx";
 const supabaseAdminPath = "src/lib/orquestador/supabase-admin.ts";
@@ -16,12 +17,13 @@ const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8
 const helper = readFileSync(helperPath, "utf8");
 const route = readFileSync(routePath, "utf8");
 const button = readFileSync(buttonPath, "utf8");
+const recentProcesses = readFileSync(recentProcessesPath, "utf8");
 const page = readFileSync(pagePath, "utf8");
 const controlCenter = readFileSync(controlCenterPath, "utf8");
 const supabaseAdmin = readFileSync(supabaseAdminPath, "utf8");
 const migration = readFileSync(migrationPath, "utf8");
 const auth = readFileSync(authPath, "utf8");
-const clientSources = [button, page].join("\n");
+const clientSources = [button, page, recentProcesses].join("\n");
 const serverSources = [helper, route, supabaseAdmin].join("\n");
 const phoneCandidatePatternForTest = /(?<![\d:])\+?\d[\d\s().-]{7,}\d(?![\d:])/g;
 
@@ -147,16 +149,75 @@ test("L. sanitiza rutas emails telefonos secretos y limita lineas", () => {
   assert.match(helper, /maxLength - 3/);
 });
 
-test("M. UI agrega boton Ver detalle", () => {
-  assert.match(controlCenter, /JobTechnicalDetailButton/);
-  assert.match(controlCenter, /<DataTableHeaderCell>Detalle<\/DataTableHeaderCell>/);
-  assert.match(button, /Ver detalle/);
-  assert.match(button, /operationalResultTitle\(detail\.job_type\)/);
-  assert.match(button, /banco_reservas_actualizar: "Banco de Reservas"/);
-  assert.match(button, /banco_packs_actualizar: "Banco de Packs"/);
-  assert.match(button, /banco_personas_actualizar: "Banco de Personas"/);
-  assert.match(button, /dashboard_actualizar: "Dashboard"/);
+test("M. Procesos recientes reemplaza Ultimos jobs sin columna tecnica", () => {
+  assert.match(controlCenter, /RecentProcesses/);
+  assert.match(controlCenter, /title="Procesos recientes"/);
+  assert.doesNotMatch(controlCenter, /title="Ultimos jobs"|<DataTableHeaderCell>ID<\/DataTableHeaderCell>|<DataTableHeaderCell>Detalle<\/DataTableHeaderCell>|<JobTechnicalDetailButton jobId=\{job\.id\}/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Proceso<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Estado<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Equipo<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Intentos<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Creado<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Inicio<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Fin<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell>Error<\/DataTableHeaderCell>/);
+  assert.match(recentProcesses, /<DataTableHeaderCell align="center"><span className="sr-only">Abrir ficha tecnica<\/span><\/DataTableHeaderCell>/);
+  assert.doesNotMatch(recentProcesses, /<DataTableHeaderCell>ID<\/DataTableHeaderCell>|<DataTableHeaderCell>Detalle<\/DataTableHeaderCell>|Ver detalle/);
 });
+
+test("M1. Procesos recientes traduce tipos estados worker intentos y fechas", () => {
+  for (const [jobType, label] of [
+    ["banco_reservas_actualizar", "Actualizar Banco de Reservas"],
+    ["banco_packs_actualizar", "Actualizar Banco de Packs"],
+    ["banco_packs_actualizar_sin_consumos", "Actualizar Banco de Packs"],
+    ["dashboard_actualizar_metricas", "Actualizar metricas del Dashboard"],
+    ["dashboard_actualizar", "Actualizar Dashboard"],
+    ["banco_personas_actualizar", "Actualizar Banco de Personas"],
+    ["healthcheck_worker", "Probar equipo"],
+    ["healthcheck_supabase", "Probar conexion"],
+  ]) {
+    assert.match(recentProcesses, new RegExp(`${jobType}: "${label}"`));
+  }
+  for (const label of ["Completado", "Error", "En ejecucion", "Pendiente", "Cancelado", "Estado no disponible"]) {
+    assert.match(recentProcesses, new RegExp(label));
+  }
+  assert.match(recentProcesses, /return "Sin asignar"/);
+  assert.match(recentProcesses, /\.replace\(\/\\bpc\\b\/i, "PC"\)/);
+  assert.match(recentProcesses, /return `\$\{attempts\}\/\$\{maxAttempts\}`/);
+  assert.match(recentProcesses, /day: "2-digit"/);
+  assert.match(recentProcesses, /month: "2-digit"/);
+  assert.match(recentProcesses, /year: "numeric"/);
+  assert.match(recentProcesses, /hourCycle: "h23"/);
+  assert.match(recentProcesses, /timeZone: "America\/Santiago"/);
+  assert.match(recentProcesses, /formatToParts/);
+  assert.doesNotMatch(recentProcesses, /dateStyle|timeStyle|a\. m\.|p\. m\.|second:/);
+});
+
+test("M2. fila y tarjeta completas abren ficha tecnica reutilizando el componente", () => {
+  assert.match(recentProcesses, /role="button"/);
+  assert.match(recentProcesses, /tabIndex=\{0\}/);
+  assert.match(recentProcesses, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.match(recentProcesses, /focus-visible:outline/);
+  assert.match(recentProcesses, /ChevronRight/);
+  assert.match(recentProcesses, /aria-label=\{openDetailLabel\(job\)\}/);
+  assert.match(recentProcesses, /<JobTechnicalDetailButton autoOpenKey=\{openToken\} hideTrigger jobId=\{selectedJobId\} \/>/);
+  assert.match(button, /autoOpenKey/);
+  assert.match(button, /hideTrigger/);
+  assert.match(button, /void loadDetail\(\)/);
+  assert.equal([...recentProcesses.matchAll(/fetch\(`/g)].length, 0);
+  assert.equal([...button.matchAll(/fetch\(`\/api\/orquestador\/jobs\/\$\{jobId\}\/detail`/g)].length, 1);
+});
+
+test("M3. mobile usa tarjetas y no tabla horizontal", () => {
+  assert.match(recentProcesses, /className="mt-5 hidden lg:block"/);
+  assert.match(recentProcesses, /className="mt-5 grid gap-3 lg:hidden"/);
+  assert.match(recentProcesses, /function RecentProcessMobileCard/);
+  assert.match(recentProcesses, /<button[\s\S]*aria-label=\{openDetailLabel\(job\)\}[\s\S]*onClick=\{\(\) => onOpen\(job\)\}/);
+  assert.match(recentProcesses, /Inicio/);
+  assert.match(recentProcesses, /Duracion/);
+  assert.match(recentProcesses, /Intentos \{formatAttempts\(job\.attempts, job\.max_attempts\)\}/);
+});
+
 
 test("N. UI abre modal accesible", () => {
   assert.match(button, /role="dialog"/);

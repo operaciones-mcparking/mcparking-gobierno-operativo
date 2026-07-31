@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, Clipboard, FileText, LoaderCircle, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { JobTechnicalDetailViewModel, ReservasOperationalSummary } from "@/lib/orquestador/job-technical-detail";
 
@@ -12,7 +12,13 @@ type DetailResponse = {
 };
 
 type JobTechnicalDetailButtonProps = {
+  ariaLabel?: string;
+  autoOpenKey?: string | null;
+  buttonClassName?: string;
+  children?: React.ReactNode;
+  hideTrigger?: boolean;
   jobId: string;
+  showIcon?: boolean;
 };
 
 const dateFormatter = new Intl.DateTimeFormat("es-CL", {
@@ -91,7 +97,15 @@ function technicalSummaryText(detail: JobTechnicalDetailViewModel) {
   ].filter(Boolean).join("\n");
 }
 
-export function JobTechnicalDetailButton({ jobId }: JobTechnicalDetailButtonProps) {
+export function JobTechnicalDetailButton({
+  ariaLabel,
+  autoOpenKey = null,
+  buttonClassName = "inline-flex h-8 w-fit items-center gap-1.5 rounded-md border border-[#cbd8e3] bg-white px-2.5 text-xs font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]",
+  children = "Abrir ficha",
+  hideTrigger = false,
+  jobId,
+  showIcon = true,
+}: JobTechnicalDetailButtonProps) {
   const [detail, setDetail] = useState<JobTechnicalDetailViewModel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -99,6 +113,7 @@ export function JobTechnicalDetailButton({ jobId }: JobTechnicalDetailButtonProp
   const [isLogOpen, setIsLogOpen] = useState(false);
   const [copyMessage, setCopyMessage] = useState<string | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const lastAutoOpenKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -115,7 +130,7 @@ export function JobTechnicalDetailButton({ jobId }: JobTechnicalDetailButtonProp
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [isOpen]);
 
-  async function loadDetail() {
+  const loadDetail = useCallback(async () => {
     setIsOpen(true);
     setIsLoading(true);
     setError(null);
@@ -138,7 +153,16 @@ export function JobTechnicalDetailButton({ jobId }: JobTechnicalDetailButtonProp
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!autoOpenKey || autoOpenKey === lastAutoOpenKeyRef.current) {
+      return;
+    }
+
+    lastAutoOpenKeyRef.current = autoOpenKey;
+    void loadDetail();
+  }, [autoOpenKey, loadDetail]);
 
   async function copySummary() {
     if (!detail || !navigator.clipboard) return;
@@ -149,14 +173,17 @@ export function JobTechnicalDetailButton({ jobId }: JobTechnicalDetailButtonProp
 
   return (
     <>
-      <button
-        className="inline-flex h-8 w-fit items-center gap-1.5 rounded-md border border-[#cbd8e3] bg-white px-2.5 text-xs font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]"
-        onClick={loadDetail}
-        type="button"
-      >
-        <FileText className="h-3.5 w-3.5 text-sea" />
-        Ver detalle
-      </button>
+      {hideTrigger ? null : (
+        <button
+          aria-label={ariaLabel}
+          className={buttonClassName}
+          onClick={loadDetail}
+          type="button"
+        >
+          {showIcon ? <FileText className="h-3.5 w-3.5 text-sea" /> : null}
+          {children}
+        </button>
+      )}
 
       {isOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-3" role="presentation">

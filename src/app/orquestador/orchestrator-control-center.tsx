@@ -28,8 +28,8 @@ import { ActualizarDatosOperacionalesControl } from "./actualizar-datos-operacio
 import { BancoPacksUpdateControl } from "./banco-packs-update-control";
 import { BancoReservasLastWeekControl } from "./banco-reservas-last-week-control";
 import { DashboardLastMonthControl } from "./dashboard-last-month-control";
-import { JobTechnicalDetailButton } from "./job-technical-detail-button";
 import { OrquestadorRefreshButton } from "./refresh-button";
+import { RecentProcesses } from "./recent-processes";
 import { SourceConnectionCheckControl } from "./source-connection-check-control";
 import { WorkerHealthCheckButton } from "./worker-health-check-button";
 
@@ -236,46 +236,8 @@ export async function OrchestratorControlCenter() {
         </div>
       </Panel>
 
-      <Panel count={`${jobs.length} jobs`} title="Ultimos jobs">
-        <div className="mt-5">
-          <DataTable minWidth="1160px">
-            <DataTableHead>
-              <tr>
-                <DataTableHeaderCell>ID</DataTableHeaderCell>
-                <DataTableHeaderCell>Tipo</DataTableHeaderCell>
-                <DataTableHeaderCell>Estado</DataTableHeaderCell>
-                <DataTableHeaderCell>Worker</DataTableHeaderCell>
-                <DataTableHeaderCell>Intentos</DataTableHeaderCell>
-                <DataTableHeaderCell>Creado</DataTableHeaderCell>
-                <DataTableHeaderCell>Inicio</DataTableHeaderCell>
-                <DataTableHeaderCell>Fin</DataTableHeaderCell>
-                <DataTableHeaderCell>Error</DataTableHeaderCell>
-                <DataTableHeaderCell>Detalle</DataTableHeaderCell>
-              </tr>
-            </DataTableHead>
-            <DataTableBody>
-              {jobs.map((job) => (
-                <DataTableRow key={job.id}>
-                  <DataTableCell strong>{shortId(job.id)}</DataTableCell>
-                  <DataTableCell>{job.job_type}</DataTableCell>
-                  <DataTableCell>
-                    <StatusBadge value={job.status} />
-                  </DataTableCell>
-                  <DataTableCell>{job.worker_id ?? "-"}</DataTableCell>
-                  <DataTableCell>{job.attempts ?? 0}/{job.max_attempts ?? 1}</DataTableCell>
-                  <DataTableCell>{formatDate(job.created_at)}</DataTableCell>
-                  <DataTableCell>{formatDate(job.started_at)}</DataTableCell>
-                  <DataTableCell>{formatDate(job.finished_at)}</DataTableCell>
-                  <DataTableCell>{job.error_message ?? "-"}</DataTableCell>
-                  <DataTableCell>
-                    <JobTechnicalDetailButton jobId={job.id} />
-                  </DataTableCell>
-                </DataTableRow>
-              ))}
-            </DataTableBody>
-          </DataTable>
-          {jobs.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay jobs recientes.</p> : null}
-        </div>
+      <Panel count={`${jobs.length} procesos`} title="Procesos recientes">
+        <RecentProcesses jobs={jobs} />
       </Panel>
 
       <Panel count={`${events.length} eventos`} title="Eventos recientes">
