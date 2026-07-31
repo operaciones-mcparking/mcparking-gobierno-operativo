@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } from "@/lib/recuperacion/whatsapp-freeform-window";
 
-const MAX_CHAT_MESSAGES = 100;
+export const MAX_CHAT_MESSAGES = 100;
 
 const LIVE_MESSAGE_SELECT = "direction,message_at,message_text,source,whatsapp_status";
 
@@ -69,6 +69,19 @@ type SafeChatMessagePayload = {
   timeOfDay: string | null;
   whatsappStatus: string | null;
 };
+
+export function resolveChatReadRange(params: {
+  hasNewerCartForPhone: boolean;
+  newerCartLookupFailed: boolean;
+  nowIso: string;
+  windowEnd: string;
+  windowStart: string;
+}) {
+  return {
+    chatReadEnd: params.newerCartLookupFailed || params.hasNewerCartForPhone ? params.windowEnd : params.nowIso,
+    chatReadStart: params.windowStart,
+  };
+}
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message, ok: false }, { status });
@@ -250,6 +263,28 @@ async function loadLiveMessages(params: {
   ]).slice(0, MAX_CHAT_MESSAGES);
 }
 
+async function detectNewerCartForPhone(params: {
+  cartId: string;
+  formDatetime: string;
+  phoneNormalized: string;
+  supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>;
+}) {
+  const { data, error } = await params.supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id")
+    .eq("phone_normalized", params.phoneNormalized)
+    .gt("form_datetime", params.formDatetime)
+    .neq("id", params.cartId)
+    .order("form_datetime", { ascending: true })
+    .limit(1);
+
+  if (error) {
+    return { failed: true, hasNewerCartForPhone: false };
+  }
+
+  return { failed: false, hasNewerCartForPhone: (data ?? []).length > 0 };
+}
+
 export async function GET(_request: NextRequest, context: RouteContext) {
   const admin = await requireAdminForApi();
 
@@ -315,13 +350,26 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     windowStart,
   });
   const safeLiveMessages = liveMessages.map(safeLiveMessagePayload);
+  const newerCartResult = await detectNewerCartForPhone({
+    cartId,
+    formDatetime: windowStart,
+    phoneNormalized: cart.phone_normalized,
+    supabase: admin.supabase,
+  });
+  const { chatReadEnd, chatReadStart } = resolveChatReadRange({
+    hasNewerCartForPhone: newerCartResult.hasNewerCartForPhone,
+    newerCartLookupFailed: newerCartResult.failed,
+    nowIso: new Date().toISOString(),
+    windowEnd,
+    windowStart,
+  });
 
   const { data: rawMessagesData, error: rawMessagesError } = await admin.supabase
     .from("recovery_whatsapp_message_memory_raw_import")
     .select("message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text")
     .eq("wa_id_normalized", cart.phone_normalized)
-    .gte("message_at", windowStart)
-    .lt("message_at", windowEnd)
+    .gte("message_at", chatReadStart)
+    .lt("message_at", chatReadEnd)
     .order("message_at", { ascending: true })
     .order("message_bound_type", { ascending: true })
     .order("created_at", { ascending: true })
@@ -350,8 +398,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     .from("recovery_whatsapp_message_memory_import")
     .select("message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week")
     .eq("wa_id_normalized", cart.phone_normalized)
-    .gte("message_at", windowStart)
-    .lt("message_at", windowEnd)
+    .gte("message_at", chatReadStart)
+    .lt("message_at", chatReadEnd)
     .order("message_at", { ascending: true })
     .order("message_bound_type", { ascending: true })
     .order("created_at", { ascending: true })

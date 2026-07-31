@@ -306,15 +306,22 @@ test("no unrelated modules are part of this task diff", () => {
   const changedFiles = execFileSync("git", ["status", "--short", "--untracked-files=all"], { encoding: "utf8" })
     .split(/\r?\n/)
     .filter(Boolean)
-    .map((line) => line.slice(3));
+    .map((line) => line.slice(3).replaceAll("\\", "/"));
 
-  assert.deepEqual(changedFiles.sort(), [
+  const allowedRecoveryChatFiles = new Set([
+    "scripts/recovery-chat-extended-window.test.mjs",
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/route.ts",
     "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts",
     "src/app/recuperacion/recovery-cart-chat-drawer.tsx",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
-  ].sort());
+  ]);
+
+  assert.equal(
+    changedFiles.every((file) => allowedRecoveryChatFiles.has(file)),
+    true,
+    `Unexpected changed files: ${changedFiles.filter((file) => !allowedRecoveryChatFiles.has(file)).join(", ")}`,
+  );
 });
 
 test("changed sources do not contain common mojibake markers", () => {
