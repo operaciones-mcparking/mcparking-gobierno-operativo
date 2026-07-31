@@ -251,9 +251,9 @@ function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp:
         <div className="bg-sea" style={{ width: `${safeOkp}%` }} />
         <div className="bg-clay" style={{ width: `${safeMcp}%` }} />
       </div>
-      <div className="mt-2 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-        <p>OKP {formatPercent(safeOkp)}</p>
-        <p>MCP {formatPercent(safeMcp)}</p>
+      <div className="mt-2 flex w-full items-center justify-between gap-2 text-xs text-slate-500">
+        <p className="text-left">OKP {formatPercent(safeOkp)}</p>
+        <p className="text-right">MCP {formatPercent(safeMcp)}</p>
       </div>
     </div>
   );

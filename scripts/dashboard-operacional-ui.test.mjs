@@ -81,7 +81,7 @@ test("G. comparativa MCP OKP y Market size", () => {
   assert.match(client, /marketShare\?\.venta_total_operacional/);
   assert.match(client, /marketShare\?\.reserva_total_dbi/);
   assert.match(client, /marketShare\?\.reserva_total_q/);
-  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>[\s\S]*aria-label=\{`\$\{label\} OKP vs MCP`\}[\s\S]*<p>OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p>MCP \{formatPercent\(safeMcp\)\}<\/p>/);
+  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>[\s\S]*aria-label=\{`\$\{label\} OKP vs MCP`\}[\s\S]*<p className="text-left">OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p className="text-right">MCP \{formatPercent\(safeMcp\)\}<\/p>/);
   assert.doesNotMatch(client, /OTRO existe en los totales por grupo/);
 });
 
@@ -111,6 +111,17 @@ test("G2. calculo visual de barras cubre proporciones y limites", () => {
   assert.equal(safePercentForTest(Number.NaN), 0);
   assert.equal(safePercentForTest(Number.POSITIVE_INFINITY), 0);
   assert.equal(safePercentForTest(0) + safePercentForTest(0), 0);
+});
+
+test("G3. porcentajes Market size quedan en una fila desde mobile", () => {
+  assert.match(client, /<div className="mt-2 flex w-full items-center justify-between gap-2 text-xs text-slate-500">/);
+  assert.match(client, /<p className="text-left">OKP \{formatPercent\(safeOkp\)\}<\/p>/);
+  assert.match(client, /<p className="text-right">MCP \{formatPercent\(safeMcp\)\}<\/p>/);
+  assert.doesNotMatch(client, /mt-2 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row/);
+  assert.doesNotMatch(client, /sm:justify-between[\s\S]{0,140}OKP \{formatPercent\(safeOkp\)\}/);
+  for (const label of ["Venta total operacional", "DBI reservas total", "Q reservas total"]) {
+    assert.match(client, new RegExp(`ShareBar label="${label}"`));
+  }
 });
 test("H. metricas principales solicitadas visibles", () => {
   for (const token of [
