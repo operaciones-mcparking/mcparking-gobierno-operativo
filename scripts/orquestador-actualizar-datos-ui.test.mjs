@@ -310,6 +310,64 @@ test("AG2. overlay compacto evita overflow y datos tecnicos principales", () => 
   assert.match(viewer, /break-words/);
   assert.match(viewer, /max-h-28 overflow-y-auto break-words/);
 });
+
+test("AG3. duracion usa formato humano sin segundos compactos", () => {
+  assert.match(viewer, /export function formatDurationHuman\(value: number \| null \| undefined\)/);
+  assert.match(viewer, /return "Duracion no disponible"/);
+  assert.match(viewer, /return `\$\{seconds\} s`/);
+  assert.match(viewer, /return `\$\{minutes\} min`/);
+  assert.match(viewer, /return `\$\{minutes\} min \$\{seconds\} s`/);
+  assert.match(viewer, /Duracion \{formatDurationHuman\(run\.duration_seconds\)\}/);
+  assert.match(viewer, /\{formatDurationHuman\(step\.duration_seconds\)\}/);
+  assert.doesNotMatch(viewer, /`\$\{value\}s`|Duracion \{formatDuration\(/);
+
+  const formatDurationHumanForTest = (value) => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return "Duracion no disponible";
+    const totalSeconds = Math.floor(value);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0) return `${seconds} s`;
+    if (seconds === 0) return `${minutes} min`;
+    return `${minutes} min ${seconds} s`;
+  };
+
+  assert.equal(formatDurationHumanForTest(42), "42 s");
+  assert.equal(formatDurationHumanForTest(60), "1 min");
+  assert.equal(formatDurationHumanForTest(61), "1 min 1 s");
+  assert.equal(formatDurationHumanForTest(120), "2 min");
+  assert.equal(formatDurationHumanForTest(364), "6 min 4 s");
+  assert.equal(formatDurationHumanForTest(null), "Duracion no disponible");
+  assert.equal(formatDurationHumanForTest(Number.NaN), "Duracion no disponible");
+});
+
+test("AG4. exito final depende del refresh del Dashboard", () => {
+  assert.match(control, /type RefreshStatus = "idle" \| "refreshing" \| "success" \| "failed"/);
+  assert.match(control, /refreshingRunRef/);
+  assert.match(control, /setRefreshStatus\("refreshing"\)/);
+  assert.match(control, /Promise\.resolve\(onSucceededRef\.current\?\.\(\)\)/);
+  assert.match(control, /setRefreshStatus\(result === false \? "failed" : "success"\)/);
+  assert.match(control, /const showRefreshSuccess = run\?\.status === "succeeded" && refreshStatus === "success"/);
+  assert.match(control, /showRefreshSuccess \? \(\s*<RefreshSuccessPanel \/>/);
+  assert.match(control, /Actualizando indicadores del Dashboard/);
+  assert.match(control, /Los procesos finalizaron correctamente, pero no fue posible actualizar los indicadores visibles/);
+  assert.match(control, /const isRefreshingAfterSuccess = run\?\.status === "succeeded" && \(refreshStatus === "idle" \|\| refreshStatus === "refreshing"\)/);
+  assert.match(control, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\) && !isRefreshingAfterSuccess\)/);
+});
+
+test("AG5. bloque verde final es sobrio y accesible", () => {
+  assert.match(control, /function RefreshSuccessPanel/);
+  assert.match(control, /role="status"/);
+  assert.match(control, /aria-live="polite"/);
+  assert.match(control, /bg-\[#f1fbf4\]/);
+  assert.match(control, /border-\[#bfe7cb\]/);
+  assert.match(control, /text-\[#22613b\]/);
+  assert.match(control, /Actualizacion completada correctamente/);
+  assert.match(control, /Todos los procesos finalizaron con exito/);
+  assert.match(control, /Puedes cerrar esta ventana con tranquilidad/);
+  assert.match(control, /aria-hidden="true"/);
+  assert.match(control, /break-words/);
+  assert.doesNotMatch(control, /confeti|corneta|ilustracion|window\.location\.reload/i);
+});
 test("AH. status visible no depende solo del color", () => {
   assert.match(control, /statusLabel/);
   assert.match(control, /aria-live="polite"/);

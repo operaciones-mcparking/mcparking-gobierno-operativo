@@ -51,19 +51,26 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
   }
 
   if (run.status === "succeeded") {
-    const refreshMessage =
-      refreshStatus === "refreshing"
-        ? "Actualizando indicadores del Dashboard..."
-        : refreshStatus === "success"
-          ? "Dashboard actualizado correctamente."
-          : refreshStatus === "failed"
-            ? "Los procesos terminaron correctamente, pero no fue posible recargar los indicadores. Cierra esta ventana y vuelve a seleccionar la fecha para intentarlo nuevamente."
-            : "Los datos operacionales se actualizaron correctamente.";
+    if (refreshStatus === "refreshing" || refreshStatus === "idle") {
+      return {
+        icon: <Loader2 className="h-5 w-5 animate-spin text-sea" aria-hidden="true" />,
+        message: "Actualizando indicadores del Dashboard...",
+        title: "Actualizacion de procesos completada",
+      };
+    }
+
+    if (refreshStatus === "failed") {
+      return {
+        icon: <AlertTriangle className="h-5 w-5 text-[#8a4a00]" aria-hidden="true" />,
+        message: "Los procesos finalizaron correctamente, pero no fue posible actualizar los indicadores visibles. Cierra esta ventana y vuelve a seleccionar la fecha para intentarlo nuevamente.",
+        title: "Actualizacion de procesos completada",
+      };
+    }
 
     return {
       icon: <CheckCircle2 className="h-5 w-5 text-[#22613b]" aria-hidden="true" />,
-      message: refreshMessage,
-      title: "Actualizacion completada",
+      message: "Todos los procesos finalizaron con exito. Puedes cerrar esta ventana con tranquilidad.",
+      title: "Actualizacion completada correctamente",
     };
   }
 
@@ -85,6 +92,28 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
   };
 }
 
+
+function RefreshSuccessPanel() {
+  return (
+    <div className="rounded-xl border border-[#bfe7cb] bg-[#f1fbf4] p-4 text-sm shadow-sm" role="status" aria-live="polite">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#bfe7cb] bg-white text-[#22613b]">
+          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="break-words text-base font-semibold text-[#1f5133]" id="actualizar-datos-overlay-title">
+            Actualizacion completada correctamente
+          </h2>
+          <p className="mt-2 break-words leading-6 text-slate-700" id="actualizar-datos-overlay-description">
+            Todos los procesos finalizaron con exito.<br />
+            Puedes cerrar esta ventana con tranquilidad.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ActualizarDatosOperacionalesControl({
   className = "",
   controlHref,
@@ -98,13 +127,16 @@ export function ActualizarDatosOperacionalesControl({
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const completedRunRef = useRef<string | null>(null);
+  const refreshingRunRef = useRef<string | null>(null);
   const onSucceededRef = useRef(onSucceeded);
   const canStart = !isStarting && !run;
   const isBusy = isStarting || status === "starting";
   const useOverlay = presentation === "overlay";
   const hasRun = Boolean(run);
   const showOverlay = useOverlay && (isConfirming || isStarting || hasRun || isOverlayOpen);
-  const canCloseOverlay = Boolean(run && isTerminalRun(run));
+  const isRefreshingAfterSuccess = run?.status === "succeeded" && (refreshStatus === "idle" || refreshStatus === "refreshing");
+  const canCloseOverlay = Boolean(run && isTerminalRun(run) && !isRefreshingAfterSuccess);
+  const showRefreshSuccess = run?.status === "succeeded" && refreshStatus === "success";
   const copy = overlayCopy(run, refreshStatus);
 
   useEffect(() => {
@@ -118,20 +150,29 @@ export function ActualizarDatosOperacionalesControl({
   }, [run, useOverlay]);
 
   useEffect(() => {
-    if (run?.status !== "succeeded" || completedRunRef.current === run.run_id) {
+    if (!run || run.status !== "succeeded") {
       return;
     }
 
-    completedRunRef.current = run.run_id;
+    if (completedRunRef.current === run.run_id || refreshingRunRef.current === run.run_id) {
+      return;
+    }
+
+    refreshingRunRef.current = run.run_id;
     setRefreshStatus("refreshing");
     Promise.resolve(onSucceededRef.current?.())
       .then((result) => {
+        completedRunRef.current = run.run_id;
         setRefreshStatus(result === false ? "failed" : "success");
       })
       .catch(() => {
+        completedRunRef.current = run.run_id;
         setRefreshStatus("failed");
+      })
+      .finally(() => {
+        refreshingRunRef.current = null;
       });
-  }, [run?.run_id, run?.status]);
+  }, [run]);
 
   useEffect(() => {
     if (!isConfirming && !showOverlay) {
@@ -170,6 +211,8 @@ export function ActualizarDatosOperacionalesControl({
   }
 
   function openConfirmation() {
+    completedRunRef.current = null;
+    refreshingRunRef.current = null;
     setRefreshStatus("idle");
     setIsConfirming(true);
   }
@@ -190,6 +233,8 @@ export function ActualizarDatosOperacionalesControl({
     clearRun();
     setIsOverlayOpen(false);
     setRefreshStatus("idle");
+    completedRunRef.current = null;
+    refreshingRunRef.current = null;
   }
 
   const actions = run ? (
@@ -388,19 +433,23 @@ export function ActualizarDatosOperacionalesControl({
               </>
             ) : (
               <>
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-[#f8fbfd]">
-                    {copy.icon}
-                  </span>
-                  <div>
-                    <h2 className="text-base font-semibold text-navy" id="actualizar-datos-overlay-title">
-                      {copy.title}
-                    </h2>
-                    <p className="mt-2 break-words leading-6" id="actualizar-datos-overlay-description" aria-live="polite">
-                      {copy.message}
-                    </p>
+                {showRefreshSuccess ? (
+                  <RefreshSuccessPanel />
+                ) : (
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-[#f8fbfd]">
+                      {copy.icon}
+                    </span>
+                    <div>
+                      <h2 className="text-base font-semibold text-navy" id="actualizar-datos-overlay-title">
+                        {copy.title}
+                      </h2>
+                      <p className="mt-2 break-words leading-6" id="actualizar-datos-overlay-description" aria-live="polite">
+                        {copy.message}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {message ? (
                   <p className="mt-4 max-h-28 overflow-y-auto break-words rounded-lg border border-[#ffd4a3] bg-[#fff8ef] px-3 py-2 text-sm text-[#8a4a00]" aria-live="polite">

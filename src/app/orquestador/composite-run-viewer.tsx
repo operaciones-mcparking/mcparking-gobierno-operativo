@@ -75,8 +75,24 @@ function readableStepLabel(label: string) {
   return label;
 }
 
-function formatDuration(value: number | null) {
-  return value === null ? "-" : `${value}s`;
+export function formatDurationHuman(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "Duracion no disponible";
+  }
+
+  const totalSeconds = Math.floor(value);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) {
+    return `${seconds} s`;
+  }
+
+  if (seconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${seconds} s`;
 }
 
 function resultMessage(run: CompositeRunViewModel) {
@@ -124,7 +140,7 @@ export function CompositeRunViewer({
         <div className="flex flex-wrap items-center gap-2">
           {run.duration_seconds !== null ? (
             <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">
-              Duracion {formatDuration(run.duration_seconds)}
+              Duracion {formatDurationHuman(run.duration_seconds)}
             </span>
           ) : null}
           <span className={`rounded-md border px-2.5 py-1 text-xs font-medium ${toneClasses[run.status]}`}>{runStatusLabels[run.status]}</span>
@@ -173,7 +189,7 @@ export function CompositeRunViewer({
                 <dt className="text-slate-500">Intentos</dt>
                 <dd className="text-right">{step.attempts ?? "-"}</dd>
                 <dt className="text-slate-500">Duracion</dt>
-                <dd className="text-right">{formatDuration(step.duration_seconds)}</dd>
+                <dd className="text-right">{formatDurationHuman(step.duration_seconds)}</dd>
               </dl>
             ) : null}
 

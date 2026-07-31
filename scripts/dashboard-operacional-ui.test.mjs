@@ -353,6 +353,50 @@ test("Q5. promedios miran hacia la columna central y filas finales siguen en esp
   assert.match(client, /<KpiLine label="ADR pagado" layout=\{layout\}/);
   assert.match(client, /<KpiLine label="Pack lista prom\." layout=\{layout\}/);
 });
+
+test("Q6. mobile OKP y MCP usan estructura comun sin espejo", () => {
+  assert.match(client, /function SystemColumnMobile\(\{ label, totals \}/);
+  assert.match(client, /<div className="xl:hidden">/);
+  assert.match(client, /function SystemColumnDesktop\(\{ label, totals \}/);
+  assert.match(client, /<div className="hidden xl:block">/);
+  assert.match(client, /<SystemColumnMobile label=\{label\} totals=\{totals\} \/>\s*<SystemColumnDesktop label=\{label\} totals=\{totals\} \/>/);
+
+  const mobileMatch = client.match(/function SystemColumnMobile[\s\S]*?function SystemColumnDesktop/);
+  assert.ok(mobileMatch);
+  const mobile = mobileMatch[0];
+  assert.match(mobile, /<div className="flex items-center justify-between gap-3">\s*<h2 className="text-lg font-semibold text-navy">\{label\}<\/h2>[\s\S]*>Sistema<\/span>/);
+  assert.doesNotMatch(mobile, /flex-row-reverse|layout=\{layout\}|AverageBlock|KpiLine/);
+  assert.match(mobile, /<MobileGroupedMetricBlock[\s\S]*leftLabel="Venta boleta"[\s\S]*rightLabel="Venta pack"/);
+  assert.match(mobile, /<MobileGroupedMetricBlock[\s\S]*leftLabel="DBI boleta"[\s\S]*rightLabel="DBI pack"/);
+  assert.match(mobile, /<MobileGroupedMetricBlock[\s\S]*leftLabel="Q boleta"[\s\S]*rightLabel="Q pack"/);
+  assert.match(mobile, /<CompactMetricLine label="Anticipacion promedio" value=\{formatDays\(totals\.advanced_book_days_total_avg\)\} \/>/);
+  assert.match(mobile, /<CompactMetricLine label="Estadia promedio" value=\{formatDays\(totals\.duration_stay_total_avg\)\} \/>/);
+  assert.doesNotMatch(mobile, /advanced_book_days_boleta_avg|advanced_book_days_pack_avg|duration_stay_boleta_avg\} \/>|duration_stay_pack_avg\} \/>/);
+});
+
+test("Q7. mobile mantiene dos tarjetas por fila y filas compactas", () => {
+  assert.match(client, /function MobileGroupedMetricBlock/);
+  assert.match(client, /<div className="mt-3 grid grid-cols-2 gap-2">\s*<SecondaryMetricCard label=\{leftLabel\} value=\{leftValue\} \/>\s*<SecondaryMetricCard label=\{rightLabel\} value=\{rightValue\} \/>\s*<\/div>/);
+  assert.doesNotMatch(client, /MobileGroupedMetricBlock[\s\S]*grid-cols-1/);
+  assert.match(client, /function CompactMetricLine/);
+  assert.match(client, /<dt className="text-xs font-medium uppercase tracking-\[0\.08em\] text-slate-500">\{label\}<\/dt>\s*<dd className="text-right text-sm font-semibold text-navy">\{value\}<\/dd>/);
+  for (const label of ["ADR pagado", "ADR lista", "Ticket pagado", "Ticket lista", "Pack pagado prom.", "Pack lista prom."]) {
+    assert.match(client, new RegExp(`<CompactMetricLine label="${label.replace(".", "\\.")}"`));
+  }
+});
+
+test("Q8. desktop conserva espejo MCP y desgloses de promedios", () => {
+  const desktopMatch = client.match(/function SystemColumnDesktop[\s\S]*?function SystemColumn\(/);
+  assert.ok(desktopMatch);
+  const desktop = desktopMatch[0];
+  assert.match(desktop, /const layout: MetricLayout = label === "MCP" \? "mirror" : "normal"/);
+  assert.match(desktop, /className=\{`flex items-center justify-between gap-3 \$\{layout === "mirror" \? "flex-row-reverse" : ""\}`\}/);
+  assert.match(desktop, /<GroupedMetricBlock[\s\S]*layout=\{layout\}/);
+  assert.match(desktop, /<AverageBlock alignment=\{averageAlignment\} label="Anticipacion promedio" main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
+  assert.match(desktop, /<AverageBlock alignment=\{averageAlignment\} label="Estadia promedio" main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
+  assert.match(desktop, /<KpiLine label="ADR pagado" layout=\{layout\}/);
+  assert.match(client, /<div className="order-1 xl:order-2">\s*<MarketColumn dashboard=\{dashboard\} \/>\s*<\/div>/);
+});
 test("R. formula ADR usa valores crudos antes de formatear", () => {
   const formatAdrForTest = (priceAverage, stayAverage) => {
     if (typeof priceAverage !== "number" || !Number.isFinite(priceAverage)) return "No disponible";
@@ -427,11 +471,15 @@ test("V. progreso y enlace al Centro de Control se reutilizan desde Dashboard", 
 
 test("W. refresh automatico ocurre una sola vez por run succeeded", () => {
   assert.match(compositeControl, /completedRunRef/);
-  assert.match(compositeControl, /run\?\.status !== "succeeded"/);
-  assert.match(compositeControl, /completedRunRef\.current === run\.run_id/);
-  assert.match(compositeControl, /completedRunRef\.current = run\.run_id/);
+  assert.match(compositeControl, /refreshingRunRef/);
+  assert.match(compositeControl, /if \(!run \|\| run\.status !== "succeeded"\)/);
+  assert.match(compositeControl, /completedRunRef\.current === run\.run_id \|\| refreshingRunRef\.current === run\.run_id/);
+  assert.match(compositeControl, /refreshingRunRef\.current = run\.run_id/);
   assert.match(compositeControl, /Promise\.resolve\(onSucceededRef\.current\?\.\(\)\)/);
+  assert.match(compositeControl, /completedRunRef\.current = run\.run_id/);
+  assert.match(compositeControl, /refreshingRunRef\.current = null/);
   assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.match(client, /cache: "no-store"/);
   assert.doesNotMatch(compositeControl, /run\?\.status === "failed"[\s\S]*onSucceeded|run\?\.status === "cancelled"[\s\S]*onSucceeded/);
 });
 
@@ -541,10 +589,12 @@ test("AB. overlay muestra carga real y reutiliza CompositeRunViewer", () => {
 });
 
 test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () => {
-  assert.match(compositeControl, /Actualizacion completada/);
-  assert.match(compositeControl, /Los datos operacionales se actualizaron correctamente/);
-  assert.match(compositeControl, /Dashboard actualizado correctamente/);
-  assert.match(compositeControl, /no fue posible recargar los indicadores/);
+  assert.match(compositeControl, /Actualizacion de procesos completada/);
+  assert.match(compositeControl, /Actualizando indicadores del Dashboard/);
+  assert.match(compositeControl, /Actualizacion completada correctamente/);
+  assert.match(compositeControl, /Todos los procesos finalizaron con exito/);
+  assert.match(compositeControl, /Puedes cerrar esta ventana con tranquilidad/);
+  assert.match(compositeControl, /no fue posible actualizar los indicadores visibles/);
   assert.match(compositeControl, /vuelve a seleccionar la fecha/);
   assert.doesNotMatch(compositeControl, /usar Refrescar/);
   assert.match(compositeControl, /No se pudo completar la actualizacion/);
@@ -552,11 +602,14 @@ test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () 
   assert.match(compositeControl, /Actualizacion cancelada/);
   assert.match(compositeControl, /run\.status === "failed"/);
   assert.match(compositeControl, /run\.status === "succeeded"/);
-  assert.doesNotMatch(compositeControl, /payload|stack trace|stdout|stderr|SUPABASE/);
+  assert.match(compositeControl, /role="status"/);
+  assert.match(compositeControl, /aria-live="polite"/);
+  assert.doesNotMatch(compositeControl, /payload|stack trace|stdout|stderr|SUPABASE|confeti|corneta|ilustracion/i);
 });
 
-test("AD. cierre del overlay solo se habilita en terminal", () => {
-  assert.match(compositeControl, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\)\)/);
+test("AD. cierre del overlay espera el refresh despues de succeeded", () => {
+  assert.match(compositeControl, /const isRefreshingAfterSuccess = run\?\.status === "succeeded" && \(refreshStatus === "idle" \|\| refreshStatus === "refreshing"\)/);
+  assert.match(compositeControl, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\) && !isRefreshingAfterSuccess\)/);
   assert.match(compositeControl, /disabled=\{!canCloseOverlay\}/);
   assert.match(compositeControl, /if \(!canCloseOverlay\) \{/);
   assert.match(compositeControl, /Cerrar resultado/);

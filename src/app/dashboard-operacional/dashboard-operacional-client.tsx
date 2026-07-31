@@ -181,12 +181,99 @@ function AverageBlock({ alignment = "left", label, main, pack, ticket, ticketLab
   );
 }
 
-function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+function CompactMetricLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#e4edf4] py-2 last:border-b-0">
+      <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">{label}</dt>
+      <dd className="text-right text-sm font-semibold text-navy">{value}</dd>
+    </div>
+  );
+}
+
+function MobileGroupedMetricBlock({
+  leftLabel,
+  leftValue,
+  mainValue,
+  rightLabel,
+  rightValue,
+  title,
+}: {
+  leftLabel: string;
+  leftValue: string;
+  mainValue: string;
+  rightLabel: string;
+  rightValue: string;
+  title: string;
+}) {
+  return (
+    <section className="border-b border-[#e4edf4] py-3 last:border-b-0">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</h3>
+        <p className="text-right text-base font-semibold text-navy">{mainValue}</p>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <SecondaryMetricCard label={leftLabel} value={leftValue} />
+        <SecondaryMetricCard label={rightLabel} value={rightValue} />
+      </div>
+    </section>
+  );
+}
+
+function SystemColumnMobile({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+  return (
+    <div className="xl:hidden">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-navy">{label}</h2>
+        <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">Sistema</span>
+      </div>
+
+      <div className="mt-4 grid gap-2">
+        <MobileGroupedMetricBlock
+          leftLabel="Venta boleta"
+          leftValue={formatCurrency(totals.reserva_boleta_venta)}
+          mainValue={formatCurrency(totals.venta_total_operacional)}
+          rightLabel="Venta pack"
+          rightValue={formatCurrency(totals.pack_vendido_venta)}
+          title="Venta total"
+        />
+        <MobileGroupedMetricBlock
+          leftLabel="DBI boleta"
+          leftValue={formatInteger(totals.reserva_boleta_dbi)}
+          mainValue={formatInteger(totals.reserva_total_dbi)}
+          rightLabel="DBI pack"
+          rightValue={formatInteger(totals.reserva_pack_dbi)}
+          title="DBI total reservas"
+        />
+        <MobileGroupedMetricBlock
+          leftLabel="Q boleta"
+          leftValue={formatInteger(totals.reserva_boleta_q)}
+          mainValue={formatInteger(totals.reserva_total_q)}
+          rightLabel="Q pack"
+          rightValue={formatInteger(totals.reserva_pack_q)}
+          title="Q reservas total"
+        />
+      </div>
+
+      <dl className="mt-4">
+        <CompactMetricLine label="Anticipacion promedio" value={formatDays(totals.advanced_book_days_total_avg)} />
+        <CompactMetricLine label="Estadia promedio" value={formatDays(totals.duration_stay_total_avg)} />
+        <CompactMetricLine label="ADR pagado" value={formatAdrCurrency(totals.precio_pagado_boleta_avg, totals.duration_stay_boleta_avg)} />
+        <CompactMetricLine label="ADR lista" value={formatAdrCurrency(totals.precio_lista_boleta_avg, totals.duration_stay_boleta_avg)} />
+        <CompactMetricLine label="Ticket pagado" value={formatCurrency(totals.precio_pagado_boleta_avg)} />
+        <CompactMetricLine label="Ticket lista" value={formatCurrency(totals.precio_lista_boleta_avg)} />
+        <CompactMetricLine label="Pack pagado prom." value={formatCurrency(totals.pack_vendido_precio_pagado_avg)} />
+        <CompactMetricLine label="Pack lista prom." value={formatCurrency(totals.pack_vendido_precio_lista_avg)} />
+      </dl>
+    </div>
+  );
+}
+
+function SystemColumnDesktop({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
   const layout: MetricLayout = label === "MCP" ? "mirror" : "normal";
   const averageAlignment: TextAlignment = label === "OKP" ? "right" : "left";
 
   return (
-    <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
+    <div className="hidden xl:block">
       <div className={`flex items-center justify-between gap-3 ${layout === "mirror" ? "flex-row-reverse" : ""}`}>
         <h2 className="text-lg font-semibold text-navy">{label}</h2>
         <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">Sistema</span>
@@ -235,6 +322,15 @@ function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: Operati
         <KpiLine label="Pack pagado prom." layout={layout} value={formatCurrency(totals.pack_vendido_precio_pagado_avg)} />
         <KpiLine label="Pack lista prom." layout={layout} value={formatCurrency(totals.pack_vendido_precio_lista_avg)} />
       </dl>
+    </div>
+  );
+}
+
+function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+  return (
+    <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
+      <SystemColumnMobile label={label} totals={totals} />
+      <SystemColumnDesktop label={label} totals={totals} />
     </section>
   );
 }
@@ -596,6 +692,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
 
     try {
       const response = await fetch(`/api/dashboard/operacional${query}`, {
+        cache: "no-store",
         method: "GET",
       });
       const body = (await response.json()) as EndpointResponse;
