@@ -511,15 +511,21 @@ test("AA. overlay usa dialog accesible y se recupera cuando existe run", () => {
   assert.match(compositeControl, /aria-labelledby="actualizar-datos-overlay-title"/);
   assert.match(compositeControl, /aria-modal="true"/);
   assert.match(compositeControl, /role="dialog"/);
+  assert.match(compositeControl, /aria-describedby="actualizar-datos-overlay-description"/);
+  assert.match(compositeControl, /max-h-\[calc\(100dvh-2rem\)\]/);
+  assert.match(compositeControl, /overflow-x-hidden/);
+  assert.match(compositeControl, /overflow-y-auto/);
+  assert.match(compositeControl, /min-w-0/);
   assert.match(compositeControl, /fixed inset-0 z-50/);
 });
 
 test("AB. overlay muestra carga real y reutiliza CompositeRunViewer", () => {
   assert.match(compositeControl, /Actualizando datos operacionales/);
-  assert.match(compositeControl, /No cierres esta ventana/);
+  assert.match(compositeControl, /Manten esta ventana abierta/);
   assert.match(compositeControl, /Loader2/);
   assert.match(compositeControl, /animate-spin/);
   assert.match(compositeControl, /const viewer = run \? <CompositeRunViewer/);
+  assert.match(compositeControl, /compact=\{useOverlay\}/);
   assert.doesNotMatch(compositeControl, /barra falsa|fake|setInterval/);
 });
 
@@ -528,6 +534,7 @@ test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () 
   assert.match(compositeControl, /Los datos operacionales se actualizaron correctamente/);
   assert.match(compositeControl, /Dashboard actualizado correctamente/);
   assert.match(compositeControl, /no fue posible recargar los indicadores/);
+  assert.match(compositeControl, /vuelve a seleccionar la fecha/);
   assert.doesNotMatch(compositeControl, /usar Refrescar/);
   assert.match(compositeControl, /No se pudo completar la actualizacion/);
   assert.match(compositeControl, /Etapa afectada/);

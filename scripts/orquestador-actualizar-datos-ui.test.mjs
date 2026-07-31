@@ -56,15 +56,20 @@ test("D. usa CompositeRunViewer reusable", () => {
 });
 
 test("E. texto del flujo muestra las tres etapas", () => {
-  assert.match(control, /Actualizar Reservas ultimo mes/);
-  assert.match(control, /Actualizar Banco de Packs/);
-  assert.match(control, /Actualizar metricas Dashboard ultimo mes/);
+  assert.match(control, /Banco de Reservas/);
+  assert.match(control, /Banco de Packs/);
+  assert.match(control, /Metricas del Dashboard/);
+  assert.doesNotMatch(control, /Actualizar Reservas ultimo mes|Actualizar metricas Dashboard ultimo mes/);
 });
 
 test("F. modal accesible de confirmacion", () => {
   assert.match(control, /role="dialog"/);
   assert.match(control, /aria-modal="true"/);
   assert.match(control, /aria-labelledby="actualizar-datos-title"/);
+  assert.match(control, /max-h-\[calc\(100dvh-2rem\)\]/);
+  assert.match(control, /overflow-x-hidden/);
+  assert.match(control, /overflow-y-auto/);
+  assert.match(control, /min-w-0/);
 });
 
 test("G. foco inicial razonable", () => {
@@ -163,6 +168,7 @@ test("P3. GET 200 waiting conserva storage asigna run y permite advance", () => 
   assert.ok(hook.indexOf("persistRunId(responseBody.run.run_id)") < hook.indexOf("setRun(responseBody.run)"));
   assert.match(hook, /setRun\(responseBody\.run\)/);
   assert.match(control, /run \? <CompositeRunViewer/);
+  assert.match(control, /compact=\{useOverlay\}/);
   assert.match(hook, /if \(isTerminalRun\(nextRun\)\) \{\s*return;\s*\}\s*await advanceRun\(nextRun\.run_id\)/s);
 });
 test("P4. cleanup de Strict Mode solo aborta y conserva storage", () => {
@@ -288,6 +294,22 @@ test("AG. estados failed y cancelled tienen etiqueta visible", () => {
   assert.match(control, /Cancelado/);
 });
 
+
+test("AG2. overlay compacto evita overflow y datos tecnicos principales", () => {
+  assert.match(control, /max-h-\[calc\(100dvh-2rem\)\]/);
+  assert.match(control, /overflow-x-hidden/);
+  assert.match(control, /overflow-y-auto/);
+  assert.match(control, /className="mt-4 max-h-28 overflow-y-auto break-words/);
+  assert.match(control, /w-full[\s\S]*sm:w-fit/);
+  assert.match(viewer, /function readableStepLabel/);
+  assert.match(viewer, /Banco de Reservas/);
+  assert.match(viewer, /Banco de Packs/);
+  assert.match(viewer, /Metricas del Dashboard/);
+  assert.match(viewer, /!compact \? \(/);
+  assert.match(viewer, /<dl className="mt-3 grid grid-cols-2/);
+  assert.match(viewer, /break-words/);
+  assert.match(viewer, /max-h-28 overflow-y-auto break-words/);
+});
 test("AH. status visible no depende solo del color", () => {
   assert.match(control, /statusLabel/);
   assert.match(control, /aria-live="polite"/);

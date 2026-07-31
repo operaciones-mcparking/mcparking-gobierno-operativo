@@ -26,9 +26,9 @@ const statusLabels: Record<CompositeRunStepStatus, string> = {
   blocked: "No ejecutado",
   cancelled: "Cancelado",
   claimed: "Ejecutando",
-  failed: "Fallo",
+  failed: "Error",
   pending: "Pendiente",
-  queued: "En cola",
+  queued: "Pendiente",
   running: "Ejecutando",
   succeeded: "Completado",
 };
@@ -67,6 +67,14 @@ function StepIcon({ status }: { status: CompositeRunStepStatus }) {
   return <CircleDashed aria-hidden="true" className={className} />;
 }
 
+
+function readableStepLabel(label: string) {
+  if (/reservas/i.test(label)) return "Banco de Reservas";
+  if (/packs/i.test(label)) return "Banco de Packs";
+  if (/dashboard|metricas/i.test(label)) return "Metricas del Dashboard";
+  return label;
+}
+
 function formatDuration(value: number | null) {
   return value === null ? "-" : `${value}s`;
 }
@@ -103,13 +111,15 @@ export function CompositeRunViewer({
   const message = resultMessage(run);
 
   return (
-    <section className={`rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm ${className}`} aria-live="polite">
+    <section className={`min-w-0 rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm ${className}`} aria-live="polite">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-base font-medium text-navy">{title}</h2>
-          <p className="mt-1 text-xs leading-5">
-            Run {run.run_id ? shortCompositeJobId(run.run_id) : "-"} - {run.kind || "sin tipo"}
-          </p>
+                    {!compact ? (
+            <p className="mt-1 break-words text-xs leading-5">
+              Run {run.run_id ? shortCompositeJobId(run.run_id) : "-"} - {run.kind || "sin tipo"}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {run.duration_seconds !== null ? (
@@ -146,7 +156,7 @@ export function CompositeRunViewer({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-xs font-medium text-slate-500">Paso {step.step}</p>
-                <p className="mt-1 font-medium text-navy">{step.label}</p>
+                <p className="mt-1 break-words font-medium text-navy">{readableStepLabel(step.label)}</p>
               </div>
               <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
                 <StepIcon status={step.status} />
@@ -154,19 +164,21 @@ export function CompositeRunViewer({
               </span>
             </div>
 
-            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs leading-5">
-              <dt className="text-slate-500">Job</dt>
-              <dd className="text-right font-medium text-navy">{shortCompositeJobId(step.job_id)}</dd>
-              <dt className="text-slate-500">Worker</dt>
-              <dd className="text-right">{step.worker_id ?? "-"}</dd>
-              <dt className="text-slate-500">Intentos</dt>
-              <dd className="text-right">{step.attempts ?? "-"}</dd>
-              <dt className="text-slate-500">Duracion</dt>
-              <dd className="text-right">{formatDuration(step.duration_seconds)}</dd>
-            </dl>
+            {!compact ? (
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs leading-5">
+                <dt className="text-slate-500">Job</dt>
+                <dd className="break-words text-right font-medium text-navy">{shortCompositeJobId(step.job_id)}</dd>
+                <dt className="text-slate-500">Worker</dt>
+                <dd className="break-words text-right">{step.worker_id ?? "-"}</dd>
+                <dt className="text-slate-500">Intentos</dt>
+                <dd className="text-right">{step.attempts ?? "-"}</dd>
+                <dt className="text-slate-500">Duracion</dt>
+                <dd className="text-right">{formatDuration(step.duration_seconds)}</dd>
+              </dl>
+            ) : null}
 
-            {step.safe_message ? <p className="mt-3 text-xs leading-5">{step.safe_message}</p> : null}
-            {step.safe_error ? <p className="mt-3 text-xs font-medium leading-5 text-[#8a4a00]">{step.safe_error}</p> : null}
+            {step.safe_message ? <p className="mt-3 break-words text-xs leading-5">{step.safe_message}</p> : null}
+            {step.safe_error ? <p className="mt-3 max-h-28 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00]">{step.safe_error}</p> : null}
           </li>
         ))}
       </ol>

@@ -8,9 +8,9 @@ import { CompositeRunViewer } from "./composite-run-viewer";
 import { useCompositeOperationsRun } from "./use-composite-operations-run";
 
 const steps = [
-  "Actualizar Reservas ultimo mes",
-  "Actualizar Banco de Packs",
-  "Actualizar metricas Dashboard ultimo mes",
+  "Banco de Reservas",
+  "Banco de Packs",
+  "Metricas del Dashboard",
 ];
 
 const terminalRunStatuses = new Set(["succeeded", "failed", "cancelled"]);
@@ -45,7 +45,7 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
   if (!run || !isTerminalRun(run)) {
     return {
       icon: <Loader2 className="h-5 w-5 animate-spin text-sea" aria-hidden="true" />,
-      message: "Este proceso puede tardar algunos minutos. No cierres esta ventana mientras se completa la actualizacion.",
+      message: "Este proceso puede tardar algunos minutos. Manten esta ventana abierta mientras se completa la actualizacion.",
       title: "Actualizando datos operacionales",
     };
   }
@@ -57,7 +57,7 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
         : refreshStatus === "success"
           ? "Dashboard actualizado correctamente."
           : refreshStatus === "failed"
-            ? "Los procesos terminaron correctamente, pero no fue posible recargar los indicadores. Puedes cerrar esta ventana y cambiar la fecha para volver a consultar."
+            ? "Los procesos terminaron correctamente, pero no fue posible recargar los indicadores. Cierra esta ventana y vuelve a seleccionar la fecha para intentarlo nuevamente."
             : "Los datos operacionales se actualizaron correctamente.";
 
     return {
@@ -196,7 +196,7 @@ export function ActualizarDatosOperacionalesControl({
     <>
       {controlHref ? (
         <Link
-          className="inline-flex h-9 w-fit items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]"
+          className="inline-flex h-9 w-full items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff] sm:w-fit"
           href={controlHref}
         >
           Ver en Centro de Control
@@ -204,7 +204,7 @@ export function ActualizarDatosOperacionalesControl({
       ) : null}
       {useOverlay ? (
         <button
-          className="inline-flex h-9 w-fit items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
           disabled={!canCloseOverlay}
           onClick={closeOverlay}
           ref={closeButtonRef}
@@ -226,7 +226,7 @@ export function ActualizarDatosOperacionalesControl({
     </>
   ) : null;
 
-  const viewer = run ? <CompositeRunViewer className="mt-4" run={run} title="Progreso de actualizacion operacional" /> : null;
+  const viewer = run ? <CompositeRunViewer className="mt-4" compact={useOverlay} run={run} title="Progreso de actualizacion operacional" /> : null;
 
   const triggerButton = (
     <button
@@ -249,7 +249,7 @@ export function ActualizarDatosOperacionalesControl({
             <span className="rounded-md border border-[#ffd4a3] bg-[#fff8ef] px-2.5 py-1 text-xs font-medium text-[#8a4a00]">Ejecucion real</span>
           </div>
           <p className="mt-2 leading-6">
-            Esta operacion ejecuta, en orden, la actualizacion de Reservas del ultimo mes, Banco de Packs y metricas Dashboard del ultimo mes.
+            Esta operacion ejecuta, en orden, Banco de Reservas, Banco de Packs y metricas del Dashboard.
           </p>
           <ol className="mt-3 grid gap-2 text-xs leading-5 sm:grid-cols-3">
             {steps.map((step, index) => (
@@ -270,7 +270,7 @@ export function ActualizarDatosOperacionalesControl({
       </div>
 
       {message ? (
-        <p className="mt-4 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] px-3 py-2 text-sm text-[#8a4a00]" aria-live="polite">
+        <p className="mt-4 max-h-28 overflow-y-auto break-words rounded-lg border border-[#ffd4a3] bg-[#fff8ef] px-3 py-2 text-sm text-[#8a4a00]" aria-live="polite">
           {message}
         </p>
       ) : null}
@@ -292,7 +292,7 @@ export function ActualizarDatosOperacionalesControl({
           <div
             aria-labelledby="actualizar-datos-title"
             aria-modal="true"
-            className="w-full max-w-md rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-lg"
+            className="max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-md overflow-x-hidden overflow-y-auto rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-lg"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
@@ -337,12 +337,12 @@ export function ActualizarDatosOperacionalesControl({
       ) : null}
 
       {showOverlay ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/35 p-4" role="presentation">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/35 p-3 sm:p-4" role="presentation">
           <div
             aria-describedby="actualizar-datos-overlay-description"
             aria-labelledby="actualizar-datos-overlay-title"
             aria-modal="true"
-            className="max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-xl border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-xl sm:p-5"
+            className="max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-3xl overflow-x-hidden overflow-y-auto rounded-xl border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-xl sm:p-5"
             role="dialog"
           >
             {isConfirming ? (
@@ -388,7 +388,7 @@ export function ActualizarDatosOperacionalesControl({
               </>
             ) : (
               <>
-                <div className="flex items-start gap-3">
+                <div className="flex min-w-0 items-start gap-3">
                   <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-[#f8fbfd]">
                     {copy.icon}
                   </span>
@@ -396,14 +396,14 @@ export function ActualizarDatosOperacionalesControl({
                     <h2 className="text-base font-semibold text-navy" id="actualizar-datos-overlay-title">
                       {copy.title}
                     </h2>
-                    <p className="mt-2 leading-6" id="actualizar-datos-overlay-description" aria-live="polite">
+                    <p className="mt-2 break-words leading-6" id="actualizar-datos-overlay-description" aria-live="polite">
                       {copy.message}
                     </p>
                   </div>
                 </div>
 
                 {message ? (
-                  <p className="mt-4 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] px-3 py-2 text-sm text-[#8a4a00]" aria-live="polite">
+                  <p className="mt-4 max-h-28 overflow-y-auto break-words rounded-lg border border-[#ffd4a3] bg-[#fff8ef] px-3 py-2 text-sm text-[#8a4a00]" aria-live="polite">
                     {message}
                   </p>
                 ) : null}
