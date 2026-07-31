@@ -156,23 +156,18 @@ function GroupedMetricBlock({
   );
 }
 
-function AverageBlock({ label, layout = "normal", main, pack, ticket, ticketLabel = "Boleta" }: { label: string; layout?: MetricLayout; main: number | null; pack: number | null; ticket: number | null; ticketLabel?: string }) {
+type AverageAlignment = "left" | "right";
+
+function AverageBlock({ alignment = "left", label, main, pack, ticket, ticketLabel = "Boleta" }: { alignment?: AverageAlignment; label: string; main: number | null; pack: number | null; ticket: number | null; ticketLabel?: string }) {
+  const textAlignment = alignment === "right" ? "text-right" : "text-left";
+
   return (
     <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
-      <p className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${layout === "mirror" ? "text-right" : ""}`}>{label}</p>
-      <p className={`mt-1 text-lg font-semibold text-navy ${layout === "mirror" ? "text-left" : ""}`}>{formatDays(main)}</p>
-      <div className={`mt-2 grid gap-1 text-xs text-slate-600 ${layout === "mirror" ? "text-right" : ""}`}>
-        {layout === "mirror" ? (
-          <>
-            <span>Pack: {formatDays(pack)}</span>
-            <span>{ticketLabel}: {formatDays(ticket)}</span>
-          </>
-        ) : (
-          <>
-            <span>{ticketLabel}: {formatDays(ticket)}</span>
-            <span>Pack: {formatDays(pack)}</span>
-          </>
-        )}
+      <p className={`text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 ${textAlignment}`}>{label}</p>
+      <p className={`mt-1 text-lg font-semibold text-navy ${textAlignment}`}>{formatDays(main)}</p>
+      <div className={`mt-2 grid gap-1 text-xs text-slate-600 ${textAlignment}`}>
+        <span>{ticketLabel}: {formatDays(ticket)}</span>
+        <span>Pack: {formatDays(pack)}</span>
       </div>
     </div>
   );
@@ -180,6 +175,7 @@ function AverageBlock({ label, layout = "normal", main, pack, ticket, ticketLabe
 
 function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
   const layout: MetricLayout = label === "MCP" ? "mirror" : "normal";
+  const averageAlignment: AverageAlignment = label === "OKP" ? "right" : "left";
 
   return (
     <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
@@ -219,8 +215,8 @@ function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: Operati
       </div>
 
       <div className="mt-4 grid gap-3">
-        <AverageBlock label="Anticipacion promedio" main={totals.advanced_book_days_total_avg} pack={totals.advanced_book_days_pack_avg} ticket={totals.advanced_book_days_boleta_avg} />
-        <AverageBlock label="Estadia promedio" main={totals.duration_stay_total_avg} pack={totals.duration_stay_pack_avg} ticket={totals.duration_stay_boleta_avg} />
+        <AverageBlock alignment={averageAlignment} label="Anticipacion promedio" main={totals.advanced_book_days_total_avg} pack={totals.advanced_book_days_pack_avg} ticket={totals.advanced_book_days_boleta_avg} />
+        <AverageBlock alignment={averageAlignment} label="Estadia promedio" main={totals.duration_stay_total_avg} pack={totals.duration_stay_pack_avg} ticket={totals.duration_stay_boleta_avg} />
       </div>
 
       <dl className="mt-4">
