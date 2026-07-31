@@ -219,8 +219,8 @@ function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: Operati
       </div>
 
       <div className="mt-4 grid gap-3">
-        <AverageBlock label="Anticipacion promedio" layout={layout} main={totals.advanced_book_days_total_avg} pack={totals.advanced_book_days_pack_avg} ticket={totals.advanced_book_days_boleta_avg} />
-        <AverageBlock label="Estadia promedio" layout={layout} main={totals.duration_stay_total_avg} pack={totals.duration_stay_pack_avg} ticket={totals.duration_stay_boleta_avg} />
+        <AverageBlock label="Anticipacion promedio" main={totals.advanced_book_days_total_avg} pack={totals.advanced_book_days_pack_avg} ticket={totals.advanced_book_days_boleta_avg} />
+        <AverageBlock label="Estadia promedio" main={totals.duration_stay_total_avg} pack={totals.duration_stay_pack_avg} ticket={totals.duration_stay_boleta_avg} />
       </div>
 
       <dl className="mt-4">

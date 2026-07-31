@@ -233,9 +233,13 @@ test("Q4. MCP usa composicion visual espejo sin invertir datos", () => {
   assert.match(client, /leftLabel="Q boleta"[\s\S]*leftValue=\{formatInteger\(totals\.reserva_boleta_q\)\}[\s\S]*rightLabel="Q pack"[\s\S]*rightValue=\{formatInteger\(totals\.reserva_pack_q\)\}/);
 });
 
-test("Q5. promedios y filas finales tambien respetan modo espejo", () => {
+test("Q5. promedios MCP usan alineacion normal y filas finales siguen en espejo", () => {
   assert.match(client, /function AverageBlock\(\{ label, layout = "normal"/);
-  assert.match(client, /<span>Pack: \{formatDays\(pack\)\}<\/span>[\s\S]*<span>\{ticketLabel\}: \{formatDays\(ticket\)\}<\/span>/);
+  assert.match(client, /<span>\{ticketLabel\}: \{formatDays\(ticket\)\}<\/span>[\s\S]*<span>Pack: \{formatDays\(pack\)\}<\/span>/);
+  assert.match(client, /<AverageBlock label="Anticipacion promedio" main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
+  assert.match(client, /<AverageBlock label="Estadia promedio" main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
+  assert.doesNotMatch(client, /<AverageBlock label="Anticipacion promedio" layout=\{layout\}/);
+  assert.doesNotMatch(client, /<AverageBlock label="Estadia promedio" layout=\{layout\}/);
   assert.match(client, /function KpiLine\(\{ label, layout = "normal", value \}/);
   assert.match(client, /<KpiLine label="ADR pagado" layout=\{layout\}/);
   assert.match(client, /<KpiLine label="Pack lista prom\." layout=\{layout\}/);
@@ -265,8 +269,8 @@ test("S. anticipacion y estadia muestran unidad dias", () => {
   assert.match(client, /\{formatDays\(main\)\}/);
   assert.match(client, /\{ticketLabel\}: \{formatDays\(ticket\)\}/);
   assert.match(client, /Pack: \{formatDays\(pack\)\}/);
-  assert.match(client, /<AverageBlock label="Anticipacion promedio" layout=\{layout\} main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
-  assert.match(client, /<AverageBlock label="Estadia promedio" layout=\{layout\} main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
+  assert.match(client, /<AverageBlock label="Anticipacion promedio" main=\{totals\.advanced_book_days_total_avg\} pack=\{totals\.advanced_book_days_pack_avg\} ticket=\{totals\.advanced_book_days_boleta_avg\} \/>/);
+  assert.match(client, /<AverageBlock label="Estadia promedio" main=\{totals\.duration_stay_total_avg\} pack=\{totals\.duration_stay_pack_avg\} ticket=\{totals\.duration_stay_boleta_avg\} \/>/);
   assert.match(client, /<SystemColumn label="OKP"/);
   assert.match(client, /<SystemColumn label="MCP"/);
   assert.doesNotMatch(client, /formatDays\(totals\.precio|formatDays\(totals\.venta|formatDays\(totals\.reserva|formatDays\(totals\.pack_vendido/);
