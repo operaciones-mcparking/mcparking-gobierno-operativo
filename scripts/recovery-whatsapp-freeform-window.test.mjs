@@ -310,6 +310,9 @@ test("no unrelated modules are part of this task diff", () => {
 
   const allowedRecoveryChatFiles = new Set([
     "scripts/recovery-chat-extended-window.test.mjs",
+    "scripts/recovery-attribution-canonical.test.mjs",
+    "src/lib/dashboard/data.ts",
+    "src/lib/recuperacion/recovery-attribution.ts",
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/route.ts",
     "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts",

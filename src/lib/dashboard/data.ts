@@ -5,6 +5,13 @@ import type {
   SiteContextOption,
 } from "@/components/dashboard/context-selector";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
+import {
+  buildRecoveryAttributionMatches,
+  resolveRecoveryAttributions,
+  type RecoveryAttributionCartInput,
+  type RecoveryAttributionMatch,
+  type RecoveryAttributionPurchaseInput,
+} from "@/lib/recuperacion/recovery-attribution";
 
 export type DashboardContext = {
   countryId?: string | null;
@@ -457,32 +464,18 @@ function santiagoCalendarDaysAgoStartIso(days: number) {
   );
 }
 
-type RecoveryAttributionCartInput = {
-  email_normalized: string | null;
-  form_datetime: string | null;
-  intended_arrival_at?: string | null;
-  id: string;
-  message_sent: boolean | null;
-  parking_code: string | null;
-  phone_normalized: string | null;
-  type: string | null;
-};
+function santiagoCalendarDaysFromNowStartIso(days: number) {
+  const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
+  const startDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
+  startDate.setUTCDate(startDate.getUTCDate() + days);
 
-type RecoveryAttributionPurchaseInput = {
-  booking_created_at: string | null;
-  booking_status?: number | null;
-  email_normalized: string | null;
-  id: string;
-  is_valid_purchase?: boolean | null;
-  paying_status?: string | null;
-  phone_normalized: string | null;
-  price: number | null;
-};
-
-type RecoveryAttributionMatch = RecentRecoveryAttributionCase & {
-  cart_id: string;
-  purchase_id: string;
-};
+  return zonedMidnightToUtcIso(
+    RECOVERY_TIME_ZONE,
+    startDate.getUTCFullYear(),
+    startDate.getUTCMonth() + 1,
+    startDate.getUTCDate(),
+  );
+}
 
 function addIsoDays(isoValue: string, days: number) {
   const date = new Date(isoValue);
@@ -517,164 +510,7 @@ async function fetchPagedRecoveryRows<T>(queryFactory: () => unknown, pageSize =
     from += pageSize;
   }
 }
-function santiagoCalendarDaysFromNowStartIso(days: number) {
-  const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
-  const startDate = new Date(Date.UTC(today.year, today.month - 1, today.day));
-  startDate.setUTCDate(startDate.getUTCDate() + days);
 
-  return zonedMidnightToUtcIso(
-    RECOVERY_TIME_ZONE,
-    startDate.getUTCFullYear(),
-    startDate.getUTCMonth() + 1,
-    startDate.getUTCDate(),
-  );
-}
-
-function buildRecoveryAttributionMatches(
-  carts: RecoveryAttributionCartInput[],
-  purchases: RecoveryAttributionPurchaseInput[],
-) {
-  type CandidateMatch = RecoveryAttributionMatch & { confidence_rank: number; cart_type_rank: number };
-
-  function comparableEmail(value: string | null) {
-    return value?.trim().toLowerCase() || null;
-  }
-
-  function comparablePhone(value: string | null) {
-    const digits = value?.replace(/\D/g, "") ?? "";
-    return digits || null;
-  }
-
-  function cartTypeRank(type: string | null) {
-    if (type === "canceled") return 1;
-    if (type === "abandoned") return 2;
-    return 3;
-  }
-
-  function buildCandidate(
-    cart: RecoveryAttributionCartInput,
-    purchase: RecoveryAttributionPurchaseInput,
-  ): CandidateMatch | null {
-    if (!cart.form_datetime || !purchase.booking_created_at) return null;
-
-    const cartDate = new Date(cart.form_datetime);
-    const purchaseDate = new Date(purchase.booking_created_at);
-
-    if (Number.isNaN(cartDate.getTime()) || Number.isNaN(purchaseDate.getTime())) return null;
-    if (purchaseDate < cartDate) return null;
-
-    const intendedArrivalDate = cart.intended_arrival_at ? new Date(cart.intended_arrival_at) : null;
-
-    if (intendedArrivalDate && !Number.isNaN(intendedArrivalDate.getTime())) {
-      if (purchaseDate > intendedArrivalDate) return null;
-    } else {
-      const recoveryWindowEnd = new Date(cartDate);
-      recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
-      if (purchaseDate >= recoveryWindowEnd) return null;
-    }
-
-    const cartEmail = comparableEmail(cart.email_normalized);
-    const purchaseEmail = comparableEmail(purchase.email_normalized);
-    const cartPhone = comparablePhone(cart.phone_normalized);
-    const purchasePhone = comparablePhone(purchase.phone_normalized);
-    const emailMatches = Boolean(cartEmail && purchaseEmail && cartEmail === purchaseEmail);
-    const phoneMatches = Boolean(cartPhone && purchasePhone && cartPhone === purchasePhone);
-
-    if (!emailMatches && !phoneMatches) return null;
-
-    const confidence = emailMatches && phoneMatches ? "high" : phoneMatches ? "medium" : "low";
-    const confidenceRank = confidence === "high" ? 1 : confidence === "medium" ? 2 : 3;
-    const hoursToPurchase = Math.round(((purchaseDate.getTime() - cartDate.getTime()) / 3_600_000) * 100) / 100;
-
-    return {
-      cart_form_datetime: cart.form_datetime,
-      cart_id: cart.id,
-      cart_type: cart.type,
-      confidence,
-      confidence_rank: confidenceRank,
-      cart_type_rank: cartTypeRank(cart.type),
-      email: cart.email_normalized ?? purchase.email_normalized ?? null,
-      hours_to_purchase: hoursToPurchase,
-      match_type: confidence === "high" ? "email_phone" : confidence === "medium" ? "phone" : "email",
-      message_sent: cart.message_sent ?? null,
-      parking_code: cart.parking_code,
-      phone: cart.phone_normalized ?? purchase.phone_normalized ?? null,
-      purchase_amount: Number(purchase.price ?? 0),
-      purchase_created_at: purchase.booking_created_at,
-      purchase_id: purchase.id,
-      recovered_24h: hoursToPurchase <= 24,
-      recovered_48h: hoursToPurchase <= 48,
-      recovered_7d: true,
-    };
-  }
-
-  const candidates: CandidateMatch[] = [];
-
-  for (const cart of carts) {
-    for (const purchase of purchases) {
-      const candidate = buildCandidate(cart, purchase);
-      if (candidate) candidates.push(candidate);
-    }
-  }
-
-  const bestByPurchase = new Map<string, CandidateMatch>();
-
-  for (const candidate of candidates) {
-    const current = bestByPurchase.get(candidate.purchase_id);
-
-    if (!current) {
-      bestByPurchase.set(candidate.purchase_id, candidate);
-      continue;
-    }
-
-    const candidateCartTime = candidate.cart_form_datetime ? new Date(candidate.cart_form_datetime).getTime() : 0;
-    const currentCartTime = current.cart_form_datetime ? new Date(current.cart_form_datetime).getTime() : 0;
-
-    if (
-      candidateCartTime > currentCartTime ||
-      (candidateCartTime === currentCartTime && candidate.confidence_rank < current.confidence_rank) ||
-      (candidateCartTime === currentCartTime &&
-        candidate.confidence_rank === current.confidence_rank &&
-        candidate.cart_type_rank < current.cart_type_rank) ||
-      (candidateCartTime === currentCartTime &&
-        candidate.confidence_rank === current.confidence_rank &&
-        candidate.cart_type_rank === current.cart_type_rank &&
-        candidate.cart_id.localeCompare(current.cart_id) < 0)
-    ) {
-      bestByPurchase.set(candidate.purchase_id, candidate);
-    }
-  }
-
-  const bestByCart = new Map<string, CandidateMatch>();
-
-  for (const candidate of bestByPurchase.values()) {
-    const current = bestByCart.get(candidate.cart_id);
-
-    if (!current) {
-      bestByCart.set(candidate.cart_id, candidate);
-      continue;
-    }
-
-    const candidatePurchaseTime = candidate.purchase_created_at ? new Date(candidate.purchase_created_at).getTime() : 0;
-    const currentPurchaseTime = current.purchase_created_at ? new Date(current.purchase_created_at).getTime() : 0;
-
-    if (
-      candidatePurchaseTime < currentPurchaseTime ||
-      (candidatePurchaseTime === currentPurchaseTime && candidate.confidence_rank < current.confidence_rank) ||
-      (candidatePurchaseTime === currentPurchaseTime &&
-        candidate.confidence_rank === current.confidence_rank &&
-        candidate.purchase_id.localeCompare(current.purchase_id) < 0)
-    ) {
-      bestByCart.set(candidate.cart_id, candidate);
-    }
-  }
-
-  return Array.from(bestByCart.values()).map(({
-    confidence_rank: _confidenceRank,
-    cart_type_rank: _cartTypeRank,
-    ...match
-  }) => match);
-}
 export type RecoveryConversationIntentSummaryItem = {
   cart_count: number;
   intent_category: string;
@@ -1736,8 +1572,6 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     message_id: string | null;
   };
 
-  type AttributionByCartRow = RecoveryAttributionMatch;
-
   type TrackingByMessageRow = {
     created_at: string | null;
     message_id: string | null;
@@ -1770,25 +1604,16 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   }
 
   function resolveAuditStatus(
-    attribution: AttributionByCartRow | undefined,
-    paymentReview: AttributionByCartRow | undefined,
+    attribution: ReturnType<typeof resolveRecoveryAttributions>[number] | undefined,
     intendedArrivalAt: string | null,
     intendedArrivalDate: string | null,
   ): RecoveryCartAuditStatus {
-    if (attribution && Number(attribution.purchase_amount ?? 0) > 0) return "recovered_with_amount";
-    if (attribution && Number(attribution.purchase_amount ?? 0) === 0) return "recovered_pack";
-    if (paymentReview) return "payment_review";
+    if (attribution?.status === "recovered_with_amount") return "recovered_with_amount";
+    if (attribution?.status === "recovered_pack") return "recovered_pack";
+    if (attribution?.status === "payment_review") return "payment_review";
     if (hasArrivalExpired(intendedArrivalAt, intendedArrivalDate)) return "expired";
 
     return "not_recovered";
-  }
-
-  function isPaymentReviewPurchase(purchase: RecoveryAttributionPurchaseInput) {
-    return (
-      purchase.is_valid_purchase !== true &&
-      Number(purchase.booking_status) === 9 &&
-      String(purchase.paying_status ?? "").trim() === "1"
-    );
   }
 
   async function fetchTrackingRowsByMessageIds(messageIds: string[]) {
@@ -1827,7 +1652,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     supabase
       .from("recovery_incomplete_bookings_import")
       .select(
-        "id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_arrival_at,intended_arrival_date,intended_departure_date",
+        "id,batch_id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_arrival_at,intended_arrival_date,intended_departure_date,row_hash",
       )
       .gte("form_datetime", auditDayStart)
       .lt("form_datetime", auditDayEnd)
@@ -1847,7 +1672,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       ? fetchPagedRecoveryRows<RecoveryAttributionPurchaseInput>(() =>
           supabase
             .from("recovery_bookings_import")
-            .select("id,booking_created_at,booking_status,paying_status,is_valid_purchase,price,email_normalized,phone_normalized")
+            .select("id,batch_id,booking_created_at,booking_status,paying_status,is_valid_purchase,price,email_normalized,phone_normalized,row_hash")
             .or("is_valid_purchase.eq.true,and(booking_status.eq.9,paying_status.eq.1)")
             .gte("booking_created_at", auditDayStart)
             .lt("booking_created_at", purchaseWindowEnd)
@@ -1861,17 +1686,8 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
 
   console.info(`[recuperacion] getRecoveryCartAuditRows:enrichment ${Date.now() - auditStartedAt}ms carts=${cartRows.length} messages=${messageIds.length}`);
   const purchaseRows = purchasesResult.error ? [] : ((purchasesResult.data ?? []) as RecoveryAttributionPurchaseInput[]);
-  const attributionsByCartId = new Map(
-    buildRecoveryAttributionMatches(
-      cartRows,
-      purchaseRows.filter((purchase) => purchase.is_valid_purchase === true),
-    ).map((item) => [item.cart_id, item]),
-  );
-  const paymentReviewsByCartId = new Map(
-    buildRecoveryAttributionMatches(
-      cartRows,
-      purchaseRows.filter(isPaymentReviewPurchase),
-    ).map((item) => [item.cart_id, item]),
+  const attributionResultsByCartId = new Map(
+    resolveRecoveryAttributions(cartRows, purchaseRows).map((item) => [item.cartId, item]),
   );
   const trackingByMessageId = new Map<string, TrackingByMessageRow>();
 
@@ -1883,20 +1699,20 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   }
 
   const auditRows = cartRows.map((cart) => {
-    const attribution = attributionsByCartId.get(cart.id);
-    const paymentReview = attribution ? undefined : paymentReviewsByCartId.get(cart.id);
-    const attributionOrReview = attribution ?? paymentReview;
+    const attributionResult = attributionResultsByCartId.get(cart.id);
     const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
 
     return {
-      audit_status: resolveAuditStatus(attribution, paymentReview, cart.intended_arrival_at, cart.intended_arrival_date),
+      audit_status: resolveAuditStatus(attributionResult, cart.intended_arrival_at, cart.intended_arrival_date),
       cart_form_datetime: cart.form_datetime,
-      cart_type: cart.type,
+      cart_type: cart.type ?? null,
       chatMessageCount: null,
-      confidence: attributionOrReview?.confidence ?? null,
+      confidence: attributionResult?.confidence ?? null,
       email: cart.email_normalized,
       hasChat: null,
-      hours_to_purchase: attributionOrReview?.hours_to_purchase ?? null,
+      hours_to_purchase: attributionResult?.attributedPurchaseAt && cart.form_datetime
+        ? Math.round(((new Date(attributionResult.attributedPurchaseAt).getTime() - new Date(cart.form_datetime).getTime()) / 3_600_000) * 100) / 100
+        : null,
       id: cart.id,
       intended_arrival_at: cart.intended_arrival_at,
       intended_arrival_date: cart.intended_arrival_date,
@@ -1905,13 +1721,13 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       lastInboundIntentCategory: null,
       lastInboundMessageAt: null,
       lastInboundSentiment: null,
-      message_sent: cart.message_sent,
-      parking_code: cart.parking_code,
+      message_sent: cart.message_sent ?? null,
+      parking_code: cart.parking_code ?? null,
       phone: cart.phone_normalized,
-      purchase_amount: attributionOrReview?.purchase_amount ?? null,
-      purchase_created_at: attributionOrReview?.purchase_created_at ?? null,
-      recovery_review_note: paymentReview ? "BookingStatus 9" : null,
-      recovered: Boolean(attribution),
+      purchase_amount: attributionResult?.attributedAmount ?? null,
+      purchase_created_at: attributionResult?.attributedPurchaseAt ?? null,
+      recovery_review_note: attributionResult?.status === "payment_review" ? "BookingStatus 9" : null,
+      recovered: attributionResult?.status === "recovered_with_amount" || attributionResult?.status === "recovered_pack",
       whatsappStatus: tracking?.tracking_status ?? "sin_seguimiento",
     };
   });
