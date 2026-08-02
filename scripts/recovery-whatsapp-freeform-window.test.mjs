@@ -311,6 +311,10 @@ test("no unrelated modules are part of this task diff", () => {
   const allowedRecoveryChatFiles = new Set([
     "scripts/recovery-chat-extended-window.test.mjs",
     "scripts/recovery-attribution-canonical.test.mjs",
+    "scripts/recovery-weekly-snapshots.test.mjs",
+    "docs/recovery_weekly_snapshots.md",
+    "src/lib/recuperacion/recovery-snapshots.ts",
+    "supabase/migrations/20260802120000_create_recovery_weekly_snapshots.sql",
     "src/lib/dashboard/data.ts",
     "src/lib/recuperacion/recovery-attribution.ts",
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
