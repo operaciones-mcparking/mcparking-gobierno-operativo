@@ -1,4 +1,4 @@
-﻿-- Recovery weekly snapshots for canonical attribution results.
+-- Recovery weekly snapshots for canonical attribution results.
 -- This migration is intentionally persistence-only: the canonical attribution
 -- calculation remains in src/lib/recuperacion/recovery-attribution.ts.
 
