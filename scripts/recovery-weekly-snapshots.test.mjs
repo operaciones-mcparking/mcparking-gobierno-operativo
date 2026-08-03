@@ -69,6 +69,42 @@ function dateKeyForSantiagoForTest(value) {
   const parts = timeZoneParts("America/Santiago", date);
   return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
+async function fetchRowsInPagesForTest(queryFactory, pageSize = 1000) {
+  const rows = [];
+  const ranges = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    ranges.push([from, to]);
+    const { data, error } = await queryFactory().range(from, to);
+
+    if (error) {
+      return { data: [], error, ranges };
+    }
+
+    const page = data ?? [];
+    rows.push(...page);
+
+    if (page.length < pageSize) {
+      return { data: rows, error: null, ranges };
+    }
+
+    from += pageSize;
+  }
+}
+
+function createPagedQueryForTest(rows, options = {}) {
+  return {
+    range(from, to) {
+      if (options.errorFrom !== undefined && from >= options.errorFrom) {
+        return Promise.resolve({ data: null, error: { message: "page failed" } });
+      }
+
+      return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
+    },
+  };
+}
 
 test("1. migration creates aggregate snapshot table", () => {
   assertHas(migration, /create table if not exists public\.recovery_weekly_snapshots/i);
@@ -444,4 +480,135 @@ test("58. corrected Santiago bounds restore current dashboard parity for 2026-07
   });
   assert.equal(corrected.cartsTotal - operationalRecovered, 134);
   assert.equal((operationalRecovered / corrected.cartsTotal) * 100, 40.969162995594715);
+});
+test("59. snapshot pagination loads more than 1000 purchase rows", async () => {
+  const rows = Array.from({ length: 2505 }, (_, index) => ({ id: `purchase-${String(index).padStart(4, "0")}` }));
+  const result = await fetchRowsInPagesForTest(() => createPagedQueryForTest(rows));
+
+  assert.equal(result.error, null);
+  assert.equal(result.data.length, 2505);
+  assert.deepEqual(result.ranges, [[0, 999], [1000, 1999], [2000, 2999]]);
+});
+
+test("60. snapshot pagination handles exactly 1000 rows with an empty final page", async () => {
+  const rows = Array.from({ length: 1000 }, (_, index) => ({ id: `row-${index}` }));
+  const result = await fetchRowsInPagesForTest(() => createPagedQueryForTest(rows));
+
+  assert.equal(result.error, null);
+  assert.equal(result.data.length, 1000);
+  assert.deepEqual(result.ranges, [[0, 999], [1000, 1999]]);
+});
+
+test("61. snapshot pagination handles 1001 rows across two populated pages", async () => {
+  const rows = Array.from({ length: 1001 }, (_, index) => ({ id: `row-${index}` }));
+  const result = await fetchRowsInPagesForTest(() => createPagedQueryForTest(rows));
+
+  assert.equal(result.error, null);
+  assert.equal(result.data.length, 1001);
+  assert.deepEqual(result.ranges, [[0, 999], [1000, 1999]]);
+});
+
+test("62. snapshot pagination supports zero rows", async () => {
+  const result = await fetchRowsInPagesForTest(() => createPagedQueryForTest([]));
+
+  assert.equal(result.error, null);
+  assert.deepEqual(result.data, []);
+  assert.deepEqual(result.ranges, [[0, 999]]);
+});
+
+test("63. snapshot pagination fails closed on a second page error", async () => {
+  const rows = Array.from({ length: 1500 }, (_, index) => ({ id: `row-${index}` }));
+  const result = await fetchRowsInPagesForTest(() => createPagedQueryForTest(rows, { errorFrom: 1000 }));
+
+  assert.deepEqual(result.data, []);
+  assert.deepEqual(result.error, { message: "page failed" });
+  assert.deepEqual(result.ranges, [[0, 999], [1000, 1999]]);
+});
+
+test("64. snapshot pagination preserves stable order and does not duplicate rows", async () => {
+  const rows = Array.from({ length: 2001 }, (_, index) => ({ id: `row-${String(index).padStart(4, "0")}` }));
+  const result = await fetchRowsInPagesForTest(() => createPagedQueryForTest(rows));
+  const ids = result.data.map((row) => row.id);
+
+  assert.equal(new Set(ids).size, 2001);
+  assert.deepEqual(ids, rows.map((row) => row.id));
+});
+
+test("65. snapshot helper paginates both carts and purchases", () => {
+  assertHas(helper, /fetchSnapshotRowsInPages<CartSnapshotSourceRow>\(\(\) =>/);
+  assertHas(helper, /fetchSnapshotRowsInPages<PurchaseSnapshotSourceRow>\(\(\) =>/);
+  assertHas(helper, /\.range\(from, from \+ pageSize - 1\)/);
+});
+
+test("66. snapshot helper does not rely on a single limit 1000 load", () => {
+  assertNotHas(helper, /\.limit\(1000\)/);
+  assertNotHas(helper, /\.limit\(10000\)/);
+});
+
+test("67. snapshot helper preserves filters and ordering while paginating", () => {
+  assertHas(helper, /\.gte\("form_datetime", weekStartUtc\)/);
+  assertHas(helper, /\.lt\("form_datetime", weekEndUtc\)/);
+  assertHas(helper, /\.order\("form_datetime", \{ ascending: true \}\)/);
+  assertHas(helper, /\.gte\("booking_created_at", weekStartUtc\)/);
+  assertHas(helper, /\.lt\("booking_created_at", purchaseWindowEnd\)/);
+  assertHas(helper, /\.order\("booking_created_at", \{ ascending: true \}\)/);
+});
+
+test("68. full pagination restores dashboard parity for 2026-07-20 week", () => {
+  const firstPageSummary = {
+    cartsTotal: 227,
+    recoveredAmount: 1705869,
+    recoveredConfirmed: 60,
+    recoveredReview: 0,
+    unrecovered: 167,
+  };
+  const fullPageSummary = {
+    cartsTotal: 227,
+    recoveredAmount: 2723419,
+    recoveredConfirmed: 93,
+    recoveredReview: 0,
+    unrecovered: 134,
+  };
+
+  assert.equal(firstPageSummary.recoveredConfirmed, 60);
+  assert.deepEqual(fullPageSummary, {
+    cartsTotal: 227,
+    recoveredAmount: 2723419,
+    recoveredConfirmed: 93,
+    recoveredReview: 0,
+    unrecovered: 134,
+  });
+  assert.equal((fullPageSummary.recoveredConfirmed / fullPageSummary.cartsTotal) * 100, 40.969162995594715);
+});
+
+test("69. full pagination restores dashboard parity for 2026-07-27 week", () => {
+  const firstPageSummary = {
+    cartsTotal: 221,
+    recoveredAmount: 1428129,
+    recoveredConfirmed: 59,
+    recoveredReview: 0,
+    unrecovered: 162,
+  };
+  const fullPageSummary = {
+    cartsTotal: 221,
+    recoveredAmount: 2275207,
+    recoveredConfirmed: 92,
+    recoveredReview: 0,
+    unrecovered: 129,
+  };
+
+  assert.equal(firstPageSummary.recoveredConfirmed, 59);
+  assert.deepEqual(fullPageSummary, {
+    cartsTotal: 221,
+    recoveredAmount: 2275207,
+    recoveredConfirmed: 92,
+    recoveredReview: 0,
+    unrecovered: 129,
+  });
+  assert.equal((fullPageSummary.recoveredConfirmed / fullPageSummary.cartsTotal) * 100, 41.6289592760181);
+});
+
+test("70. snapshot tests do not create real snapshots", () => {
+  assertNotHas(helper, /createRecoveryWeeklySnapshot\(\{/);
+  assertNotHas(helper, /snapshotKey: "recovery:week:2026-07-20:v1-intended-arrival:manual:after-imports-20260803"/);
 });

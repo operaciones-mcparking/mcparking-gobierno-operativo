@@ -73,6 +73,12 @@ type SnapshotRpcRow = {
 
 type SnapshotRpcResult = SnapshotRpcRow | SnapshotRpcRow[] | null;
 
+type SnapshotQueryError = { message: string };
+
+type SnapshotPagedQuery<T> = {
+  range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: SnapshotQueryError | null }>;
+};
+
 function createRecoverySnapshotSupabaseClient() {
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Supabase service role environment is not configured.");
@@ -172,6 +178,31 @@ function normalizeSnapshotRpcResult(data: SnapshotRpcResult): SnapshotRpcRow | n
   return isSnapshotRpcRow(data) ? data : null;
 }
 
+async function fetchSnapshotRowsInPages<T>(
+  queryFactory: () => SnapshotPagedQuery<T>,
+  pageSize = 1000,
+): Promise<{ data: T[]; error: SnapshotQueryError | null }> {
+  const rows: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await queryFactory().range(from, from + pageSize - 1);
+
+    if (error) {
+      return { data: [] as T[], error };
+    }
+
+    const page = data ?? [];
+    rows.push(...page);
+
+    if (page.length < pageSize) {
+      return { data: rows, error: null };
+    }
+
+    from += pageSize;
+  }
+}
+
 function buildCartSnapshotRows(
   attributions: RecoveryAttributionResult[],
   carts: CartSnapshotSourceRow[],
@@ -238,28 +269,32 @@ export async function createRecoveryWeeklySnapshot(
   const supabase = createRecoverySnapshotSupabaseClient();
 
   const [cartsResult, purchasesResult] = await Promise.all([
-    supabase
-      .from("recovery_incomplete_bookings_import")
-      .select(
-        "id,batch_id,email_normalized,phone_normalized,type,parking_code,form_datetime,message_sent,intended_arrival_at,row_hash,updated_at_source",
-      )
-      .gte("form_datetime", weekStartUtc)
-      .lt("form_datetime", weekEndUtc)
-      .order("form_datetime", { ascending: true }),
-    supabase
-      .from("recovery_bookings_import")
-      .select("id,batch_id,booking_created_at,booking_status,paying_status,is_valid_purchase,price,email_normalized,phone_normalized,row_hash")
-      .or("is_valid_purchase.eq.true,and(booking_status.eq.9,paying_status.eq.1)")
-      .gte("booking_created_at", weekStartUtc)
-      .lt("booking_created_at", purchaseWindowEnd)
-      .order("booking_created_at", { ascending: true }),
+    fetchSnapshotRowsInPages<CartSnapshotSourceRow>(() =>
+      supabase
+        .from("recovery_incomplete_bookings_import")
+        .select(
+          "id,batch_id,email_normalized,phone_normalized,type,parking_code,form_datetime,message_sent,intended_arrival_at,row_hash,updated_at_source",
+        )
+        .gte("form_datetime", weekStartUtc)
+        .lt("form_datetime", weekEndUtc)
+        .order("form_datetime", { ascending: true }),
+    ),
+    fetchSnapshotRowsInPages<PurchaseSnapshotSourceRow>(() =>
+      supabase
+        .from("recovery_bookings_import")
+        .select("id,batch_id,booking_created_at,booking_status,paying_status,is_valid_purchase,price,email_normalized,phone_normalized,row_hash")
+        .or("is_valid_purchase.eq.true,and(booking_status.eq.9,paying_status.eq.1)")
+        .gte("booking_created_at", weekStartUtc)
+        .lt("booking_created_at", purchaseWindowEnd)
+        .order("booking_created_at", { ascending: true }),
+    ),
   ]);
 
   if (cartsResult.error) throw new Error("Could not load recovery carts for snapshot.");
   if (purchasesResult.error) throw new Error("Could not load recovery purchases for snapshot.");
 
-  const carts = (cartsResult.data ?? []) as CartSnapshotSourceRow[];
-  const purchases = (purchasesResult.data ?? []) as PurchaseSnapshotSourceRow[];
+  const carts = cartsResult.data;
+  const purchases = purchasesResult.data;
   const payload = buildRecoveryWeeklySnapshotPayload(carts, purchases);
 
   const { data, error } = await supabase.rpc("create_recovery_weekly_snapshot", {
