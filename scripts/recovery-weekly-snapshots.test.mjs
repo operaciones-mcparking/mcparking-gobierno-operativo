@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -18,6 +18,56 @@ function assertHas(source, pattern, message) {
 
 function assertNotHas(source, pattern, message) {
   assert.doesNotMatch(source, pattern, message);
+}
+function timeZoneParts(timeZone, date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(date);
+
+  const valueFor = (type) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  return {
+    day: valueFor("day"),
+    hour: valueFor("hour"),
+    minute: valueFor("minute"),
+    month: valueFor("month"),
+    second: valueFor("second"),
+    year: valueFor("year"),
+  };
+}
+
+function timeZoneOffsetMs(timeZone, date) {
+  const parts = timeZoneParts(timeZone, date);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+
+  return asUtc - date.getTime();
+}
+
+function zonedMidnightToUtcIso(timeZone, year, month, day) {
+  const guess = new Date(Date.UTC(year, month - 1, day));
+  const firstPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, guess));
+  const secondPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, firstPass));
+
+  return secondPass.toISOString();
+}
+
+function santiagoDateOnlyToUtcIsoForTest(value) {
+  const [year, month, day] = value.split("-").map(Number);
+  return zonedMidnightToUtcIso("America/Santiago", year, month, day);
+}
+
+function dateKeyForSantiagoForTest(value) {
+  const date = new Date(value);
+  const parts = timeZoneParts("America/Santiago", date);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
 }
 
 test("1. migration creates aggregate snapshot table", () => {
@@ -306,4 +356,92 @@ test("51. all expected artifacts exist", () => {
   for (const file of [migrationPath, helperPath, docPath]) {
     assert.equal(existsSync(file), true, `${file} should exist`);
   }
+});
+
+test("52. snapshot helper converts Santiago winter week boundaries to UTC", () => {
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-07-20"), "2026-07-20T04:00:00.000Z");
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-07-27"), "2026-07-27T04:00:00.000Z");
+});
+
+test("53. snapshot helper converts Santiago summer week boundaries with daylight saving offset", () => {
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-01-05"), "2026-01-05T03:00:00.000Z");
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-01-12"), "2026-01-12T03:00:00.000Z");
+});
+
+test("54. snapshot helper handles month and year boundary weeks", () => {
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-08-31"), "2026-08-31T04:00:00.000Z");
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-09-07"), "2026-09-07T03:00:00.000Z");
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2026-12-28"), "2026-12-28T03:00:00.000Z");
+  assert.equal(santiagoDateOnlyToUtcIsoForTest("2027-01-04"), "2027-01-04T03:00:00.000Z");
+});
+
+test("55. snapshot helper does not use date-only values as direct 00:00Z filters", () => {
+  assertHas(helper, /const weekStartUtc = santiagoDateOnlyToUtcIso\(input\.weekStart\)/);
+  assertHas(helper, /const weekEndUtc = santiagoDateOnlyToUtcIso\(input\.weekEnd\)/);
+  assertHas(helper, /\.gte\("form_datetime", weekStartUtc\)/);
+  assertHas(helper, /\.lt\("form_datetime", weekEndUtc\)/);
+  assertHas(helper, /\.gte\("booking_created_at", weekStartUtc\)/);
+  assertNotHas(helper, /\.gte\("form_datetime", input\.weekStart\)/);
+  assertNotHas(helper, /\.lt\("form_datetime", input\.weekEnd\)/);
+  assertNotHas(helper, /\.gte\("booking_created_at", input\.weekStart\)/);
+});
+
+test("56. dashboard and snapshot share Santiago local midnight criteria", () => {
+  assertHas(helper, /const RECOVERY_TIME_ZONE = "America\/Santiago"/);
+  assertHas(helper, /function zonedMidnightToUtcIso/);
+  assertHas(helper, /function timeZoneOffsetMs/);
+  assertHas(helper, /function timeZoneParts/);
+  assertHas(helper, /santiagoDateOnlyToUtcIso/);
+});
+
+test("57. Santiago week excludes UTC border carts from the previous local day", () => {
+  const borderRows = [
+    "2026-07-20T00:07:50+00:00",
+    "2026-07-20T01:03:36+00:00",
+    "2026-07-20T01:29:15+00:00",
+    "2026-07-20T02:24:19+00:00",
+    "2026-07-20T02:48:29+00:00",
+    "2026-07-20T02:58:22+00:00",
+    "2026-07-20T03:35:15+00:00",
+    "2026-07-20T03:44:22+00:00",
+  ];
+
+  assert.equal(borderRows.every((value) => dateKeyForSantiagoForTest(value) === "2026-07-19"), true);
+  assert.equal(borderRows.filter((value) => value >= "2026-07-20T00:00:00.000Z" && value < "2026-07-27T00:00:00.000Z").length, 8);
+  assert.equal(borderRows.filter((value) => value >= "2026-07-20T04:00:00.000Z" && value < "2026-07-27T04:00:00.000Z").length, 0);
+});
+
+test("58. corrected Santiago bounds restore current dashboard parity for 2026-07-20 week", () => {
+  const utcSnapshotSummary = {
+    cartsTotal: 235,
+    recoveredAmount: 2773814,
+    recoveredConfirmed: 96,
+    recoveredReview: 0,
+  };
+  const borderRows = [
+    { amount: 35947, recovered: true },
+    { amount: 0, recovered: false },
+    { amount: 0, recovered: true },
+    { amount: 14448, recovered: true },
+    { amount: 0, recovered: false },
+    { amount: 0, recovered: false },
+    { amount: 0, recovered: false },
+    { amount: 0, recovered: false },
+  ];
+  const corrected = {
+    cartsTotal: utcSnapshotSummary.cartsTotal - borderRows.length,
+    recoveredAmount: utcSnapshotSummary.recoveredAmount - borderRows.reduce((total, row) => total + row.amount, 0),
+    recoveredConfirmed: utcSnapshotSummary.recoveredConfirmed - borderRows.filter((row) => row.recovered).length,
+    recoveredReview: utcSnapshotSummary.recoveredReview,
+  };
+  const operationalRecovered = corrected.recoveredConfirmed + corrected.recoveredReview;
+
+  assert.deepEqual(corrected, {
+    cartsTotal: 227,
+    recoveredAmount: 2723419,
+    recoveredConfirmed: 93,
+    recoveredReview: 0,
+  });
+  assert.equal(corrected.cartsTotal - operationalRecovered, 134);
+  assert.equal((operationalRecovered / corrected.cartsTotal) * 100, 40.969162995594715);
 });

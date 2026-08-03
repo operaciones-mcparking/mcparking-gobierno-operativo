@@ -13,6 +13,7 @@ import {
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const RECOVERY_TIME_ZONE = "America/Santiago";
 
 export type RecoveryWeeklySnapshotKind = "batch" | "daily" | "weekly_close" | "manual" | "reconstructed";
 
@@ -92,6 +93,61 @@ function addIsoDays(value: string, days: number) {
   const date = new Date(value);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString();
+}
+
+function timeZoneParts(timeZone: string, date: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
+    timeZone,
+    year: "numeric",
+  }).formatToParts(date);
+
+  const valueFor = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
+
+  return {
+    day: valueFor("day"),
+    hour: valueFor("hour"),
+    minute: valueFor("minute"),
+    month: valueFor("month"),
+    second: valueFor("second"),
+    year: valueFor("year"),
+  };
+}
+
+function timeZoneOffsetMs(timeZone: string, date: Date) {
+  const parts = timeZoneParts(timeZone, date);
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+
+  return asUtc - date.getTime();
+}
+
+function zonedMidnightToUtcIso(timeZone: string, year: number, month: number, day: number) {
+  const guess = new Date(Date.UTC(year, month - 1, day));
+  const firstPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, guess));
+  const secondPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, firstPass));
+
+  return secondPass.toISOString();
+}
+
+function santiagoDateOnlyToUtcIso(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+
+  if (!match) {
+    throw new Error("Snapshot week boundaries must use YYYY-MM-DD.");
+  }
+
+  return zonedMidnightToUtcIso(
+    RECOVERY_TIME_ZONE,
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+  );
 }
 
 function assertSafeSnapshotKey(value: string) {
@@ -176,7 +232,9 @@ export async function createRecoveryWeeklySnapshot(
   assertSafeSnapshotKey(input.snapshotKey);
 
   const calculationVersion = input.calculationVersion ?? RECOVERY_ATTRIBUTION_CALCULATION_VERSION;
-  const purchaseWindowEnd = addIsoDays(input.weekEnd, 14);
+  const weekStartUtc = santiagoDateOnlyToUtcIso(input.weekStart);
+  const weekEndUtc = santiagoDateOnlyToUtcIso(input.weekEnd);
+  const purchaseWindowEnd = addIsoDays(weekEndUtc, 14);
   const supabase = createRecoverySnapshotSupabaseClient();
 
   const [cartsResult, purchasesResult] = await Promise.all([
@@ -185,14 +243,14 @@ export async function createRecoveryWeeklySnapshot(
       .select(
         "id,batch_id,email_normalized,phone_normalized,type,parking_code,form_datetime,message_sent,intended_arrival_at,row_hash,updated_at_source",
       )
-      .gte("form_datetime", input.weekStart)
-      .lt("form_datetime", input.weekEnd)
+      .gte("form_datetime", weekStartUtc)
+      .lt("form_datetime", weekEndUtc)
       .order("form_datetime", { ascending: true }),
     supabase
       .from("recovery_bookings_import")
       .select("id,batch_id,booking_created_at,booking_status,paying_status,is_valid_purchase,price,email_normalized,phone_normalized,row_hash")
       .or("is_valid_purchase.eq.true,and(booking_status.eq.9,paying_status.eq.1)")
-      .gte("booking_created_at", input.weekStart)
+      .gte("booking_created_at", weekStartUtc)
       .lt("booking_created_at", purchaseWindowEnd)
       .order("booking_created_at", { ascending: true }),
   ]);
