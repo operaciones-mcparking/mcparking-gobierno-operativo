@@ -310,6 +310,7 @@ test("no unrelated modules are part of this task diff", () => {
 
   const allowedRecoveryChatFiles = new Set([
     "scripts/recovery-chat-extended-window.test.mjs",
+    "scripts/recovery-snapshot-comparison-api.test.mjs",
     "scripts/recovery-attribution-canonical.test.mjs",
     "scripts/recovery-weekly-snapshots.test.mjs",
     "scripts/recovery-import-row-changes.test.mjs",
@@ -323,9 +324,11 @@ test("no unrelated modules are part of this task diff", () => {
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/route.ts",
     "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts",
+    "src/app/api/recuperacion/snapshots/compare/route.ts",
     "src/app/orquestador/page.tsx",
     "src/app/recuperacion/recovery-cart-chat-drawer.tsx",
     "src/lib/recuperacion/recovery-chat-read-range.ts",
+    "src/lib/recuperacion/recovery-snapshot-comparison.ts",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
   ]);
 
