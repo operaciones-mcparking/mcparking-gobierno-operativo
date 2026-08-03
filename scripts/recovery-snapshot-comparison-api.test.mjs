@@ -545,8 +545,9 @@ test("42. imports are not touched", () => {
   assertNotHas(helper, /import_recovery_/);
 });
 
-test("43. UI is not changed by this endpoint/helper task", () => {
-  assertNotHas(ui, /snapshot comparison|Ver cambios|recovery-snapshot-comparison/i);
+test("43. backend endpoint and helper stay UI-free", () => {
+  assertNotHas(route, /use client|RecoverySnapshotComparisonDrawer|Ver cambios/);
+  assertNotHas(helper, /use client|RecoverySnapshotComparisonDrawer|Ver cambios/);
 });
 
 test("44. orchestrator is untouched by this task", () => {
@@ -568,6 +569,9 @@ test("46. current task diff is scoped", () => {
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
     "src/app/api/recuperacion/snapshots/compare/route.ts",
     "src/lib/recuperacion/recovery-snapshot-comparison.ts",
+    "scripts/recovery-snapshot-comparison-ui.test.mjs",
+    "src/app/recuperacion/recovery-cart-audit-table.tsx",
+    "src/app/recuperacion/recovery-snapshot-comparison-drawer.tsx",
   ]);
 
   assert.equal(changedFiles.every((file) => allowed.has(file)), true, `Unexpected changed files: ${changedFiles.join(", ")}`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import type {
@@ -9,12 +9,19 @@ import type {
   RecoveryCartWhatsappStatus,
 } from "@/lib/dashboard/data";
 import { RecoveryCartChatDrawer } from "./recovery-cart-chat-drawer";
+import { RecoverySnapshotComparisonDrawer, type RecoverySnapshotComparison } from "./recovery-snapshot-comparison-drawer";
 
 const RECOVERY_TIME_ZONE = "America/Santiago";
 
 type RecoveryCartAuditTableProps = {
   error?: string | null;
   rows: RecoveryCartAuditRow[];
+};
+
+type SnapshotComparisonResponse = {
+  comparison?: RecoverySnapshotComparison;
+  error?: string;
+  ok: boolean;
 };
 
 type ChatIndicator = Pick<
@@ -666,6 +673,40 @@ function deltaNumber(current: number, previous: number) {
   return `${sign}${formatNumber(delta)}`;
 }
 
+function formatSnapshotDeltaPoints(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+
+  return `${sign}${Math.abs(value).toFixed(1).replace(".", ",")} pts`;
+}
+
+function formatSnapshotDeltaNumber(value: number | null | undefined, singular: string, plural: string) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+  const absolute = Math.abs(value);
+
+  return `${sign}${formatNumber(absolute)} ${absolute === 1 ? singular : plural}`;
+}
+
+function formatSnapshotDeltaCurrency(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  const sign = value > 0 ? "+" : value < 0 ? "-" : "";
+
+  return `${sign}${formatCurrency(Math.abs(value))}`;
+}
+
+function snapshotDeltaTone(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value === 0) return "neutral" as const;
+  if (value > 0) return "good" as const;
+
+  return "danger" as const;
+}
+
+function isValidSnapshotWeekStart(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+
+  return weekStartKeyForDateKey(value) === value;
+}
 
 function comparisonBadgeToneClasses(tone: string) {
   if (tone === "good") return "border-emerald-200 bg-emerald-50 text-emerald-700";
@@ -911,6 +952,11 @@ function WeeklyBreakdownBlock({
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [sortKey, setSortKey] = useState<SortKey>("cart_date");
   const [selectedWeekStart, setSelectedWeekStart] = useState("");
+  const [snapshotComparison, setSnapshotComparison] = useState<RecoverySnapshotComparison | null>(null);
+  const [snapshotComparisonLoading, setSnapshotComparisonLoading] = useState(false);
+  const [snapshotComparisonError, setSnapshotComparisonError] = useState<string | null>(null);
+  const [snapshotComparisonDrawerOpen, setSnapshotComparisonDrawerOpen] = useState(false);
+  const activeSnapshotWeekRef = useRef("");
   const [chatIndicators, setChatIndicators] = useState<Record<string, ChatIndicator>>({});
   const [expandedMobileCartIds, setExpandedMobileCartIds] = useState<Record<string, boolean>>({});
 
@@ -1095,6 +1141,61 @@ function WeeklyBreakdownBlock({
     },
   ];
   useEffect(() => {
+    activeSnapshotWeekRef.current = activeWeekStart;
+  }, [activeWeekStart]);
+
+  useEffect(() => {
+    setSnapshotComparison(null);
+    setSnapshotComparisonError(null);
+    setSnapshotComparisonDrawerOpen(false);
+
+    if (!isValidSnapshotWeekStart(activeWeekStart)) {
+      setSnapshotComparisonLoading(false);
+      return;
+    }
+
+    const requestedWeekStart = activeWeekStart;
+    const controller = new AbortController();
+
+    setSnapshotComparisonLoading(true);
+
+    async function loadSnapshotComparison() {
+      try {
+        const response = await fetch(`/api/recuperacion/snapshots/compare?weekStart=${encodeURIComponent(requestedWeekStart)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as SnapshotComparisonResponse;
+
+        if (activeSnapshotWeekRef.current !== requestedWeekStart) return;
+
+        if (!response.ok || !payload.ok || !payload.comparison) {
+          throw new Error(payload.error ?? "No se pudo cargar la comparación");
+        }
+
+        if (payload.comparison.weekStart !== requestedWeekStart) return;
+
+        setSnapshotComparison(payload.comparison);
+      } catch (fetchError) {
+        if ((fetchError as { name?: string }).name === "AbortError") return;
+        if (activeSnapshotWeekRef.current !== requestedWeekStart) return;
+
+        setSnapshotComparisonError("No se pudo cargar la comparación");
+      } finally {
+        if (activeSnapshotWeekRef.current === requestedWeekStart) {
+          setSnapshotComparisonLoading(false);
+        }
+      }
+    }
+
+    void loadSnapshotComparison();
+
+    return () => {
+      controller.abort();
+    };
+  }, [activeWeekStart]);
+
+  useEffect(() => {
     setCurrentPage(1);
   }, [dateQuery, statusFilter, typeFilter, whatsappFilter]);
 
@@ -1210,6 +1311,38 @@ function WeeklyBreakdownBlock({
                     </div>
                     <p className="mt-1 text-[11px] text-slate-500">{card.previous}</p>
                     {"detail" in card ? <p className="mt-1 text-[11px] text-slate-500">{card.detail}</p> : null}
+                    {card.label === "Tasa recuperación" ? (
+                      <div className="mt-3 border-t border-[#edf2f6] pt-3">
+                        <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">Desde snapshot anterior</p>
+                        {snapshotComparisonLoading ? (
+                          <p className="mt-2 text-[11px] text-slate-500">Cargando comparación histórica...</p>
+                        ) : snapshotComparisonError ? (
+                          <p className="mt-2 text-[11px] text-rose-700">No se pudo cargar la comparación</p>
+                        ) : !snapshotComparison || !snapshotComparison.available ? (
+                          <p className="mt-2 text-[11px] text-slate-500">Sin comparación histórica</p>
+                        ) : snapshotComparison.reason === "no_changes" ? (
+                          <p className="mt-2 text-[11px] text-slate-500">Sin cambios desde el snapshot anterior</p>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${comparisonBadgeToneClasses(snapshotDeltaTone(snapshotComparison.delta?.recoveryRatePoints))}`}>
+                                {formatSnapshotDeltaPoints(snapshotComparison.delta?.recoveryRatePoints)} desde snapshot anterior
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600">
+                              {formatSnapshotDeltaNumber(snapshotComparison.delta?.recoveredConfirmed, "recuperado", "recuperados")} ? {formatSnapshotDeltaCurrency(snapshotComparison.delta?.recoveredAmount)}
+                            </p>
+                            <button
+                              className="inline-flex items-center rounded-full border border-[#d6e1ea] bg-white px-3 py-1.5 text-[11px] font-medium text-navy hover:border-teal-200 hover:bg-teal-50"
+                              onClick={() => setSnapshotComparisonDrawerOpen(true)}
+                              type="button"
+                            >
+                              Ver cambios
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -1771,6 +1904,14 @@ function WeeklyBreakdownBlock({
       ) : null}
 
     </section>
+      <RecoverySnapshotComparisonDrawer
+        activeWeekStart={activeWeekStart}
+        comparison={snapshotComparison}
+        error={snapshotComparisonError}
+        loading={snapshotComparisonLoading}
+        onOpenChange={setSnapshotComparisonDrawerOpen}
+        open={snapshotComparisonDrawerOpen}
+      />
       <RecoveryCartChatDrawer cartId={selectedChatCartId} onClose={() => setSelectedChatCartId(null)} />
     </>
   );

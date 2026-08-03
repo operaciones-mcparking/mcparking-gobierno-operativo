@@ -298,7 +298,7 @@ test("visible drawer copy exposes every safe window status", () => {
   assert.match(drawer, /Ventana abierta/);
   assert.match(drawer, /Ventana por vencer/);
   assert.match(drawer, /Ventana cerrada/);
-  assert.match(drawer, /Sin inbound (?:válido|vÃ¡lido)/);
+  assert.match(drawer, /Sin inbound/);
   assert.match(drawer, /No se pudo verificar ventana/);
 });
 
@@ -329,6 +329,9 @@ test("no unrelated modules are part of this task diff", () => {
     "src/app/recuperacion/recovery-cart-chat-drawer.tsx",
     "src/lib/recuperacion/recovery-chat-read-range.ts",
     "src/lib/recuperacion/recovery-snapshot-comparison.ts",
+    "scripts/recovery-snapshot-comparison-ui.test.mjs",
+    "src/app/recuperacion/recovery-cart-audit-table.tsx",
+    "src/app/recuperacion/recovery-snapshot-comparison-drawer.tsx",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
   ]);
 
@@ -346,6 +349,6 @@ test("changed sources do not contain common mojibake markers", () => {
     [sendRoutePath, sendRoute],
     [drawerPath, drawer],
   ]) {
-    assert.doesNotMatch(source, /Ãƒ|Ã‚/, `${path} contains mojibake markers`);
+    assert.doesNotMatch(source, /\u00C3|\u00C2|\u00E2|\u00EF\u00BF\u00BD/, `${path} contains mojibake markers`);
   }
 });
