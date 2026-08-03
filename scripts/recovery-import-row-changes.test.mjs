@@ -210,6 +210,40 @@ test("31. insert and update operations are differentiated", () => {
   assertHas(migration, /'updated'/i);
 });
 
+test("31a. identity hash qualifies pgcrypto digest through extensions schema", () => {
+  assertHas(migration, /extensions\.digest\(lower\(trim\(p_value\)\), 'sha256'\)/i);
+});
+
+test("31b. identity hash does not call unqualified digest", () => {
+  assertNotHas(migration, /(?<!extensions\.)\bdigest\(/i);
+});
+
+test("31c. migration is safe to rerun after table creation", () => {
+  assertHas(migration, /create table if not exists public\.recovery_import_row_changes/i);
+  assertHas(migration, /create index if not exists recovery_import_row_changes_batch_id_idx/i);
+  assertHas(migration, /create or replace function public\.recovery_import_safe_identity_hash/i);
+  assertHas(migration, /create or replace function public\.import_recovery_incomplete_bookings/i);
+  assertHas(migration, /create or replace function public\.import_recovery_purchases/i);
+});
+
+test("31d. migration does not use destructive drops for partial reapply", () => {
+  assertNotHas(migration, /drop\s+table|drop\s+function|truncate/i);
+});
+
+test("31e. existing updated_rows constraint is not recreated", () => {
+  assertNotHas(migration, /add constraint recovery_import_batches_updated_rows_check/i);
+  assertNotHas(migration, /validate constraint recovery_import_batches_updated_rows_check/i);
+});
+
+test("31f. migration only uses guarded add column for existing batch metadata", () => {
+  assertHas(migration, /add column if not exists updated_rows integer default 0/i);
+  assertNotHas(migration, /alter table public\.recovery_import_batches[\s\S]{0,120}add column updated_rows/i);
+});
+
+test("31g. migration does not contain unguarded alter table add constraint statements", () => {
+  assertNotHas(migration, /alter table public\.[^;]+add constraint/i);
+});
+
 test("32. event writes happen inside the import RPC CTE chain", () => {
   assertHas(migration, /create or replace function public\.import_recovery_incomplete_bookings[\s\S]*insert into public\.recovery_import_row_changes/i);
   assertHas(migration, /create or replace function public\.import_recovery_purchases[\s\S]*insert into public\.recovery_import_row_changes/i);

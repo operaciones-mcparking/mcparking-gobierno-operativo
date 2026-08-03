@@ -93,7 +93,7 @@ set search_path = public
 as $$
   select case
     when nullif(lower(trim(p_value)), '') is null then null
-    else encode(digest(lower(trim(p_value)), 'sha256'), 'hex')
+    else encode(extensions.digest(lower(trim(p_value)), 'sha256'), 'hex')
   end;
 $$;
 
@@ -708,23 +708,6 @@ comment on function public.import_recovery_incomplete_bookings(text, bigint, tex
 revoke all on function public.import_recovery_incomplete_bookings(text, bigint, text, jsonb, jsonb) from public;
 revoke execute on function public.import_recovery_incomplete_bookings(text, bigint, text, jsonb, jsonb) from anon;
 grant execute on function public.import_recovery_incomplete_bookings(text, bigint, text, jsonb, jsonb) to authenticated;
--- Add updated rows support to recovery purchase imports.
--- This migration does not modify purchase data by itself; it replaces the RPC so future imports can update mutable fields.
-
-alter table public.recovery_import_batches
-  add column if not exists updated_rows integer;
-
-alter table public.recovery_import_batches
-  add constraint recovery_import_batches_updated_rows_check
-  check (updated_rows is null or updated_rows >= 0)
-  not valid;
-
-alter table public.recovery_import_batches
-  validate constraint recovery_import_batches_updated_rows_check;
-
-comment on column public.recovery_import_batches.updated_rows is
-  'Rows updated during incremental imports when a stable source key already exists but mutable source fields changed.';
-
 -- Transactional import RPC for validated recovery purchases CSV rows.
 -- Adds controlled updates for mutable purchase fields when source_booking_id already exists.
 -- The app must validate the CSV and build normalized rows server-side before
