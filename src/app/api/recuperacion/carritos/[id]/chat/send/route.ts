@@ -26,9 +26,9 @@ type CartSendSourceRow = {
 };
 
 type WhatsappWindowErrorCode =
-  | "WHATSAPP_FREEFORM_WINDOW_CLOSED"
-  | "WHATSAPP_FREEFORM_WINDOW_NOT_OPEN"
-  | "WHATSAPP_FREEFORM_WINDOW_UNVERIFIABLE";
+  | "whatsapp_window_closed"
+  | "whatsapp_window_missing"
+  | "whatsapp_window_unverifiable";
 type SupabaseTechnicalError = {
   code?: string;
   details?: string;
@@ -59,15 +59,15 @@ function jsonError(message: string, status: number, stage?: string, messagePaylo
 
 function whatsappWindowError(windowState: WhatsappFreeformWindowState) {
   const code: WhatsappWindowErrorCode = windowState.status === "closed"
-    ? "WHATSAPP_FREEFORM_WINDOW_CLOSED"
+    ? "whatsapp_window_closed"
     : windowState.status === "unverifiable"
-      ? "WHATSAPP_FREEFORM_WINDOW_UNVERIFIABLE"
-      : "WHATSAPP_FREEFORM_WINDOW_NOT_OPEN";
+      ? "whatsapp_window_unverifiable"
+      : "whatsapp_window_missing";
   const error = windowState.status === "closed"
-    ? "La ventana de atención está cerrada. Debes utilizar una plantilla de WhatsApp."
+    ? "La ventana de WhatsApp está cerrada."
     : windowState.status === "unverifiable"
-      ? "No fue posible verificar la ventana de atención. Intenta recargar el chat antes de enviar."
-      : "La ventana de atención no está abierta. Debes utilizar una plantilla de WhatsApp.";
+      ? "No fue posible verificar la ventana de WhatsApp."
+      : "No existe una respuesta reciente del cliente para abrir la ventana de WhatsApp.";
 
   return NextResponse.json(
     {
@@ -238,7 +238,27 @@ async function callN8nWebhook(payload: {
   }
 
   if (!response.ok) {
-    return { errorMessage: `n8n respondio HTTP ${response.status}.`, ok: false as const, status: response.status };
+    if (responseContainsMetaWindowClosed(responsePayload)) {
+      return {
+        errorCode: "whatsapp_meta_window_closed" as const,
+        errorMessage: "Meta informó que la ventana de WhatsApp está cerrada.",
+        metaWindowClosed: true,
+        ok: false as const,
+        status: response.status,
+      };
+    }
+
+    return { errorMessage: `n8n respondio HTTP ${response.status}.`, metaWindowClosed: false, ok: false as const, status: response.status };
+  }
+
+  if (responseContainsMetaWindowClosed(responsePayload)) {
+    return {
+      errorCode: "whatsapp_meta_window_closed" as const,
+      errorMessage: "Meta informó que la ventana de WhatsApp está cerrada.",
+      metaWindowClosed: true,
+      ok: false as const,
+      status: 502,
+    };
   }
 
   const typedPayload = responsePayload as { n8nExecutionId?: unknown; executionId?: unknown; whatsappMessageId?: unknown; whatsappStatus?: unknown } | null;
@@ -249,6 +269,20 @@ async function callN8nWebhook(payload: {
     whatsappMessageId: safeString(typedPayload?.whatsappMessageId) || null,
     whatsappStatus: safeString(typedPayload?.whatsappStatus) || "sent",
   };
+}
+
+function responseContainsMetaWindowClosed(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+
+  let text: string;
+
+  try {
+    text = typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+
+  return /131047|re-engagement message|more than 24 hours/i.test(text);
 }
 
 function shortErrorMessage(value: unknown) {
@@ -375,11 +409,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
         .eq("id", insertedMessage.id);
 
+      const safeFailedMessage = safeMessagePayload({ ...insertedMessage, whatsapp_status: failedStatus } as { message_at: string; message_text: string; whatsapp_status: string | null });
+
+      if (n8nResult.metaWindowClosed) {
+        return NextResponse.json(
+          {
+            code: n8nResult.errorCode,
+            error: n8nResult.errorMessage,
+            message: safeFailedMessage,
+            ok: false,
+            stage: "n8n",
+          },
+          { status: 409 },
+        );
+      }
+
       return jsonError(
         "Mensaje guardado localmente, pero n8n no pudo enviarlo.",
         502,
         "n8n",
-        safeMessagePayload({ ...insertedMessage, whatsapp_status: failedStatus } as { message_at: string; message_text: string; whatsapp_status: string | null }),
+        safeFailedMessage,
       );
     }
 

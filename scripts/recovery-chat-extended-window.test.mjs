@@ -150,7 +150,7 @@ test("WhatsApp 24-hour authorization helper and POST send route are not part of 
   assert.match(whatsappWindowSource, /classifyWhatsappFreeformWindow/);
   assert.match(sendRouteSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cart\.id\)/);
   assert.match(sendRouteSource, /callN8nWebhook\(\{ cart, messageText, operatorEmail, sentAt \}\)/);
-  assert.match(sendRouteSource, /WHATSAPP_FREEFORM_WINDOW_UNVERIFIABLE/);
+  assert.match(sendRouteSource, /whatsapp_window_unverifiable/);
   assert.doesNotMatch(routeSource, /callN8nWebhook/);
   assert.doesNotMatch(routeSource, /export\s+async\s+function\s+POST/);
 });

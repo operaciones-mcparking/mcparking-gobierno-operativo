@@ -67,13 +67,17 @@ type RecoveryCartChatDrawerProps = {
   onClose: () => void;
 };
 
-type WhatsappFreeformWindowStatus = "open" | "expiring" | "closed" | "no_inbound" | "unverifiable";
+type WhatsappFreeformWindowStatus = "open" | "closing_soon" | "closed" | "missing" | "unverifiable";
 
 type WhatsappFreeformWindowPayload = {
   canSendFreeform: boolean;
+  businessKey: "MPV" | "EAP" | null;
+  closesAt: string | null;
   expiresAt: string | null;
   lastInboundAt: string | null;
+  metaRejectedAsClosed: boolean;
   remainingSeconds: number | null;
+  source: "live" | "message_memory" | "combined" | null;
   status: WhatsappFreeformWindowStatus;
 };
 
@@ -147,7 +151,8 @@ function formatRemainingTime(milliseconds: number) {
 }
 
 function remainingMilliseconds(windowState: WhatsappFreeformWindowPayload, nowMs: number) {
-  const expiresAtMs = windowState.expiresAt ? new Date(windowState.expiresAt).getTime() : Number.NaN;
+  const closesAt = windowState.closesAt ?? windowState.expiresAt;
+  const expiresAtMs = closesAt ? new Date(closesAt).getTime() : Number.NaN;
 
   if (Number.isFinite(expiresAtMs)) {
     return expiresAtMs - nowMs;
@@ -180,7 +185,7 @@ function getWhatsappFreeformWindowView(
     };
   }
 
-  if (windowState.status === "open" || windowState.status === "expiring") {
+  if (windowState.status === "open" || windowState.status === "closing_soon") {
     const remainingMs = remainingMilliseconds(windowState, nowMs);
 
     if (remainingMs <= 0) {
@@ -193,13 +198,13 @@ function getWhatsappFreeformWindowView(
     }
 
     const remainingLabel = formatRemainingTime(remainingMs);
-    const isExpiring = windowState.status === "expiring";
+    const isClosingSoon = windowState.status === "closing_soon";
 
     return {
       canSendFreeform: true,
       kind: windowState.status,
-      label: isExpiring ? `Ventana por vencer · ${remainingLabel} restantes` : `Ventana abierta · ${remainingLabel} restantes`,
-      tone: isExpiring ? "warning" : "success",
+      label: isClosingSoon ? `Cierra pronto · ${remainingLabel} restantes` : `Ventana abierta · ${remainingLabel} restantes`,
+      tone: isClosingSoon ? "warning" : "success",
     };
   }
 
@@ -212,11 +217,11 @@ function getWhatsappFreeformWindowView(
     };
   }
 
-  if (windowState.status === "no_inbound") {
+  if (windowState.status === "missing") {
     return {
       canSendFreeform: false,
-      kind: "no_inbound",
-      label: "Sin inbound válido · requiere plantilla",
+      kind: "missing",
+      label: "Sin respuesta del cliente · requiere plantilla",
       tone: "neutral",
     };
   }
@@ -428,7 +433,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const messagePlaceholder = (() => {
     if (freeformWindow.kind === "checking") return "Verificando ventana de atención...";
     if (freeformWindow.kind === "closed") return "La ventana de atención está cerrada";
-    if (freeformWindow.kind === "no_inbound") return "Se requiere una plantilla aprobada";
+    if (freeformWindow.kind === "missing") return "Se requiere una plantilla aprobada";
     if (freeformWindow.kind === "unverifiable") return "No fue posible verificar la ventana";
     if (!cart?.phone) return "Sin teléfono normalizado";
 
@@ -452,7 +457,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     if (isFreeformBlocked) {
       const blockedMessage = freeformWindow.kind === "closed"
         ? "La ventana de atención está cerrada. Para volver a contactar se requiere una plantilla aprobada."
-        : freeformWindow.kind === "no_inbound"
+        : freeformWindow.kind === "missing"
           ? "No se encontró una ventana iniciada por el cliente. Para contactarlo se requiere una plantilla aprobada."
           : "No fue posible verificar la ventana de atención. Recarga el chat antes de intentar enviar.";
 
@@ -653,7 +658,13 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <ValueBadge tone={freeformWindow.tone}>{freeformWindow.label}</ValueBadge>
             {summary ? <ValueBadge tone="success">{formatNumber(summary.totalMessages)} mensajes</ValueBadge> : null}
             {summary?.liveMessages ? <ValueBadge tone="info">{formatNumber(summary.liveMessages)} live</ValueBadge> : null}
-            <span>Ventana: {formatDateTime(cart?.windowStart ?? null)} - {formatDateTime(cart?.windowEnd ?? null)}</span>
+            <span>Historial mostrado: {formatDateTime(cart?.windowStart ?? null)} - {formatDateTime(cart?.windowEnd ?? null)}</span>
+            {serverWhatsappWindow?.lastInboundAt ? (
+              <span>Último inbound: {formatDateTime(serverWhatsappWindow.lastInboundAt)}</span>
+            ) : null}
+            {serverWhatsappWindow?.closesAt || serverWhatsappWindow?.expiresAt ? (
+              <span>Cierre WhatsApp: {formatDateTime(serverWhatsappWindow.closesAt ?? serverWhatsappWindow.expiresAt)}</span>
+            ) : null}
             {summary ? <span>Inbound: {formatNumber(summary.inboundMessages)} - Outbound: {formatNumber(summary.outboundMessages)}</span> : null}
           </div>
           <div className="mt-2 flex sm:hidden">
@@ -792,9 +803,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
               Han pasado más de 24 horas desde el último mensaje del cliente. Para volver a contactarlo se requiere una plantilla aprobada.
             </p>
           ) : null}
-          {freeformWindow.kind === "no_inbound" ? (
+          {freeformWindow.kind === "missing" ? (
             <p className="mt-1 rounded-lg border border-[#d6e1ea] bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 sm:text-xs">
-              No hay mensajes inbound válidos para iniciar la ventana de atención. Para contactar se requiere una plantilla aprobada.
+              No hay respuestas válidas del cliente para iniciar la ventana de atención. Para contactar se requiere una plantilla aprobada.
             </p>
           ) : null}
           {freeformWindow.kind === "unverifiable" ? (
