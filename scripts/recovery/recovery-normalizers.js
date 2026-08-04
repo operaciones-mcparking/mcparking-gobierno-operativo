@@ -1,3 +1,5 @@
+const RECOVERY_TIME_ZONE = "America/Santiago";
+
 function normalizePhone(raw) {
   if (raw === null || raw === undefined) return null;
 
@@ -56,6 +58,67 @@ function isValidPurchase(bookingStatus) {
   return status === 1 || status === 8;
 }
 
+function timeZoneParts(timeZone, date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  return Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  );
+}
+
+function timeZoneOffsetMs(timeZone, date) {
+  const parts = timeZoneParts(timeZone, date);
+  const asUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+
+  return asUtc - date.getTime();
+}
+
+function zonedDateTimeToUtcDate(timeZone, year, month, day, hour, minute, second) {
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  const firstPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, guess));
+  const secondPass = new Date(guess.getTime() - timeZoneOffsetMs(timeZone, firstPass));
+  const localParts = timeZoneParts(timeZone, secondPass);
+
+  if (
+    localParts.year !== year ||
+    localParts.month !== month ||
+    localParts.day !== day ||
+    localParts.hour !== hour ||
+    localParts.minute !== minute ||
+    localParts.second !== second
+  ) {
+    return null;
+  }
+
+  return secondPass;
+}
+
+function hasExplicitTimeZone(value) {
+  return /[T\s]\d{1,2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+}
+
+function integerPart(value) {
+  return Number.parseInt(value, 10);
+}
+
 function parseDateSafe(raw) {
   if (raw === null || raw === undefined) return null;
 
@@ -63,27 +126,54 @@ function parseDateSafe(raw) {
 
   if (!value) return null;
 
-  const direct = new Date(value);
+  if (hasExplicitTimeZone(value)) {
+    const direct = new Date(value);
 
-  if (!Number.isNaN(direct.getTime())) return direct;
+    return Number.isNaN(direct.getTime()) ? null : direct;
+  }
 
-  const match = value.match(
+  const dayFirstMatch = value.match(
     /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
   );
-
-  if (!match) return null;
-
-  const [, day, month, year, hour = "0", minute = "0", second = "0"] = match;
-  const date = new Date(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second),
+  const isoLocalMatch = value.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
   );
 
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (!dayFirstMatch && !isoLocalMatch) return null;
+
+  const [, first, secondValue, third, hour = "0", minute = "0", seconds = "0"] =
+    dayFirstMatch ?? isoLocalMatch;
+  const year = integerPart(dayFirstMatch ? third : first);
+  const month = integerPart(secondValue);
+  const day = integerPart(dayFirstMatch ? first : third);
+  const hourNumber = integerPart(hour);
+  const minuteNumber = integerPart(minute);
+  const secondNumber = integerPart(seconds);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hourNumber < 0 ||
+    hourNumber > 23 ||
+    minuteNumber < 0 ||
+    minuteNumber > 59 ||
+    secondNumber < 0 ||
+    secondNumber > 59
+  ) {
+    return null;
+  }
+
+  return zonedDateTimeToUtcDate(
+    RECOVERY_TIME_ZONE,
+    year,
+    month,
+    day,
+    hourNumber,
+    minuteNumber,
+    secondNumber,
+  );
 }
 
 module.exports = {
