@@ -165,6 +165,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+const operationalParkingDisplayNames: Record<string, string> = {
+  EAP: "Estacionamiento Aeropuerto",
+  "ESTACIONAMIENTO AEROPUERTO": "Estacionamiento Aeropuerto",
+  MCP: "McParking",
+  "MC PARKING VESPUCIO": "McParking",
+  OKP_EXP: "OKParking Express",
+  "OK PARKING EXPRESS": "OKParking Express",
+  OKP_RC: "OKParking Rio Clarillo",
+  "OK PARKING RC": "OKParking Rio Clarillo",
+};
+
+export function displayOperationalParkingName(parkingCodigo: string | null | undefined, parkingNombre: string | null | undefined) {
+  const codeKey = String(parkingCodigo ?? "").trim().toUpperCase();
+  const nameKey = String(parkingNombre ?? "").trim().toUpperCase();
+  return operationalParkingDisplayNames[codeKey] ?? operationalParkingDisplayNames[nameKey] ?? parkingNombre ?? "Sin estacionamiento";
+}
+
 function isSafeDate(value: unknown): value is string {
   if (typeof value !== "string" || !datePattern.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -228,8 +245,11 @@ function parseLastUpdate(value: unknown): OperationalDashboardLastUpdate | null 
   const packsJobId = nullableUuid(value, "packs_job_id");
   const dashboardJobId = nullableUuid(value, "dashboard_job_id");
   const estado = requiredString(value, "estado");
-  const periodoDesde = requiredDate(value, "periodo_desde");
-  const periodoHasta = requiredDate(value, "periodo_hasta");
+  const metadata = isRecord(value.metadata) ? value.metadata : null;
+  const metadataPeriodoDesde = metadata ? requiredDate(metadata, "periodo_desde") : null;
+  const metadataPeriodoHasta = metadata ? requiredDate(metadata, "periodo_hasta") : null;
+  const periodoDesde = metadataPeriodoDesde ?? requiredDate(value, "periodo_desde");
+  const periodoHasta = metadataPeriodoHasta ?? requiredDate(value, "periodo_hasta");
   const metricVersion = requiredString(value, "metric_version");
   const rowsWritten = finiteNumber(value.rows_written);
   const calculatedAt = value.calculated_at;
@@ -363,7 +383,7 @@ function parseRow(value: unknown): OperationalDashboardRow | null {
     pack_vendido_q: sums.pack_vendido_q ?? 0,
     pack_vendido_venta: sums.pack_vendido_venta ?? 0,
     parking_codigo: parkingCodigo,
-    parking_nombre: parkingNombre,
+    parking_nombre: displayOperationalParkingName(parkingCodigo, parkingNombre),
     precio_lista_boleta_avg: averages.precio_lista_boleta_avg ?? null,
     precio_pagado_boleta_avg: averages.precio_pagado_boleta_avg ?? null,
     quarter,

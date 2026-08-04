@@ -152,9 +152,10 @@ test("I. resumen por estacionamiento usa tabla desktop resumida", () => {
   assert.doesNotMatch(client, /Detalle operativo por parking|filas operacionales visibles/);
   assert.match(client, /function ParkingSummaryTable/);
   assert.match(client, /className="mt-5 hidden lg:block"/);
-  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acción"]) {
+  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos"]) {
     assert.match(client, new RegExp(label));
   }
+  assert.equal(client.includes('"Acci\\u00f3n"'), true);
   assert.match(client, /row\.parking_nombre/);
   assert.match(client, /row\.sistema_grupo/);
   assert.match(client, /formatCurrency\(row\.venta_total_operacional\)/);
@@ -164,34 +165,54 @@ test("I. resumen por estacionamiento usa tabla desktop resumida", () => {
   assert.doesNotMatch(client, /min-w-\[1180px\]|overflow-x-auto/);
 });
 
-test("I1. detalle expandible conserva los desgloses operativos", () => {
-  assert.match(client, /function ParkingDetail/);
+test("I1. drawer de detalle conserva los desgloses operativos", () => {
+  assert.match(client, /function ParkingDetailDrawer/);
   assert.match(client, /function ParkingSummaryToggle/);
-  assert.match(client, /aria-expanded=\{isExpanded\}/);
-  assert.match(client, /aria-controls=\{detailId\}/);
-  assert.match(client, /aria-label=\{`\$\{isExpanded \? "Ocultar" : "Ver"\} detalle de \$\{parkingName\}`\}/);
+  assert.equal(client.includes('aria-label={`Ver detalle de ${parkingName}`}'), true);
   assert.match(client, /Ver detalle/);
-  assert.match(client, /Ocultar detalle/);
+  assert.doesNotMatch(client, /Ocultar detalle|aria-expanded={isExpanded}|aria-controls={detailId}/);
+  assert.match(client, /role="dialog"/);
+  assert.match(client, /aria-modal="true"/);
+  assert.match(client, /Cerrar detalle operacional/);
+  assert.match(client, /event.key === "Escape"/);
+  assert.match(client, /document.body.style.overflow = "hidden"/);
+  assert.match(client, /max-w-full/);
+  assert.match(client, /md:max-w-3xl/);
+  assert.match(client, /overflow-y-auto overflow-x-hidden/);
   for (const label of [
     "Ventas",
-    "Venta boleta",
-    "Venta packs",
+    "Venta Operacional",
+    "Venta Boleta",
+    "Venta Packs Vendidos",
     "Reservas",
-    "Q boleta",
-    "Q reservas pack",
-    "Q total reservas",
-    "DBI boleta",
-    "DBI reservas pack",
-    "DBI total reservas",
-    "Packs",
-    "Q packs vendidos",
-    "Fecha",
-    "Fecha del registro",
+    "Q Boleta",
+    "Q Reservas Pack",
+    "Q Total Reservas",
+    "DBI",
+    "DBI Boleta",
+    "DBI Reservas Pack",
+    "DBI Total Reservas",
+    "Packs vendidos",
+    "Q Packs Vendidos",
+    "DBI Packs Vendidos",
+    "Anticipacion",
+    "Anticipacion Total",
+    "Anticipacion Boleta",
+    "Anticipacion Pack",
+    "Estadia",
+    "Estadia Total",
+    "Estadia Boleta",
+    "Estadia Pack",
+    "ADR",
+    "ADR Pagado",
+    "ADR Lista",
+    "Ticket",
+    "Ticket Pagado",
+    "Ticket Lista",
   ]) {
     assert.match(client, new RegExp(label));
   }
 });
-
 test("I2. filas totales visibles se calculan localmente sin tocar metricas base", () => {
   assert.match(client, /type ParkingSummaryTotals = Pick/);
   assert.match(client, /function calculateParkingSummaryTotals\(rows: OperationalDashboardRow\[\]\)/);

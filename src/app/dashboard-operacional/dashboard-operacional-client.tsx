@@ -12,6 +12,7 @@ import {
   formatAdrCurrency,
   formatCurrency,
   formatDate,
+  formatDateTime,
   formatDays,
   formatInteger,
   formatPercent,
@@ -79,7 +80,7 @@ function LastUpdateSummary({ dashboard }: { dashboard: OperationalDashboardViewM
     return <p className="mt-2 text-sm text-slate-600">Sin actualizaciones registradas</p>;
   }
 
-  const updateDate = lastUpdate.periodo_hasta ? formatDate(lastUpdate.periodo_hasta) : "Sin fecha";
+  const updateDate = formatDateTime(lastUpdate.calculated_at ?? lastUpdate.updated_at ?? lastUpdate.created_at);
   const hasRange = Boolean(lastUpdate.periodo_desde && lastUpdate.periodo_hasta);
 
   return (
@@ -407,87 +408,152 @@ function calculateParkingSummaryTotals(rows: OperationalDashboardRow[]): Parking
   return totals;
 }
 
+function formatDetailValue(value: string) {
+  return value === "No disponible" ? "\u2014" : value;
+}
+
 function ParkingDetailSection({ items, title }: { items: Array<[string, string]>; title: string }) {
   return (
-    <div>
+    <section className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4">
       <h4 className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{title}</h4>
-      <dl className="mt-2 grid gap-1 text-sm">
+      <dl className="mt-3 grid gap-2 text-sm">
         {items.map(([label, value]) => (
-          <div className="flex items-center justify-between gap-3" key={label}>
-            <dt className="text-slate-600">{label}</dt>
-            <dd className="font-medium text-navy">{value}</dd>
+          <div className="flex items-start justify-between gap-4" key={label}>
+            <dt className="min-w-0 text-slate-600">{label}</dt>
+            <dd className="shrink-0 text-right font-semibold text-navy">{formatDetailValue(value)}</dd>
           </div>
         ))}
       </dl>
-    </div>
+    </section>
   );
 }
 
-function ParkingDetail({ row }: { row: OperationalDashboardRow }) {
+function ParkingDetailDrawer({ onClose, row }: { onClose: () => void; row: OperationalDashboardRow | null }) {
+  useEffect(() => {
+    if (!row) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [onClose, row]);
+
+  if (!row) return null;
+
   return (
-    <div className="grid gap-4 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 sm:grid-cols-2 lg:grid-cols-5">
-      <ParkingDetailSection
-        items={[
-          ["Venta boleta", formatCurrency(row.reserva_boleta_venta)],
-          ["Venta packs", formatCurrency(row.pack_vendido_venta)],
-        ]}
-        title="Ventas"
-      />
-      <ParkingDetailSection
-        items={[
-          ["Q boleta", formatInteger(row.reserva_boleta_q)],
-          ["Q reservas pack", formatInteger(row.reserva_pack_q)],
-          ["Q total reservas", formatInteger(row.reserva_total_q)],
-        ]}
-        title="Reservas"
-      />
-      <ParkingDetailSection
-        items={[
-          ["DBI boleta", formatInteger(row.reserva_boleta_dbi)],
-          ["DBI reservas pack", formatInteger(row.reserva_pack_dbi)],
-          ["DBI total reservas", formatInteger(row.reserva_total_dbi)],
-        ]}
-        title="DBI"
-      />
-      <ParkingDetailSection items={[["Q packs vendidos", formatInteger(row.pack_vendido_q)]]} title="Packs" />
-      <ParkingDetailSection items={[["Fecha del registro", formatDate(row.fecha)]]} title="Fecha" />
+    <div aria-modal="true" className="fixed inset-0 z-50 flex justify-end bg-navy/35" role="dialog">
+      <button aria-label="Cerrar detalle operacional" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} type="button" />
+      <aside className="relative flex h-full w-full max-w-full flex-col overflow-y-auto overflow-x-hidden bg-white shadow-2xl md:max-w-3xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#d6e1ea] bg-white p-5">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sea">Detalle operacional</p>
+            <h2 className="mt-2 text-xl font-semibold text-navy">{row.parking_nombre}</h2>
+            <p className="mt-1 text-sm text-slate-600">{formatDate(row.fecha)} ? Sistema {row.sistema_grupo}</p>
+          </div>
+          <button aria-label="Cerrar detalle operacional" className="rounded-lg border border-[#d7e3ec] bg-white px-3 py-2 text-sm font-medium text-navy transition hover:bg-[#f8fbfd]" onClick={onClose} type="button">
+            Cerrar
+          </button>
+        </div>
+        <div className="grid gap-4 p-5 md:grid-cols-2">
+          <ParkingDetailSection
+            items={[
+              ["Venta Operacional", formatCurrency(row.venta_total_operacional)],
+              ["Venta Boleta", formatCurrency(row.reserva_boleta_venta)],
+              ["Venta Packs Vendidos", formatCurrency(row.pack_vendido_venta)],
+            ]}
+            title="Ventas"
+          />
+          <ParkingDetailSection
+            items={[
+              ["Q Boleta", formatInteger(row.reserva_boleta_q)],
+              ["Q Reservas Pack", formatInteger(row.reserva_pack_q)],
+              ["Q Total Reservas", formatInteger(row.reserva_total_q)],
+            ]}
+            title="Reservas"
+          />
+          <ParkingDetailSection
+            items={[
+              ["DBI Boleta", formatInteger(row.reserva_boleta_dbi)],
+              ["DBI Reservas Pack", formatInteger(row.reserva_pack_dbi)],
+              ["DBI Total Reservas", formatInteger(row.reserva_total_dbi)],
+            ]}
+            title="DBI"
+          />
+          <ParkingDetailSection
+            items={[
+              ["Q Packs Vendidos", formatInteger(row.pack_vendido_q)],
+              ["DBI Packs Vendidos", formatInteger(row.pack_vendido_dbi)],
+            ]}
+            title="Packs vendidos"
+          />
+          <ParkingDetailSection
+            items={[
+              ["Anticipacion Total", formatDays(row.advanced_book_days_total_avg)],
+              ["Anticipacion Boleta", formatDays(row.advanced_book_days_boleta_avg)],
+              ["Anticipacion Pack", formatDays(row.advanced_book_days_pack_avg)],
+            ]}
+            title="Anticipacion"
+          />
+          <ParkingDetailSection
+            items={[
+              ["Estadia Total", formatDays(row.duration_stay_total_avg)],
+              ["Estadia Boleta", formatDays(row.duration_stay_boleta_avg)],
+              ["Estadia Pack", formatDays(row.duration_stay_pack_avg)],
+            ]}
+            title="Estadia"
+          />
+          <ParkingDetailSection
+            items={[
+              ["ADR Pagado", formatAdrCurrency(row.precio_pagado_boleta_avg, row.duration_stay_boleta_avg)],
+              ["ADR Lista", formatAdrCurrency(row.precio_lista_boleta_avg, row.duration_stay_boleta_avg)],
+            ]}
+            title="ADR"
+          />
+          <ParkingDetailSection
+            items={[
+              ["Ticket Pagado", formatCurrency(row.precio_pagado_boleta_avg)],
+              ["Ticket Lista", formatCurrency(row.precio_lista_boleta_avg)],
+            ]}
+            title="Ticket"
+          />
+        </div>
+      </aside>
     </div>
   );
 }
 
 function ParkingSummaryToggle({
-  detailId,
-  isExpanded,
-  onToggle,
+  onOpen,
   parkingName,
 }: {
-  detailId: string;
-  isExpanded: boolean;
-  onToggle: () => void;
+  onOpen: () => void;
   parkingName: string;
 }) {
   return (
     <button
-      aria-controls={detailId}
-      aria-expanded={isExpanded}
-      aria-label={`${isExpanded ? "Ocultar" : "Ver"} detalle de ${parkingName}`}
+      aria-label={`Ver detalle de ${parkingName}`}
       className="rounded-md border border-[#d7e3ec] bg-white px-2.5 py-1 text-xs font-medium text-navy transition hover:bg-[#f8fbfd]"
-      onClick={onToggle}
+      onClick={onOpen}
       type="button"
     >
-      {isExpanded ? "Ocultar detalle" : "Ver detalle"}
+      Ver detalle
     </button>
   );
 }
 
 function ParkingSummaryTable({
-  expandedKeys,
-  onToggle,
+  onOpenDetail,
   rows,
   totals,
 }: {
-  expandedKeys: Set<string>;
-  onToggle: (key: string) => void;
+  onOpenDetail: (row: OperationalDashboardRow) => void;
   rows: OperationalDashboardRow[];
   totals: ParkingSummaryTotals;
 }) {
@@ -496,7 +562,7 @@ function ParkingSummaryTable({
       <table className="w-full border-separate border-spacing-0 text-left text-sm">
         <thead>
           <tr className="text-xs uppercase tracking-[0.08em] text-slate-500">
-            {["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acción"].map((header) => (
+            {["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acci\u00f3n"].map((header) => (
               <th className="border-b border-[#d6e1ea] bg-[#f8fbfd] px-3 py-3 font-semibold" key={header}>{header}</th>
             ))}
           </tr>
@@ -504,8 +570,6 @@ function ParkingSummaryTable({
         <tbody>
           {rows.map((row) => {
             const key = getParkingSummaryKey(row);
-            const detailId = getParkingDetailId("parking-detail", key);
-            const isExpanded = expandedKeys.has(key);
 
             return (
               <Fragment key={key}>
@@ -519,23 +583,9 @@ function ParkingSummaryTable({
                   <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_dbi)}</td>
                   <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.pack_vendido_q)}</td>
                   <td className="border-b border-[#e4edf4] px-3 py-3">
-                    <ParkingSummaryToggle
-                      detailId={detailId}
-                      isExpanded={isExpanded}
-                      onToggle={() => onToggle(key)}
-                      parkingName={row.parking_nombre}
-                    />
+                    <ParkingSummaryToggle onOpen={() => onOpenDetail(row)} parkingName={row.parking_nombre} />
                   </td>
                 </tr>
-                {isExpanded ? (
-                  <tr>
-                    <td className="border-b border-[#e4edf4] px-3 py-3" colSpan={7}>
-                      <div id={detailId}>
-                        <ParkingDetail row={row} />
-                      </div>
-                    </td>
-                  </tr>
-                ) : null}
               </Fragment>
             );
           })}
@@ -555,17 +605,12 @@ function ParkingSummaryTable({
 }
 
 function ParkingSummaryCard({
-  isExpanded,
-  onToggle,
+  onOpenDetail,
   row,
 }: {
-  isExpanded: boolean;
-  onToggle: () => void;
+  onOpenDetail: (row: OperationalDashboardRow) => void;
   row: OperationalDashboardRow;
 }) {
-  const key = getParkingSummaryKey(row);
-  const detailId = getParkingDetailId("parking-card-detail", key);
-
   return (
     <article className="rounded-xl border border-[#e4edf4] bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -573,7 +618,7 @@ function ParkingSummaryCard({
           <h3 className="font-semibold text-navy">{row.parking_nombre}</h3>
           <span className="mt-2 inline-flex rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-1 text-xs font-medium text-slate-600">{row.sistema_grupo}</span>
         </div>
-        <ParkingSummaryToggle detailId={detailId} isExpanded={isExpanded} onToggle={onToggle} parkingName={row.parking_nombre} />
+        <ParkingSummaryToggle onOpen={() => onOpenDetail(row)} parkingName={row.parking_nombre} />
       </div>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
@@ -593,11 +638,6 @@ function ParkingSummaryCard({
           <dd className="mt-1 font-semibold text-navy">{formatInteger(row.pack_vendido_q)}</dd>
         </div>
       </dl>
-      {isExpanded ? (
-        <div className="mt-4" id={detailId}>
-          <ParkingDetail row={row} />
-        </div>
-      ) : null}
     </article>
   );
 }
@@ -629,13 +669,11 @@ function ParkingTotalsCard({ totals }: { totals: ParkingSummaryTotals }) {
 }
 
 function ParkingSummaryCards({
-  expandedKeys,
-  onToggle,
+  onOpenDetail,
   rows,
   totals,
 }: {
-  expandedKeys: Set<string>;
-  onToggle: (key: string) => void;
+  onOpenDetail: (row: OperationalDashboardRow) => void;
   rows: OperationalDashboardRow[];
   totals: ParkingSummaryTotals;
 }) {
@@ -643,7 +681,7 @@ function ParkingSummaryCards({
     <div className="mt-5 grid gap-3 lg:hidden">
       {rows.map((row) => {
         const key = getParkingSummaryKey(row);
-        return <ParkingSummaryCard isExpanded={expandedKeys.has(key)} key={key} onToggle={() => onToggle(key)} row={row} />;
+        return <ParkingSummaryCard key={key} onOpenDetail={onOpenDetail} row={row} />;
       })}
       <ParkingTotalsCard totals={totals} />
     </div>
@@ -657,7 +695,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [selectedDate, setSelectedDate] = useState(initialDateRef.current);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(initialError);
-  const [expandedParkingKeys, setExpandedParkingKeys] = useState<Set<string>>(() => new Set());
+  const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
 
   const rows = useMemo(() => {
     return [...(dashboard?.rows ?? [])].sort((left, right) => {
@@ -669,16 +707,11 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
     });
   }, [dashboard]);
   const parkingSummaryTotals = useMemo(() => calculateParkingSummaryTotals(rows), [rows]);
-  const toggleParkingDetail = useCallback((key: string) => {
-    setExpandedParkingKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
+  const openParkingDetail = useCallback((row: OperationalDashboardRow) => {
+    setSelectedParkingDetail(row);
+  }, []);
+  const closeParkingDetail = useCallback(() => {
+    setSelectedParkingDetail(null);
   }, []);
 
   const loadByDate = useCallback(async (date: string) => {
@@ -727,7 +760,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   }, [loadByDate]);
 
   useEffect(() => {
-    setExpandedParkingKeys(new Set());
+    setSelectedParkingDetail(null);
   }, [selectedDate]);
 
   return (
@@ -798,11 +831,13 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
           <p className="mt-5 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">No hay estacionamientos para la fecha seleccionada.</p>
         ) : (
           <>
-            <ParkingSummaryTable expandedKeys={expandedParkingKeys} onToggle={toggleParkingDetail} rows={rows} totals={parkingSummaryTotals} />
-            <ParkingSummaryCards expandedKeys={expandedParkingKeys} onToggle={toggleParkingDetail} rows={rows} totals={parkingSummaryTotals} />
+            <ParkingSummaryTable onOpenDetail={openParkingDetail} rows={rows} totals={parkingSummaryTotals} />
+            <ParkingSummaryCards onOpenDetail={openParkingDetail} rows={rows} totals={parkingSummaryTotals} />
           </>
         )}
       </section>
+
+      <ParkingDetailDrawer onClose={closeParkingDetail} row={selectedParkingDetail} />
     </>
   );
 }
