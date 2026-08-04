@@ -24,6 +24,14 @@ type SnapshotComparisonResponse = {
   ok: boolean;
 };
 
+type WhatsappWindowIndicatorStatus = "open" | "closing_soon" | "closed" | "missing" | "unverifiable";
+
+type WhatsappWindowIndicatorPayload = {
+  closesAt: string | null;
+  remainingSeconds: number | null;
+  status: WhatsappWindowIndicatorStatus;
+};
+
 type ChatIndicator = Pick<
   RecoveryCartAuditRow,
   | "chatMessageCount"
@@ -35,6 +43,7 @@ type ChatIndicator = Pick<
 > & {
   cartId: string;
   hasInbound: boolean;
+  whatsappWindow?: WhatsappWindowIndicatorPayload;
 };
 
 type StatusFilter = "all" | RecoveryCartAuditStatus;
@@ -246,6 +255,90 @@ function intentTooltipTitle(row: RecoveryCartAuditRow) {
   if (items.length === 0) return row.hasChat === false ? "Sin chat asociado" : "Chat disponible bajo demanda";
 
   return items.map(([label, value]) => `${label}: ${value}`).join(" | ");
+}
+
+function formatWhatsappWindowRemaining(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds)) return null;
+
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+
+  if (hours > 0) return `${hours} h ${minutes} min`;
+  return `${minutes} min`;
+}
+
+function currentWhatsappWindow(windowState: WhatsappWindowIndicatorPayload | null | undefined, nowMs: number) {
+  if (!windowState) {
+    return {
+      ariaLabel: "Verificando ventana de WhatsApp",
+      className: "bg-slate-300/60 animate-pulse",
+      title: "Verificando ventana de WhatsApp",
+    };
+  }
+
+  if (windowState.status === "missing") {
+    return {
+      ariaLabel: "Sin respuesta del cliente",
+      className: "bg-slate-300/80",
+      title: "Sin respuesta válida del cliente · requiere plantilla",
+    };
+  }
+
+  if (windowState.status === "unverifiable") {
+    return {
+      ariaLabel: "No se pudo verificar la ventana",
+      className: "border border-slate-500 bg-slate-600",
+      title: "No se pudo verificar la ventana de WhatsApp",
+    };
+  }
+
+  const closesAtMs = windowState.closesAt ? new Date(windowState.closesAt).getTime() : NaN;
+
+  if (!Number.isFinite(closesAtMs)) {
+    return {
+      ariaLabel: "No se pudo verificar la ventana",
+      className: "border border-slate-500 bg-slate-600",
+      title: "No se pudo verificar la ventana de WhatsApp",
+    };
+  }
+
+  const remainingSeconds = Math.max(0, Math.ceil((closesAtMs - nowMs) / 1000));
+  const remaining = formatWhatsappWindowRemaining(remainingSeconds);
+
+  if (remainingSeconds <= 0) {
+    return {
+      ariaLabel: "Ventana de WhatsApp cerrada",
+      className: "bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.14)]",
+      title: "Ventana cerrada · requiere plantilla",
+    };
+  }
+
+  if (remainingSeconds <= 2 * 60 * 60) {
+    return {
+      ariaLabel: "Ventana de WhatsApp próxima a cerrar",
+      className: "bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.18)]",
+      title: remaining ? `Cierra en ${remaining}` : "Cierra pronto",
+    };
+  }
+
+  return {
+    ariaLabel: "Ventana de WhatsApp abierta",
+    className: "bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.16)]",
+    title: remaining ? `Ventana abierta · ${remaining} restantes` : "Ventana abierta",
+  };
+}
+
+function WhatsappWindowDot({ state, nowMs }: { nowMs: number; state?: WhatsappWindowIndicatorPayload }) {
+  const indicator = currentWhatsappWindow(state, nowMs);
+
+  return (
+    <span
+      aria-label={indicator.ariaLabel}
+      className={`h-2.5 w-2.5 shrink-0 rounded-full transition ${indicator.className}`}
+      title={indicator.title}
+    />
+  );
 }
 
 
@@ -959,6 +1052,7 @@ function WeeklyBreakdownBlock({
   const activeSnapshotWeekRef = useRef("");
   const [chatIndicators, setChatIndicators] = useState<Record<string, ChatIndicator>>({});
   const [expandedMobileCartIds, setExpandedMobileCartIds] = useState<Record<string, boolean>>({});
+  const [whatsappWindowNowMs, setWhatsappWindowNowMs] = useState(() => Date.now());
 
   const visibleRows = useMemo(() => {
     return [...rows]
@@ -1200,6 +1294,14 @@ function WeeklyBreakdownBlock({
   }, [dateQuery, statusFilter, typeFilter, whatsappFilter]);
 
   useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setWhatsappWindowNowMs(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     if (pageRowIds.length === 0) return;
 
     const missingIds = pageRowIds.filter((id) => !chatIndicators[id]);
@@ -1210,14 +1312,19 @@ function WeeklyBreakdownBlock({
 
     async function loadChatIndicators() {
       try {
-        const response = await fetch("/api/recuperacion/carritos/chat-indicators", {
-          body: JSON.stringify({ cartIds: missingIds }),
-          headers: { "Content-Type": "application/json" },
-          method: "POST",
+        const params = new URLSearchParams({ cartIds: missingIds.join(",") });
+        const response = await fetch(`/api/recuperacion/carritos/chat-indicators?${params.toString()}`, {
+          cache: "no-store",
           signal: controller.signal,
         });
 
-        if (!response.ok) return;
+        if (!response.ok) {
+          setChatIndicators((current) => ({
+            ...current,
+            ...Object.fromEntries(missingIds.map((id) => [id, { cartId: id, chatMessageCount: 0, hasChat: false, hasInbound: false, lastInboundChatState: null, lastInboundIntentCategory: null, lastInboundMessageAt: null, lastInboundSentiment: null, whatsappWindow: { closesAt: null, remainingSeconds: null, status: "unverifiable" } }])),
+          }));
+          return;
+        }
 
         const payload = (await response.json()) as { indicators?: Record<string, ChatIndicator> };
 
@@ -1695,6 +1802,7 @@ function WeeklyBreakdownBlock({
                   <div className="mt-2 flex min-w-0 items-start gap-2">
                     <p className="min-w-0 flex-1 break-all text-sm font-medium leading-5 text-navy">{row.email ?? "Sin correo"}</p>
                     <span aria-label={chatLabel} className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${chatDotClass}`} title={chatLabel} />
+                    <WhatsappWindowDot nowMs={whatsappWindowNowMs} state={chatIndicator?.whatsappWindow} />
                   </div>
 
                   <div className="mt-2 space-y-1 text-xs leading-5 text-slate-600">
@@ -1810,6 +1918,7 @@ function WeeklyBreakdownBlock({
                         className={`h-2 w-2 shrink-0 rounded-full transition ${chatDotClass}`}
                         title={displayRow.hasChat === true && displayRow.chatMessageCount !== null ? `Chat disponible: ${formatNumber(displayRow.chatMessageCount)} mensajes` : displayRow.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
                       />
+                      <WhatsappWindowDot nowMs={whatsappWindowNowMs} state={chatIndicator?.whatsappWindow} />
                     </div>
                     <div className="mt-1 break-all text-[11px] text-slate-500">{row.phone ?? "Sin telefono"}</div>
                   </td>
@@ -1879,6 +1988,35 @@ function WeeklyBreakdownBlock({
                 ? `Mostrando ${formatNumber(visibleRows.length)} de ${formatNumber(visibleRows.length)}`
                 : `Mostrando ${formatNumber(showingFrom)}-${formatNumber(showingTo)} de ${formatNumber(visibleRows.length)}`}
             </p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-5 text-slate-500 sm:justify-end">
+              <span className="flex items-center gap-1.5 whitespace-nowrap" aria-label="Chat: actividad">
+                <span className="h-2 w-2 rounded-full bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]" aria-hidden="true" />
+                Chat: actividad
+              </span>
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium text-slate-600">Ventana:</span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Ventana abierta">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.16)]" aria-hidden="true" />
+                  Abierta
+                </span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Ventana por cerrar">
+                  <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_0_3px_rgba(251,191,36,0.18)]" aria-hidden="true" />
+                  Por cerrar
+                </span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Ventana cerrada">
+                  <span className="h-2 w-2 rounded-full bg-rose-500 shadow-[0_0_0_3px_rgba(244,63,94,0.14)]" aria-hidden="true" />
+                  Cerrada
+                </span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Ventana sin respuesta">
+                  <span className="h-2 w-2 rounded-full bg-slate-300/80" aria-hidden="true" />
+                  Sin respuesta
+                </span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Ventana no verificable">
+                  <span className="h-2 w-2 rounded-full border border-slate-500 bg-slate-600" aria-hidden="true" />
+                  No verificable
+                </span>
+              </span>
+            </div>
             {shouldShowPaginationControls ? (
               <div className="flex gap-2">
                 <button

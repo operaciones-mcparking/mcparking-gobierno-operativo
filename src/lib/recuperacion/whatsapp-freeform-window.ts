@@ -31,7 +31,7 @@ type CartContactRow = {
   phone_normalized: string | null;
 };
 
-type InboundCandidate = {
+export type WhatsappInboundCandidate = {
   businessKey: RecoveryWhatsappBusinessKey | null;
   messageAt: string | null;
   messageId: string | null;
@@ -44,7 +44,7 @@ type LiveInboundRow = {
   whatsapp_message_id?: string | null;
 };
 
-type MemoryConversationRow = {
+export type WhatsappMemoryConversationRow = {
   api_phone_normalized: string | null;
   message_at: string | null;
   message_bound_type: string | null;
@@ -152,7 +152,7 @@ async function liveInboundCandidates(
     .order("message_at", { ascending: false })
     .limit(20);
 
-  if (error) return { candidates: [] as InboundCandidate[], error: true as const };
+  if (error) return { candidates: [] as WhatsappInboundCandidate[], error: true as const };
 
   const candidates = ((data ?? []) as LiveInboundRow[])
     .filter((row) => row.direction === "inbound")
@@ -178,21 +178,21 @@ async function memoryConversationRows(
     .order("message_at", { ascending: false })
     .limit(50);
 
-  if (error) return { error: true as const, rows: [] as MemoryConversationRow[] };
+  if (error) return { error: true as const, rows: [] as WhatsappMemoryConversationRow[] };
 
-  return { error: false as const, rows: (data ?? []) as MemoryConversationRow[] };
+  return { error: false as const, rows: (data ?? []) as WhatsappMemoryConversationRow[] };
 }
 
-function explicitBusinessKeysForRows(rows: MemoryConversationRow[]) {
+function explicitBusinessKeysForRows(rows: WhatsappMemoryConversationRow[]) {
   return new Set(rows.map((row) => businessKeyForBusinessPhone(row.api_phone_normalized)).filter((key): key is RecoveryWhatsappBusinessKey => key !== null));
 }
 
-function explicitOutboundBusinessKeysForRows(rows: MemoryConversationRow[]) {
+function explicitOutboundBusinessKeysForRows(rows: WhatsappMemoryConversationRow[]) {
   return explicitBusinessKeysForRows(rows.filter((row) => row.message_bound_type === "outbound"));
 }
 
 function resolveConversationBusinessKey(params: {
-  explicitRows: MemoryConversationRow[];
+  explicitRows: WhatsappMemoryConversationRow[];
   parkingBusinessKey: RecoveryWhatsappBusinessKey | null;
 }) {
   const outboundKeys = explicitOutboundBusinessKeysForRows(params.explicitRows);
@@ -210,7 +210,17 @@ function resolveConversationBusinessKey(params: {
   return params.parkingBusinessKey;
 }
 
-function memoryInboundCandidates(rows: MemoryConversationRow[], businessKey: RecoveryWhatsappBusinessKey) {
+export function resolveWhatsappConversationBusinessKey(params: {
+  memoryRows: WhatsappMemoryConversationRow[];
+  parkingBusinessKey: RecoveryWhatsappBusinessKey | null;
+}) {
+  return resolveConversationBusinessKey({
+    explicitRows: params.memoryRows,
+    parkingBusinessKey: params.parkingBusinessKey,
+  });
+}
+
+function memoryInboundCandidates(rows: WhatsappMemoryConversationRow[], businessKey: RecoveryWhatsappBusinessKey) {
   return rows
     .filter((row) => row.message_bound_type === "inbound")
     .map((row) => ({
@@ -222,13 +232,13 @@ function memoryInboundCandidates(rows: MemoryConversationRow[], businessKey: Rec
     .filter((candidate) => candidate.businessKey === businessKey);
 }
 
-function hasAmbiguousInboundWithoutBusiness(rows: MemoryConversationRow[]) {
+function hasAmbiguousInboundWithoutBusiness(rows: WhatsappMemoryConversationRow[]) {
   return rows.some((row) => row.message_bound_type === "inbound" && !businessKeyForBusinessPhone(row.api_phone_normalized));
 }
 
-function dedupeCandidates(candidates: InboundCandidate[]) {
+function dedupeCandidates(candidates: WhatsappInboundCandidate[]) {
   const seen = new Set<string>();
-  const unique: InboundCandidate[] = [];
+  const unique: WhatsappInboundCandidate[] = [];
 
   for (const candidate of candidates) {
     const timestamp = validTimestamp(candidate.messageAt);
@@ -250,7 +260,7 @@ function dedupeCandidates(candidates: InboundCandidate[]) {
   return unique;
 }
 
-function sourceForCandidates(candidates: InboundCandidate[]): WhatsappFreeformWindowSource {
+function sourceForCandidates(candidates: WhatsappInboundCandidate[]): WhatsappFreeformWindowSource {
   const sources = new Set(candidates.map((candidate) => candidate.source));
 
   if (sources.has("live") && sources.has("message_memory")) return "combined";
@@ -258,6 +268,58 @@ function sourceForCandidates(candidates: InboundCandidate[]): WhatsappFreeformWi
   if (sources.has("message_memory")) return "message_memory";
 
   return null;
+}
+
+export function resolveWhatsappFreeformWindowFromLoadedSources(params: {
+  liveCandidates: WhatsappInboundCandidate[];
+  memoryRows: WhatsappMemoryConversationRow[];
+  nowMs?: number;
+  parkingBusinessKey: RecoveryWhatsappBusinessKey | null;
+}): WhatsappFreeformWindowState {
+  const businessKey = resolveConversationBusinessKey({
+    explicitRows: params.memoryRows,
+    parkingBusinessKey: params.parkingBusinessKey,
+  });
+
+  if (!businessKey) {
+    return emptyState("unverifiable", params.parkingBusinessKey);
+  }
+
+  const allCandidates = [
+    ...params.liveCandidates.filter((candidate) => candidate.businessKey === businessKey),
+    ...memoryInboundCandidates(params.memoryRows, businessKey),
+  ];
+  const candidates = dedupeCandidates(allCandidates);
+  const latestInbound = candidates
+    .map((candidate) => ({
+      candidate,
+      timestamp: validTimestamp(candidate.messageAt),
+    }))
+    .filter((item): item is { candidate: WhatsappInboundCandidate; timestamp: number } => item.timestamp !== null)
+    .sort((left, right) => right.timestamp - left.timestamp)[0];
+
+  if (!latestInbound) {
+    if (params.memoryRows.length > 0 && hasAmbiguousInboundWithoutBusiness(params.memoryRows)) {
+      return emptyState("unverifiable", businessKey);
+    }
+
+    return emptyState("missing", businessKey);
+  }
+
+  return classifyWhatsappFreeformWindow(
+    new Date(latestInbound.timestamp).toISOString(),
+    params.nowMs ?? Date.now(),
+    businessKey,
+    sourceForCandidates(candidates.filter((candidate) => candidate.messageAt === latestInbound.candidate.messageAt)),
+  );
+}
+
+export function publicWhatsappFreeformWindow(state: WhatsappFreeformWindowState) {
+  return {
+    closesAt: state.closesAt,
+    remainingSeconds: state.remainingSeconds,
+    status: state.status,
+  };
 }
 
 export async function getWhatsappFreeformWindowForCart(
@@ -307,31 +369,10 @@ export async function getWhatsappFreeformWindowForCart(
     return emptyState("unverifiable", businessKey);
   }
 
-  const allCandidates = [
-    ...liveResult.candidates,
-    ...memoryInboundCandidates(memoryRows, businessKey),
-  ];
-  const candidates = dedupeCandidates(allCandidates);
-  const latestInbound = candidates
-    .map((candidate) => ({
-      candidate,
-      timestamp: validTimestamp(candidate.messageAt),
-    }))
-    .filter((item): item is { candidate: InboundCandidate; timestamp: number } => item.timestamp !== null)
-    .sort((left, right) => right.timestamp - left.timestamp)[0];
-
-  if (!latestInbound) {
-    if (memoryRows.length > 0 && hasAmbiguousInboundWithoutBusiness(memoryRows)) {
-      return emptyState("unverifiable", businessKey);
-    }
-
-    return emptyState("missing", businessKey);
-  }
-
-  return classifyWhatsappFreeformWindow(
-    new Date(latestInbound.timestamp).toISOString(),
+  return resolveWhatsappFreeformWindowFromLoadedSources({
+    liveCandidates: liveResult.candidates,
+    memoryRows,
     nowMs,
-    businessKey,
-    sourceForCandidates(dedupeCandidates(allCandidates).filter((candidate) => candidate.messageAt === latestInbound.candidate.messageAt)),
-  );
+    parkingBusinessKey,
+  });
 }

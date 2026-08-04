@@ -452,6 +452,8 @@ test("no unrelated modules are part of this task diff", () => {
     "src/app/recuperacion/recovery-snapshot-comparison-drawer.tsx",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
     "scripts/recovery-whatsapp-business-window.test.mjs",
+    "scripts/recovery-whatsapp-window-indicator.test.mjs",
+    "src/app/api/recuperacion/carritos/chat-indicators/route.ts",
   ]);
 
   assert.equal(

@@ -576,6 +576,8 @@ test("46. current task diff is scoped", () => {
     "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts",
     "src/app/recuperacion/recovery-cart-chat-drawer.tsx",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
+    "src/app/api/recuperacion/carritos/chat-indicators/route.ts",
+    "scripts/recovery-whatsapp-window-indicator.test.mjs",
   ]);
 
   assert.equal(changedFiles.every((file) => allowed.has(file)), true, `Unexpected changed files: ${changedFiles.join(", ")}`);
