@@ -291,7 +291,9 @@ test("batch errors degrade safely to unverifiable", () => {
 });
 
 test("footer legend explains chat and WhatsApp window indicators", () => {
-  assert.match(table, /Chat: actividad/);
+  assert.match(table, /Chat:/);
+  assert.match(table, /Respondi\u00f3/);
+  assert.match(table, /Chat sin respuesta/);
   assert.match(table, /Ventana:/);
   assert.match(table, /Abierta/);
   assert.match(table, /Por cerrar/);
@@ -302,6 +304,7 @@ test("footer legend explains chat and WhatsApp window indicators", () => {
 
 test("footer legend reuses the same indicator colors", () => {
   assert.match(table, /bg-sea shadow-\[0_0_0_3px_rgba\(14,148,136,0\.14\)\]/);
+  assert.match(table, /bg-sky-400 shadow-\[0_0_0_3px_rgba\(56,189,248,0\.14\)\]/);
   assert.match(table, /bg-emerald-500 shadow-\[0_0_0_3px_rgba\(16,185,129,0\.16\)\]/);
   assert.match(table, /bg-amber-400 shadow-\[0_0_0_3px_rgba\(251,191,36,0\.18\)\]/);
   assert.match(table, /bg-rose-500 shadow-\[0_0_0_3px_rgba\(244,63,94,0\.14\)\]/);
@@ -316,7 +319,8 @@ test("footer legend supports desktop right alignment and mobile wrap", () => {
 });
 
 test("footer legend is visible text and accessible", () => {
-  assert.match(table, /aria-label="Chat: actividad"/);
+  assert.match(table, /aria-label="Chat respondi\u00f3"/);
+  assert.match(table, /aria-label="Chat sin respuesta"/);
   assert.match(table, /aria-label="Ventana abierta"/);
   assert.match(table, /aria-label="Ventana por cerrar"/);
   assert.match(table, /aria-label="Ventana cerrada"/);

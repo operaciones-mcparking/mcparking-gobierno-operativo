@@ -1989,9 +1989,16 @@ function WeeklyBreakdownBlock({
                 : `Mostrando ${formatNumber(showingFrom)}-${formatNumber(showingTo)} de ${formatNumber(visibleRows.length)}`}
             </p>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-5 text-slate-500 sm:justify-end">
-              <span className="flex items-center gap-1.5 whitespace-nowrap" aria-label="Chat: actividad">
-                <span className="h-2 w-2 rounded-full bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]" aria-hidden="true" />
-                Chat: actividad
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium text-slate-600">Chat:</span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Chat respondió">
+                  <span className="h-2 w-2 rounded-full bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]" aria-hidden="true" />
+                  Respondió
+                </span>
+                <span className="flex items-center gap-1 whitespace-nowrap" aria-label="Chat sin respuesta">
+                  <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.14)]" aria-hidden="true" />
+                  Sin respuesta
+                </span>
               </span>
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="font-medium text-slate-600">Ventana:</span>
