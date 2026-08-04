@@ -101,6 +101,22 @@ function addIsoDays(value: string, days: number) {
   return date.toISOString();
 }
 
+function isIsoInRange(value: string | null | undefined, fromInclusive: string, toExclusive: string) {
+  if (!value) return false;
+
+  const valueTime = new Date(value).getTime();
+  const fromTime = new Date(fromInclusive).getTime();
+  const toTime = new Date(toExclusive).getTime();
+
+  return (
+    Number.isFinite(valueTime) &&
+    Number.isFinite(fromTime) &&
+    Number.isFinite(toTime) &&
+    valueTime >= fromTime &&
+    valueTime < toTime
+  );
+}
+
 function timeZoneParts(timeZone: string, date: Date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
@@ -244,14 +260,27 @@ function latestBatchId(rows: Array<{ batch_id?: string | null }>) {
 export function buildRecoveryWeeklySnapshotPayload(
   carts: CartSnapshotSourceRow[],
   purchases: PurchaseSnapshotSourceRow[],
+  options: {
+    latestCartRows?: CartSnapshotSourceRow[];
+    weekEndUtc?: string;
+    weekStartUtc?: string;
+  } = {},
 ) {
   const attributions = resolveRecoveryAttributions(carts, purchases);
-  const summary = summarizeRecoveryAttributions(attributions);
-  const cartResults = buildCartSnapshotRows(attributions, carts).sort((left, right) => left.cart_id.localeCompare(right.cart_id));
+  const snapshotAttributions =
+    options.weekStartUtc && options.weekEndUtc
+      ? attributions.filter((result) => isIsoInRange(result.cartFormDatetime, options.weekStartUtc as string, options.weekEndUtc as string))
+      : attributions;
+  const summary = summarizeRecoveryAttributions(snapshotAttributions);
+  const cartResults = buildCartSnapshotRows(snapshotAttributions, carts).sort((left, right) => left.cart_id.localeCompare(right.cart_id));
+  const cartsById = new Map(carts.map((cart) => [cart.id, cart]));
+  const latestCartRows =
+    options.latestCartRows ??
+    (cartResults.map((result) => cartsById.get(result.cart_id)).filter(Boolean) as CartSnapshotSourceRow[]);
 
   return {
     cartResults,
-    latestCartBatchId: latestBatchId(carts),
+    latestCartBatchId: latestBatchId(latestCartRows),
     latestPurchaseBatchId: latestBatchId(purchases),
     summary,
   };
@@ -266,6 +295,7 @@ export async function createRecoveryWeeklySnapshot(
   const weekStartUtc = santiagoDateOnlyToUtcIso(input.weekStart);
   const weekEndUtc = santiagoDateOnlyToUtcIso(input.weekEnd);
   const purchaseWindowEnd = addIsoDays(weekEndUtc, 14);
+  const cartUniverseEnd = purchaseWindowEnd;
   const supabase = createRecoverySnapshotSupabaseClient();
 
   const [cartsResult, purchasesResult] = await Promise.all([
@@ -276,7 +306,7 @@ export async function createRecoveryWeeklySnapshot(
           "id,batch_id,email_normalized,phone_normalized,type,parking_code,form_datetime,message_sent,intended_arrival_at,row_hash,updated_at_source",
         )
         .gte("form_datetime", weekStartUtc)
-        .lt("form_datetime", weekEndUtc)
+        .lt("form_datetime", cartUniverseEnd)
         .order("form_datetime", { ascending: true }),
     ),
     fetchSnapshotRowsInPages<PurchaseSnapshotSourceRow>(() =>
@@ -295,7 +325,12 @@ export async function createRecoveryWeeklySnapshot(
 
   const carts = cartsResult.data;
   const purchases = purchasesResult.data;
-  const payload = buildRecoveryWeeklySnapshotPayload(carts, purchases);
+  const weekCarts = carts.filter((cart) => isIsoInRange(cart.form_datetime, weekStartUtc, weekEndUtc));
+  const payload = buildRecoveryWeeklySnapshotPayload(carts, purchases, {
+    latestCartRows: weekCarts,
+    weekEndUtc,
+    weekStartUtc,
+  });
 
   const { data, error } = await supabase.rpc("create_recovery_weekly_snapshot", {
     p_calculation_version: calculationVersion,

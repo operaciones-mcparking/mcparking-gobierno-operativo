@@ -415,7 +415,7 @@ test("55. snapshot helper does not use date-only values as direct 00:00Z filters
   assertHas(helper, /const weekStartUtc = santiagoDateOnlyToUtcIso\(input\.weekStart\)/);
   assertHas(helper, /const weekEndUtc = santiagoDateOnlyToUtcIso\(input\.weekEnd\)/);
   assertHas(helper, /\.gte\("form_datetime", weekStartUtc\)/);
-  assertHas(helper, /\.lt\("form_datetime", weekEndUtc\)/);
+  assertHas(helper, /\.lt\("form_datetime", cartUniverseEnd\)/);
   assertHas(helper, /\.gte\("booking_created_at", weekStartUtc\)/);
   assertNotHas(helper, /\.gte\("form_datetime", input\.weekStart\)/);
   assertNotHas(helper, /\.lt\("form_datetime", input\.weekEnd\)/);
@@ -547,7 +547,7 @@ test("66. snapshot helper does not rely on a single limit 1000 load", () => {
 
 test("67. snapshot helper preserves filters and ordering while paginating", () => {
   assertHas(helper, /\.gte\("form_datetime", weekStartUtc\)/);
-  assertHas(helper, /\.lt\("form_datetime", weekEndUtc\)/);
+  assertHas(helper, /\.lt\("form_datetime", cartUniverseEnd\)/);
   assertHas(helper, /\.order\("form_datetime", \{ ascending: true \}\)/);
   assertHas(helper, /\.gte\("booking_created_at", weekStartUtc\)/);
   assertHas(helper, /\.lt\("booking_created_at", purchaseWindowEnd\)/);
@@ -581,34 +581,111 @@ test("68. full pagination restores dashboard parity for 2026-07-20 week", () => 
   assert.equal((fullPageSummary.recoveredConfirmed / fullPageSummary.cartsTotal) * 100, 40.969162995594715);
 });
 
-test("69. full pagination restores dashboard parity for 2026-07-27 week", () => {
-  const firstPageSummary = {
+test("69. global attribution restores dashboard parity for 2026-07-27 week", () => {
+  const weekOnlyAttributionSummary = {
     cartsTotal: 221,
-    recoveredAmount: 1428129,
-    recoveredConfirmed: 59,
+    recoveredAmount: 2405933,
+    recoveredConfirmed: 98,
     recoveredReview: 0,
-    unrecovered: 162,
+    unrecovered: 123,
   };
-  const fullPageSummary = {
+  const globalThenFilteredSummary = {
     cartsTotal: 221,
-    recoveredAmount: 2275207,
-    recoveredConfirmed: 92,
+    recoveredAmount: 2356212,
+    recoveredConfirmed: 96,
     recoveredReview: 0,
-    unrecovered: 129,
+    unrecovered: 125,
   };
 
-  assert.equal(firstPageSummary.recoveredConfirmed, 59);
-  assert.deepEqual(fullPageSummary, {
+  assert.equal(weekOnlyAttributionSummary.recoveredConfirmed - globalThenFilteredSummary.recoveredConfirmed, 2);
+  assert.equal(weekOnlyAttributionSummary.recoveredAmount - globalThenFilteredSummary.recoveredAmount, 49721);
+  assert.deepEqual(globalThenFilteredSummary, {
     cartsTotal: 221,
-    recoveredAmount: 2275207,
-    recoveredConfirmed: 92,
+    recoveredAmount: 2356212,
+    recoveredConfirmed: 96,
     recoveredReview: 0,
-    unrecovered: 129,
+    unrecovered: 125,
   });
-  assert.equal((fullPageSummary.recoveredConfirmed / fullPageSummary.cartsTotal) * 100, 41.6289592760181);
+  assert.equal((globalThenFilteredSummary.recoveredConfirmed / globalThenFilteredSummary.cartsTotal) * 100, 43.43891402714932);
 });
 
 test("70. snapshot tests do not create real snapshots", () => {
   assertNotHas(helper, /createRecoveryWeeklySnapshot\(\{/);
   assertNotHas(helper, /snapshotKey: "recovery:week:2026-07-20:v1-intended-arrival:manual:after-imports-20260803"/);
+});
+
+
+test("71. snapshot helper resolves attribution before filtering by requested week", () => {
+  assert.equal(helper.includes("const attributions = resolveRecoveryAttributions(carts, purchases)"), true);
+  assertHas(helper, /const snapshotAttributions =[\s\S]*attributions\.filter\(\(result\) => isIsoInRange\(result\.cartFormDatetime/);
+  assert.equal(helper.includes("const summary = summarizeRecoveryAttributions(snapshotAttributions)"), true);
+  assert.equal(helper.includes("buildCartSnapshotRows(snapshotAttributions, carts)"), true);
+});
+
+test("72. snapshot helper no longer filters carts to the week before attribution", () => {
+  assert.equal(helper.includes("const cartUniverseEnd = purchaseWindowEnd"), true);
+  assert.equal(helper.includes('.lt("form_datetime", cartUniverseEnd)'), true);
+  assertNotHas(helper, /\.lt\("form_datetime", weekEndUtc\)\s*\.order\("form_datetime"/);
+});
+
+test("73. snapshot helper persists only requested-week cart details after global attribution", () => {
+  assert.equal(helper.includes("const weekCarts = carts.filter((cart) => isIsoInRange(cart.form_datetime, weekStartUtc, weekEndUtc))"), true);
+  assert.equal(helper.includes("latestCartRows: weekCarts"), true);
+  assertHas(helper, /weekStartUtc,\s*\n\s*}\)/);
+});
+
+test("74. posterior cart outside the week can win the same purchase before weekly filtering", () => {
+  const purchaseId = "purchase-1";
+  const weekCart = { cartId: "week-cart", formDatetime: "2026-07-27T16:21:24.000Z" };
+  const nextWeekCart = { cartId: "next-week-cart", formDatetime: "2026-08-03T18:29:15.000Z" };
+  const winningCart = [weekCart, nextWeekCart]
+    .filter((cart) => cart.formDatetime <= "2026-08-03T18:44:14.000Z")
+    .sort((left, right) => right.formDatetime.localeCompare(left.formDatetime))[0];
+
+  assert.equal(purchaseId, "purchase-1");
+  assert.equal(winningCart.cartId, "next-week-cart");
+  assert.equal(winningCart.cartId === weekCart.cartId, false);
+});
+
+test("75. posterior cart inside the same week still wins without changing weekly total universe", () => {
+  const carts = [
+    { cartId: "monday", formDatetime: "2026-07-27T10:00:00.000Z" },
+    { cartId: "friday", formDatetime: "2026-07-31T10:00:00.000Z" },
+  ];
+  const winner = carts
+    .filter((cart) => cart.formDatetime <= "2026-08-01T10:00:00.000Z")
+    .sort((left, right) => right.formDatetime.localeCompare(left.formDatetime))[0];
+
+  assert.equal(winner.cartId, "friday");
+  assert.equal(carts.filter((cart) => cart.formDatetime >= "2026-07-27T04:00:00.000Z" && cart.formDatetime < "2026-08-03T04:00:00.000Z").length, 2);
+});
+
+test("76. previous cart does not displace the most recent eligible cart", () => {
+  const carts = [
+    { cartId: "previous", formDatetime: "2026-07-20T10:00:00.000Z" },
+    { cartId: "current", formDatetime: "2026-07-27T10:00:00.000Z" },
+  ];
+  const winner = carts
+    .filter((cart) => cart.formDatetime <= "2026-07-28T10:00:00.000Z")
+    .sort((left, right) => right.formDatetime.localeCompare(left.formDatetime))[0];
+
+  assert.equal(winner.cartId, "current");
+});
+
+test("77. same purchase is counted in only one filtered week", () => {
+  const assignments = [{ purchaseId: "p1", cartId: "next-week-cart", cartWeek: "2026-08-03" }];
+
+  assert.equal(assignments.filter((item) => item.purchaseId === "p1" && item.cartWeek === "2026-07-27").length, 0);
+  assert.equal(assignments.filter((item) => item.purchaseId === "p1" && item.cartWeek === "2026-08-03").length, 1);
+});
+
+test("78. differential 2026-07-27 carts are excluded by global competition", () => {
+  const differential = [
+    { cartId: "bc4d7325", amount: 11074, competingCartId: "5d2d1023" },
+    { cartId: "d7695983", amount: 38647, competingCartId: "bee7333e" },
+  ];
+
+  assert.equal(differential.length, 2);
+  assert.equal(differential.reduce((total, item) => total + item.amount, 0), 49721);
+  assert.deepEqual(differential.map((item) => item.competingCartId), ["5d2d1023", "bee7333e"]);
 });
