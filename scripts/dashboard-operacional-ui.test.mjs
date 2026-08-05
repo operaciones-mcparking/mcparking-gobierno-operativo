@@ -57,11 +57,61 @@ test("C. selector unificado contiene Dashboard y Centro de Control", () => {
   assert.doesNotMatch(client, /McParking Orquestador|Centro de Control|href="\/orquestador"/);
 });
 
-test("D. consume GET api dashboard operacional y filtra por date", () => {
+test("D. consume GET api dashboard operacional y filtra por from/to", () => {
   assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{query\}`/);
   assert.match(client, /method: "GET"/);
-  assert.match(client, /type="date"/);
-  assert.match(client, /date=\$\{encodeURIComponent\(date\)\}/);
+  assert.match(client, /buildDashboardRangeQuery\(range\)/);
+  assert.match(client, /from=\$\{encodeURIComponent\(range\.from\)\}&to=\$\{encodeURIComponent\(range\.to\)\}/);
+  assert.doesNotMatch(client, /date=\$\{encodeURIComponent\(date\)\}/);
+});
+
+test("D1. selector de periodo contiene presets y custom", () => {
+  assert.match(client, /type DateRangePreset = "today" \| "yesterday" \| "last7" \| "last14" \| "thisMonth" \| "previousMonth" \| "custom"/);
+  for (const label of ["Hoy", "Ayer", "\\u00daltimos 7 d\\u00edas", "\\u00daltimos 14 d\\u00edas", "Este mes", "Mes anterior", "Personalizado"]) {
+    assert.match(client, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(client, /function DateRangeSelector/);
+  assert.match(client, />Periodo<\/span>/);
+  assert.match(client, /Desde/);
+  assert.match(client, /Hasta/);
+  assert.match(client, /Aplicar/);
+});
+
+test("D2. presets calculan rangos con fecha local", () => {
+  assert.match(client, /getPresetDateRange\("today"\)/);
+  assert.match(client, /addLocalDays\(todayKey, -1\)/);
+  assert.match(client, /addLocalDays\(todayKey, -6\)/);
+  assert.match(client, /addLocalDays\(todayKey, -13\)/);
+  assert.match(client, /firstDayOfMonth\(todayKey\)/);
+  assert.match(client, /previousMonthRange\(todayKey\)/);
+  assert.match(client, /today\.getFullYear\(\)/);
+  assert.match(client, /today\.getMonth\(\) \+ 1/);
+  assert.match(client, /today\.getDate\(\)/);
+  assert.doesNotMatch(client, /toISOString\(\)\.slice\(0, 10\)/);
+});
+
+test("D3. custom invalido no ejecuta carga", () => {
+  assert.match(client, /isValidDateRange\(nextRange\)/);
+  assert.match(client, /El rango personalizado debe tener Desde menor o igual a Hasta\./);
+  assert.match(client, /return;\s*}\s*\n\s*setCustomError\(null\);\s*\n\s*setIsOpen\(false\);\s*\n\s*onApplyRange\(nextRange\)/);
+  assert.match(client, /if \(!isValidDateRange\(range\)\) \{\s*setError\("El periodo seleccionado no es valido\."\);\s*return false;\s*}/);
+});
+
+test("D4. refresh operacional reutiliza rango activo", () => {
+  assert.match(client, /const \[dateRange, setDateRange\] = useState<DateRange>/);
+  assert.match(client, /const loadByRange = useCallback/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.doesNotMatch(client, /selectedDate|loadByDate/);
+});
+
+test("D5. selector de periodo alinea rango y accion sin overflow", () => {
+  assert.match(client, /relative grid min-w-0 gap-3 text-sm font-medium text-navy sm:grid-cols-\[minmax\(180px,220px\)_auto\] sm:items-end/);
+  assert.match(client, /<span>Periodo<\/span>[\s\S]*<span>Rango seleccionado<\/span>/);
+  assert.match(client, /flex h-10 min-w-0 items-center rounded-lg border border-transparent text-sm font-normal text-slate-500 sm:whitespace-nowrap/);
+  assert.match(client, /grid min-w-0 gap-3 lg:grid-cols-\[minmax\(0,1fr\)_auto\] lg:items-end/);
+  assert.match(client, /<DateRangeSelector onApplyRange=\{loadByRange\} range=\{dateRange\} \/>[\s\S]*<ActualizarDatosOperacionalesControl/);
+  assert.match(client, /w-\[min\(92vw,34rem\)\]/);
+  assert.doesNotMatch(client, /overflow-x-auto|min-w-\[720px\]|min-w-\[1180px\]/);
 });
 
 test("E. no consulta Supabase ni SQLite desde React", () => {
@@ -148,7 +198,7 @@ test("H. metricas principales solicitadas visibles", () => {
 
 test("I. resumen por estacionamiento usa tabla desktop compacta con ADR", () => {
   assert.match(client, /Resumen por estacionamiento/);
-  assert.match(client, /estacionamientos para la fecha seleccionada/);
+  assert.match(client, /estacionamientos para el periodo seleccionado/);
   assert.doesNotMatch(client, /Detalle operativo por parking|filas operacionales visibles/);
   assert.match(client, /function ParkingSummaryTable/);
   assert.match(client, /className="mt-5 hidden lg:block"/);
@@ -258,12 +308,12 @@ test("K. maneja estados loading empty error y rows vacias", () => {
   assert.match(client, /LoadingOverlay/);
   assert.match(client, /initialError/);
   assert.match(client, /No hay una corrida operacional disponible/);
-  assert.match(client, /No hay estacionamientos para la fecha seleccionada/);
+  assert.match(client, /No hay estacionamientos para el periodo seleccionado/);
 });
 
 test("L. Dashboard reutiliza el control compuesto existente", () => {
   assert.match(client, /ActualizarDatosOperacionalesControl/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
   assert.match(compositeControl, /useCompositeOperationsRun/);
   assert.match(compositeControl, /CompositeRunViewer/);
   assert.doesNotMatch(client, /Conexion operativa en siguiente etapa/);
@@ -456,7 +506,7 @@ test("S. anticipacion y estadia muestran unidad dias", () => {
   assert.match(client, /<SystemColumn label="OKP"/);
   assert.match(client, /<SystemColumn label="MCP"/);
   assert.doesNotMatch(client, /formatDays\(totals\.precio|formatDays\(totals\.venta|formatDays\(totals\.reserva|formatDays\(totals\.pack_vendido/);
-  assert.doesNotMatch(client + formatters, /No disponible dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as/);
+  assert.doesNotMatch(client + formatters, /No disponible dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as/);
 });
 
 test("T. formatDays singular plural y valores invalidos", () => {
@@ -467,18 +517,18 @@ test("T. formatDays singular plural y valores invalidos", () => {
   const formatDaysForTest = (value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return "No disponible";
 
-    return `${decimalFormatterForTest.format(value)} ${value === 1 ? "día" : "días"}`;
+    return `${decimalFormatterForTest.format(value)} ${value === 1 ? "dÃƒÆ’Ã‚Â­a" : "dÃƒÆ’Ã‚Â­as"}`;
   };
 
-  assert.equal(formatDaysForTest(1), "1 día");
-  assert.equal(formatDaysForTest(2.3), "2,3 días");
-  assert.equal(formatDaysForTest(0), "0 días");
-  assert.equal(formatDaysForTest(0.5), "0,5 días");
+  assert.equal(formatDaysForTest(1), "1 dÃƒÆ’Ã‚Â­a");
+  assert.equal(formatDaysForTest(2.3), "2,3 dÃƒÆ’Ã‚Â­as");
+  assert.equal(formatDaysForTest(0), "0 dÃƒÆ’Ã‚Â­as");
+  assert.equal(formatDaysForTest(0.5), "0,5 dÃƒÆ’Ã‚Â­as");
   assert.equal(formatDaysForTest(null), "No disponible");
   assert.equal(formatDaysForTest(undefined), "No disponible");
   assert.equal(formatDaysForTest(Number.NaN), "No disponible");
   assert.equal(formatDaysForTest(Number.POSITIVE_INFINITY), "No disponible");
-  assert.notEqual(formatDaysForTest(null), "No disponible días");
+  assert.notEqual(formatDaysForTest(null), "No disponible dÃƒÆ’Ã‚Â­as");
 });test("U. control exige confirmacion y bloquea doble creacion", () => {
   assert.match(compositeControl, /setIsConfirming\(true\)/);
   assert.match(compositeControl, /Confirmacion requerida/);
@@ -507,7 +557,7 @@ test("W. refresh automatico ocurre una sola vez por run succeeded", () => {
   assert.match(compositeControl, /Promise\.resolve\(onSucceededRef\.current\?\.\(\)\)/);
   assert.match(compositeControl, /completedRunRef\.current = run\.run_id/);
   assert.match(compositeControl, /refreshingRunRef\.current = null/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
   assert.match(client, /cache: "no-store"/);
   assert.doesNotMatch(compositeControl, /run\?\.status === "failed"[\s\S]*onSucceeded|run\?\.status === "cancelled"[\s\S]*onSucceeded/);
 });
@@ -525,32 +575,32 @@ test("Y. fecha inicial usa hoy local sin toISOString", () => {
   assert.match(client, /today\.getDate\(\)/);
   assert.match(client, /padStart\(2, "0"\)/);
   assert.match(client, /return `\$\{year\}-\$\{month\}-\$\{day\}`/);
-  assert.match(client, /initialDateRef = useRef\(getTodayLocalDate\(\)\)/);
-  assert.match(client, /useState\(initialDateRef\.current\)/);
-  assert.match(client, /loadByDate\(initialDateRef\.current\)/);
+  assert.match(client, /initialDateRangeRef = useRef\(getPresetDateRange\("today"\)\)/);
+  assert.match(client, /useState<DateRange>\(initialDateRangeRef\.current\)/);
+  assert.match(client, /loadByRange\(initialDateRangeRef\.current\)/);
   assert.doesNotMatch(client, /toISOString\(\)\.slice\(0, 10\)/);
 });
 
-test("Z. fecha seleccionada sigue siendo mutable y se usa en refresh final", () => {
-  assert.match(client, /onChange=\{\(event\) => loadByDate\(event\.target\.value\)\}/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByDate\(selectedDate\)\}/);
+test("Z. periodo seleccionado sigue siendo mutable y se usa en refresh final", () => {
+  assert.match(client, /<DateRangeSelector onApplyRange=\{loadByRange\} range=\{dateRange\} \/>/);
+  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
   assert.doesNotMatch(client, /initialDashboard\?\.filters\?\.date \?\?/);
 });
 
-test("Z1. no existe boton visual Refrescar y el cambio de fecha solo consulta GET", () => {
+test("Z1. no existe boton visual Refrescar y el cambio de periodo solo consulta GET", () => {
   assert.doesNotMatch(client, /RefreshCw|Refrescar dashboard operacional|>\s*Refrescar\s*</);
-  assert.match(client, /onChange=\{\(event\) => loadByDate\(event\.target\.value\)\}/);
+  assert.match(client, /onApplyRange=\{loadByRange\}/);
   assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{query\}`/);
   assert.match(client, /method: "GET"/);
   assert.doesNotMatch(client, /method: "POST"|startRun\(|\/api\/orquestador\/operaciones\/actualizar-datos/);
 });
 
-test("Z2. cambio de fecha evita doble GET y respuestas antiguas", () => {
-  const dateChangeCalls = client.match(/loadByDate\(event\.target\.value\)/g) ?? [];
-  assert.equal(dateChangeCalls.length, 1);
+test("Z2. cambio de periodo evita respuestas antiguas", () => {
+  const rangeFetchCalls = client.match(/loadByRange/g) ?? [];
+  assert.ok(rangeFetchCalls.length >= 3);
   assert.match(client, /activeRequestRef = useRef\(0\)/);
   assert.match(client, /requestId !== activeRequestRef\.current/);
-  assert.doesNotMatch(client, /void loadByDate\(selectedDate\)/);
+  assert.doesNotMatch(client, /void loadByRange\(dateRange\)/);
 });
 
 test("Z3. seccion intermedia no aparece en Dashboard y el control queda en cabecera", () => {
@@ -567,7 +617,7 @@ test("Z3. seccion intermedia no aparece en Dashboard y el control queda en cabec
 test("Z3b. cabecera movil conserva solo titulo fecha y accion principal", () => {
   assert.match(client, /<p className="text-xs font-semibold uppercase tracking-\[0\.14em\] text-sea">Dashboard operacional<\/p>/);
   assert.match(client, /<div className="hidden lg:block">\s*<h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP<\/h2>\s*<LastUpdateSummary dashboard=\{dashboard\} \/>\s*<\/div>/);
-  assert.match(client, /Filtro Fecha/);
+  assert.match(client, /Periodo/);
   assert.match(client, /<ActualizarDatosOperacionalesControl/);
   assert.match(client, /presentation="overlay"/);
   assert.match(client, /function LastUpdateSummary/);

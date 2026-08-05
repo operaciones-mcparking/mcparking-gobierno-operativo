@@ -29,6 +29,24 @@ type EndpointResponse = {
   ok: boolean;
 };
 
+type DateRangePreset = "today" | "yesterday" | "last7" | "last14" | "thisMonth" | "previousMonth" | "custom";
+
+type DateRange = {
+  from: string;
+  preset: DateRangePreset;
+  to: string;
+};
+
+const dateRangePresets: Array<{ label: string; value: DateRangePreset }> = [
+  { label: "Hoy", value: "today" },
+  { label: "Ayer", value: "yesterday" },
+  { label: "\u00daltimos 7 d\u00edas", value: "last7" },
+  { label: "\u00daltimos 14 d\u00edas", value: "last14" },
+  { label: "Este mes", value: "thisMonth" },
+  { label: "Mes anterior", value: "previousMonth" },
+  { label: "Personalizado", value: "custom" },
+];
+
 const emptyTotals: OperationalDashboardTotals = {
   advanced_book_days_boleta_avg: null,
   advanced_book_days_pack_avg: null,
@@ -61,6 +79,82 @@ function getTodayLocalDate() {
   const day = String(today.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
+}
+
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function fromLocalDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+
+  return new Date(year, month - 1, day);
+}
+
+function addLocalDays(dateKey: string, days: number) {
+  const date = fromLocalDateKey(dateKey);
+  date.setDate(date.getDate() + days);
+
+  return toLocalDateKey(date);
+}
+
+function firstDayOfMonth(dateKey: string) {
+  const date = fromLocalDateKey(dateKey);
+
+  return toLocalDateKey(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+function previousMonthRange(dateKey: string) {
+  const date = fromLocalDateKey(dateKey);
+  const first = new Date(date.getFullYear(), date.getMonth() - 1, 1);
+  const last = new Date(date.getFullYear(), date.getMonth(), 0);
+
+  return {
+    from: toLocalDateKey(first),
+    to: toLocalDateKey(last),
+  };
+}
+
+function getPresetDateRange(preset: DateRangePreset, todayKey = getTodayLocalDate()): DateRange {
+  if (preset === "yesterday") {
+    const yesterday = addLocalDays(todayKey, -1);
+
+    return { from: yesterday, preset, to: yesterday };
+  }
+
+  if (preset === "last7") {
+    return { from: addLocalDays(todayKey, -6), preset, to: todayKey };
+  }
+
+  if (preset === "last14") {
+    return { from: addLocalDays(todayKey, -13), preset, to: todayKey };
+  }
+
+  if (preset === "thisMonth") {
+    return { from: firstDayOfMonth(todayKey), preset, to: todayKey };
+  }
+
+  if (preset === "previousMonth") {
+    return { ...previousMonthRange(todayKey), preset };
+  }
+
+  return { from: todayKey, preset: "today", to: todayKey };
+}
+
+function getDateRangeLabel(preset: DateRangePreset) {
+  return dateRangePresets.find((item) => item.value === preset)?.label ?? "Personalizado";
+}
+
+function isValidDateRange(range: Pick<DateRange, "from" | "to">) {
+  return Boolean(range.from && range.to && range.from <= range.to);
+}
+
+function buildDashboardRangeQuery(range: DateRange) {
+  return `?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`;
 }
 
 function updateStatusLabel(status: string | null | undefined) {
@@ -694,11 +788,115 @@ function ParkingSummaryCards({
   );
 }
 
+function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: DateRange) => void; range: DateRange }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [customFrom, setCustomFrom] = useState(range.from);
+  const [customTo, setCustomTo] = useState(range.to);
+  const [customError, setCustomError] = useState<string | null>(null);
+  const selectedLabel = getDateRangeLabel(range.preset);
+
+  const selectPreset = useCallback((preset: DateRangePreset) => {
+    if (preset === "custom") {
+      setCustomFrom(range.from);
+      setCustomTo(range.to);
+      setCustomError(null);
+      setIsOpen(true);
+      return;
+    }
+
+    onApplyRange(getPresetDateRange(preset));
+    setCustomError(null);
+    setIsOpen(false);
+  }, [onApplyRange, range.from, range.to]);
+
+  const applyCustomRange = useCallback(() => {
+    const nextRange: DateRange = { from: customFrom, preset: "custom", to: customTo };
+
+    if (!isValidDateRange(nextRange)) {
+      setCustomError("El rango personalizado debe tener Desde menor o igual a Hasta.");
+      return;
+    }
+
+    setCustomError(null);
+    setIsOpen(false);
+    onApplyRange(nextRange);
+  }, [customFrom, customTo, onApplyRange]);
+
+  return (
+    <div className="relative grid min-w-0 gap-3 text-sm font-medium text-navy sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end">
+      <div className="grid min-w-0 gap-1">
+        <span>Periodo</span>
+        <button
+          aria-expanded={isOpen}
+          className="flex h-10 w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-[#cbd8e3] bg-white px-3 text-left text-sm text-navy outline-none transition hover:bg-[#f8fbfd] focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
+          onClick={() => setIsOpen((current) => !current)}
+          type="button"
+        >
+          <span className="min-w-0 truncate">{selectedLabel}</span>
+          <span aria-hidden="true" className="shrink-0 text-slate-500">v</span>
+        </button>
+      </div>
+      <div className="grid min-w-0 gap-1">
+        <span>Rango seleccionado</span>
+        <p className="flex h-10 min-w-0 items-center rounded-lg border border-transparent text-sm font-normal text-slate-500 sm:whitespace-nowrap">{range.from} - {range.to}</p>
+      </div>
+
+      {isOpen ? (
+        <div className="absolute left-0 top-full z-30 mt-2 w-[min(92vw,34rem)] overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-xl">
+          <div className="grid gap-0 sm:grid-cols-[12rem_minmax(0,1fr)]">
+            <div className="border-b border-[#e4edf4] p-2 sm:border-b-0 sm:border-r">
+              {dateRangePresets.map((preset) => (
+                <button
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${range.preset === preset.value ? "bg-[#e8f4f8] font-semibold text-navy" : "text-slate-600 hover:bg-[#f8fbfd]"}`}
+                  key={preset.value}
+                  onClick={() => selectPreset(preset.value)}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid min-w-0 gap-3 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Personalizado</p>
+              <label className="grid gap-1 text-sm font-medium text-navy">
+                Desde
+                <input
+                  className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
+                  onChange={(event) => setCustomFrom(event.target.value)}
+                  type="date"
+                  value={customFrom}
+                />
+              </label>
+              <label className="grid gap-1 text-sm font-medium text-navy">
+                Hasta
+                <input
+                  className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
+                  onChange={(event) => setCustomTo(event.target.value)}
+                  type="date"
+                  value={customTo}
+                />
+              </label>
+              {customError ? <p className="rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-2 text-xs font-medium text-[#8a4a00]">{customError}</p> : null}
+              <button
+                className="h-10 rounded-lg bg-navy px-3 text-sm font-semibold text-white transition hover:bg-[#13354b]"
+                onClick={applyCustomRange}
+                type="button"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function DashboardOperacionalClient({ initialDashboard, initialError }: DashboardOperacionalClientProps) {
-  const initialDateRef = useRef(getTodayLocalDate());
+  const initialDateRangeRef = useRef(getPresetDateRange("today"));
   const activeRequestRef = useRef(0);
   const [dashboard, setDashboard] = useState(initialDashboard);
-  const [selectedDate, setSelectedDate] = useState(initialDateRef.current);
+  const [dateRange, setDateRange] = useState<DateRange>(initialDateRangeRef.current);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(initialError);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
@@ -720,14 +918,19 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
     setSelectedParkingDetail(null);
   }, []);
 
-  const loadByDate = useCallback(async (date: string) => {
+  const loadByRange = useCallback(async (range: DateRange) => {
+    if (!isValidDateRange(range)) {
+      setError("El periodo seleccionado no es valido.");
+      return false;
+    }
+
     const requestId = activeRequestRef.current + 1;
     activeRequestRef.current = requestId;
-    setSelectedDate(date);
+    setDateRange(range);
     setIsLoading(true);
     setError(null);
 
-    const query = date ? `?date=${encodeURIComponent(date)}` : "";
+    const query = buildDashboardRangeQuery(range);
 
     try {
       const response = await fetch(`/api/dashboard/operacional${query}`, {
@@ -762,12 +965,12 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   }, []);
 
   useEffect(() => {
-    void loadByDate(initialDateRef.current);
-  }, [loadByDate]);
+    void loadByRange(initialDateRangeRef.current);
+  }, [loadByRange]);
 
   useEffect(() => {
     setSelectedParkingDetail(null);
-  }, [selectedDate]);
+  }, [dateRange]);
 
   return (
     <>
@@ -780,20 +983,12 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
             <LastUpdateSummary dashboard={dashboard} />
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end">
-            <label className="grid gap-1 text-sm font-medium text-navy">
-              Filtro Fecha
-              <input
-                className="h-10 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
-                onChange={(event) => loadByDate(event.target.value)}
-                type="date"
-                value={selectedDate}
-              />
-            </label>
+          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <DateRangeSelector onApplyRange={loadByRange} range={dateRange} />
 
             <ActualizarDatosOperacionalesControl
               controlHref="/orquestador?view=control"
-              onSucceeded={() => loadByDate(selectedDate)}
+              onSucceeded={() => loadByRange(dateRange)}
               presentation="overlay"
             />
           </div>
@@ -828,13 +1023,13 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-navy">Resumen por estacionamiento</h2>
-            <p className="mt-1 text-sm text-slate-600">{rows.length} estacionamientos para la fecha seleccionada.</p>
+            <p className="mt-1 text-sm text-slate-600">{rows.length} estacionamientos para el periodo seleccionado.</p>
           </div>
           <span className="w-fit rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2.5 py-1 text-xs font-medium text-slate-600">Solo lectura</span>
         </div>
 
         {rows.length === 0 ? (
-          <p className="mt-5 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">No hay estacionamientos para la fecha seleccionada.</p>
+          <p className="mt-5 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">No hay estacionamientos para el periodo seleccionado.</p>
         ) : (
           <>
             <ParkingSummaryTable onOpenDetail={openParkingDetail} rows={rows} totals={parkingSummaryTotals} />
