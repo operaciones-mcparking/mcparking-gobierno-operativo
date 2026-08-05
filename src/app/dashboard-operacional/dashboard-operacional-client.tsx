@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -175,15 +176,10 @@ function LastUpdateSummary({ dashboard }: { dashboard: OperationalDashboardViewM
   }
 
   const updateDate = formatDateTime(lastUpdate.calculated_at ?? lastUpdate.updated_at ?? lastUpdate.created_at);
-  const hasRange = Boolean(lastUpdate.periodo_desde && lastUpdate.periodo_hasta);
-
   return (
     <div className="mt-2 grid gap-1 text-sm text-slate-600">
       <p>Ultima actualizacion: {updateDate}</p>
       <p>Estado: {updateStatusLabel(lastUpdate.estado)}</p>
-      {hasRange ? (
-        <p className="text-xs">Datos disponibles: {formatDate(lastUpdate.periodo_desde)} al {formatDate(lastUpdate.periodo_hasta)}</p>
-      ) : null}
     </div>
   );
 }
@@ -833,7 +829,7 @@ function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: Date
           type="button"
         >
           <span className="min-w-0 truncate">{selectedLabel}</span>
-          <span aria-hidden="true" className="shrink-0 text-slate-500">v</span>
+          <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" />
         </button>
       </div>
       <div className="grid min-w-0 gap-1">
@@ -988,8 +984,10 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
 
             <ActualizarDatosOperacionalesControl
               controlHref="/orquestador?view=control"
+              className="w-full sm:w-fit"
               onSucceeded={() => loadByRange(dateRange)}
               presentation="overlay"
+              triggerVariant="compact"
             />
           </div>
         </div>

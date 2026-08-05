@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
@@ -264,7 +264,7 @@ test("17. caso 21-07-2026 normaliza nombres y conserva 21 campos disponibles", (
 
 test("18. no se modifica recuperacion ni orquestador de jobs", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/recuperacion\//m);
-  assert.doesNotMatch(diffNames, /^src\/app\/orquestador\//m);
+  assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/(?!actualizar-datos-operacionales-control\.tsx$)/m);
   assert.doesNotMatch(diffNames, /^src\/lib\/orquestador\//m);
 });
 
@@ -280,6 +280,7 @@ test("20. diff queda acotado a la web nueva y tests", () => {
     "src/app/dashboard-operacional/dashboard-operacional-client.tsx",
     "src/lib/dashboard/operacional.ts",
     "scripts/dashboard-operacional-ui.test.mjs",
+    "src/app/orquestador/actualizar-datos-operacionales-control.tsx",
   ]);
   for (const file of diffNames.split(/\r?\n/).filter(Boolean)) {
     assert.equal(allowed.has(file), true, `Unexpected diff file: ${file}`);

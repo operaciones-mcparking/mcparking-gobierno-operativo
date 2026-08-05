@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, DatabaseZap, Loader2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, DatabaseZap, Loader2, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
@@ -35,6 +35,7 @@ type ActualizarDatosOperacionalesControlProps = {
   controlHref?: string;
   onSucceeded?: () => Promise<boolean | void> | boolean | void;
   presentation?: "inline" | "overlay";
+  triggerVariant?: "default" | "compact";
 };
 
 function isTerminalRun(run: ReturnType<typeof useCompositeOperationsRun>["run"]) {
@@ -119,6 +120,7 @@ export function ActualizarDatosOperacionalesControl({
   controlHref,
   onSucceeded,
   presentation = "inline",
+  triggerVariant = "default",
 }: ActualizarDatosOperacionalesControlProps) {
   const { clearRun, isStarting, message, run, startRun, status } = useCompositeOperationsRun();
   const [isConfirming, setIsConfirming] = useState(false);
@@ -273,7 +275,18 @@ export function ActualizarDatosOperacionalesControl({
 
   const viewer = run ? <CompositeRunViewer className="mt-4" compact={useOverlay} run={run} title="Progreso de actualizacion operacional" /> : null;
 
-  const triggerButton = (
+  const triggerButton = triggerVariant === "compact" ? (
+    <button
+      aria-label={isStarting ? "Iniciando actualizacion operacional" : "Actualizar datos operacionales"}
+      className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-[#0b3554] bg-navy text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-10"
+      disabled={!canStart}
+      onClick={openConfirmation}
+      title={isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales"}
+      type="button"
+    >
+      {isStarting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
+    </button>
+  ) : (
     <button
       className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
       disabled={!canStart}
