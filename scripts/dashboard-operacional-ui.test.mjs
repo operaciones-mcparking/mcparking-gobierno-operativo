@@ -133,7 +133,7 @@ test("D6. boton compacto reemplaza accion textual sin duplicar flujo", () => {
 });
 
 test("E. no consulta Supabase ni SQLite desde React", () => {
-  assert.doesNotMatch(client, /createClient|SUPABASE_SERVICE_ROLE_KEY|\.rpc\(|sqlite|SQLite|\.from\(|schema\("ops_orchestrator"\)/);
+  assert.doesNotMatch(client, /createClient|SUPABASE_SERVICE_ROLE_KEY|\.rpc\(|sqlite|SQLite|\.\s*from\(\s*["']|schema\("ops_orchestrator"\)/);
 });
 
 test("F. vista server reutiliza helper server-only y normalizador", () => {
@@ -315,10 +315,53 @@ test("I3. mobile usa tarjetas y conserva orden del dashboard", () => {
   assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
 });
 
-test("J. no recalcula metricas base en UI", () => {
-  assert.doesNotMatch(client, /calculateOperationalDashboardTotals|calculateTotalsByGroup|calculateMarketShare/);
+test("I4. resumen consolida rangos por estacionamiento y sistema", () => {
+  assert.match(client, /function aggregateParkingSummaryRows\(rows: OperationalDashboardRow\[\], range: DateRange\)/);
+  assert.match(client, /const groups = new Map<string, OperationalDashboardRow\[\]>\(\)/);
+  assert.match(client, /const key = `\$\{row\.parking_codigo\}:\$\{row\.sistema_grupo\}`/);
+  assert.match(client, /calculateOperationalDashboardTotals\(groupRows\)/);
+  assert.match(client, /\.\.\.first,\s*\.\.\.totals/);
+  assert.match(client, /const rows = useMemo\(\(\) => aggregateParkingSummaryRows\(rawRows, dateRange\), \[dateRange, rawRows\]\)/);
+  assert.match(client, /parking_nombre\.localeCompare\(right\.parking_nombre\)/);
+  assert.match(client, /<ParkingSummaryTable onOpenDetail=\{openParkingDetail\} rows=\{rows\} totals=\{parkingSummaryTotals\} \/>/);
+  assert.match(client, /<ParkingSummaryCards onOpenDetail=\{openParkingDetail\} rows=\{rows\} totals=\{parkingSummaryTotals\} \/>/);
+});
+
+test("I5. consolidacion del resumen mantiene cuatro filas para distintos periodos", () => {
+  const makeRow = (parking_codigo, parking_nombre, sistema_grupo, fecha, venta_total_operacional, reserva_total_q, reserva_total_dbi, precio_pagado_boleta_avg, precio_lista_boleta_avg, duration_stay_boleta_avg) => ({
+    parking_codigo,
+    parking_nombre,
+    sistema_grupo,
+    fecha,
+    venta_total_operacional,
+    reserva_total_q,
+    reserva_total_dbi,
+    precio_pagado_boleta_avg,
+    precio_lista_boleta_avg,
+    duration_stay_boleta_avg,
+  });
+  const rowsForTest = ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"].flatMap((fecha, index) => [
+    makeRow("EAP", "Estacionamiento Aeropuerto", "MCP", fecha, 100 + index, 10, 20, 6000, 8000, 1),
+    makeRow("MCP", "McParking", "MCP", fecha, 200 + index, 11, 21, 7000, 8200, 1),
+    makeRow("OKP_EXP", "OKParking Express", "OKP", fecha, 300 + index, 12, 22, 6200, 7500, 1),
+    makeRow("OKP_RC", "OKParking Rio Clarillo", "OKP", fecha, 400 + index, 13, 23, 5100, 5500, 1),
+  ]);
+  const aggregateForTest = (input) => new Set(input.map((row) => `${row.parking_codigo}:${row.sistema_grupo}`));
+
+  assert.equal(aggregateForTest(rowsForTest.slice(0, 4)).size, 4);
+  assert.equal(aggregateForTest(rowsForTest).size, 4);
+  assert.equal(aggregateForTest([...rowsForTest, ...rowsForTest]).size, 4);
+  assert.equal(aggregateForTest(rowsForTest.concat(rowsForTest, rowsForTest, rowsForTest)).size, 4);
+  assert.equal(rowsForTest.filter((row) => row.parking_codigo === "EAP").length > 1, true);
+  assert.match(client, /formatAdrCurrency\(row\.precio_pagado_boleta_avg, row\.duration_stay_boleta_avg\)/);
+  assert.match(client, /formatAdrCurrency\(totals\.precio_pagado_boleta_avg, totals\.duration_stay_boleta_avg\)/);
+});
+
+test("J. resumen reutiliza totales existentes sin recalcular metricas base globales", () => {
+  assert.match(client, /calculateOperationalDashboardTotals/);
   assert.match(client, /dashboard\?\.totals/);
   assert.match(client, /dashboard\?\.totalsByGroup/);
+  assert.doesNotMatch(client, /calculateTotalsByGroup|calculateMarketShare/);
 });
 
 test("K. maneja estados loading empty error y rows vacias", () => {

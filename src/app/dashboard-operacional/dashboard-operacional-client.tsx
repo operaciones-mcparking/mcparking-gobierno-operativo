@@ -3,10 +3,11 @@
 import { ChevronDown } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type {
-  OperationalDashboardRow,
-  OperationalDashboardTotals,
-  OperationalDashboardViewModel,
+import {
+  calculateOperationalDashboardTotals,
+  type OperationalDashboardRow,
+  type OperationalDashboardTotals,
+  type OperationalDashboardViewModel,
 } from "@/lib/dashboard/operacional";
 import { ActualizarDatosOperacionalesControl } from "../orquestador/actualizar-datos-operacionales-control";
 import {
@@ -481,6 +482,39 @@ function getParkingSummaryKey(row: OperationalDashboardRow) {
   return `${row.fecha}:${row.parking_codigo}:${row.sistema_grupo}:${row.id}`;
 }
 
+function aggregateParkingSummaryRows(rows: OperationalDashboardRow[], range: DateRange) {
+  const groups = new Map<string, OperationalDashboardRow[]>();
+
+  for (const row of rows) {
+    const key = `${row.parking_codigo}:${row.sistema_grupo}`;
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  const rangeDate = fromLocalDateKey(range.from);
+
+  return Array.from(groups.values())
+    .map((groupRows) => {
+      const first = groupRows[0];
+      const totals = calculateOperationalDashboardTotals(groupRows);
+      const month = rangeDate.getMonth() + 1;
+
+      return {
+        ...first,
+        ...totals,
+        day: rangeDate.getDate(),
+        fecha: range.from,
+        month,
+        quarter: Math.floor((month - 1) / 3) + 1,
+        year: rangeDate.getFullYear(),
+      };
+    })
+    .sort((left, right) => {
+      const parkingCompare = left.parking_nombre.localeCompare(right.parking_nombre);
+      if (parkingCompare !== 0) return parkingCompare;
+      return left.sistema_grupo.localeCompare(right.sistema_grupo);
+    });
+}
+
 function getParkingDetailId(prefix: string, key: string) {
   return `${prefix}-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
@@ -897,7 +931,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [error, setError] = useState(initialError);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
 
-  const rows = useMemo(() => {
+  const rawRows = useMemo(() => {
     return [...(dashboard?.rows ?? [])].sort((left, right) => {
       const dateCompare = right.fecha.localeCompare(left.fecha);
       if (dateCompare !== 0) return dateCompare;
@@ -906,6 +940,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       return left.parking_nombre.localeCompare(right.parking_nombre);
     });
   }, [dashboard]);
+  const rows = useMemo(() => aggregateParkingSummaryRows(rawRows, dateRange), [dateRange, rawRows]);
   const parkingSummaryTotals = dashboard?.totals ?? emptyTotals;
   const openParkingDetail = useCallback((row: OperationalDashboardRow) => {
     setSelectedParkingDetail(row);
