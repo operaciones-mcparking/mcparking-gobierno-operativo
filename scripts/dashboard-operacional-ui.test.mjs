@@ -146,25 +146,30 @@ test("H. metricas principales solicitadas visibles", () => {
   }
 });
 
-test("I. resumen por estacionamiento usa tabla desktop resumida", () => {
+test("I. resumen por estacionamiento usa tabla desktop compacta con ADR", () => {
   assert.match(client, /Resumen por estacionamiento/);
   assert.match(client, /estacionamientos para la fecha seleccionada/);
   assert.doesNotMatch(client, /Detalle operativo por parking|filas operacionales visibles/);
   assert.match(client, /function ParkingSummaryTable/);
   assert.match(client, /className="mt-5 hidden lg:block"/);
-  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos"]) {
-    assert.match(client, new RegExp(label));
+  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "ADR Pagado (CLP)", "ADR Lista (CLP)"]) {
+    assert.equal(client.includes(label), true);
   }
   assert.equal(client.includes('"Acci\\u00f3n"'), true);
+  assert.match(client, /title="Promedio por reserva pagado"/);
+  assert.match(client, /title="Promedio por reserva segun tarifa lista"/);
   assert.match(client, /row\.parking_nombre/);
   assert.match(client, /row\.sistema_grupo/);
   assert.match(client, /formatCurrency\(row\.venta_total_operacional\)/);
   assert.match(client, /formatInteger\(row\.reserva_total_q\)/);
   assert.match(client, /formatInteger\(row\.reserva_total_dbi\)/);
-  assert.match(client, /formatInteger\(row\.pack_vendido_q\)/);
+  assert.match(client, /formatAdrCurrency\(row\.precio_pagado_boleta_avg, row\.duration_stay_boleta_avg\)/);
+  assert.match(client, /formatAdrCurrency\(row\.precio_lista_boleta_avg, row\.duration_stay_boleta_avg\)/);
+  const tableMatch = client.match(/function ParkingSummaryTable[\s\S]*?function ParkingSummaryCard/);
+  assert.ok(tableMatch);
+  assert.doesNotMatch(tableMatch[0], /Packs vendidos|pack_vendido_q/);
   assert.doesNotMatch(client, /min-w-\[1180px\]|overflow-x-auto/);
 });
-
 test("I1. drawer de detalle conserva los desgloses operativos", () => {
   assert.match(client, /function ParkingDetailDrawer/);
   assert.match(client, /function ParkingSummaryToggle/);
@@ -213,25 +218,28 @@ test("I1. drawer de detalle conserva los desgloses operativos", () => {
     assert.match(client, new RegExp(label));
   }
 });
-test("I2. filas totales visibles se calculan localmente sin tocar metricas base", () => {
-  assert.match(client, /type ParkingSummaryTotals = Pick/);
-  assert.match(client, /function calculateParkingSummaryTotals\(rows: OperationalDashboardRow\[\]\)/);
-  assert.match(client, /for \(const row of rows\)/);
-  assert.match(client, /totals\.venta_total_operacional \+= row\.venta_total_operacional/);
-  assert.match(client, /totals\.reserva_total_q \+= row\.reserva_total_q/);
-  assert.match(client, /totals\.reserva_total_dbi \+= row\.reserva_total_dbi/);
-  assert.match(client, /totals\.pack_vendido_q \+= row\.pack_vendido_q/);
-  assert.match(client, /<td className="border-t border-\[#cbd8e3\] px-3 py-3">TOTAL<\/td>/);
+test("I2. fila TOTAL usa totales existentes y ADR ponderado del DTO", () => {
+  assert.match(client, /type ParkingSummaryTotals = Pick<[\s\S]*OperationalDashboardTotals/);
+  assert.match(client, /"precio_pagado_boleta_avg"/);
+  assert.match(client, /"precio_lista_boleta_avg"/);
+  assert.match(client, /"duration_stay_boleta_avg"/);
+  assert.doesNotMatch(client, /function calculateParkingSummaryTotals/);
+  assert.match(client, /const parkingSummaryTotals = dashboard\?\.totals \?\? emptyTotals/);
+  assert.match(client, /<td className="border-t border-\[#cbd8e3\] px-2\.5 py-3">TOTAL<\/td>/);
+  assert.match(client, /formatCurrency\(totals\.venta_total_operacional\)/);
+  assert.match(client, /formatInteger\(totals\.reserva_total_q\)/);
+  assert.match(client, /formatInteger\(totals\.reserva_total_dbi\)/);
+  assert.match(client, /formatAdrCurrency\(totals\.precio_pagado_boleta_avg, totals\.duration_stay_boleta_avg\)/);
+  assert.match(client, /formatAdrCurrency\(totals\.precio_lista_boleta_avg, totals\.duration_stay_boleta_avg\)/);
   assert.match(client, /<ParkingTotalsCard totals=\{totals\} \/>/);
   assert.doesNotMatch(client, /TOTAL[\s\S]{0,240}<ParkingSummaryToggle/);
 });
-
 test("I3. mobile usa tarjetas y conserva orden del dashboard", () => {
   assert.match(client, /function ParkingSummaryCards/);
   assert.match(client, /function ParkingSummaryCard/);
   assert.match(client, /className="mt-5 grid gap-3 lg:hidden"/);
   assert.match(client, /<ParkingTotalsCard totals=\{totals\} \/>/);
-  for (const label of ["Venta", "Reservas", "DBI", "Packs vendidos"]) {
+  for (const label of ["Venta", "Reservas", "DBI", "ADR Pagado", "ADR Lista"]) {
     assert.match(client, new RegExp(label));
   }
   assert.match(client, /<div className="order-1 xl:order-2">\s*<MarketColumn dashboard=\{dashboard\} \/>\s*<\/div>/);

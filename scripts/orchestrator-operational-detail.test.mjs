@@ -154,16 +154,22 @@ test("6. metadata real corrige fecha maxima disponible sin usar 20-07-26", () =>
   assert.doesNotMatch(client, /20-07-26|2026-07-20T00:00:00|hardcode/);
 });
 
-test("7. resumen mantiene columnas actuales y fila TOTAL no expandible", () => {
-  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos"]) {
+test("7. resumen mantiene columnas compactas con ADR y fila TOTAL no expandible", () => {
+  for (const label of ["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "ADR Pagado", "ADR Lista"]) {
     assert.match(client, new RegExp(label));
   }
   assert.equal(client.includes('"Acci\\u00f3n"'), true);
-  assert.match(client, /<td className="border-t border-\[#cbd8e3\] px-3 py-3">TOTAL<\/td>/);
+  assert.match(client, /title="Promedio por reserva pagado"/);
+  assert.match(client, /title="Promedio por reserva segun tarifa lista"/);
+  assert.match(client, /<td className="border-t border-\[#cbd8e3\] px-2\.5 py-3">TOTAL<\/td>/);
+  assert.match(client, /formatAdrCurrency\(row\.precio_pagado_boleta_avg, row\.duration_stay_boleta_avg\)/);
+  assert.match(client, /formatAdrCurrency\(totals\.precio_lista_boleta_avg, totals\.duration_stay_boleta_avg\)/);
+  const tableMatch = client.match(/function ParkingSummaryTable[\s\S]*?function ParkingSummaryCard/);
+  assert.ok(tableMatch);
+  assert.doesNotMatch(tableMatch[0], /Packs vendidos|pack_vendido_q/);
   assert.doesNotMatch(client, /TOTAL[\s\S]{0,260}<ParkingSummaryToggle/);
   assert.doesNotMatch(client, /min-w-\[1180px\]|overflow-x-auto/);
 });
-
 test("8. boton Ver detalle abre drawer", () => {
   assert.match(client, /function ParkingDetailDrawer/);
   assert.match(client, /role="dialog"/);
@@ -237,10 +243,12 @@ test("15. cierre accesible, overlay y Escape", () => {
 });
 
 test("16. tabla resumen no se convierte en 24 columnas", () => {
-  assert.equal(client.includes('["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acci\\u00f3n"]'), true);
-  assert.doesNotMatch(client, /Venta Operacional[\s\S]{0,120}<th|Ticket Lista[\s\S]{0,120}<th/);
+  const tableMatch = client.match(/function ParkingSummaryTable[\s\S]*?function ParkingSummaryCard/);
+  assert.ok(tableMatch);
+  assert.match(tableMatch[0], /ADR Pagado \(CLP\)/);
+  assert.match(tableMatch[0], /ADR Lista \(CLP\)/);
+  assert.doesNotMatch(tableMatch[0], /Venta Operacional[\s\S]{0,120}<th|Ticket Lista[\s\S]{0,120}<th/);
 });
-
 test("17. caso 21-07-2026 normaliza nombres y conserva 21 campos disponibles", () => {
   const dashboard = normalizeOperationalDashboardRpcResult(rpcPayload([
     row(),

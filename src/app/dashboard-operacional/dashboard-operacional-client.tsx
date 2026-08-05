@@ -101,8 +101,13 @@ function groupTotals(dashboard: OperationalDashboardViewModel | null, group: "MC
 type MetricLayout = "normal" | "mirror";
 type TextAlignment = "left" | "right";
 type ParkingSummaryTotals = Pick<
-  OperationalDashboardRow,
-  "pack_vendido_q" | "reserva_total_dbi" | "reserva_total_q" | "venta_total_operacional"
+  OperationalDashboardTotals,
+  | "duration_stay_boleta_avg"
+  | "precio_lista_boleta_avg"
+  | "precio_pagado_boleta_avg"
+  | "reserva_total_dbi"
+  | "reserva_total_q"
+  | "venta_total_operacional"
 >;
 
 function KpiLine({ label, layout = "normal", value }: { label: string; layout?: MetricLayout; value: string }) {
@@ -390,24 +395,6 @@ function getParkingDetailId(prefix: string, key: string) {
   return `${prefix}-${key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
-function calculateParkingSummaryTotals(rows: OperationalDashboardRow[]): ParkingSummaryTotals {
-  const totals: ParkingSummaryTotals = {
-    pack_vendido_q: 0,
-    reserva_total_dbi: 0,
-    reserva_total_q: 0,
-    venta_total_operacional: 0,
-  };
-
-  for (const row of rows) {
-    totals.pack_vendido_q += row.pack_vendido_q;
-    totals.reserva_total_dbi += row.reserva_total_dbi;
-    totals.reserva_total_q += row.reserva_total_q;
-    totals.venta_total_operacional += row.venta_total_operacional;
-  }
-
-  return totals;
-}
-
 function formatDetailValue(value: string) {
   return value === "No disponible" ? "\u2014" : value;
 }
@@ -562,8 +549,17 @@ function ParkingSummaryTable({
       <table className="w-full border-separate border-spacing-0 text-left text-sm">
         <thead>
           <tr className="text-xs uppercase tracking-[0.08em] text-slate-500">
-            {["Estacionamiento", "Sistema", "Venta", "Reservas", "DBI", "Packs vendidos", "Acci\u00f3n"].map((header) => (
-              <th className="border-b border-[#d6e1ea] bg-[#f8fbfd] px-3 py-3 font-semibold" key={header}>{header}</th>
+            {[
+              { label: "Estacionamiento" },
+              { label: "Sistema" },
+              { label: "Venta" },
+              { label: "Reservas" },
+              { label: "DBI" },
+              { label: "ADR Pagado (CLP)", title: "Promedio por reserva pagado" },
+              { label: "ADR Lista (CLP)", title: "Promedio por reserva segun tarifa lista" },
+              { label: "Acci\u00f3n" },
+            ].map((header) => (
+              <th className="border-b border-[#d6e1ea] bg-[#f8fbfd] px-2.5 py-3 font-semibold" key={header.label} title={header.title}>{header.label}</th>
             ))}
           </tr>
         </thead>
@@ -574,15 +570,16 @@ function ParkingSummaryTable({
             return (
               <Fragment key={key}>
                 <tr>
-                  <td className="border-b border-[#e4edf4] px-3 py-3 font-medium text-navy">{row.parking_nombre}</td>
-                  <td className="border-b border-[#e4edf4] px-3 py-3">
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3 font-medium text-navy">{row.parking_nombre}</td>
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">
                     <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-1 text-xs font-medium text-slate-600">{row.sistema_grupo}</span>
                   </td>
-                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatCurrency(row.venta_total_operacional)}</td>
-                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_q)}</td>
-                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.reserva_total_dbi)}</td>
-                  <td className="border-b border-[#e4edf4] px-3 py-3">{formatInteger(row.pack_vendido_q)}</td>
-                  <td className="border-b border-[#e4edf4] px-3 py-3">
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">{formatCurrency(row.venta_total_operacional)}</td>
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">{formatInteger(row.reserva_total_q)}</td>
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">{formatInteger(row.reserva_total_dbi)}</td>
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">{formatAdrCurrency(row.precio_pagado_boleta_avg, row.duration_stay_boleta_avg)}</td>
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">{formatAdrCurrency(row.precio_lista_boleta_avg, row.duration_stay_boleta_avg)}</td>
+                  <td className="border-b border-[#e4edf4] px-2.5 py-3">
                     <ParkingSummaryToggle onOpen={() => onOpenDetail(row)} parkingName={row.parking_nombre} />
                   </td>
                 </tr>
@@ -590,13 +587,14 @@ function ParkingSummaryTable({
             );
           })}
           <tr className="font-semibold text-navy">
-            <td className="border-t border-[#cbd8e3] px-3 py-3">TOTAL</td>
-            <td className="border-t border-[#cbd8e3] px-3 py-3 text-slate-500">-</td>
-            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatCurrency(totals.venta_total_operacional)}</td>
-            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatInteger(totals.reserva_total_q)}</td>
-            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatInteger(totals.reserva_total_dbi)}</td>
-            <td className="border-t border-[#cbd8e3] px-3 py-3">{formatInteger(totals.pack_vendido_q)}</td>
-            <td className="border-t border-[#cbd8e3] px-3 py-3" />
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3">TOTAL</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3 text-slate-500">-</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3">{formatCurrency(totals.venta_total_operacional)}</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3">{formatInteger(totals.reserva_total_q)}</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3">{formatInteger(totals.reserva_total_dbi)}</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3">{formatAdrCurrency(totals.precio_pagado_boleta_avg, totals.duration_stay_boleta_avg)}</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3">{formatAdrCurrency(totals.precio_lista_boleta_avg, totals.duration_stay_boleta_avg)}</td>
+            <td className="border-t border-[#cbd8e3] px-2.5 py-3" />
           </tr>
         </tbody>
       </table>
@@ -634,8 +632,12 @@ function ParkingSummaryCard({
           <dd className="mt-1 font-semibold text-navy">{formatInteger(row.reserva_total_dbi)}</dd>
         </div>
         <div>
-          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500">Packs vendidos</dt>
-          <dd className="mt-1 font-semibold text-navy">{formatInteger(row.pack_vendido_q)}</dd>
+          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500" title="Promedio por reserva pagado">ADR Pagado</dt>
+          <dd className="mt-1 font-semibold text-navy">{formatAdrCurrency(row.precio_pagado_boleta_avg, row.duration_stay_boleta_avg)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs uppercase tracking-[0.08em] text-slate-500" title="Promedio por reserva segun tarifa lista">ADR Lista</dt>
+          <dd className="mt-1 font-semibold text-navy">{formatAdrCurrency(row.precio_lista_boleta_avg, row.duration_stay_boleta_avg)}</dd>
         </div>
       </dl>
     </article>
@@ -660,8 +662,12 @@ function ParkingTotalsCard({ totals }: { totals: ParkingSummaryTotals }) {
           <dd className="mt-1">{formatInteger(totals.reserva_total_dbi)}</dd>
         </div>
         <div>
-          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">Packs vendidos</dt>
-          <dd className="mt-1">{formatInteger(totals.pack_vendido_q)}</dd>
+          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500" title="Promedio por reserva pagado">ADR Pagado</dt>
+          <dd className="mt-1">{formatAdrCurrency(totals.precio_pagado_boleta_avg, totals.duration_stay_boleta_avg)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500" title="Promedio por reserva segun tarifa lista">ADR Lista</dt>
+          <dd className="mt-1">{formatAdrCurrency(totals.precio_lista_boleta_avg, totals.duration_stay_boleta_avg)}</dd>
         </div>
       </dl>
     </article>
@@ -706,7 +712,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       return left.parking_nombre.localeCompare(right.parking_nombre);
     });
   }, [dashboard]);
-  const parkingSummaryTotals = useMemo(() => calculateParkingSummaryTotals(rows), [rows]);
+  const parkingSummaryTotals = dashboard?.totals ?? emptyTotals;
   const openParkingDetail = useCallback((row: OperationalDashboardRow) => {
     setSelectedParkingDetail(row);
   }, []);
