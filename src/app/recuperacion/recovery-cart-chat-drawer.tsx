@@ -610,9 +610,6 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     return `recovery-template-variable-${position}`;
   }
 
-  function templateVariableErrorId(position: number) {
-    return `recovery-template-variable-${position}-error`;
-  }
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#0f172a]/35" onClick={onClose}>
@@ -901,14 +898,12 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
                   {selectedTemplatePreparationVariables.map((variable) => {
                     const inputId = templateVariableInputId(variable.position);
-                    const errorId = templateVariableErrorId(variable.position);
                     const hasError = !templateVariableValues[variable.position]?.trim();
 
                     return (
-                      <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-600" htmlFor={inputId} key={variable.position}>
-                        Variable {variable.placeholder}
+                      <label className="grid min-w-0" htmlFor={inputId} key={variable.position}>
+                        <span className="sr-only">Variable {variable.placeholder}</span>
                         <input
-                          aria-describedby={hasError ? errorId : undefined}
                           aria-invalid={hasError}
                           className="h-10 w-full min-w-0 rounded-xl border border-[#d8e7e1] bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
                           id={inputId}
@@ -918,7 +913,6 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                           type="text"
                           value={templateVariableValues[variable.position] ?? ""}
                         />
-                        {hasError ? <span className="text-[11px] font-medium text-[#92400e]" id={errorId}>Variable requerida para preparar la plantilla.</span> : null}
                       </label>
                     );
                   })}

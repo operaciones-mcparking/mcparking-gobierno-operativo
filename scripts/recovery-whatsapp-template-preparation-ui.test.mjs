@@ -60,11 +60,12 @@ test("8. empty or spaces-only variables are pending", () => {
   assert.match(drawer, /aria-invalid=\{hasError\}/);
 });
 
-test("9. a labelled input is created per variable", () => {
+test("9. an accessible compact input is created per variable", () => {
   assert.match(drawer, /selectedTemplatePreparationVariables\.map/);
-  assert.match(drawer, /Variable \{variable\.placeholder\}/);
-  assert.match(drawer, /htmlFor=\{inputId\}/);
+  assert.match(drawer, /<label className="grid min-w-0" htmlFor=\{inputId\}/);
+  assert.match(drawer, /<span className="sr-only">Variable \{variable\.placeholder\}<\/span>/);
   assert.match(drawer, /id=\{inputId\}/);
+  assert.match(drawer, /placeholder=\{variable\.placeholder\}/);
   assert.match(drawer, /maxLength=\{500\}/);
 });
 
@@ -86,9 +87,10 @@ test("13. complete variables show ready helper text", () => {
   assert.match(drawer, /Variables listas para la siguiente etapa\./);
 });
 
-test("14. individual input errors remain available", () => {
-  assert.match(drawer, /Variable requerida para preparar la plantilla\./);
-  assert.match(drawer, /aria-describedby=\{hasError \? errorId : undefined\}/);
+test("14. individual visible labels and input errors are removed", () => {
+  assert.doesNotMatch(drawer, /Variable requerida para preparar la plantilla\./);
+  assert.doesNotMatch(drawer, /aria-describedby=\{hasError \? errorId : undefined\}/);
+  assert.doesNotMatch(drawer, /templateVariableErrorId|errorId/);
 });
 
 test("15. preview helper keeps placeholders when a value is empty", () => {
