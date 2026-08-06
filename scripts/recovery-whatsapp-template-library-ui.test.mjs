@@ -76,7 +76,10 @@ test("8. selection is visual only and does not send", () => {
   assert.match(modal, /onSelectTemplate\(selectedTemplate\)/);
   assert.match(drawer, /Plantilla seleccionada/);
   assert.doesNotMatch(modal + route, /sendTemplate|\/chat\/send-template|method:\s*"POST"|callN8nWebhook/);
-  assert.doesNotMatch(drawer, /\/chat\/send-template|sendTemplateMessage/);
+  assert.match(drawer, /Preparar envío/);
+  assert.match(drawer, /dryRun: true/);
+  assert.match(drawer, /\/chat\/send-template/);
+  assert.doesNotMatch(drawer, /sendTemplateMessage|callN8nWebhook|N8N_RECOVERY/);
 });
 
 test("9. responsive desktop and mobile layouts are present", () => {

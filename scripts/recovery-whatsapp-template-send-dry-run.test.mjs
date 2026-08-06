@@ -183,16 +183,22 @@ test("30. response includes dryRun true", () => {
   assert.match(route, /dry_run_required/);
 });
 
-test("31. drawer is not wired to send-template", () => {
-  assert.doesNotMatch(drawer, /send-template|sendTemplateMessage|templateKey.*fetch|Enviar plantilla[\s\S]{0,300}onClick/);
+test("31. drawer calls send-template only in dry-run mode", () => {
+  const validateFunction = drawer.slice(drawer.indexOf("async function validateSelectedTemplate"), drawer.indexOf("return (", drawer.indexOf("async function validateSelectedTemplate")));
+
+  assert.ok(validateFunction.includes('/chat/send-template'));
+  assert.match(validateFunction, /dryRun: true/);
+  assert.match(validateFunction, /method: "POST"/);
+  assert.doesNotMatch(validateFunction, /businessKey|phone_number_id|components|previewText|templateName|token/);
 });
 
-test("32. Enviar plantilla remains disabled", () => {
-  const sendTemplateBlock = drawer.slice(drawer.indexOf("Enviar plantilla") - 400, drawer.indexOf("Enviar plantilla") + 250);
+test("32. Prepare template button is gated by complete variables", () => {
+  const validateTemplateBlock = drawer.slice(drawer.indexOf("Preparar envío") - 500, drawer.indexOf("Preparar envío") + 300);
 
-  assert.match(sendTemplateBlock, /disabled/);
-  assert.match(sendTemplateBlock, /aria-disabled="true"/);
-  assert.doesNotMatch(sendTemplateBlock, /onClick|fetch\(/);
+  assert.ok(drawer.includes("canValidateTemplate = Boolean(cartId)"));
+  assert.ok(drawer.includes("selectedTemplateVariableErrors.length === 0"));
+  assert.ok(validateTemplateBlock.includes("disabled={!canValidateTemplate}"));
+  assert.ok(validateTemplateBlock.includes("onClick={() => void validateSelectedTemplate()}"));
 });
 
 test("33. request DTO is intentionally narrow", () => {

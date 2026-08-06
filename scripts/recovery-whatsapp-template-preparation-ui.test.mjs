@@ -12,7 +12,7 @@ const modal = readFileSync(modalPath, "utf8");
 const meta = readFileSync(metaPath, "utf8");
 const route = readFileSync(routePath, "utf8");
 const changedSources = [drawer, modal, meta, route].join("\n");
-const sendTemplateButtonBlock = drawer.slice(drawer.indexOf("Enviar plantilla") - 600, drawer.indexOf("Enviar plantilla") + 300);
+const validateTemplateButtonBlock = drawer.slice(drawer.indexOf("Preparar envío") - 900, drawer.indexOf("Preparar envío") + 600);
 
 test("1. without selection the compact button says Plantillas", () => {
   assert.match(drawer, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
@@ -35,7 +35,7 @@ test("3. selected template panel exposes Cambiar plantilla and Cerrar plantilla"
 test("4. closing selected template clears selected template and variable values", () => {
   assert.match(drawer, /function closeSelectedTemplate\(\)/);
   assert.match(drawer, /setSelectedTemplate\(null\)/);
-  assert.match(drawer, /setTemplateVariableValues\(\{\}\)/);
+  assert.ok(drawer.includes("setTemplateVariableValues({})"));
 });
 
 test("5. closing selected template does not close the drawer or call APIs", () => {
@@ -84,55 +84,84 @@ test("12. pending alert is inline and accessible", () => {
 });
 
 test("13. complete variables show ready helper text", () => {
-  assert.match(drawer, /Variables listas para la siguiente etapa\./);
+  assert.match(drawer, /Variables listas para preparar en modo prueba./);
 });
 
 test("14. individual visible labels and input errors are removed", () => {
-  assert.doesNotMatch(drawer, /Variable requerida para preparar la plantilla\./);
-  assert.doesNotMatch(drawer, /aria-describedby=\{hasError \? errorId : undefined\}/);
+  assert.doesNotMatch(drawer, /Variable requerida para preparar la plantilla./);
+  assert.doesNotMatch(drawer, /aria-describedby={hasError ? errorId : undefined}/);
   assert.doesNotMatch(drawer, /templateVariableErrorId|errorId/);
 });
 
 test("15. preview helper keeps placeholders when a value is empty", () => {
-  assert.match(modal, /value\.trim\(\)\.length > 0 \? value : placeholder/);
+  assert.ok(modal.includes("value.trim().length > 0 ? value : placeholder"));
 });
 
 test("16. preview helper replaces placeholders when values exist", () => {
   assert.match(modal, /export function renderTemplatePreviewText/);
-  assert.match(drawer, /renderTemplatePreviewText\(selectedTemplate\.preview\.body, templateVariableValues\)/);
-  assert.match(drawer, /renderTemplatePreviewText\(button\.text, templateVariableValues\)/);
+  assert.ok(drawer.includes("renderTemplatePreviewText(selectedTemplate.preview.body, templateVariableValues)"));
+  assert.ok(drawer.includes("renderTemplatePreviewText(button.text, templateVariableValues)"));
 });
 
-test("17. changing to another template clears previous values", () => {
-  assert.match(drawer, /current\?\.key !== template\.key/);
-  assert.match(drawer, /setTemplateVariableValues\(\{\}\)/);
+test("17. changing to another template clears previous values and validation", () => {
+  assert.ok(drawer.includes("current?.key !== template.key"));
+  assert.ok(drawer.includes("setTemplateVariableValues({})"));
+  assert.ok(drawer.includes("setTemplateValidationResult(null)"));
 });
 
 test("18. choosing the same template preserves values", () => {
   const selectFunction = drawer.slice(drawer.indexOf("function handleTemplateSelected"), drawer.indexOf("function closeSelectedTemplate"));
-  assert.match(selectFunction, /if \(current\?\.key !== template\.key\)/);
-  assert.doesNotMatch(selectFunction, /else\s*\{\s*setTemplateVariableValues/);
+  assert.ok(selectFunction.includes("if (current?.key !== template.key)"));
+  assert.doesNotMatch(selectFunction, /elses*{s*setTemplateVariableValues/);
 });
 
-test("19. Enviar plantilla remains visible and disabled", () => {
-  assert.match(drawer, /Enviar plantilla/);
-  assert.match(sendTemplateButtonBlock, /aria-disabled="true"/);
-  assert.match(sendTemplateButtonBlock, /disabled/);
-  assert.match(sendTemplateButtonBlock, /title="El envío se habilitará en la siguiente etapa"/);
+test("19. Preparar envio replaces send copy", () => {
+  assert.match(drawer, /Preparar envío/);
+  assert.match(drawer, /Preparando envío.../);
+  assert.doesNotMatch(drawer, /Validar plantilla|Validando plantilla|Enviar plantilla/);
 });
 
-test("20. Enviar plantilla has no send onClick", () => {
-  assert.doesNotMatch(sendTemplateButtonBlock, /onClick/);
+test("20. validation button calls the dry-run endpoint", () => {
+  assert.match(validateTemplateButtonBlock, /disabled={!canValidateTemplate}/);
+  assert.ok(validateTemplateButtonBlock.includes("onClick={() => void validateSelectedTemplate()}"));
+  assert.ok(drawer.includes('/api/recuperacion/carritos/${encodeURIComponent(cartId)}/chat/send-template'));
 });
 
-test("21. no template POST or send-template endpoint exists", () => {
-  assert.doesNotMatch(changedSources, /send-template|sendTemplate|\/chat\/send-template/i);
-  assert.doesNotMatch(modal + route, /method:\s*"POST"/);
+test("21. template validation request is dry-run and narrow", () => {
+  const validateFunction = drawer.slice(drawer.indexOf("async function validateSelectedTemplate"), drawer.indexOf("return (", drawer.indexOf("async function validateSelectedTemplate")));
+
+  assert.match(validateFunction, /dryRun: true/);
+  assert.match(validateFunction, /templateKey: selectedTemplate.key/);
+  assert.match(validateFunction, /language: selectedTemplate.language/);
+  assert.match(validateFunction, /variables/);
+  assert.doesNotMatch(validateFunction, /businessKey|phone_number_id|phone:|components|previewText|templateName|token/);
 });
 
-test("22. no n8n, Supabase write, or message send path is added for templates", () => {
-  assert.doesNotMatch(modal + route, /callN8nWebhook|N8N_RECOVERY|supabase\.from\([^)]*\)\.insert|insert\(|upsert\(|update\(/i);
-  assert.doesNotMatch(sendTemplateButtonBlock, /fetch\(|POST|n8n|supabase/i);
+test("21b. prepared result is operator-friendly and hides technical details", () => {
+  const resultBlock = drawer.slice(drawer.indexOf("Plantilla preparada") - 300, drawer.indexOf("Plantilla preparada") + 1600);
+
+  assert.match(resultBlock, /Plantilla preparada/);
+  assert.match(resultBlock, /Vista previa final/);
+  assert.match(resultBlock, /templateValidationBusinessLabel/);
+  assert.match(drawer, /MPV" \| "EAP"/);
+  assert.match(drawer, /McParking/);
+  assert.match(drawer, /Estacionamiento Aeropuerto/);
+  assert.match(resultBlock, /selectedTemplate.label/);
+  assert.match(resultBlock, /Idioma/);
+  assert.doesNotMatch(resultBlock, /variableCount|maskedPhone|templateName|Payload|phone_number_id|token|components/);
+});
+
+test("21c. redundant closed and missing footer hints are hidden when templates are available", () => {
+  assert.match(drawer, /freeformWindow.kind === "closed" && !shouldShowTemplateButton/);
+  assert.match(drawer, /freeformWindow.kind === "missing" && !shouldShowTemplateButton/);
+  assert.match(drawer, /freeformWindow.kind === "unverifiable"/);
+});
+
+test("22. template dry-run UI still has no n8n, Supabase write, or message history update", () => {
+  const validateFunction = drawer.slice(drawer.indexOf("async function validateSelectedTemplate"), drawer.indexOf("return (", drawer.indexOf("async function validateSelectedTemplate")));
+
+  assert.doesNotMatch(modal + route, /callN8nWebhook|N8N_RECOVERY|insert\(|upsert\(|update\(/i);
+  assert.doesNotMatch(validateFunction, /callN8nWebhook|N8N_RECOVERY|supabase|setData\(|messageDraft|\/messages/i);
 });
 
 test("23. mobile layout avoids horizontal overflow", () => {

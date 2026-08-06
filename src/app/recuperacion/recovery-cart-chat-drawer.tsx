@@ -63,6 +63,27 @@ type SendChatResponse = {
   whatsappWindow?: WhatsappFreeformWindowPayload;
 };
 
+type TemplateDryRunResponse = {
+  code?: string;
+  error?: string;
+  dryRun?: boolean;
+  ok: boolean;
+  preview?: {
+    body: string | null;
+    buttons: Array<{ text: string; type: string }>;
+    footer: string | null;
+    header: string | null;
+  };
+  validation?: {
+    businessKey: "MPV" | "EAP";
+    cartType: string | null;
+    language: string;
+    maskedPhone: string | null;
+    templateName: string;
+    variableCount: number;
+  };
+};
+
 type RecoveryCartChatDrawerProps = {
   cartId: string | null;
   onClose: () => void;
@@ -106,6 +127,10 @@ function formatDateTime(value: string | null) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-CL").format(value);
+}
+
+function templateValidationBusinessLabel(businessKey: "MPV" | "EAP") {
+  return businessKey === "EAP" ? "Estacionamiento Aeropuerto" : "McParking";
 }
 
 function sentimentTone(sentiment: string | null): BadgeTone {
@@ -254,6 +279,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [templateVariableValues, setTemplateVariableValues] = useState<Record<number, string>>({});
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [isTemplateValidating, setIsTemplateValidating] = useState(false);
+  const [templateValidationError, setTemplateValidationError] = useState<string | null>(null);
+  const [templateValidationResult, setTemplateValidationResult] = useState<TemplateDryRunResponse | null>(null);
   const [whatsappWindowOverride, setWhatsappWindowOverride] = useState<WhatsappFreeformWindowPayload | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
@@ -314,6 +342,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setIsTemplateLibraryOpen(false);
       setSelectedTemplate(null);
       setTemplateVariableValues({});
+      setIsTemplateValidating(false);
+      setTemplateValidationError(null);
+      setTemplateValidationResult(null);
       setWhatsappWindowOverride(null);
       previousMessageCountRef.current = 0;
       shouldScrollToBottomRef.current = true;
@@ -426,6 +457,8 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     setIsTemplateLibraryOpen(false);
     setSelectedTemplate(null);
     setTemplateVariableValues({});
+    setTemplateValidationError(null);
+    setTemplateValidationResult(null);
   }, [data?.whatsappWindow, whatsappWindowOverride]);
 
 
@@ -456,6 +489,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const shouldShowSelectedTemplatePanel = shouldShowTemplateButton && selectedTemplate;
   const selectedTemplatePreparationVariables = selectedTemplate ? selectedTemplate.variables : [];
   const selectedTemplateVariableErrors = selectedTemplatePreparationVariables.filter((variable) => !templateVariableValues[variable.position]?.trim());
+  const canValidateTemplate = Boolean(cartId) && Boolean(selectedTemplate) && selectedTemplateVariableErrors.length === 0 && !isTemplateValidating && !error;
   const selectedTemplatePreview = selectedTemplate
     ? {
         body: renderTemplatePreviewText(selectedTemplate.preview.body, templateVariableValues),
@@ -582,11 +616,15 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
       return template;
     });
+    setTemplateValidationError(null);
+    setTemplateValidationResult(null);
   }
 
   function closeSelectedTemplate() {
     setSelectedTemplate(null);
     setTemplateVariableValues({});
+    setTemplateValidationError(null);
+    setTemplateValidationResult(null);
   }
 
   function formatMissingTemplateVariablesMessage(variables: Array<{ position: number }>) {
@@ -604,10 +642,65 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
   function updateTemplateVariable(position: number, value: string) {
     setTemplateVariableValues((current) => ({ ...current, [position]: value }));
+    setTemplateValidationError(null);
+    setTemplateValidationResult(null);
   }
 
   function templateVariableInputId(position: number) {
     return `recovery-template-variable-${position}`;
+  }
+
+  function templateValidationErrorMessage(payload: TemplateDryRunResponse | null) {
+    if (payload?.code === "missing_variable" || payload?.code === "unknown_variable" || payload?.code === "variable_too_long") {
+      return payload.error ?? "Revisa las variables de la plantilla.";
+    }
+
+    if (payload?.code === "business_key_unverifiable") {
+      return "No se pudo validar el número de WhatsApp de esta conversación.";
+    }
+
+    if (payload?.code === "meta_templates_unavailable" || payload?.code === "template_not_allowed" || payload?.code === "template_not_approved") {
+      return "No se pudo validar la plantilla seleccionada.";
+    }
+
+    return payload?.error ?? "No se pudo validar la plantilla.";
+  }
+
+  async function validateSelectedTemplate() {
+    if (!cartId || !selectedTemplate || !canValidateTemplate) return;
+
+    setIsTemplateValidating(true);
+    setTemplateValidationError(null);
+    setTemplateValidationResult(null);
+
+    const variables = Object.fromEntries(
+      selectedTemplatePreparationVariables.map((variable) => [String(variable.position), templateVariableValues[variable.position]?.trim() ?? ""]),
+    );
+
+    try {
+      const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(cartId)}/chat/send-template`, {
+        body: JSON.stringify({
+          dryRun: true,
+          language: selectedTemplate.language,
+          templateKey: selectedTemplate.key,
+          variables,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as TemplateDryRunResponse;
+
+      if (!response.ok || !payload.ok) {
+        setTemplateValidationError(templateValidationErrorMessage(payload));
+        return;
+      }
+
+      setTemplateValidationResult(payload);
+    } catch {
+      setTemplateValidationError("No se pudo validar la plantilla.");
+    } finally {
+      setIsTemplateValidating(false);
+    }
   }
 
 
@@ -933,18 +1026,53 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
                   <p className="text-xs font-medium text-slate-500">
                     {selectedTemplateVariableErrors.length > 0
                       ? "Completa todas las variables antes de continuar."
-                      : "Variables listas para la siguiente etapa."}
+                      : "Variables listas para preparar en modo prueba."}
                   </p>
                   <button
-                    aria-disabled="true"
-                    className="inline-flex h-9 items-center justify-center rounded-full bg-slate-300 px-4 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed"
-                    disabled
-                    title="El envío se habilitará en la siguiente etapa"
+                    className="inline-flex h-9 items-center justify-center rounded-full bg-teal-700 px-4 text-xs font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
+                    disabled={!canValidateTemplate}
+                    onClick={() => void validateSelectedTemplate()}
+                    title="Prepara la plantilla en modo prueba sin enviarla"
                     type="button"
                   >
-                    Enviar plantilla
+                    {isTemplateValidating ? "Preparando envío..." : "Preparar envío"}
                   </button>
                 </div>
+                {isTemplateValidating ? (
+                  <p className="rounded-xl border border-[#d8e7e1] bg-white px-3 py-2 text-xs font-semibold text-slate-600" aria-live="polite">
+                    Preparando envío...
+                  </p>
+                ) : null}
+                {templateValidationResult?.ok && templateValidationResult.validation ? (
+                  <div className="grid gap-3 rounded-xl border border-teal-100 bg-teal-50 px-3 py-2 text-xs text-teal-900" aria-live="polite">
+                    <p className="font-semibold">Plantilla preparada</p>
+                    {templateValidationResult.preview?.body ? (
+                      <div className="rounded-lg bg-white/80 px-3 py-2 text-slate-800">
+                        <p className="mb-1 font-semibold text-teal-700">Vista previa final</p>
+                        <p className="whitespace-pre-wrap break-words">{templateValidationResult.preview.body}</p>
+                      </div>
+                    ) : null}
+                    <dl className="grid gap-x-3 gap-y-2 sm:grid-cols-3">
+                      <div>
+                        <dt className="font-semibold text-teal-700">Negocio</dt>
+                        <dd>{templateValidationBusinessLabel(templateValidationResult.validation.businessKey)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-semibold text-teal-700">Plantilla</dt>
+                        <dd className="break-words">{selectedTemplate.label}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-semibold text-teal-700">Idioma</dt>
+                        <dd>{templateValidationResult.validation.language}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                ) : null}
+                {templateValidationError ? (
+                  <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]" role="alert">
+                    {templateValidationError}
+                  </p>
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -988,12 +1116,12 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <span>Via n8n server-side</span>
             <span>{messageDraft.length}/4096</span>
           </div>
-          {freeformWindow.kind === "closed" ? (
+          {freeformWindow.kind === "closed" && !shouldShowTemplateButton ? (
             <p className="mt-1 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-2 py-1 text-[11px] font-medium text-[#92400e] sm:text-xs">
               Han pasado más de 24 horas desde el último mensaje del cliente. Para volver a contactarlo se requiere una plantilla aprobada.
             </p>
           ) : null}
-          {freeformWindow.kind === "missing" ? (
+          {freeformWindow.kind === "missing" && !shouldShowTemplateButton ? (
             <p className="mt-1 rounded-lg border border-[#d6e1ea] bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 sm:text-xs">
               No hay respuestas válidas del cliente para iniciar la ventana de atención. Para contactar se requiere una plantilla aprobada.
             </p>
