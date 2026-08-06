@@ -1,6 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fetchMetaWhatsappTemplatesForBusiness, type SafeMetaWhatsappTemplate } from "@/lib/recuperacion/meta-whatsapp-templates";
+import {
+  buildRecoveryWhatsappTemplateN8nPayload,
+  buildRecoveryWhatsappTemplateN8nPayloadPreview,
+} from "@/lib/recuperacion/whatsapp-template-n8n-payload";
 import { buildRecoveryWhatsappMetaTemplatePayload, buildRecoveryWhatsappMetaTemplatePayloadPreview } from "@/lib/recuperacion/whatsapp-template-send-payload";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
@@ -33,15 +37,32 @@ type TemplateVariableValue = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VARIABLE_KEY_RE = /^(?:\{\{\s*)?(\d+)(?:\s*\}\})?$/;
 const MAX_TEMPLATE_VARIABLE_LENGTH = 500;
-
+const ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set(["dryRun", "language", "templateKey", "variables"]);
+const FORBIDDEN_DRY_RUN_PAYLOAD_KEYS = new Set([
+  "accessToken",
+  "businessKey",
+  "components",
+  "graphPayload",
+  "metaPayload",
+  "mode",
+  "n8nPayload",
+  "n8nTransportPayload",
+  "operatorEmail",
+  "phone",
+  "phone_number_id",
+  "previewText",
+  "senderKey",
+  "sentAt",
+  "source",
+]);
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ code, error: message, ok: false }, { status });
 }
 
 function hasOnlyAllowedPayloadKeys(value: SendTemplateDryRunRequest) {
-  const allowedKeys = new Set(["dryRun", "language", "templateKey", "variables"]);
-
-  return Object.keys(value as Record<string, unknown>).every((key) => allowedKeys.has(key));
+  return Object.keys(value as Record<string, unknown>).every(
+    (key) => ALLOWED_DRY_RUN_PAYLOAD_KEYS.has(key) && !FORBIDDEN_DRY_RUN_PAYLOAD_KEYS.has(key),
+  );
 }
 
 async function requireAdminForApi() {
@@ -287,6 +308,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
   });
   const metaPayloadPreview = buildRecoveryWhatsappMetaTemplatePayloadPreview(metaPayload, maskPhone(cartResult.cart.phone_normalized));
   const previewBody = renderPreviewText(template.preview.body, variablesResult.variables);
+  const n8nTransportPayload = buildRecoveryWhatsappTemplateN8nPayload({
+    cartId: cartResult.cart.id,
+    cartType: cartResult.cart.type,
+    metaPayload,
+    operatorEmail: admin.user.email ?? "",
+    previewText: previewBody ?? "",
+    senderKey: businessKey,
+    sentAt: new Date().toISOString(),
+  });
+  const n8nTransportPreview = buildRecoveryWhatsappTemplateN8nPayloadPreview(
+    n8nTransportPayload,
+    maskPhone(cartResult.cart.phone_normalized),
+  );
   const n8nPayloadPreview = {
     components: metaPayload.template.components,
     language: template.language,
@@ -299,6 +333,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     dryRun: true,
     metaPayloadPreview,
     n8nPayloadPreview,
+    n8nTransportPreview,
     ok: true,
     senderKey: businessKey,
     preview: {

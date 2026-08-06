@@ -57,7 +57,9 @@ test("9. helper does not include token", () => {
 });
 
 test("10. helper does not include phone_number_id", () => {
-  assert.doesNotMatch(helper + route, /phone_number_id|META_WHATSAPP_PHONE_NUMBER_ID/);
+  assert.doesNotMatch(helper, /phone_number_id|META_WHATSAPP_PHONE_NUMBER_ID/);
+  assert.doesNotMatch(route, /META_WHATSAPP_PHONE_NUMBER_ID|payload\.phone_number_id|phone_number_id\?: unknown/);
+  assert.match(route, /"phone_number_id"/);
 });
 
 test("11. helper does not include WABA", () => {
@@ -65,7 +67,7 @@ test("11. helper does not include WABA", () => {
 });
 
 test("12. route does not accept graph payload from the client", () => {
-  assert.match(route, /new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
+  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
   assert.doesNotMatch(route, /graphPayload\?: unknown|payload\.graphPayload/);
 });
 

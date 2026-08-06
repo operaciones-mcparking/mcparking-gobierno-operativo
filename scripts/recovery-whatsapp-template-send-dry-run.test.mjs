@@ -150,7 +150,7 @@ test("22. client businessKey is rejected as an unknown payload field", () => {
 
 test("23. client phone_number_id is rejected as an unknown payload field", () => {
   assert.doesNotMatch(route, /payload\.phone_number_id|phone_number_id\?: unknown/);
-  assert.doesNotMatch(route, /phone_number_id/);
+  assert.match(route, /"phone_number_id"/);
   assert.match(route, /hasOnlyAllowedPayloadKeys\(payload\)/);
 });
 
@@ -177,7 +177,8 @@ test("28. route does not expose token", () => {
 });
 
 test("29. route does not expose phone_number_id", () => {
-  assert.doesNotMatch(route, /phone_number_id|META_WHATSAPP_PHONE_NUMBER_ID/);
+  assert.doesNotMatch(route, /META_WHATSAPP_PHONE_NUMBER_ID|payload\.phone_number_id|phone_number_id\?: unknown/);
+  assert.match(route, /"phone_number_id"/);
   assert.match(route, /maskedPhone: maskPhone/);
 });
 
@@ -216,6 +217,6 @@ test("33. request DTO is intentionally narrow", () => {
 
 test("34. unknown request fields are blocked before validation", () => {
   assert.match(route, /function hasOnlyAllowedPayloadKeys/);
-  assert.match(route, /new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
+  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
   assert.match(route, /unknown_payload_field/);
 });
