@@ -91,7 +91,7 @@ test("K. Solo crea etapa 1 al iniciar", () => {
 
 test("L. Etapa 1 contrato exacto", () => {
   assert.match(helper, /jobType: "banco_reservas_actualizar"/);
-  assert.match(helper, /payload: \{ modo: "last-month" \}/);
+  assert.match(helper, /payload: \{ modo: "last-week" \}/);
   assert.match(helper, /requestedSource: "web_orchestrator_operaciones_last_month_reservas"/);
 });
 
@@ -133,7 +133,7 @@ test("T. Etapa 3 contrato exacto", () => {
   assert.match(helper, /jobType: "dashboard_actualizar_metricas"/);
   assert.match(helper, /agent: "dashboard"/);
   assert.match(helper, /action: "actualizar-metricas"/);
-  assert.match(helper, /periodo: "last-month"/);
+  assert.match(helper, /periodo: "last-week"/);
   assert.match(helper, /requestedSource: "web_orchestrator_operaciones_last_month_dashboard"/);
 });
 
@@ -216,8 +216,8 @@ test("AH. No crea job type compuesto nuevo", () => {
 });
 
 test("AI. No usa payload enriquecido legacy", () => {
-  assert.doesNotMatch(helper, /rebuild|confirmar_borrado|confirmar_actualizacion|modo.*last-week/);
-  assert.match(helper, /payload: \{ modo: "last-month" \}/);
+  assert.doesNotMatch(helper, /rebuild|confirmar_borrado|confirmar_actualizacion|payload: \{ modo: "last-month" \}/);
+  assert.match(helper, /payload: \{ modo: "last-week" \}/);
 });
 
 test("AJ. RPC composite dedicadas", () => {

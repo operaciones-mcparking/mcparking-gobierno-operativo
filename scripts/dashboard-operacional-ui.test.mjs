@@ -15,6 +15,7 @@ const tabsPath = "src/app/orquestador/orchestrator-view-tabs.tsx";
 const compositeControlPath = "src/app/orquestador/actualizar-datos-operacionales-control.tsx";
 const compositeHookPath = "src/app/orquestador/use-composite-operations-run.ts";
 const compositeViewerPath = "src/app/orquestador/composite-run-viewer.tsx";
+const actualizarDatosHelperPath = "src/lib/orquestador/actualizar-datos-operacionales.ts";
 
 const page = readFileSync(pagePath, "utf8");
 const orquestadorPage = readFileSync(orquestadorPagePath, "utf8");
@@ -28,6 +29,7 @@ const tabs = readFileSync(tabsPath, "utf8");
 const compositeControl = readFileSync(compositeControlPath, "utf8");
 const compositeHook = readFileSync(compositeHookPath, "utf8");
 const compositeViewer = readFileSync(compositeViewerPath, "utf8");
+const actualizarDatosHelper = readFileSync(actualizarDatosHelperPath, "utf8");
 const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
 const uiSources = [page, client, formatters].join("\n");
 
@@ -375,6 +377,9 @@ test("K. maneja estados loading empty error y rows vacias", () => {
 test("L. Dashboard reutiliza el control compuesto existente", () => {
   assert.match(client, /ActualizarDatosOperacionalesControl/);
   assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(actualizarDatosHelper, /payload: \{ modo: "last-week" \}/);
+  assert.match(actualizarDatosHelper, /periodo: "last-week"/);
+  assert.doesNotMatch(actualizarDatosHelper, /payload: \{ modo: "last-month" \}|periodo: "last-month"/);
   assert.match(compositeControl, /useCompositeOperationsRun/);
   assert.match(compositeControl, /CompositeRunViewer/);
   assert.doesNotMatch(client, /Conexion operativa en siguiente etapa/);

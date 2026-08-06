@@ -29,7 +29,7 @@ export const ACTUALIZAR_DATOS_STEPS: readonly ActualizarDatosStep[] = [
   {
     jobType: "banco_reservas_actualizar",
     label: ACTUALIZAR_DATOS_OPERACIONALES_LABELS[1],
-    payload: { modo: "last-month" },
+    payload: { modo: "last-week" },
     priority: 90,
     requestedSource: "web_orchestrator_operaciones_last_month_reservas",
     sequenceIndex: 1,
@@ -50,7 +50,7 @@ export const ACTUALIZAR_DATOS_STEPS: readonly ActualizarDatosStep[] = [
     payload: {
       action: "actualizar-metricas",
       agent: "dashboard",
-      periodo: "last-month",
+      periodo: "last-week",
     },
     priority: 92,
     requestedSource: "web_orchestrator_operaciones_last_month_dashboard",
