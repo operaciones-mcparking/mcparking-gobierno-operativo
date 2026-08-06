@@ -9,10 +9,14 @@ const routePath = "src/app/api/recuperacion/carritos/[id]/chat/route.ts";
 const rangeHelperPath = "src/lib/recuperacion/recovery-chat-read-range.ts";
 const whatsappWindowPath = "src/lib/recuperacion/whatsapp-freeform-window.ts";
 const sendRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts";
+const drawerPath = "src/app/recuperacion/recovery-cart-chat-drawer.tsx";
+const templatesRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts";
 const routeSource = readFileSync(routePath, "utf8");
 const rangeHelperSource = readFileSync(rangeHelperPath, "utf8");
 const whatsappWindowSource = readFileSync(whatsappWindowPath, "utf8");
 const sendRouteSource = readFileSync(sendRoutePath, "utf8");
+const drawerSource = readFileSync(drawerPath, "utf8");
+const templatesRouteSource = readFileSync(templatesRoutePath, "utf8");
 
 function loadRangeHelperExports() {
   const module = { exports: {} };
@@ -155,6 +159,49 @@ test("WhatsApp 24-hour authorization helper and POST send route are not part of 
   assert.doesNotMatch(routeSource, /export\s+async\s+function\s+POST/);
 });
 
+
+test("open recovery chat keeps the freeform composer behavior", () => {
+  assert.match(drawerSource, /const canSendMessage = !isSending && !isFreeformBlocked && Boolean\(cart\?\.phone\) && messageDraft\.trim\(\)\.length > 0/);
+  assert.match(drawerSource, /disabled=\{isSending \|\| !cart\?\.phone \|\| isFreeformBlocked\}/);
+  assert.match(drawerSource, /if \(canSendMessage\) void sendMessage\(\)/);
+  assert.match(drawerSource, /\/api\/recuperacion\/carritos\/" \+ encodeURIComponent\(cartId\) \+ "\/chat\/send/);
+});
+
+test("closed or missing recovery chat shows approved template selector", () => {
+  assert.match(drawerSource, /const shouldShowTemplatePanel = isFreeformBlocked && \([\s\S]*freeformWindow\.kind === "closed"[\s\S]*freeformWindow\.kind === "missing"[\s\S]*freeformWindow\.kind === "unverifiable"/);
+  assert.match(drawerSource, /Enviar plantilla aprobada/);
+  assert.match(drawerSource, /aria-label="Plantillas WhatsApp aprobadas"/);
+  assert.match(drawerSource, /id="recovery-chat-template"/);
+  assert.match(drawerSource, /templates\.map\(\(template\) =>/);
+  assert.match(drawerSource, /Idioma:/);
+  assert.match(drawerSource, /getTemplateStatusLabel\(selectedTemplate\?\.category \?\? null\)/);
+});
+
+test("template options load from the safe GET endpoint only", () => {
+  const templatesFetch = drawerSource.match(/fetch\(`\/api\/recuperacion\/carritos\/\$\{encodeURIComponent\(activeCartId\)\}\/chat\/templates`, \{[\s\S]*?\}\);/);
+
+  assert.ok(templatesFetch, "templates fetch block exists");
+  assert.match(templatesFetch[0], /method: "GET"/);
+  assert.doesNotMatch(templatesFetch[0], /method: "POST"/);
+  assert.match(drawerSource, /RecoveryTemplatesResponse/);
+  assert.match(drawerSource, /setTemplates\(nextTemplates\)/);
+  assert.doesNotMatch(drawerSource, /sendTemplate|sendTemplateMessage|\/chat\/send-template/);
+});
+
+test("template selector covers loading, empty, error, and unverifiable states", () => {
+  assert.match(drawerSource, /Cargando plantillas\.\.\./);
+  assert.match(drawerSource, /No hay plantillas disponibles/);
+  assert.match(drawerSource, /No se pudieron cargar las plantillas/);
+  assert.match(drawerSource, /No se puede determinar/);
+  assert.match(drawerSource, /freeformWindow\.kind === "unverifiable"/);
+  assert.match(drawerSource, /whatsappWindow\.status === "closed" \|\| whatsappWindow\.status === "missing"/);
+});
+
+test("template visualization does not call n8n or send messages", () => {
+  assert.doesNotMatch(templatesRouteSource, /n8n|N8N|callN8nWebhook|messageText/);
+  assert.doesNotMatch(drawerSource, /templatesError[\s\S]*callN8nWebhook/);
+  assert.match(sendRouteSource, /callN8nWebhook\(\{ cart, messageText, operatorEmail, sentAt \}\)/);
+});
 test("no unrelated /orquestador files are touched", () => {
   const changedFiles = execFileSync("git", ["status", "--short", "--untracked-files=all"], { encoding: "utf8" })
     .split(/\r?\n/)

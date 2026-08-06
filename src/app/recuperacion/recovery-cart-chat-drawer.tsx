@@ -67,6 +67,23 @@ type RecoveryCartChatDrawerProps = {
   onClose: () => void;
 };
 
+type RecoveryTemplateOption = {
+  category: string | null;
+  key: string;
+  label: string;
+  language: string;
+};
+
+type RecoveryTemplatesResponse = {
+  business?: {
+    key: "MPV" | "EAP";
+    label: string;
+  };
+  error?: string;
+  ok: boolean;
+  templates?: RecoveryTemplateOption[];
+};
+
 type WhatsappFreeformWindowStatus = "open" | "closing_soon" | "closed" | "missing" | "unverifiable";
 
 type WhatsappFreeformWindowPayload = {
@@ -161,6 +178,10 @@ function remainingMilliseconds(windowState: WhatsappFreeformWindowPayload, nowMs
   return typeof windowState.remainingSeconds === "number" ? windowState.remainingSeconds * 1000 : 0;
 }
 
+function getTemplateStatusLabel(category: string | null) {
+  return category ? `Estado: ${category}` : "Estado: aprobada";
+}
+
 function getWhatsappFreeformWindowView(
   windowState: WhatsappFreeformWindowPayload | null | undefined,
   nowMs: number,
@@ -243,8 +264,12 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [messageDraft, setMessageDraft] = useState("");
   const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("all");
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<RecoveryTemplateOption[]>([]);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [templatesStatus, setTemplatesStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
   const [whatsappWindowOverride, setWhatsappWindowOverride] = useState<WhatsappFreeformWindowPayload | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
@@ -404,8 +429,73 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       window.setTimeout(scrollToBottom, 50);
     });
 
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [data, isLoading, data?.messages?.length]);
+    return () => window.cancelAnimationFrame(animationFrame);  }, [data, isLoading, data?.messages?.length]);
+
+  useEffect(() => {
+    const isDataForActiveCart = data?.cart?.id === cartId;
+    const whatsappWindow = isDataForActiveCart ? data?.whatsappWindow : null;
+    const shouldLoadTemplates = Boolean(
+      cartId && whatsappWindow && !whatsappWindow.canSendFreeform && (whatsappWindow.status === "closed" || whatsappWindow.status === "missing"),
+    );
+
+    if (!shouldLoadTemplates) {
+      setSelectedTemplateKey("");
+      setTemplates([]);
+      setTemplatesError(null);
+      setTemplatesStatus("idle");
+      return;
+    }
+
+    const activeCartId = cartId as string;
+    const controller = new AbortController();
+    let isActive = true;
+
+    async function loadTemplates() {
+      setSelectedTemplateKey("");
+      setTemplates([]);
+      setTemplatesError(null);
+      setTemplatesStatus("loading");
+
+      try {
+        const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(activeCartId)}/chat/templates`, {
+          method: "GET",
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as RecoveryTemplatesResponse;
+
+        if (!response.ok || !payload.ok) {
+          if (isActive) {
+            setTemplatesError("No se pudieron cargar las plantillas");
+            setTemplatesStatus("error");
+          }
+          return;
+        }
+
+        if (isActive) {
+          const nextTemplates = payload.templates ?? [];
+          setTemplates(nextTemplates);
+          setSelectedTemplateKey(nextTemplates[0]?.key ?? "");
+          setTemplatesStatus("loaded");
+        }
+      } catch (fetchError) {
+        if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
+          return;
+        }
+
+        if (isActive) {
+          setTemplatesError("No se pudieron cargar las plantillas");
+          setTemplatesStatus("error");
+        }
+      }
+    }
+
+    void loadTemplates();
+
+    return () => {
+      isActive = false;
+      controller.abort();
+    };
+  }, [cartId, data?.cart?.id, data?.whatsappWindow]);
 
   if (!cartId) {
     return null;
@@ -430,6 +520,10 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const freeformWindow = getWhatsappFreeformWindowView(serverWhatsappWindow, nowMs, isLoading || shouldVerifyCurrentCart, Boolean(error));
   const isFreeformBlocked = !freeformWindow.canSendFreeform;
   const canSendMessage = !isSending && !isFreeformBlocked && Boolean(cart?.phone) && messageDraft.trim().length > 0;
+  const shouldShowTemplatePanel = isFreeformBlocked && (
+    freeformWindow.kind === "closed" || freeformWindow.kind === "missing" || freeformWindow.kind === "unverifiable"
+  );
+  const selectedTemplate = templates.find((template) => template.key === selectedTemplateKey) ?? templates[0] ?? null;
   const messagePlaceholder = (() => {
     if (freeformWindow.kind === "checking") return "Verificando ventana de atención...";
     if (freeformWindow.kind === "closed") return "La ventana de atención está cerrada";
@@ -769,7 +863,62 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           }}
           style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
-          <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-1.5 shadow-inner focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
+          {shouldShowTemplatePanel ? (
+            <section
+              aria-label="Plantillas WhatsApp aprobadas"
+              className="mb-2 rounded-2xl border border-[#d8e7e1] bg-[#f8fbfd] p-3 text-sm text-slate-700"
+            >
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Enviar plantilla aprobada</p>
+                  <p className="mt-0.5 text-xs text-slate-500">El texto libre permanece bloqueado mientras la ventana no está abierta.</p>
+                </div>
+                <ValueBadge tone={freeformWindow.tone}>{freeformWindow.label}</ValueBadge>
+              </div>
+
+              {freeformWindow.kind === "unverifiable" ? (
+                <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs font-medium text-slate-600">
+                  No se puede determinar el número de WhatsApp de la conversación
+                </p>
+              ) : templatesStatus === "loading" ? (
+                <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs font-medium text-slate-600">
+                  Cargando plantillas...
+                </p>
+              ) : templatesStatus === "error" ? (
+                <p className="mt-3 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-medium text-[#92400e]">
+                  {templatesError ?? "No se pudieron cargar las plantillas"}
+                </p>
+              ) : templates.length === 0 ? (
+                <p className="mt-3 rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-xs font-medium text-slate-600">
+                  No hay plantillas disponibles
+                </p>
+              ) : (
+                <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-600" htmlFor="recovery-chat-template">
+                    Plantilla
+                    <select
+                      className="min-h-10 w-full min-w-0 rounded-xl border border-[#d8e7e1] bg-white px-3 py-2 text-sm font-semibold text-navy outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                      id="recovery-chat-template"
+                      onChange={(event) => setSelectedTemplateKey(event.target.value)}
+                      value={selectedTemplate?.key ?? ""}
+                    >
+                      {templates.map((template) => (
+                        <option key={template.key} value={template.key}>
+                          {template.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="rounded-xl border border-[#d8e7e1] bg-white px-3 py-2 text-xs font-medium text-slate-600">
+                    <p>
+                      Idioma: <span className="font-semibold text-navy">{selectedTemplate?.language ?? "-"}</span>
+                    </p>
+                    <p>{getTemplateStatusLabel(selectedTemplate?.category ?? null)}</p>
+                  </div>
+                </div>
+              )}
+            </section>
+          ) : null}          <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-1.5 shadow-inner focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
             <textarea
               className="max-h-24 min-h-8 flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-500 disabled:text-slate-500"
               disabled={isSending || !cart?.phone || isFreeformBlocked}
