@@ -11,12 +11,14 @@ const whatsappWindowPath = "src/lib/recuperacion/whatsapp-freeform-window.ts";
 const sendRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts";
 const drawerPath = "src/app/recuperacion/recovery-cart-chat-drawer.tsx";
 const templatesRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts";
+const templateModalPath = "src/app/recuperacion/recovery-whatsapp-template-library-modal.tsx";
 const routeSource = readFileSync(routePath, "utf8");
 const rangeHelperSource = readFileSync(rangeHelperPath, "utf8");
 const whatsappWindowSource = readFileSync(whatsappWindowPath, "utf8");
 const sendRouteSource = readFileSync(sendRoutePath, "utf8");
 const drawerSource = readFileSync(drawerPath, "utf8");
 const templatesRouteSource = readFileSync(templatesRoutePath, "utf8");
+const templateModalSource = readFileSync(templateModalPath, "utf8");
 
 function loadRangeHelperExports() {
   const module = { exports: {} };
@@ -167,36 +169,42 @@ test("open recovery chat keeps the freeform composer behavior", () => {
   assert.match(drawerSource, /\/api\/recuperacion\/carritos\/" \+ encodeURIComponent\(cartId\) \+ "\/chat\/send/);
 });
 
-test("closed or missing recovery chat shows approved template selector", () => {
-  assert.match(drawerSource, /const shouldShowTemplatePanel = isFreeformBlocked && \([\s\S]*freeformWindow\.kind === "closed"[\s\S]*freeformWindow\.kind === "missing"[\s\S]*freeformWindow\.kind === "unverifiable"/);
-  assert.match(drawerSource, /Enviar plantilla aprobada/);
-  assert.match(drawerSource, /aria-label="Plantillas WhatsApp aprobadas"/);
-  assert.match(drawerSource, /id="recovery-chat-template"/);
-  assert.match(drawerSource, /templates\.map\(\(template\) =>/);
-  assert.match(drawerSource, /Idioma:/);
-  assert.match(drawerSource, /getTemplateStatusLabel\(selectedTemplate\?\.category \?\? null\)/);
+test("closed or missing recovery chat shows compact templates button", () => {
+  assert.match(drawerSource, /const shouldShowTemplateButton = isFreeformBlocked && \(freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"\)/);
+  assert.match(drawerSource, /Abrir biblioteca de plantillas aprobadas/);
+  assert.match(drawerSource, /<span>Plantillas<\/span>/);
+  assert.match(drawerSource, /<RecoveryWhatsappTemplateLibraryModal/);
+  assert.doesNotMatch(drawerSource, /Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|templatesError|setTemplates\(/);
 });
 
-test("template options load from the safe GET endpoint only", () => {
-  const templatesFetch = drawerSource.match(/fetch\(`\/api\/recuperacion\/carritos\/\$\{encodeURIComponent\(activeCartId\)\}\/chat\/templates`, \{[\s\S]*?\}\);/);
+test("template library modal loads from the safe GET endpoint only", () => {
+  const templatesFetch = templateModalSource.match(/fetch\(`\/api\/recuperacion\/carritos\/\$\{encodeURIComponent\(activeCartId\)\}\/chat\/templates`, \{[\s\S]*?\}\);/);
 
   assert.ok(templatesFetch, "templates fetch block exists");
   assert.match(templatesFetch[0], /method: "GET"/);
   assert.doesNotMatch(templatesFetch[0], /method: "POST"/);
-  assert.match(drawerSource, /RecoveryTemplatesResponse/);
-  assert.match(drawerSource, /setTemplates\(nextTemplates\)/);
-  assert.doesNotMatch(drawerSource, /sendTemplate|sendTemplateMessage|\/chat\/send-template/);
+  assert.match(templateModalSource, /AbortController/);
+  assert.match(templateModalSource, /reloadToken/);
+  assert.doesNotMatch(templateModalSource, /sendTemplate|sendTemplateMessage|\/chat\/send-template/);
 });
 
-test("template selector covers loading, empty, error, and unverifiable states", () => {
-  assert.match(drawerSource, /Cargando plantillas\.\.\./);
-  assert.match(drawerSource, /No hay plantillas disponibles/);
-  assert.match(drawerSource, /No se pudieron cargar las plantillas/);
-  assert.match(drawerSource, /No se puede determinar/);
-  assert.match(drawerSource, /freeformWindow\.kind === "unverifiable"/);
-  assert.match(drawerSource, /whatsappWindow\.status === "closed" \|\| whatsappWindow\.status === "missing"/);
+test("template library modal covers states, search, filters, preview, and selection", () => {
+  assert.match(templateModalSource, /role="dialog"/);
+  assert.match(templateModalSource, /aria-modal="true"/);
+  assert.match(templateModalSource, /event\.key === "Escape"/);
+  assert.match(templateModalSource, /Cargando plantillas desde Meta/);
+  assert.match(templateModalSource, /No se pudieron cargar las plantillas/);
+  assert.match(templateModalSource, /No hay plantillas aprobadas disponibles para este número/);
+  assert.match(templateModalSource, /No se puede determinar el número de WhatsApp de esta conversación/);
+  assert.match(templateModalSource, /No hay plantillas que coincidan con la búsqueda/);
+  assert.match(templateModalSource, /Buscar plantilla\.\.\./);
+  assert.match(templateModalSource, /categoryCounts/);
+  assert.match(templateModalSource, /languageFilter/);
+  assert.match(templateModalSource, /template\.preview\.body/);
+  assert.match(templateModalSource, /template\.variables\.map/);
+  assert.match(templateModalSource, /Usar plantilla/);
+  assert.match(drawerSource, /Plantilla seleccionada:/);
 });
-
 test("template visualization does not call n8n or send messages", () => {
   assert.doesNotMatch(templatesRouteSource, /n8n|N8N|callN8nWebhook|messageText/);
   assert.doesNotMatch(drawerSource, /templatesError[\s\S]*callN8nWebhook/);

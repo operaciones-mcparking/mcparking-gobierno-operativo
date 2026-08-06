@@ -2,10 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { fetchMetaWhatsappTemplatesForBusiness } from "@/lib/recuperacion/meta-whatsapp-templates";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
-import {
-  getAllowedRecoveryTemplatesForBusiness,
-  isRecoveryTemplateAllowed,
-} from "@/lib/recuperacion/whatsapp-recovery-template-catalog";
+import { decorateRecoveryTemplateForBusiness } from "@/lib/recuperacion/whatsapp-recovery-template-catalog";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 type RouteContext = {
@@ -105,26 +102,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const businessKey = windowState.businessKey;
 
   try {
-    const [metaTemplates, allowedTemplates] = await Promise.all([
-      fetchMetaWhatsappTemplatesForBusiness(businessKey),
-      Promise.resolve(getAllowedRecoveryTemplatesForBusiness(businessKey)),
-    ]);
-    const allowedByMetaName = new Map(allowedTemplates.map((template) => [template.metaName, template]));
-    const templates = metaTemplates
-      .filter((template) => isRecoveryTemplateAllowed(businessKey, template.name))
-      .map((template) => {
-        const catalogTemplate = allowedByMetaName.get(template.name);
-
-        if (!catalogTemplate) return null;
-
-        return {
-          category: template.category,
-          key: catalogTemplate.key,
-          label: catalogTemplate.label,
-          language: template.language || catalogTemplate.language,
-        };
-      })
-      .filter((template): template is { category: string | null; key: string; label: string; language: string } => template !== null);
+    const templates = (await fetchMetaWhatsappTemplatesForBusiness(businessKey))
+      .map((template) => decorateRecoveryTemplateForBusiness(businessKey, template))
+      .map((template) => ({
+        category: template.category,
+        key: template.key,
+        label: template.label,
+        language: template.language,
+        name: template.name,
+        preview: template.preview,
+        status: template.status,
+        variables: template.variables,
+      }));
 
     return NextResponse.json({
       business: {

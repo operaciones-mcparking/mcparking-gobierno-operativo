@@ -31,6 +31,19 @@ function loadCatalogExports() {
   return module.exports;
 }
 
+function template(name, label = "Meta Label") {
+  return {
+    category: "MARKETING",
+    key: `${name}:es_CL`,
+    label,
+    language: "es_CL",
+    name,
+    preview: { body: "Body", buttons: [], footer: null, header: null },
+    status: "APPROVED",
+    variables: [],
+  };
+}
+
 function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -39,63 +52,46 @@ test("1. catalog is server-only", () => {
   assert.match(catalogSource, /import "server-only"/);
 });
 
-test("2. MPV returns cp_generico", () => {
+test("2. MPV known template can receive presentation label", () => {
+  const { decorateRecoveryTemplateForBusiness } = loadCatalogExports();
+  const decorated = plain(decorateRecoveryTemplateForBusiness("MPV", template("cp_generico")));
+
+  assert.equal(decorated.name, "cp_generico");
+  assert.equal(decorated.label, "CP generico");
+});
+
+test("3. EAP known template can receive presentation label", () => {
+  const { decorateRecoveryTemplateForBusiness } = loadCatalogExports();
+  const decorated = plain(decorateRecoveryTemplateForBusiness("EAP", template("cp_generico_eap")));
+
+  assert.equal(decorated.name, "cp_generico_eap");
+  assert.equal(decorated.label, "CP generico EAP");
+});
+
+test("4. unknown approved templates are not filtered out", () => {
   const { getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-  const templates = plain(getAllowedRecoveryTemplatesForBusiness("MPV"));
+  const templates = plain(getAllowedRecoveryTemplatesForBusiness("MPV", [template("nuevo_meta"), template("cp_generico")]));
 
-  assert.deepEqual(templates.map((template) => template.metaName), ["cp_generico"]);
-  assert.equal(isRecoveryTemplateAllowed("MPV", "cp_generico"), true);
+  assert.deepEqual(templates.map((item) => item.name), ["nuevo_meta", "cp_generico"]);
+  assert.equal(isRecoveryTemplateAllowed("MPV", "nuevo_meta"), true);
+  assert.equal(isRecoveryTemplateAllowed("EAP", "nuevo_meta"), true);
 });
 
-test("3. EAP returns cp_generico_eap", () => {
-  const { getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-  const templates = plain(getAllowedRecoveryTemplatesForBusiness("EAP"));
-
-  assert.deepEqual(templates.map((template) => template.metaName), ["cp_generico_eap"]);
-  assert.equal(isRecoveryTemplateAllowed("EAP", "cp_generico_eap"), true);
-});
-
-test("4. MPV does not return EAP templates", () => {
-  const { getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-  const names = plain(getAllowedRecoveryTemplatesForBusiness("MPV")).map((template) => template.metaName);
-
-  assert.equal(names.includes("cp_generico_eap"), false);
-  assert.equal(isRecoveryTemplateAllowed("MPV", "cp_generico_eap"), false);
-});
-
-test("5. EAP does not return MPV templates", () => {
-  const { getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-  const names = plain(getAllowedRecoveryTemplatesForBusiness("EAP")).map((template) => template.metaName);
-
-  assert.equal(names.includes("cp_generico"), false);
-  assert.equal(isRecoveryTemplateAllowed("EAP", "cp_generico"), false);
-});
-
-test("6. disabled templates do not appear", () => {
-  const { RECOVERY_TEMPLATE_CATALOG, getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-
-  RECOVERY_TEMPLATE_CATALOG.MPV[0].enabled = false;
-
-  assert.deepEqual(plain(getAllowedRecoveryTemplatesForBusiness("MPV")), []);
-  assert.equal(isRecoveryTemplateAllowed("MPV", "cp_generico"), false);
-});
-
-test("7. unknown templates are rejected", () => {
+test("5. empty template names are rejected as invalid selection values", () => {
   const { isRecoveryTemplateAllowed } = loadCatalogExports();
 
   assert.equal(isRecoveryTemplateAllowed("MPV", ""), false);
-  assert.equal(isRecoveryTemplateAllowed("MPV", "no_existe"), false);
-  assert.equal(isRecoveryTemplateAllowed("EAP", "no_existe"), false);
+  assert.equal(isRecoveryTemplateAllowed("EAP", "   "), false);
 });
 
-test("8. catalog does not expose secrets", () => {
+test("6. catalog does not expose secrets", () => {
   assert.doesNotMatch(catalogSource, /ACCESS_TOKEN|META_WHATSAPP_ACCESS_TOKEN|PHONE_NUMBER_ID|phone_number_id|NEXT_PUBLIC|Bearer/i);
 });
 
-test("9. catalog does not call Meta or n8n", () => {
+test("7. catalog does not call Meta or n8n", () => {
   assert.doesNotMatch(catalogSource, /fetch\(|graph\.facebook\.com|message_templates|N8N_RECOVERY|n8n/i);
 });
 
-test("10. catalog does not write Supabase or send messages", () => {
+test("8. catalog does not write Supabase or send messages", () => {
   assert.doesNotMatch(catalogSource, /createClient|\.from\(|\.insert\(|\.update\(|\.delete\(|\.rpc\(|method:\s*"POST"|\/chat\/send/);
 });

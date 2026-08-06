@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { MetaWhatsappTemplateBusinessKey } from "./meta-whatsapp-templates";
+import type { MetaWhatsappTemplateBusinessKey, SafeMetaWhatsappTemplate } from "./meta-whatsapp-templates";
 
 export type RecoveryTemplateCatalogItem = {
   description: string;
@@ -11,50 +11,45 @@ export type RecoveryTemplateCatalogItem = {
   metaName: string;
 };
 
-export const RECOVERY_TEMPLATE_CATALOG: Record<MetaWhatsappTemplateBusinessKey, RecoveryTemplateCatalogItem[]> = {
-  EAP: [
-    {
+export const RECOVERY_TEMPLATE_PRESENTATION: Partial<
+  Record<MetaWhatsappTemplateBusinessKey, Record<string, Pick<RecoveryTemplateCatalogItem, "description" | "label">>>
+> = {
+  EAP: {
+    cp_generico_eap: {
       description: "Plantilla generica aprobada para recuperacion EAP.",
-      enabled: true,
-      key: "cp_generico_eap",
       label: "CP generico EAP",
-      language: "es_CL",
-      metaName: "cp_generico_eap",
     },
-  ],
-  MPV: [
-    {
+  },
+  MPV: {
+    cp_generico: {
       description: "Plantilla generica aprobada para recuperacion MPV.",
-      enabled: true,
-      key: "cp_generico",
       label: "CP generico",
-      language: "es_CL",
-      metaName: "cp_generico",
     },
-  ],
+  },
 };
 
-function cloneTemplate(template: RecoveryTemplateCatalogItem): RecoveryTemplateCatalogItem {
-  return { ...template };
+export function decorateRecoveryTemplateForBusiness(
+  businessKey: MetaWhatsappTemplateBusinessKey,
+  template: SafeMetaWhatsappTemplate,
+): SafeMetaWhatsappTemplate {
+  const presentation = RECOVERY_TEMPLATE_PRESENTATION[businessKey]?.[template.name];
+
+  return {
+    ...template,
+    label: presentation?.label ?? template.label,
+  };
 }
 
 export function getAllowedRecoveryTemplatesForBusiness(
-  businessKey: MetaWhatsappTemplateBusinessKey,
-): RecoveryTemplateCatalogItem[] {
-  return RECOVERY_TEMPLATE_CATALOG[businessKey]
-    .filter((template) => template.enabled)
-    .map(cloneTemplate);
+  _businessKey: MetaWhatsappTemplateBusinessKey,
+  templates: SafeMetaWhatsappTemplate[] = [],
+): SafeMetaWhatsappTemplate[] {
+  return templates.map((template) => ({ ...template }));
 }
 
 export function isRecoveryTemplateAllowed(
-  businessKey: MetaWhatsappTemplateBusinessKey,
+  _businessKey: MetaWhatsappTemplateBusinessKey,
   templateName: string,
 ) {
-  const normalizedTemplateName = templateName.trim();
-
-  if (!normalizedTemplateName) return false;
-
-  return getAllowedRecoveryTemplatesForBusiness(businessKey).some(
-    (template) => template.metaName === normalizedTemplateName,
-  );
+  return templateName.trim().length > 0;
 }

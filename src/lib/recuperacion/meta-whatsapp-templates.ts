@@ -3,20 +3,51 @@ import "server-only";
 export type MetaWhatsappTemplateBusinessKey = "MPV" | "EAP";
 export type MetaWhatsappTemplateStatus = "APPROVED" | "PAUSED" | "DISABLED" | "UNKNOWN";
 
+export type SafeWhatsappTemplatePreview = {
+  buttons: Array<{
+    text: string;
+    type: string;
+  }>;
+  body: string | null;
+  footer: string | null;
+  header: string | null;
+};
+
+export type SafeWhatsappTemplateVariable = {
+  placeholder: string;
+  position: number;
+};
+
 export type SafeMetaWhatsappTemplate = {
   category: string | null;
+  key: string;
   label: string;
   language: string;
   name: string;
-  status: MetaWhatsappTemplateStatus;
+  preview: SafeWhatsappTemplatePreview;
+  status: "APPROVED";
+  variables: SafeWhatsappTemplateVariable[];
 };
 
 type MetaTemplateResponse = {
   data?: unknown;
 };
 
+type MetaTemplateButton = {
+  text?: unknown;
+  type?: unknown;
+};
+
+type MetaTemplateComponent = {
+  buttons?: unknown;
+  format?: unknown;
+  text?: unknown;
+  type?: unknown;
+};
+
 type MetaTemplateRow = {
   category?: unknown;
+  components?: unknown;
   language?: unknown;
   name?: unknown;
   status?: unknown;
@@ -61,6 +92,77 @@ function labelForTemplateName(name: string) {
     .join(" ");
 }
 
+function normalizeTemplateButtons(value: unknown): SafeWhatsappTemplatePreview["buttons"] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((button): SafeWhatsappTemplatePreview["buttons"][number] | null => {
+      const source = (button ?? {}) as MetaTemplateButton;
+      const text = safeText(source.text);
+      const type = safeText(source.type).toUpperCase() || "BUTTON";
+
+      if (!text) return null;
+
+      return { text, type };
+    })
+    .filter((button): button is SafeWhatsappTemplatePreview["buttons"][number] => button !== null);
+}
+
+function normalizeTemplatePreview(components: unknown): SafeWhatsappTemplatePreview {
+  const preview: SafeWhatsappTemplatePreview = {
+    body: null,
+    buttons: [],
+    footer: null,
+    header: null,
+  };
+
+  if (!Array.isArray(components)) return preview;
+
+  for (const item of components) {
+    const component = (item ?? {}) as MetaTemplateComponent;
+    const type = safeText(component.type).toUpperCase();
+    const text = safeText(component.text);
+
+    if (type === "HEADER") {
+      preview.header = text || null;
+      continue;
+    }
+
+    if (type === "BODY") {
+      preview.body = text || null;
+      continue;
+    }
+
+    if (type === "FOOTER") {
+      preview.footer = text || null;
+      continue;
+    }
+
+    if (type === "BUTTONS") {
+      preview.buttons = normalizeTemplateButtons(component.buttons);
+    }
+  }
+
+  return preview;
+}
+
+function extractVariables(preview: SafeWhatsappTemplatePreview): SafeWhatsappTemplateVariable[] {
+  const text = [preview.header, preview.body, preview.footer, ...preview.buttons.map((button) => button.text)]
+    .filter(Boolean)
+    .join("\n");
+  const positions = new Set<number>();
+
+  for (const match of text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
+    const position = Number.parseInt(match[1] ?? "", 10);
+
+    if (Number.isFinite(position) && position > 0) positions.add(position);
+  }
+
+  return [...positions]
+    .sort((left, right) => left - right)
+    .map((position) => ({ placeholder: `{{${position}}}`, position }));
+}
+
 function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | null {
   const name = safeText(row.name);
   const language = safeText(row.language);
@@ -68,12 +170,17 @@ function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | nul
 
   if (!name || !language || status !== "APPROVED") return null;
 
+  const preview = normalizeTemplatePreview(row.components);
+
   return {
-    category: safeText(row.category) || null,
+    category: safeText(row.category).toUpperCase() || null,
+    key: `${name}:${language}`,
     label: labelForTemplateName(name),
     language,
     name,
-    status,
+    preview,
+    status: "APPROVED",
+    variables: extractVariables(preview),
   };
 }
 
@@ -83,7 +190,7 @@ function normalizeTemplatesResponse(payload: MetaTemplateResponse): SafeMetaWhat
   return payload.data
     .map((row) => normalizeTemplate((row ?? {}) as MetaTemplateRow))
     .filter((template): template is SafeMetaWhatsappTemplate => template !== null)
-    .sort((left, right) => left.label.localeCompare(right.label));
+    .sort((left, right) => left.label.localeCompare(right.label) || left.language.localeCompare(right.language));
 }
 
 export function clearMetaWhatsappTemplatesCache() {
@@ -106,7 +213,7 @@ export async function fetchMetaWhatsappTemplatesForBusiness(
   }
 
   const url = new URL(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/${phoneNumberId}/message_templates`);
-  url.searchParams.set("fields", "name,language,status,category");
+  url.searchParams.set("fields", "name,language,status,category,components");
 
   const response = await fetch(url, {
     headers: {

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
-import ts from "typescript";
 
 const routePath = "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts";
 const catalogPath = "src/lib/recuperacion/whatsapp-recovery-template-catalog.ts";
@@ -13,34 +11,6 @@ const route = readFileSync(routePath, "utf8");
 const catalog = readFileSync(catalogPath, "utf8");
 const meta = readFileSync(metaPath, "utf8");
 const windowHelper = readFileSync(windowHelperPath, "utf8");
-
-function loadCatalogExports() {
-  const module = { exports: {} };
-  const output = ts.transpileModule(catalog, {
-    compilerOptions: {
-      esModuleInterop: true,
-      importsNotUsedAsValues: ts.ImportsNotUsedAsValues.Remove,
-      module: ts.ModuleKind.CommonJS,
-      target: ts.ScriptTarget.ES2022,
-    },
-    fileName: catalogPath,
-  }).outputText;
-
-  vm.runInNewContext(output, {
-    exports: module.exports,
-    module,
-    require(name) {
-      if (name === "server-only") return {};
-      throw new Error(`Unexpected require in endpoint test: ${name}`);
-    },
-  });
-
-  return module.exports;
-}
-
-function plain(value) {
-  return JSON.parse(JSON.stringify(value));
-}
 
 test("1. endpoint is GET-only and requires active admin", () => {
   assert.match(route, /export async function GET\(_request: NextRequest, context: RouteContext\)/);
@@ -61,37 +31,7 @@ test("3. missing cart returns 404", () => {
   assert.match(route, /jsonError\("Carrito no encontrado\.", 404, "cart_not_found"\)/);
 });
 
-test("4. MPV catalog allows only cp_generico", () => {
-  const { getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-  const templates = plain(getAllowedRecoveryTemplatesForBusiness("MPV"));
-
-  assert.deepEqual(templates.map((template) => template.metaName), ["cp_generico"]);
-  assert.equal(isRecoveryTemplateAllowed("MPV", "cp_generico"), true);
-  assert.equal(isRecoveryTemplateAllowed("MPV", "cp_generico_eap"), false);
-});
-
-test("5. EAP catalog allows only cp_generico_eap", () => {
-  const { getAllowedRecoveryTemplatesForBusiness, isRecoveryTemplateAllowed } = loadCatalogExports();
-  const templates = plain(getAllowedRecoveryTemplatesForBusiness("EAP"));
-
-  assert.deepEqual(templates.map((template) => template.metaName), ["cp_generico_eap"]);
-  assert.equal(isRecoveryTemplateAllowed("EAP", "cp_generico_eap"), true);
-  assert.equal(isRecoveryTemplateAllowed("EAP", "cp_generico"), false);
-});
-
-test("6. endpoint applies Meta APPROVED templates through the allowed catalog", () => {
-  assert.match(route, /fetchMetaWhatsappTemplatesForBusiness\(businessKey\)/);
-  assert.match(route, /getAllowedRecoveryTemplatesForBusiness\(businessKey\)/);
-  assert.match(route, /isRecoveryTemplateAllowed\(businessKey, template\.name\)/);
-  assert.match(route, /allowedByMetaName\.get\(template\.name\)/);
-  assert.match(route, /key: catalogTemplate\.key/);
-  assert.match(route, /label: catalogTemplate\.label/);
-  assert.match(route, /language: template\.language \|\| catalogTemplate\.language/);
-  assert.match(route, /category: template\.category/);
-  assert.match(meta, /status !== "APPROVED"/);
-});
-
-test("7. endpoint uses real conversation window resolution, not parking_code alone", () => {
+test("4. endpoint uses real conversation window resolution, not parking_code alone", () => {
   assert.match(route, /getWhatsappFreeformWindowForCart\(admin\.supabase, cartResult\.cart\.id\)/);
   assert.match(route, /windowState\.businessKey/);
   assert.match(route, /windowState\.status === "unverifiable"/);
@@ -100,39 +40,62 @@ test("7. endpoint uses real conversation window resolution, not parking_code alo
   assert.match(windowHelper, /api_phone_normalized/);
 });
 
-test("8. unverifiable business key is blocked", () => {
+test("5. unverifiable business key is blocked before Meta lookup", () => {
   assert.match(route, /!isSupportedBusinessKey\(windowState\.businessKey\)/);
   assert.match(route, /jsonError\("No fue posible verificar el negocio de la conversacion de WhatsApp\.", 409, "business_key_unverifiable"\)/);
+  assert.ok(route.indexOf("business_key_unverifiable") < route.indexOf("fetchMetaWhatsappTemplatesForBusiness(businessKey)"));
 });
 
-test("9. DTO is safe and does not expose secrets or Meta internals", () => {
+test("6. endpoint returns all Meta APPROVED templates for the resolved business", () => {
+  assert.match(route, /fetchMetaWhatsappTemplatesForBusiness\(businessKey\)/);
+  assert.match(route, /\.map\(\(template\) => decorateRecoveryTemplateForBusiness\(businessKey, template\)\)/);
+  assert.doesNotMatch(route, /\.filter\(\(template\) => isRecoveryTemplateAllowed|allowedByMetaName|getAllowedRecoveryTemplatesForBusiness\(businessKey\)/);
+  assert.match(meta, /status !== "APPROVED"/);
+  assert.match(meta, /fields", "name,language,status,category,components"/);
+});
+
+test("7. MPV and EAP remain separated by server-side business key", () => {
+  assert.match(route, /const businessKey = windowState\.businessKey/);
+  assert.match(route, /fetchMetaWhatsappTemplatesForBusiness\(businessKey\)/);
+  assert.doesNotMatch(route, /fetchMetaWhatsappTemplatesForBusiness\("MPV"\)[\s\S]*fetchMetaWhatsappTemplatesForBusiness\("EAP"\)/);
+  assert.doesNotMatch(route, /businessKey.*searchParams|businessKey.*request|payload\.businessKey|body\.businessKey/);
+});
+
+test("8. DTO is safe and includes normalized preview only", () => {
   assert.match(route, /business:\s*{[\s\S]*key: businessKey,[\s\S]*label: businessLabel\(businessKey\)/);
-  assert.match(route, /templates,/);
-  assert.doesNotMatch(route, /META_WHATSAPP_ACCESS_TOKEN|Authorization|Bearer|phone_number_id|PHONE_NUMBER_ID|WABA|payload|components|graph\.facebook\.com/);
-  assert.doesNotMatch(route, /whatsapp_message_id|wamid|access_token|token/i);
+  assert.match(route, /preview: template\.preview/);
+  assert.match(route, /variables: template\.variables/);
+  assert.match(route, /status: template\.status/);
+  assert.doesNotMatch(route, /META_WHATSAPP_ACCESS_TOKEN|Authorization|Bearer|phone_number_id|PHONE_NUMBER_ID|WABA|payload|graph\.facebook\.com/);
+  assert.doesNotMatch(route, /components:|template\.components|whatsapp_message_id|wamid|access_token|token/i);
 });
 
-test("10. Meta error is sanitized", () => {
+test("9. Meta error is sanitized", () => {
   assert.match(route, /catch \{/);
   assert.match(route, /jsonError\("No se pudieron cargar templates de WhatsApp\.", 500, "meta_templates_unavailable"\)/);
   assert.doesNotMatch(route, /error\.message|JSON\.stringify\(error\)|debugDetails|debugMessage/);
 });
 
-test("11. endpoint does not call n8n or send messages", () => {
+test("10. endpoint does not call n8n or send messages", () => {
   assert.doesNotMatch(route, /N8N_RECOVERY|n8n|callN8nWebhook|messageText|send-template|\/chat\/send/);
   assert.doesNotMatch(route, /method:\s*"POST"|fetch\([^)]*webhook|whatsappMessageId/);
 });
 
-test("12. endpoint does not write Supabase", () => {
+test("11. endpoint does not write Supabase", () => {
   assert.doesNotMatch(route, /\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);
   assert.match(route, /\.from\("user_profiles"\)/);
   assert.match(route, /\.from\("recovery_incomplete_bookings_import"\)/);
 });
 
-test("13. endpoint returns the expected public DTO shape", () => {
+test("12. endpoint returns the expected public DTO shape", () => {
   assert.match(route, /return NextResponse\.json\(\{[\s\S]*business:[\s\S]*ok: true,[\s\S]*templates,[\s\S]*\}\)/);
-  assert.match(route, /key: catalogTemplate\.key/);
-  assert.match(route, /label: catalogTemplate\.label/);
-  assert.match(route, /language: template\.language \|\| catalogTemplate\.language/);
-  assert.match(route, /category: template\.category/);
+  for (const field of ["key", "label", "language", "category", "name", "preview", "status", "variables"]) {
+    assert.match(route, new RegExp(`${field}: template\\.${field}`));
+  }
+});
+
+test("13. catalog is optional presentation and not an inventory allowlist", () => {
+  assert.match(catalog, /RECOVERY_TEMPLATE_PRESENTATION/);
+  assert.match(catalog, /decorateRecoveryTemplateForBusiness/);
+  assert.doesNotMatch(catalog, /RECOVERY_TEMPLATE_CATALOG|enabled: false|\.filter\(\(template\) => template\.enabled\)/);
 });
