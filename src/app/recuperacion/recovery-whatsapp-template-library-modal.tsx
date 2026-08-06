@@ -50,7 +50,7 @@ type RecoveryWhatsappTemplateLibraryModalProps = {
 const ALL_CATEGORIES = "Todas";
 const ALL_LANGUAGES = "Todos";
 
-function categoryLabel(category: string | null) {
+export function categoryLabel(category: string | null) {
   const normalized = (category ?? "").trim().toUpperCase();
 
   if (normalized === "MARKETING") return "Marketing";
@@ -60,6 +60,16 @@ function categoryLabel(category: string | null) {
   return normalized ? normalized.charAt(0) + normalized.slice(1).toLowerCase() : "Otra";
 }
 
+export function renderTemplatePreviewText(text: string | null, values: Record<number, string>) {
+  if (!text) return null;
+
+  return text.replace(/\{\{\s*(\d+)\s*\}\}/g, (placeholder, positionValue) => {
+    const position = Number.parseInt(positionValue, 10);
+    const value = values[position];
+
+    return typeof value === "string" && value.trim().length > 0 ? value : placeholder;
+  });
+}
 function previewText(template: RecoveryTemplateOption) {
   return [
     template.name,

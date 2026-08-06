@@ -455,6 +455,7 @@ test("no unrelated modules are part of this task diff", () => {
     "scripts/recovery-whatsapp-template-catalog.test.mjs",
     "scripts/recovery-whatsapp-template-endpoint.test.mjs",
     "scripts/recovery-whatsapp-template-library-ui.test.mjs",
+    "scripts/recovery-whatsapp-template-preparation-ui.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts",
     "src/app/recuperacion/recovery-whatsapp-template-library-modal.tsx",
     "src/lib/recuperacion/meta-whatsapp-templates.ts",

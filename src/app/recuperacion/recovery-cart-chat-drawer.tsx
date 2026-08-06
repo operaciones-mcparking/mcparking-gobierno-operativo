@@ -4,7 +4,7 @@ import { Copy, ExternalLink, MessageCircle, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
-import { RecoveryWhatsappTemplateLibraryModal, type RecoveryTemplateOption } from "./recovery-whatsapp-template-library-modal";
+import { RecoveryWhatsappTemplateLibraryModal, categoryLabel, renderTemplatePreviewText, type RecoveryTemplateOption } from "./recovery-whatsapp-template-library-modal";
 
 const RECOVERY_TIME_ZONE = "America/Santiago";
 const WINDOW_TIMER_INTERVAL_MS = 60 * 1000;
@@ -251,6 +251,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<RecoveryTemplateOption | null>(null);
+  const [templateVariableValues, setTemplateVariableValues] = useState<Record<number, string>>({});
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [whatsappWindowOverride, setWhatsappWindowOverride] = useState<WhatsappFreeformWindowPayload | null>(null);
@@ -312,6 +313,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setMessageSourceFilter("all");
       setIsTemplateLibraryOpen(false);
       setSelectedTemplate(null);
+      setTemplateVariableValues({});
       setWhatsappWindowOverride(null);
       previousMessageCountRef.current = 0;
       shouldScrollToBottomRef.current = true;
@@ -416,6 +418,15 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
     return () => window.cancelAnimationFrame(animationFrame);  }, [data, isLoading, data?.messages?.length]);
 
+  useEffect(() => {
+    const currentWindow = whatsappWindowOverride ?? data?.whatsappWindow ?? null;
+
+    if (!currentWindow?.canSendFreeform) return;
+
+    setIsTemplateLibraryOpen(false);
+    setSelectedTemplate(null);
+    setTemplateVariableValues({});
+  }, [data?.whatsappWindow, whatsappWindowOverride]);
 
 
   if (!cartId) {
@@ -442,6 +453,20 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const isFreeformBlocked = !freeformWindow.canSendFreeform;
   const canSendMessage = !isSending && !isFreeformBlocked && Boolean(cart?.phone) && messageDraft.trim().length > 0;
   const shouldShowTemplateButton = isFreeformBlocked && (freeformWindow.kind === "closed" || freeformWindow.kind === "missing");
+  const shouldShowSelectedTemplatePanel = shouldShowTemplateButton && selectedTemplate;
+  const selectedTemplatePreparationVariables = selectedTemplate ? selectedTemplate.variables : [];
+  const selectedTemplateVariableErrors = selectedTemplatePreparationVariables.filter((variable) => !templateVariableValues[variable.position]?.trim());
+  const selectedTemplatePreview = selectedTemplate
+    ? {
+        body: renderTemplatePreviewText(selectedTemplate.preview.body, templateVariableValues),
+        buttons: selectedTemplate.preview.buttons.map((button) => ({
+          ...button,
+          text: renderTemplatePreviewText(button.text, templateVariableValues) ?? button.text,
+        })),
+        footer: renderTemplatePreviewText(selectedTemplate.preview.footer, templateVariableValues),
+        header: renderTemplatePreviewText(selectedTemplate.preview.header, templateVariableValues),
+      }
+    : null;
   const messagePlaceholder = (() => {
     if (freeformWindow.kind === "checking") return "Verificando ventana de atención...";
     if (freeformWindow.kind === "closed") return "La ventana de atención está cerrada";
@@ -548,6 +573,45 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     } finally {
       setIsSending(false);
     }
+  }
+  function handleTemplateSelected(template: RecoveryTemplateOption) {
+    setSelectedTemplate((current) => {
+      if (current?.key !== template.key) {
+        setTemplateVariableValues({});
+      }
+
+      return template;
+    });
+  }
+
+  function closeSelectedTemplate() {
+    setSelectedTemplate(null);
+    setTemplateVariableValues({});
+  }
+
+  function formatMissingTemplateVariablesMessage(variables: Array<{ position: number }>) {
+    const positions = variables.map((variable) => variable.position).sort((left, right) => left - right);
+
+    if (positions.length === 0) return null;
+
+    if (positions.length === 1) return `Falta completar la variable ${positions[0]}.`;
+
+    const lastPosition = positions[positions.length - 1];
+    const firstPositions = positions.slice(0, -1).join(", ");
+
+    return `Falta completar las variables ${firstPositions} y ${lastPosition}.`;
+  }
+
+  function updateTemplateVariable(position: number, value: string) {
+    setTemplateVariableValues((current) => ({ ...current, [position]: value }));
+  }
+
+  function templateVariableInputId(position: number) {
+    return `recovery-template-variable-${position}`;
+  }
+
+  function templateVariableErrorId(position: number) {
+    return `recovery-template-variable-${position}-error`;
   }
 
   return (
@@ -781,21 +845,125 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           }}
           style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
-          {selectedTemplate ? (
-            <p className="mb-2 rounded-xl border border-[#d8e7e1] bg-[#f8fbfd] px-3 py-2 text-xs font-semibold text-slate-700">
-              Plantilla seleccionada: <span className="text-navy">{selectedTemplate.label}</span>
-            </p>
+          {shouldShowSelectedTemplatePanel && selectedTemplatePreview ? (
+            <section
+              aria-live="polite"
+              className="mb-2 grid min-w-0 gap-3 rounded-2xl border border-[#d8e7e1] bg-[#f8fbfd] p-3 text-sm text-slate-700"
+            >
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-teal-700">Plantilla seleccionada</p>
+                  <h3 className="mt-1 truncate text-sm font-semibold text-navy">{selectedTemplate.label}</h3>
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{selectedTemplate.name}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    <ValueBadge tone="success">{categoryLabel(selectedTemplate.category)}</ValueBadge>
+                    <ValueBadge tone="neutral">{selectedTemplate.language}</ValueBadge>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <button
+                    className="inline-flex h-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white px-3 text-xs font-semibold text-teal-700 transition hover:border-teal-300 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    onClick={() => setIsTemplateLibraryOpen(true)}
+                    type="button"
+                  >
+                    Cambiar plantilla
+                  </button>
+                  <button
+                    aria-label="Cerrar plantilla seleccionada"
+                    className="inline-flex h-9 shrink-0 items-center justify-center gap-1 rounded-full border border-[#f2d6a2] bg-white px-3 text-xs font-semibold text-[#92400e] transition hover:bg-[#fff8e8] focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    onClick={closeSelectedTemplate}
+                    type="button"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Cerrar plantilla
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-[#eef7f4] p-2">
+                <div className="grid gap-2 rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
+                  {selectedTemplatePreview.header ? <p className="font-semibold text-navy">{selectedTemplatePreview.header}</p> : null}
+                  {selectedTemplatePreview.body ? <p className="whitespace-pre-wrap break-words leading-5">{selectedTemplatePreview.body}</p> : null}
+                  {selectedTemplatePreview.footer ? <p className="text-xs text-slate-500">{selectedTemplatePreview.footer}</p> : null}
+                  {selectedTemplatePreview.buttons.length > 0 ? (
+                    <div className="grid gap-1 border-t border-slate-100 pt-2">
+                      {selectedTemplatePreview.buttons.map((button, index) => (
+                        <span key={`${button.type}-${button.text}-${index}`} className="rounded-lg bg-slate-50 px-2 py-1 text-center text-xs font-semibold text-teal-700">
+                          {button.text}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {selectedTemplatePreparationVariables.length > 0 ? (
+                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                  {selectedTemplatePreparationVariables.map((variable) => {
+                    const inputId = templateVariableInputId(variable.position);
+                    const errorId = templateVariableErrorId(variable.position);
+                    const hasError = !templateVariableValues[variable.position]?.trim();
+
+                    return (
+                      <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-600" htmlFor={inputId} key={variable.position}>
+                        Variable {variable.placeholder}
+                        <input
+                          aria-describedby={hasError ? errorId : undefined}
+                          aria-invalid={hasError}
+                          className="h-10 w-full min-w-0 rounded-xl border border-[#d8e7e1] bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                          id={inputId}
+                          maxLength={500}
+                          onChange={(event) => updateTemplateVariable(variable.position, event.target.value)}
+                          placeholder={variable.placeholder}
+                          type="text"
+                          value={templateVariableValues[variable.position] ?? ""}
+                        />
+                        {hasError ? <span className="text-[11px] font-medium text-[#92400e]" id={errorId}>Variable requerida para preparar la plantilla.</span> : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="rounded-xl border border-[#d8e7e1] bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+                  Esta plantilla no requiere variables.
+                </p>
+              )}
+
+              <div className="grid gap-2">
+                {selectedTemplateVariableErrors.length > 0 ? (
+                  <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]" role="alert">
+                    {formatMissingTemplateVariablesMessage(selectedTemplateVariableErrors)}
+                  </p>
+                ) : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-medium text-slate-500">
+                    {selectedTemplateVariableErrors.length > 0
+                      ? "Completa todas las variables antes de continuar."
+                      : "Variables listas para la siguiente etapa."}
+                  </p>
+                  <button
+                    aria-disabled="true"
+                    className="inline-flex h-9 items-center justify-center rounded-full bg-slate-300 px-4 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed"
+                    disabled
+                    title="El envío se habilitará en la siguiente etapa"
+                    type="button"
+                  >
+                    Enviar plantilla
+                  </button>
+                </div>
+              </div>
+            </section>
           ) : null}
           <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-1.5 shadow-inner focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
             {shouldShowTemplateButton ? (
               <button
-                aria-label="Abrir biblioteca de plantillas aprobadas"
+                aria-label={selectedTemplate ? "Cambiar plantilla aprobada" : "Abrir biblioteca de plantillas aprobadas"}
                 className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-teal-700 px-3 text-xs font-semibold text-white transition hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 onClick={() => setIsTemplateLibraryOpen(true)}
                 type="button"
               >
                 <MessageCircle className="h-4 w-4" />
-                <span>Plantillas</span>
+                <span>{selectedTemplate ? "Cambiar plantilla" : "Plantillas"}</span>
               </button>
             ) : null}
             <textarea
@@ -848,7 +1016,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           cartId={cartId}
           isOpen={isTemplateLibraryOpen}
           onClose={() => setIsTemplateLibraryOpen(false)}
-          onSelectTemplate={setSelectedTemplate}
+          onSelectTemplate={handleTemplateSelected}
           selectedTemplateKey={selectedTemplate?.key ?? null}
         />
       </div>

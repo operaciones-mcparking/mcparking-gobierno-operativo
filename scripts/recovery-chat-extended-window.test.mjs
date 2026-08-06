@@ -172,7 +172,7 @@ test("open recovery chat keeps the freeform composer behavior", () => {
 test("closed or missing recovery chat shows compact templates button", () => {
   assert.match(drawerSource, /const shouldShowTemplateButton = isFreeformBlocked && \(freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"\)/);
   assert.match(drawerSource, /Abrir biblioteca de plantillas aprobadas/);
-  assert.match(drawerSource, /<span>Plantillas<\/span>/);
+  assert.match(drawerSource, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
   assert.match(drawerSource, /<RecoveryWhatsappTemplateLibraryModal/);
   assert.doesNotMatch(drawerSource, /Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|templatesError|setTemplates\(/);
 });
@@ -203,7 +203,7 @@ test("template library modal covers states, search, filters, preview, and select
   assert.match(templateModalSource, /template\.preview\.body/);
   assert.match(templateModalSource, /template\.variables\.map/);
   assert.match(templateModalSource, /Usar plantilla/);
-  assert.match(drawerSource, /Plantilla seleccionada:/);
+  assert.match(drawerSource, /Plantilla seleccionada/);
 });
 test("template visualization does not call n8n or send messages", () => {
   assert.doesNotMatch(templatesRouteSource, /n8n|N8N|callN8nWebhook|messageText/);

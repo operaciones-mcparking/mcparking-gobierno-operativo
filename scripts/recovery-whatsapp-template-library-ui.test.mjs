@@ -15,7 +15,7 @@ const meta = readFileSync(metaPath, "utf8");
 test("1. drawer shows compact Plantillas button only when freeform is blocked by closed or missing", () => {
   assert.match(drawer, /shouldShowTemplateButton = isFreeformBlocked && \(freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"\)/);
   assert.match(drawer, /Abrir biblioteca de plantillas aprobadas/);
-  assert.match(drawer, /<span>Plantillas<\/span>/);
+  assert.match(drawer, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
   assert.doesNotMatch(drawer, /Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|setTemplates\(/);
 });
 
@@ -74,7 +74,7 @@ test("7. cards show real preview and placeholders without filling variables", ()
 test("8. selection is visual only and does not send", () => {
   assert.match(modal, /Usar plantilla/);
   assert.match(modal, /onSelectTemplate\(selectedTemplate\)/);
-  assert.match(drawer, /Plantilla seleccionada:/);
+  assert.match(drawer, /Plantilla seleccionada/);
   assert.doesNotMatch(modal + route, /sendTemplate|\/chat\/send-template|method:\s*"POST"|callN8nWebhook/);
   assert.doesNotMatch(drawer, /\/chat\/send-template|sendTemplateMessage/);
 });
