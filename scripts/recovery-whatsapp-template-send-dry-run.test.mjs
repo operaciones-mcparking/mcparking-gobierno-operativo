@@ -4,8 +4,10 @@ import test from "node:test";
 
 const routePath = "src/app/api/recuperacion/carritos/[id]/chat/send-template/route.ts";
 const drawerPath = "src/app/recuperacion/recovery-cart-chat-drawer.tsx";
+const metaPayloadPath = "src/lib/recuperacion/whatsapp-template-send-payload.ts";
 const route = readFileSync(routePath, "utf8");
 const drawer = readFileSync(drawerPath, "utf8");
+const metaPayload = readFileSync(metaPayloadPath, "utf8");
 
 function blockBetween(start, end) {
   const startIndex = route.indexOf(start);
@@ -115,14 +117,14 @@ test("17. variables are ordered by numeric position", () => {
 });
 
 test("18. BODY components are built server-side", () => {
-  assert.match(route, /function buildBodyComponents/);
-  assert.match(route, /type: "body" as const/);
-  assert.match(route, /type: "text" as const/);
-  assert.match(route, /components = buildBodyComponents\(variablesResult\.variables\)/);
+  assert.match(route, /buildRecoveryWhatsappMetaTemplatePayload/);
+  assert.match(route, /variables: variablesResult\.variables/);
+  assert.match(metaPayload, /type: "body"/);
+  assert.match(metaPayload, /type: "text"/);
 });
 
 test("19. template without variables omits components", () => {
-  assert.match(route, /if \(variables\.length === 0\) return undefined/);
+  assert.match(metaPayload, /if \(orderedVariables\.length > 0\)/);
   assert.match(route, /Esta plantilla no acepta variables/);
 });
 
@@ -135,7 +137,8 @@ test("20. preview final replaces placeholders", () => {
 test("21. client components are rejected as an unknown payload field", () => {
   assert.doesNotMatch(route, /payload\.components|components\?: unknown/);
   assert.match(route, /hasOnlyAllowedPayloadKeys\(payload\)/);
-  assert.match(route, /const components = buildBodyComponents\(variablesResult\.variables\)/);
+  assert.match(route, /buildRecoveryWhatsappMetaTemplatePayload/);
+  assert.match(route, /variables: variablesResult\.variables/);
 });
 
 test("22. client businessKey is rejected as an unknown payload field", () => {

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fetchMetaWhatsappTemplatesForBusiness, type SafeMetaWhatsappTemplate } from "@/lib/recuperacion/meta-whatsapp-templates";
+import { buildRecoveryWhatsappMetaTemplatePayload, buildRecoveryWhatsappMetaTemplatePayloadPreview } from "@/lib/recuperacion/whatsapp-template-send-payload";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
@@ -188,20 +189,6 @@ function validateBodyVariables(template: SafeMetaWhatsappTemplate, value: unknow
   };
 }
 
-function buildBodyComponents(variables: TemplateVariableValue[]) {
-  if (variables.length === 0) return undefined;
-
-  return [
-    {
-      parameters: variables.map((variable) => ({
-        text: variable.text,
-        type: "text" as const,
-      })),
-      type: "body" as const,
-    },
-  ];
-}
-
 function renderPreviewText(value: string | null, variables: TemplateVariableValue[]) {
   if (!value) return null;
 
@@ -292,10 +279,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return variablesResult.error;
   }
 
-  const components = buildBodyComponents(variablesResult.variables);
+  const metaPayload = buildRecoveryWhatsappMetaTemplatePayload({
+    language: template.language,
+    templateName: template.name,
+    to: cartResult.cart.phone_normalized,
+    variables: variablesResult.variables,
+  });
+  const metaPayloadPreview = buildRecoveryWhatsappMetaTemplatePayloadPreview(metaPayload, maskPhone(cartResult.cart.phone_normalized));
   const previewBody = renderPreviewText(template.preview.body, variablesResult.variables);
   const n8nPayloadPreview = {
-    components,
+    components: metaPayload.template.components,
     language: template.language,
     mode: "template" as const,
     source: "recovery_web" as const,
@@ -304,8 +297,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   return NextResponse.json({
     dryRun: true,
+    metaPayloadPreview,
     n8nPayloadPreview,
     ok: true,
+    senderKey: businessKey,
     preview: {
       body: previewBody,
       buttons: template.preview.buttons,
