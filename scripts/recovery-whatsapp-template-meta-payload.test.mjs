@@ -11,7 +11,17 @@ const route = readFileSync(routePath, "utf8");
 const drawer = readFileSync(drawerPath, "utf8");
 
 function validateFunctionBlock() {
-  return drawer.slice(drawer.indexOf("async function validateSelectedTemplate"), drawer.indexOf("return (", drawer.indexOf("async function validateSelectedTemplate")));
+  const start = drawer.indexOf("async function validateSelectedTemplate");
+  const end = drawer.indexOf("async function sendPreparedTemplate", start);
+
+  return drawer.slice(start, end);
+}
+
+function sendFunctionBlock() {
+  const start = drawer.indexOf("async function sendPreparedTemplate");
+  const end = drawer.indexOf("return (", start);
+
+  return drawer.slice(start, end);
 }
 
 test("1. builds messaging_product whatsapp", () => {
@@ -109,16 +119,18 @@ test("20. route still does not send Meta messages", () => {
   assert.doesNotMatch(helper + route, /\/messages|whatsappMessageId|messaging_product[\s\S]*fetch\(/);
 });
 
-test("21. UI continues using dryRun true", () => {
+test("21. UI preparation continues using dryRun true", () => {
   assert.match(validateFunctionBlock(), /dryRun: true/);
+  assert.doesNotMatch(validateFunctionBlock(), /dryRun: false/);
 });
 
-test("22. button continues saying Preparar envio", () => {
+test("22. buttons expose preparation and explicit confirmation", () => {
   assert.match(drawer, /Preparar envío/);
   assert.match(drawer, /Preparando envío/);
+  assert.match(drawer, /Confirmar y enviar/);
 });
 
-test("23. no real send is enabled", () => {
-  assert.doesNotMatch(drawer, /Enviar plantilla|Confirmar envío|Enviar mensaje de plantilla/);
-  assert.doesNotMatch(validateFunctionBlock(), /dryRun: false|callN8nWebhook|N8N_RECOVERY/);
+test("23. confirmation does not call Graph messages or n8n directly from the UI", () => {
+  assert.match(sendFunctionBlock(), /dryRun: false/);
+  assert.doesNotMatch(sendFunctionBlock(), /callN8nWebhook|N8N_RECOVERY|graph\.facebook\.com|\/messages|phone_number_id|accessToken|metaPayload/);
 });

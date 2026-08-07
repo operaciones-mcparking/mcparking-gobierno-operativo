@@ -590,6 +590,7 @@ test("46. current task diff is scoped", () => {
     "scripts/recovery-whatsapp-template-meta-payload.test.mjs",
     "scripts/recovery-whatsapp-template-n8n-payload.test.mjs",
     "scripts/recovery-whatsapp-template-send-real.test.mjs",
+    "scripts/recovery-whatsapp-template-send-confirmation-ui.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts",
     "src/app/api/recuperacion/carritos/[id]/chat/send-template/route.ts",
     "src/app/recuperacion/recovery-cart-chat-drawer.tsx",

@@ -13,7 +13,17 @@ const metaPayload = readFileSync(metaPayloadPath, "utf8");
 const n8nPayload = readFileSync(n8nPayloadPath, "utf8");
 
 function validateFunctionBlock() {
-  return drawer.slice(drawer.indexOf("async function validateSelectedTemplate"), drawer.indexOf("return (", drawer.indexOf("async function validateSelectedTemplate")));
+  const start = drawer.indexOf("async function validateSelectedTemplate");
+  const end = drawer.indexOf("async function sendPreparedTemplate", start);
+
+  return drawer.slice(start, end);
+}
+
+function sendFunctionBlock() {
+  const start = drawer.indexOf("async function sendPreparedTemplate");
+  const end = drawer.indexOf("return (", start);
+
+  return drawer.slice(start, end);
 }
 
 function responseBlock() {
@@ -188,17 +198,22 @@ test("27. route requires an explicit dryRun boolean", () => {
   assert.match(route, /dryRun: false/);
 });
 
-test("28. UI button remains preparation only", () => {
+test("28. UI keeps preparation as the first step and adds explicit confirmation", () => {
   assert.match(drawer, /Preparar env/);
   assert.match(drawer, /Preparando env/);
-  assert.doesNotMatch(drawer, /dryRun: false|Enviar mensaje de plantilla|Confirmar env/);
+  assert.match(drawer, /Confirmar y enviar/);
+  assert.match(sendFunctionBlock(), /dryRun: false/);
 });
 
-test("29. no real send is enabled in the UI", () => {
-  const block = validateFunctionBlock();
-  assert.match(block, /method: "POST"/);
-  assert.match(block, /dryRun: true/);
-  assert.doesNotMatch(block, /callN8nWebhook|N8N_RECOVERY|\/messages|dryRun: false/);
+test("29. UI confirmation calls only the server endpoint with no n8n authority fields", () => {
+  const validateBlock = validateFunctionBlock();
+  const sendBlock = sendFunctionBlock();
+
+  assert.match(validateBlock, /method: "POST"/);
+  assert.match(validateBlock, /dryRun: true/);
+  assert.match(sendBlock, /method: "POST"/);
+  assert.match(sendBlock, /\/chat\/send-template/);
+  assert.doesNotMatch(sendBlock, /callN8nWebhook|N8N_RECOVERY|\/messages|senderKey|metaPayload|webhookUrl|secreto|phone_number_id|accessToken/);
 });
 
 test("30. public preview includes masked Meta payload and source", () => {

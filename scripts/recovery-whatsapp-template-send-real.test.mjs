@@ -176,10 +176,17 @@ test("8. client cannot override server authority fields", () => {
   assert.match(route, /unknown_payload_field/);
 });
 
-test("9. browser still sends only dryRun true", () => {
-  const validateBlock = drawer.slice(drawer.indexOf("async function validateSelectedTemplate"), drawer.indexOf("return (", drawer.indexOf("async function validateSelectedTemplate")));
+test("9. browser prepares with dryRun true and confirms with dryRun false only through the server endpoint", () => {
+  const validateStart = drawer.indexOf("async function validateSelectedTemplate");
+  const sendStart = drawer.indexOf("async function sendPreparedTemplate");
+  const validateBlock = drawer.slice(validateStart, sendStart);
+  const sendBlock = drawer.slice(sendStart, drawer.indexOf("return (", sendStart));
+
   assert.match(validateBlock, /dryRun: true/);
   assert.doesNotMatch(validateBlock, /dryRun: false|senderKey|metaPayload|webhookUrl|secreto|phone_number_id|accessToken/);
+  assert.match(sendBlock, /dryRun: false/);
+  assert.match(sendBlock, /\/chat\/send-template/);
+  assert.doesNotMatch(sendBlock, /senderKey|metaPayload|webhookUrl|secreto|phone_number_id|accessToken|callN8nWebhook|N8N_RECOVERY/);
 });
 
 test("10. dryRun true branch returns before n8n call", () => {

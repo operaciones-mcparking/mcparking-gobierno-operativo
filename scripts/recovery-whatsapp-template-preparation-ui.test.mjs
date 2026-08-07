@@ -25,11 +25,15 @@ test("2. with selection the compact button says Cambiar plantilla", () => {
   assert.match(drawer, /onClick=\{\(\) => setIsTemplateLibraryOpen\(true\)\}/);
 });
 
-test("3. selected template panel exposes Cambiar plantilla and Cerrar plantilla", () => {
-  assert.match(drawer, /Plantilla seleccionada/);
-  assert.match(drawer, /Cambiar plantilla/);
-  assert.match(drawer, /Cerrar plantilla/);
-  assert.match(drawer, /aria-label="Cerrar plantilla seleccionada"/);
+test("3. selected template header exposes only the accessible close control", () => {
+  const headerBlock = drawer.slice(drawer.indexOf("Plantilla seleccionada"), drawer.indexOf("<div className=\"rounded-2xl bg-[#eef7f4] p-2\">"));
+
+  assert.match(headerBlock, /Plantilla seleccionada/);
+  assert.match(headerBlock, /aria-label="Cerrar plantilla"/);
+  assert.match(headerBlock, /title="Cerrar plantilla"/);
+  assert.match(headerBlock, /<X className="h-3\.5 w-3\.5"/);
+  assert.doesNotMatch(headerBlock, />\s*Cambiar plantilla\s*</);
+  assert.doesNotMatch(headerBlock, />\s*Cerrar plantilla\s*</);
 });
 
 test("4. closing selected template clears selected template and variable values", () => {
