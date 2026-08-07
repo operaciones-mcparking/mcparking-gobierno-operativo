@@ -5,6 +5,7 @@ import {
   buildRecoveryWhatsappTemplateN8nPayload,
   buildRecoveryWhatsappTemplateN8nPayloadPreview,
 } from "@/lib/recuperacion/whatsapp-template-n8n-payload";
+import { sendRecoveryWhatsappTemplateViaN8n } from "@/lib/recuperacion/whatsapp-template-n8n-transport";
 import { buildRecoveryWhatsappMetaTemplatePayload, buildRecoveryWhatsappMetaTemplatePayloadPreview } from "@/lib/recuperacion/whatsapp-template-send-payload";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
@@ -48,12 +49,17 @@ const FORBIDDEN_DRY_RUN_PAYLOAD_KEYS = new Set([
   "n8nPayload",
   "n8nTransportPayload",
   "operatorEmail",
+  "parking",
   "phone",
   "phone_number_id",
   "previewText",
+  "secreto",
   "senderKey",
   "sentAt",
   "source",
+  "telefono_usuario",
+  "templateName",
+  "webhookUrl",
 ]);
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ code, error: message, ok: false }, { status });
@@ -244,8 +250,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("La solicitud contiene campos no permitidos.", 400, "unknown_payload_field");
   }
 
-  if (payload.dryRun !== true) {
-    return jsonError("Esta operacion solo esta disponible en modo dry-run.", 400, "dry_run_required");
+  if (typeof payload.dryRun !== "boolean") {
+    return jsonError("Debes indicar si la operacion es dry-run.", 400, "dry_run_required");
   }
 
   const templateKey = safeString(payload.templateKey);
@@ -329,26 +335,45 @@ export async function POST(request: NextRequest, context: RouteContext) {
     templateName: template.name,
   };
 
+  if (payload.dryRun) {
+    return NextResponse.json({
+      dryRun: true,
+      metaPayloadPreview,
+      n8nPayloadPreview,
+      n8nTransportPreview,
+      ok: true,
+      senderKey: businessKey,
+      preview: {
+        body: previewBody,
+        buttons: template.preview.buttons,
+        footer: template.preview.footer,
+        header: template.preview.header,
+      },
+      validation: {
+        businessKey,
+        cartType: cartResult.cart.type,
+        language: template.language,
+        maskedPhone: maskPhone(cartResult.cart.phone_normalized),
+        templateName: template.name,
+        variableCount: variablesResult.variables.length,
+      },
+    });
+  }
+
+  const n8nResult = await sendRecoveryWhatsappTemplateViaN8n(n8nTransportPayload);
+
+  if (!n8nResult.ok) {
+    return jsonError("No se pudo enviar la plantilla de WhatsApp.", n8nResult.status, n8nResult.code);
+  }
+
   return NextResponse.json({
-    dryRun: true,
-    metaPayloadPreview,
-    n8nPayloadPreview,
-    n8nTransportPreview,
+    dryRun: false,
     ok: true,
-    senderKey: businessKey,
-    preview: {
-      body: previewBody,
-      buttons: template.preview.buttons,
-      footer: template.preview.footer,
-      header: template.preview.header,
-    },
-    validation: {
-      businessKey,
-      cartType: cartResult.cart.type,
-      language: template.language,
-      maskedPhone: maskPhone(cartResult.cart.phone_normalized),
-      templateName: template.name,
-      variableCount: variablesResult.variables.length,
+    send: {
+      businessKey: n8nResult.senderKey,
+      messageId: n8nResult.messageId,
+      messageStatus: n8nResult.messageStatus,
+      status: n8nResult.status,
     },
   });
 }

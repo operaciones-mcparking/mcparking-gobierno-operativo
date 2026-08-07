@@ -96,8 +96,9 @@ test("17. payload helper does not fetch", () => {
   assert.doesNotMatch(helper, /fetch\(/);
 });
 
-test("18. payload helper and route do not call n8n", () => {
-  assert.doesNotMatch(helper + route, /N8N_RECOVERY|callN8nWebhook|webhookUrl|x-mcparking-recovery-secret/);
+test("18. payload helper and dry-run route do not expose n8n config", () => {
+  assert.doesNotMatch(helper + route, /N8N_RECOVERY|callN8nWebhook|x-mcparking-recovery-secret/);
+  assert.match(route, /"webhookUrl"/);
 });
 
 test("19. payload helper does not write Supabase", () => {

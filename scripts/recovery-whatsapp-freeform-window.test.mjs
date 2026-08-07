@@ -391,6 +391,36 @@ test("POST send route recalculates the window before local insert, updates, or n
   assert.match(sendRoute, /status:\s*409/);
 });
 
+test("freeform n8n contract is ready for the unified workflow", () => {
+  const payloadStart = sendRoute.indexOf("body: JSON.stringify({");
+  const payloadEnd = sendRoute.indexOf("}),", payloadStart);
+  const payloadBlock = sendRoute.slice(payloadStart, payloadEnd);
+
+  assert.ok(payloadStart > 0, "n8n payload exists");
+  assert.match(payloadBlock, /mode:\s*"freeform"/);
+  assert.match(payloadBlock, /cartId:\s*payload\.cart\.id/);
+  assert.match(payloadBlock, /cartType:\s*payload\.cart\.type/);
+  assert.match(payloadBlock, /email:\s*payload\.cart\.email_normalized/);
+  assert.match(payloadBlock, /messageText:\s*payload\.messageText/);
+  assert.match(payloadBlock, /operatorEmail:\s*payload\.operatorEmail/);
+  assert.match(payloadBlock, /parking:\s*payload\.cart\.parking_code/);
+  assert.match(payloadBlock, /phone:\s*payload\.cart\.phone_normalized/);
+  assert.match(payloadBlock, /sentAt:\s*payload\.sentAt/);
+  assert.match(payloadBlock, /source:\s*"recovery_web"/);
+
+  assert.match(sendRoute, /process\.env\.N8N_RECOVERY_WHATSAPP_WEBHOOK_URL/);
+  assert.match(sendRoute, /process\.env\.N8N_RECOVERY_WEBHOOK_SECRET/);
+  assert.match(sendRoute, /"x-mcparking-recovery-secret":\s*webhookSecret/);
+  assert.match(sendRoute, /fetch\(webhookUrl/);
+  assert.doesNotMatch(sendRoute, /N8N_RECOVERY_WHATSAPP_TEMPLATE_WEBHOOK_URL/);
+  assert.doesNotMatch(sendRoute, /sendRecoveryWhatsappTemplateViaN8n/);
+});
+
+test("freeform accepts legacy and unified n8n message identifiers", () => {
+  assert.match(sendRoute, /whatsappMessageId:\s*safeString\(typedPayload\?\.whatsappMessageId\) \|\| safeString\(typedPayload\?\.messageId\) \|\| null/);
+  assert.match(sendRoute, /whatsappStatus:\s*safeString\(typedPayload\?\.whatsappStatus\) \|\| safeString\(typedPayload\?\.messageStatus\) \|\| "sent"/);
+  assert.match(sendRoute, /n8nExecutionId:\s*safeString\(typedPayload\?\.n8nExecutionId\) \|\| safeString\(typedPayload\?\.executionId\) \|\| null/);
+});
 test("drawer relies on server window state and preserves the draft on server rejection", () => {
   assert.match(drawer, /whatsappWindow\?: WhatsappFreeformWindowPayload/);
   assert.match(drawer, /serverWhatsappWindow = whatsappWindowOverride \?\? \(isDataForCurrentCart \? data\?\.whatsappWindow : null\)/);
@@ -459,6 +489,7 @@ test("no unrelated modules are part of this task diff", () => {
     "scripts/recovery-whatsapp-template-send-dry-run.test.mjs",
     "scripts/recovery-whatsapp-template-meta-payload.test.mjs",
     "scripts/recovery-whatsapp-template-n8n-payload.test.mjs",
+    "scripts/recovery-whatsapp-template-send-real.test.mjs",
     "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts",
     "src/app/api/recuperacion/carritos/[id]/chat/send-template/route.ts",
     "src/app/recuperacion/recovery-whatsapp-template-library-modal.tsx",
@@ -466,6 +497,7 @@ test("no unrelated modules are part of this task diff", () => {
     "src/lib/recuperacion/whatsapp-recovery-template-catalog.ts",
     "src/lib/recuperacion/whatsapp-template-send-payload.ts",
     "src/lib/recuperacion/whatsapp-template-n8n-payload.ts",
+    "src/lib/recuperacion/whatsapp-template-n8n-transport.ts",
     "scripts/recovery-whatsapp-business-window.test.mjs",
     "scripts/recovery-whatsapp-window-indicator.test.mjs",
     "src/app/api/recuperacion/carritos/chat-indicators/route.ts",

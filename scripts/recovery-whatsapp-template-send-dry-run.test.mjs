@@ -154,9 +154,9 @@ test("23. client phone_number_id is rejected as an unknown payload field", () =>
   assert.match(route, /hasOnlyAllowedPayloadKeys\(payload\)/);
 });
 
-test("24. route does not call n8n", () => {
-  assert.doesNotMatch(route, /N8N_RECOVERY|callN8nWebhook|webhookUrl|x-mcparking-recovery-secret/);
-  assert.doesNotMatch(route, /fetch\(.*webhook|method:\s*"POST"[\s\S]*fetch/);
+test("24. dry-run route path does not expose n8n configuration", () => {
+  assert.doesNotMatch(route, /N8N_RECOVERY|callN8nWebhook|x-mcparking-recovery-secret/);
+  assert.match(route, /"webhookUrl"/);
 });
 
 test("25. route does not insert messages", () => {
@@ -182,8 +182,10 @@ test("29. route does not expose phone_number_id", () => {
   assert.match(route, /maskedPhone: maskPhone/);
 });
 
-test("30. response includes dryRun true", () => {
+test("30. response supports dryRun true and dryRun false safely", () => {
   assert.match(route, /dryRun: true/);
+  assert.match(route, /dryRun: false/);
+  assert.match(route, /typeof payload\.dryRun !== "boolean"/);
   assert.match(route, /dry_run_required/);
 });
 
@@ -218,5 +220,6 @@ test("33. request DTO is intentionally narrow", () => {
 test("34. unknown request fields are blocked before validation", () => {
   assert.match(route, /function hasOnlyAllowedPayloadKeys/);
   assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
+  assert.match(route, /FORBIDDEN_DRY_RUN_PAYLOAD_KEYS/);
   assert.match(route, /unknown_payload_field/);
 });

@@ -216,6 +216,7 @@ async function callN8nWebhook(payload: {
       cartType: payload.cart.type,
       email: payload.cart.email_normalized,
       messageText: payload.messageText,
+      mode: "freeform",
       operatorEmail: payload.operatorEmail,
       parking: payload.cart.parking_code,
       phone: payload.cart.phone_normalized,
@@ -261,13 +262,20 @@ async function callN8nWebhook(payload: {
     };
   }
 
-  const typedPayload = responsePayload as { n8nExecutionId?: unknown; executionId?: unknown; whatsappMessageId?: unknown; whatsappStatus?: unknown } | null;
+  const typedPayload = responsePayload as {
+    executionId?: unknown;
+    messageId?: unknown;
+    messageStatus?: unknown;
+    n8nExecutionId?: unknown;
+    whatsappMessageId?: unknown;
+    whatsappStatus?: unknown;
+  } | null;
 
   return {
     n8nExecutionId: safeString(typedPayload?.n8nExecutionId) || safeString(typedPayload?.executionId) || null,
     ok: true as const,
-    whatsappMessageId: safeString(typedPayload?.whatsappMessageId) || null,
-    whatsappStatus: safeString(typedPayload?.whatsappStatus) || "sent",
+    whatsappMessageId: safeString(typedPayload?.whatsappMessageId) || safeString(typedPayload?.messageId) || null,
+    whatsappStatus: safeString(typedPayload?.whatsappStatus) || safeString(typedPayload?.messageStatus) || "sent",
   };
 }
 

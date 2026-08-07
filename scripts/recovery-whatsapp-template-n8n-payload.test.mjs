@@ -17,9 +17,14 @@ function validateFunctionBlock() {
 }
 
 function responseBlock() {
-  const start = route.lastIndexOf("return NextResponse.json({");
-  assert.notEqual(start, -1, "response block missing");
-  return route.slice(start);
+  const marker = "dryRun: true,";
+  const markerIndex = route.indexOf(marker);
+  assert.notEqual(markerIndex, -1, "dry-run response block missing");
+  const start = route.lastIndexOf("return NextResponse.json({", markerIndex);
+  const end = route.indexOf("  const n8nResult", markerIndex);
+  assert.notEqual(start, -1, "dry-run response block start missing");
+  assert.notEqual(end, -1, "dry-run response block end missing");
+  return route.slice(start, end);
 }
 
 test("1. n8n helper is server-only", () => {
@@ -156,7 +161,8 @@ test("21. browser does not send authority fields", () => {
 });
 
 test("22. no token, WABA, phone number id, or webhook URL is exposed", () => {
-  assert.doesNotMatch(n8nPayload + route, /META_WHATSAPP_ACCESS_TOKEN|Authorization|Bearer|access_token|WABA|waba|webhookUrl|N8N_RECOVERY|x-mcparking-recovery-secret/);
+  assert.doesNotMatch(n8nPayload + route, /META_WHATSAPP_ACCESS_TOKEN|Authorization|Bearer|access_token|WABA|waba|N8N_RECOVERY|x-mcparking-recovery-secret/);
+  assert.match(route, /"webhookUrl"/);
 });
 
 test("23. helper does not fetch", () => {
@@ -164,7 +170,7 @@ test("23. helper does not fetch", () => {
 });
 
 test("24. helper and route do not call n8n", () => {
-  assert.doesNotMatch(n8nPayload + route, /callN8nWebhook|webhookUrl|N8N_RECOVERY|n8n\.cloud/i);
+  assert.doesNotMatch(n8nPayload + route, /callN8nWebhook|N8N_RECOVERY|n8n\.cloud/i);
 });
 
 test("25. helper and route do not call Graph messages", () => {
@@ -175,9 +181,11 @@ test("26. helper and route do not write Supabase", () => {
   assert.doesNotMatch(n8nPayload + route, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
 });
 
-test("27. route still requires dryRun true", () => {
-  assert.match(route, /payload\.dryRun !== true/);
+test("27. route requires an explicit dryRun boolean", () => {
+  assert.match(route, /typeof payload\.dryRun !== "boolean"/);
   assert.match(route, /dry_run_required/);
+  assert.match(route, /dryRun: true/);
+  assert.match(route, /dryRun: false/);
 });
 
 test("28. UI button remains preparation only", () => {
