@@ -411,40 +411,72 @@ function SvgOrgChart({
   roles: OrgRole[];
 }) {
   const chart = buildSvgOrgChart(roots, childrenByParent);
+  const chartContent = (
+    <>
+      {chart.lines.map((line, index) => (
+        <line
+          key={`${line.x1}-${line.y1}-${line.x2}-${line.y2}-${index}`}
+          stroke="#7b9ab5"
+          strokeWidth="1"
+          x1={line.x1}
+          x2={line.x2}
+          y1={line.y1}
+          y2={line.y2}
+        />
+      ))}
+      {chart.nodes.map((node) => (
+        <foreignObject
+          height={node.height}
+          key={roleKey(node.role)}
+          width={node.width}
+          x={node.x}
+          y={node.y}
+        >
+          <SvgOrgCard canEdit={canEdit} node={node} people={people} roles={roles} />
+        </foreignObject>
+      ))}
+    </>
+  );
 
   return (
     <div className="mt-5 rounded-2xl bg-[#f6f8fa] p-3 sm:p-5">
       <OrgChartMetrics metrics={metrics} />
-      <svg
-        aria-label="Organigrama operativo"
-        className="mt-4 block h-auto w-full"
-        role="img"
-        style={{ aspectRatio: `${chart.width} / ${chart.height}` }}
-        viewBox={`0 0 ${chart.width} ${chart.height}`}
-      >
-        {chart.lines.map((line, index) => (
-          <line
-            key={`${line.x1}-${line.y1}-${line.x2}-${line.y2}-${index}`}
-            stroke="#7b9ab5"
-            strokeWidth="1"
-            x1={line.x1}
-            x2={line.x2}
-            y1={line.y1}
-            y2={line.y2}
-          />
-        ))}
-        {chart.nodes.map((node) => (
-          <foreignObject
-            height={node.height}
-            key={roleKey(node.role)}
-            width={node.width}
-            x={node.x}
-            y={node.y}
+      <div className="mt-4 hidden lg:block">
+        <svg
+          aria-label="Organigrama operativo"
+          className="block h-auto w-full"
+          role="img"
+          style={{ aspectRatio: `${chart.width} / ${chart.height}` }}
+          viewBox={`0 0 ${chart.width} ${chart.height}`}
+        >
+          {chartContent}
+        </svg>
+      </div>
+      <div className="mt-4 overflow-x-auto overflow-y-hidden pb-2 [--org-chart-scale:0.46] min-[390px]:[--org-chart-scale:0.48] min-[430px]:[--org-chart-scale:0.52] sm:[--org-chart-scale:0.68] md:[--org-chart-scale:0.82] lg:hidden">
+        <div
+          className="relative mx-auto"
+          style={{
+            height: `calc(${chart.height}px * var(--org-chart-scale))`,
+            minWidth: `calc(${chart.width}px * var(--org-chart-scale))`,
+            width: `calc(${chart.width}px * var(--org-chart-scale))`,
+          }}
+        >
+          <svg
+            aria-label="Organigrama operativo"
+            className="absolute left-0 top-0 block max-w-none"
+            role="img"
+            style={{
+              height: chart.height,
+              transform: "scale(var(--org-chart-scale))",
+              transformOrigin: "top left",
+              width: chart.width,
+            }}
+            viewBox={`0 0 ${chart.width} ${chart.height}`}
           >
-            <SvgOrgCard canEdit={canEdit} node={node} people={people} roles={roles} />
-          </foreignObject>
-        ))}
-      </svg>
+            {chartContent}
+          </svg>
+        </div>
+      </div>
     </div>
   );
 }
