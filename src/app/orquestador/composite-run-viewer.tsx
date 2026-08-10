@@ -68,7 +68,22 @@ function StepIcon({ status }: { status: CompositeRunStepStatus }) {
 }
 
 function formatDuration(value: number | null) {
-  return value === null ? "-" : `${value}s`;
+  if (value === null) {
+    return "-";
+  }
+
+  const minutes = Math.floor(value / 60);
+  const seconds = value % 60;
+
+  if (minutes === 0) {
+    return `${seconds} s`;
+  }
+
+  if (seconds === 0) {
+    return `${minutes} min`;
+  }
+
+  return `${minutes} min ${seconds} s`;
 }
 
 function resultMessage(run: CompositeRunViewModel) {
@@ -103,7 +118,7 @@ export function CompositeRunViewer({
   const message = resultMessage(run);
 
   return (
-    <section className={`rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm ${className}`} aria-live="polite">
+    <section className={`rounded-lg border border-[#d6e1ea] bg-white ${compact ? "p-3" : "p-4"} text-sm text-slate-600 shadow-sm ${className}`} aria-live="polite">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-medium text-navy">{title}</h2>
@@ -140,33 +155,24 @@ export function CompositeRunViewer({
         </div>
       </div>
 
-      <ol className={`mt-4 grid gap-3 ${compact ? "" : "md:grid-cols-3"}`}>
+      <ol className="mt-4 divide-y divide-[#d6e1ea] rounded-lg border border-[#d6e1ea] bg-[#f8fbfd]">
         {run.steps.map((step) => (
-          <li key={step.step} className="rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] p-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-500">Paso {step.step}</p>
-                <p className="mt-1 font-medium text-navy">{step.label}</p>
-              </div>
-              <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
+          <li
+            key={step.step}
+            className="grid gap-2 px-3 py-2 sm:grid-cols-[minmax(14rem,1fr)_9rem_5rem] sm:items-center sm:gap-4"
+          >
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-slate-500">Paso {step.step}</p>
+              <p className="mt-0.5 truncate whitespace-nowrap font-medium text-navy">{step.label}</p>
+            </div>
+            <div className="sm:flex sm:justify-start">
+              <span className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
                 <StepIcon status={step.status} />
                 {statusLabels[step.status]}
               </span>
             </div>
-
-            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs leading-5">
-              <dt className="text-slate-500">Job</dt>
-              <dd className="text-right font-medium text-navy">{shortCompositeJobId(step.job_id)}</dd>
-              <dt className="text-slate-500">Worker</dt>
-              <dd className="text-right">{step.worker_id ?? "-"}</dd>
-              <dt className="text-slate-500">Intentos</dt>
-              <dd className="text-right">{step.attempts ?? "-"}</dd>
-              <dt className="text-slate-500">Duracion</dt>
-              <dd className="text-right">{formatDuration(step.duration_seconds)}</dd>
-            </dl>
-
-            {step.safe_message ? <p className="mt-3 text-xs leading-5">{step.safe_message}</p> : null}
-            {step.safe_error ? <p className="mt-3 text-xs font-medium leading-5 text-[#8a4a00]">{step.safe_error}</p> : null}
+            <p className="text-xs font-medium text-slate-600 sm:text-right">{formatDuration(step.duration_seconds)}</p>
+            {step.safe_error ? <p className="text-xs font-medium leading-5 text-[#8a4a00] sm:col-span-3">{step.safe_error}</p> : null}
           </li>
         ))}
       </ol>

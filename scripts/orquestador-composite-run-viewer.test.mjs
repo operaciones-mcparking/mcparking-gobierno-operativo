@@ -185,6 +185,25 @@ test("Y. callback retry es opcional", () => {
   assert.match(viewerSource, /onRetry \?/);
 });
 
+test("Y1. filas compactas alinean titulo estado y duracion", () => {
+  assert.match(viewerSource, /divide-y divide-\[#d6e1ea\]/);
+  assert.match(viewerSource, /sm:grid-cols-\[minmax\(14rem,1fr\)_9rem_5rem\]/);
+  assert.match(viewerSource, /whitespace-nowrap/);
+  assert.match(viewerSource, /sm:text-right/);
+});
+
+test("Y2. no muestra requested_source tecnico en filas", () => {
+  assert.doesNotMatch(viewerSource, /step\.safe_message/);
+  assert.doesNotMatch(viewerSource, /web_orchestrator_/);
+});
+
+test("Y3. duracion individual usa formato humano", () => {
+  assert.match(viewerSource, /const minutes = Math\.floor\(value \/ 60\)/);
+  assert.match(viewerSource, /const seconds = value % 60/);
+  assert.match(viewerSource, /return `\$\{seconds\} s`/);
+  assert.match(viewerSource, /return `\$\{minutes\} min \$\{seconds\} s`/);
+  assert.match(viewerSource, /formatDuration\(step\.duration_seconds\)/);
+});
 test("Z. no crea jobs", () => {
   assert.doesNotMatch(mapperSource + viewerSource, /orchestrator_create_job|create.*Job\(/);
 });
