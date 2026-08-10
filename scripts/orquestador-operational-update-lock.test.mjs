@@ -83,6 +83,57 @@ test("K. helpers server-side llaman solo RPCs de orquestador", () => {
   assert.match(supabaseAdmin, /orchestrator_create_operational_update_step_if_missing/);
 });
 
+test("M. discovery polling detecta corrida externa sin F5", () => {
+  assert.match(hook, /const discoveryPollDelayMs = 5000/);
+  assert.match(hook, /const discoveryTimeoutRef = useRef<number \| null>\(null\)/);
+  assert.match(hook, /const scheduleActiveDiscovery = useCallback/);
+  assert.match(hook, /loadActiveRun\(\{ silent: true \}\)/);
+  assert.match(hook, /scheduleActiveDiscovery\(discoveryPollDelayMs\)/);
+});
+
+test("N. active false conserva discovery sin romper UI", () => {
+  assert.match(hook, /if \(!responseBody\.active\) \{/);
+  assert.match(hook, /if \(!options\.silent && isMountedRef\.current\) \{\s*setRun\(null\);\s*setStatus\("idle"\);\s*setMessage\(null\);\s*\}/s);
+  assert.match(hook, /scheduleActiveDiscovery\(discoveryPollDelayMs\);\s*\}, delayMs\)/s);
+});
+
+test("O. active true adopta run y transiciona a polling normal", () => {
+  assert.match(hook, /persistRunId\(responseBody\.run\.run_id\)/);
+  assert.match(hook, /setRun\(responseBody\.run\)/);
+  assert.match(hook, /setStatus\(statusFromRun\(responseBody\.run\)\)/);
+  assert.match(hook, /if \(activeRun && !isTerminalRun\(activeRun\)\) \{\s*clearDiscoveryTimer\(\);\s*scheduleNext\(activeRun\.run_id, 1000\);\s*return;\s*\}/s);
+});
+
+test("P. discovery y run polling no corren duplicados", () => {
+  assert.match(hook, /clearDiscoveryTimer\(\);\s*discoveryTimeoutRef\.current = window\.setTimeout/s);
+  assert.match(hook, /if \(isDiscoveringActiveRef\.current\) \{\s*return null;\s*\}/s);
+  assert.match(hook, /clearDiscoveryTimer\(\);\s*scheduleNext\(run\.run_id, 2500\)/s);
+});
+
+test("Q. terminal vuelve a discovery para futuras corridas", () => {
+  assert.match(hook, /if \(!run \|\| isTerminalRun\(run\)\) \{\s*clearTimer\(\);/s);
+  assert.match(hook, /clearStoredRun\("terminal_run"\)/);
+  assert.match(hook, /scheduleActiveDiscovery\(discoveryPollDelayMs\);\s*return;\s*\}/s);
+});
+
+test("R. errores transitorios de discovery son silenciosos", () => {
+  assert.match(hook, /loadActiveRun = useCallback\(async \(options: \{ silent\?: boolean \} = \{\}\)/);
+  assert.match(hook, /if \(!options\.silent && isMountedRef\.current\)/);
+  assert.doesNotMatch(hook, /loadActiveRun\(\{ silent: true \}\)[\s\S]{0,300}setStatus\("network_error"\)/);
+});
+
+test("S. discovery no crea jobs ni dispara start automatico", () => {
+  const discoveryBlock = hook.slice(hook.indexOf("const scheduleActiveDiscovery"), hook.indexOf("useEffect(() =>", hook.indexOf("const scheduleActiveDiscovery")));
+  assert.match(discoveryBlock, /loadActiveRun\(\{ silent: true \}\)/);
+  assert.doesNotMatch(discoveryBlock, /method:\s*"POST"|startRun\(|advanceRun\(|body:\s*JSON\.stringify/);
+});
+
+test("T. cleanup elimina polling de discovery", () => {
+  assert.match(hook, /const clearDiscoveryTimer = useCallback/);
+  assert.match(hook, /window\.clearTimeout\(discoveryTimeoutRef\.current\)/);
+  assert.match(hook, /stopRequests[\s\S]*clearDiscoveryTimer\(\)/);
+  assert.match(hook, /stopRequests\("effect_cleanup"\)/);
+});
 test("L. no toca worker agentes n8n recuperacion", () => {
   const changedScope = [
     "src/app/api/orquestador/operaciones/actualizar-datos/advance/route.ts",

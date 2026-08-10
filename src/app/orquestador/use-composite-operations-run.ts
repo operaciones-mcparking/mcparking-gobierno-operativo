@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompositeRunViewModel } from "@/lib/orquestador/composite-runs";
 
 const storageKey = "orquestador:actualizar-datos:last-month:run-id:v1";
+const discoveryPollDelayMs = 5000;
 const terminalStatuses = new Set(["succeeded", "failed", "cancelled"]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -114,8 +115,10 @@ export function useCompositeOperationsRun() {
   const advanceControllerRef = useRef<AbortController | null>(null);
   const isRefreshingRef = useRef(false);
   const isAdvancingRef = useRef(false);
+  const isDiscoveringActiveRef = useRef(false);
   const recoveryStartedRef = useRef(false);
   const shouldRetryRef = useRef(false);
+  const discoveryTimeoutRef = useRef<number | null>(null);
   const retryDelayRef = useRef(2500);
   const timeoutRef = useRef<number | null>(null);
 
@@ -123,6 +126,13 @@ export function useCompositeOperationsRun() {
     if (timeoutRef.current !== null) {
       window.clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
+    }
+  }, []);
+
+  const clearDiscoveryTimer = useCallback(() => {
+    if (discoveryTimeoutRef.current !== null) {
+      window.clearTimeout(discoveryTimeoutRef.current);
+      discoveryTimeoutRef.current = null;
     }
   }, []);
 
@@ -142,10 +152,12 @@ export function useCompositeOperationsRun() {
       advanceControllerRef.current = null;
       isRefreshingRef.current = false;
       isAdvancingRef.current = false;
+      isDiscoveringActiveRef.current = false;
       shouldRetryRef.current = false;
+      clearDiscoveryTimer();
       clearTimer();
     },
-    [clearTimer],
+    [clearDiscoveryTimer, clearTimer],
   );
 
   const clearRun = useCallback(() => {
@@ -249,7 +261,12 @@ export function useCompositeOperationsRun() {
     [clearStoredRun, persistRunId],
   );
 
-  const loadActiveRun = useCallback(async () => {
+  const loadActiveRun = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (isDiscoveringActiveRef.current) {
+      return null;
+    }
+
+    isDiscoveringActiveRef.current = true;
     getControllerRef.current?.abort();
     const controller = new AbortController();
     getControllerRef.current = controller;
@@ -263,7 +280,7 @@ export function useCompositeOperationsRun() {
 
       if (!response.ok) {
         const safeMessage = await readSafeError(response);
-        if (isMountedRef.current) {
+        if (!options.silent && isMountedRef.current) {
           setMessage(safeMessage);
           setStatus(response.status === 401 || response.status === 403 ? "unauthorized" : "network_error");
         }
@@ -272,7 +289,7 @@ export function useCompositeOperationsRun() {
 
       const responseBody = (await response.json()) as ActiveRunResponse;
       if (!responseBody.ok) {
-        if (isMountedRef.current) {
+        if (!options.silent && isMountedRef.current) {
           setMessage("No fue posible consultar la actualizacion operacional activa.");
           setStatus("network_error");
         }
@@ -281,7 +298,7 @@ export function useCompositeOperationsRun() {
 
       if (!responseBody.active) {
         clearStoredRun("global_active_empty");
-        if (isMountedRef.current) {
+        if (!options.silent && isMountedRef.current) {
           setRun(null);
           setStatus("idle");
           setMessage(null);
@@ -290,7 +307,7 @@ export function useCompositeOperationsRun() {
       }
 
       if (!isCompositeRunViewModel(responseBody.run)) {
-        if (isMountedRef.current) {
+        if (!options.silent && isMountedRef.current) {
           setMessage("No fue posible consultar la actualizacion operacional activa.");
           setStatus("network_error");
         }
@@ -309,7 +326,7 @@ export function useCompositeOperationsRun() {
         return null;
       }
 
-      if (isMountedRef.current) {
+      if (!options.silent && isMountedRef.current) {
         setMessage("No fue posible consultar la actualizacion operacional activa.");
         setStatus("network_error");
       }
@@ -318,6 +335,7 @@ export function useCompositeOperationsRun() {
       if (getControllerRef.current === controller) {
         getControllerRef.current = null;
       }
+      isDiscoveringActiveRef.current = false;
     }
   }, [clearStoredRun, persistRunId]);
 
@@ -406,6 +424,32 @@ export function useCompositeOperationsRun() {
     },
     [advanceRun, clearTimer, loadRun],
   );
+  const scheduleActiveDiscovery = useCallback(
+    (delayMs: number = discoveryPollDelayMs) => {
+      clearDiscoveryTimer();
+      discoveryTimeoutRef.current = window.setTimeout(async () => {
+        if (document.visibilityState !== "visible") {
+          scheduleActiveDiscovery(discoveryPollDelayMs);
+          return;
+        }
+
+        const activeRun = await loadActiveRun({ silent: true });
+
+        if (activeRun && !isTerminalRun(activeRun)) {
+          clearDiscoveryTimer();
+          scheduleNext(activeRun.run_id, 1000);
+          return;
+        }
+
+        if (activeRun && isTerminalRun(activeRun)) {
+          clearStoredRun("terminal_run");
+        }
+
+        scheduleActiveDiscovery(discoveryPollDelayMs);
+      }, delayMs);
+    },
+    [clearDiscoveryTimer, clearStoredRun, loadActiveRun, scheduleNext],
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -422,6 +466,7 @@ export function useCompositeOperationsRun() {
     setStatus("loading");
     void loadActiveRun().then((activeRun) => {
       if (activeRun && !isTerminalRun(activeRun)) {
+        clearDiscoveryTimer();
         scheduleNext(activeRun.run_id, 1000);
         return;
       }
@@ -452,6 +497,8 @@ export function useCompositeOperationsRun() {
       } else if (storedRunId) {
         clearStoredRun("invalid_stored_run_id");
       }
+
+      scheduleActiveDiscovery(discoveryPollDelayMs);
     });
 
     return () => {
@@ -459,7 +506,7 @@ export function useCompositeOperationsRun() {
       stopRequests("effect_cleanup");
       recoveryStartedRef.current = false;
     };
-  }, [clearStoredRun, loadActiveRun, loadRun, persistRunId, scheduleNext, stopRequests]);
+  }, [clearDiscoveryTimer, clearStoredRun, loadActiveRun, loadRun, persistRunId, scheduleActiveDiscovery, scheduleNext, stopRequests]);
 
   useEffect(() => {
     if (!run || isTerminalRun(run)) {
@@ -467,11 +514,13 @@ export function useCompositeOperationsRun() {
       if (run && isTerminalRun(run)) {
         clearStoredRun("terminal_run");
       }
+      scheduleActiveDiscovery(discoveryPollDelayMs);
       return;
     }
 
+    clearDiscoveryTimer();
     scheduleNext(run.run_id, 2500);
-  }, [clearStoredRun, clearTimer, run, scheduleNext]);
+  }, [clearDiscoveryTimer, clearStoredRun, clearTimer, run, scheduleActiveDiscovery, scheduleNext]);
 
   const startRun = useCallback(async () => {
     if (isStarting || (run && !isTerminalRun(run))) {
