@@ -305,7 +305,9 @@ test("AG2. overlay compacto evita overflow y datos tecnicos principales", () => 
   assert.match(viewer, /Banco de Reservas/);
   assert.match(viewer, /Banco de Packs/);
   assert.match(viewer, /Metricas del Dashboard/);
-  assert.match(viewer, /!compact \? \(/);
+  assert.match(viewer, /compact \? "mt-3 divide-y/);
+  assert.match(viewer, /compact \? "flex min-w-0 flex-col gap-2/);
+  assert.match(viewer, /!compact \? <p className="text-xs font-medium text-slate-500">Paso \{step\.step\}<\/p> : null/);
   assert.match(viewer, /<dl className="mt-3 grid grid-cols-2/);
   assert.match(viewer, /break-words/);
   assert.match(viewer, /max-h-28 overflow-y-auto break-words/);
@@ -346,27 +348,38 @@ test("AG4. exito final depende del refresh del Dashboard", () => {
   assert.match(control, /setRefreshStatus\("refreshing"\)/);
   assert.match(control, /Promise\.resolve\(onSucceededRef\.current\?\.\(\)\)/);
   assert.match(control, /setRefreshStatus\(result === false \? "failed" : "success"\)/);
-  assert.match(control, /const showRefreshSuccess = run\?\.status === "succeeded" && refreshStatus === "success"/);
-  assert.match(control, /showRefreshSuccess \? \(\s*<RefreshSuccessPanel \/>/);
+  assert.match(control, /setRefreshStatus\(result === false \? "failed" : "success"\)/);
+  assert.match(control, /title: "Actualizacion completada"/);
   assert.match(control, /Actualizando indicadores del Dashboard/);
   assert.match(control, /Los procesos finalizaron correctamente, pero no fue posible actualizar los indicadores visibles/);
   assert.match(control, /const isRefreshingAfterSuccess = run\?\.status === "succeeded" && \(refreshStatus === "idle" \|\| refreshStatus === "refreshing"\)/);
   assert.match(control, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\) && !isRefreshingAfterSuccess\)/);
 });
 
-test("AG5. bloque verde final es sobrio y accesible", () => {
-  assert.match(control, /function RefreshSuccessPanel/);
-  assert.match(control, /role="status"/);
-  assert.match(control, /aria-live="polite"/);
-  assert.match(control, /bg-\[#f1fbf4\]/);
-  assert.match(control, /border-\[#bfe7cb\]/);
-  assert.match(control, /text-\[#22613b\]/);
-  assert.match(control, /Actualizacion completada correctamente/);
-  assert.match(control, /Todos los procesos finalizaron con exito/);
-  assert.match(control, /Puedes cerrar esta ventana con tranquilidad/);
-  assert.match(control, /aria-hidden="true"/);
-  assert.match(control, /break-words/);
+test("AG5. modal completado queda compacto y sin mensaje duplicado", () => {
+  assert.doesNotMatch(control, /function RefreshSuccessPanel/);
+  assert.doesNotMatch(control, /showRefreshSuccess/);
+  assert.match(control, /title: "Actualizacion completada"/);
+  assert.match(control, /Todos los procesos finalizaron correctamente/);
+  assert.doesNotMatch(control, /Puedes cerrar esta ventana con tranquilidad/);
+  assert.match(control, /statusLabel\(status\)/);
+  assert.match(control, /h-8 w-8/);
+  assert.match(viewer, /\(message && !compact\) \|\| onRetry/);
   assert.doesNotMatch(control, /confeti|corneta|ilustracion|window\.location\.reload/i);
+});
+
+test("AG6. progreso compacto mantiene paso barra y estados visibles", () => {
+  assert.match(viewer, /currentStepLabel/);
+  assert.match(viewer, /Paso \{run\.current_step \?\? completedSteps\} de \{run\.total_steps\}/);
+  assert.match(viewer, /role="progressbar"/);
+  assert.match(viewer, /Banco de Reservas/);
+  assert.match(viewer, /Banco de Packs/);
+  assert.match(viewer, /Metricas del Dashboard/);
+  assert.match(viewer, /Completado/);
+  assert.match(viewer, /Ejecutando/);
+  assert.match(viewer, /Pendiente/);
+  assert.match(viewer, /Error/);
+  assert.match(viewer, /max-h-24 overflow-y-auto break-words text-xs font-medium leading-5 text-\[#8a4a00\]/);
 });
 test("AH. status visible no depende solo del color", () => {
   assert.match(control, /statusLabel/);

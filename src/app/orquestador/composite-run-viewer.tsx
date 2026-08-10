@@ -115,6 +115,11 @@ function resultMessage(run: CompositeRunViewModel) {
   return null;
 }
 
+function currentStepLabel(run: CompositeRunViewModel) {
+  const current = run.steps.find((step) => step.step === run.current_step) ?? run.steps.find((step) => step.status === "running" || step.status === "claimed");
+  return current ? readableStepLabel(current.label) : null;
+}
+
 export function CompositeRunViewer({
   className = "",
   compact = false,
@@ -125,13 +130,15 @@ export function CompositeRunViewer({
   const completedSteps = run.steps.filter((step) => step.status === "succeeded").length;
   const progressPercent = run.total_steps > 0 ? Math.round((completedSteps / run.total_steps) * 100) : 0;
   const message = resultMessage(run);
+  const activeStepLabel = currentStepLabel(run);
 
   return (
-    <section className={`min-w-0 rounded-lg border border-[#d6e1ea] bg-white p-4 text-sm text-slate-600 shadow-sm ${className}`} aria-live="polite">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className={`min-w-0 rounded-lg border border-[#d6e1ea] bg-white text-sm text-slate-600 shadow-sm ${compact ? "p-3" : "p-4"} ${className}`} aria-live="polite">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h2 className="text-base font-medium text-navy">{title}</h2>
-                    {!compact ? (
+          {compact && activeStepLabel ? <p className="mt-1 text-sm font-medium text-navy">{activeStepLabel}</p> : null}
+          {!compact ? (
             <p className="mt-1 break-words text-xs leading-5">
               Run {run.run_id ? shortCompositeJobId(run.run_id) : "-"} - {run.kind || "sin tipo"}
             </p>
@@ -147,7 +154,7 @@ export function CompositeRunViewer({
         </div>
       </div>
 
-      <div className="mt-4">
+      <div className={compact ? "mt-3" : "mt-4"}>
         <div className="flex items-center justify-between gap-3 text-xs">
           <span className="font-medium text-navy">
             Paso {run.current_step ?? completedSteps} de {run.total_steps}
@@ -166,21 +173,28 @@ export function CompositeRunViewer({
         </div>
       </div>
 
-      <ol className={`mt-4 grid gap-3 ${compact ? "" : "md:grid-cols-3"}`}>
+      <ol className={compact ? "mt-3 divide-y divide-[#d6e1ea] rounded-lg border border-[#d6e1ea] bg-[#f8fbfd]" : "mt-4 grid gap-3 md:grid-cols-3"}>
         {run.steps.map((step) => (
-          <li key={step.step} className="rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] p-3">
-            <div className="flex items-start justify-between gap-3">
+          <li key={step.step} className={compact ? "flex min-w-0 flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" : "rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] p-3"}>
+            <div className={compact ? "flex min-w-0 items-center gap-2" : "flex items-start justify-between gap-3"}>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-500">Paso {step.step}</p>
-                <p className="mt-1 break-words font-medium text-navy">{readableStepLabel(step.label)}</p>
+                {!compact ? <p className="text-xs font-medium text-slate-500">Paso {step.step}</p> : null}
+                <p className={compact ? "break-words font-medium text-navy" : "mt-1 break-words font-medium text-navy"}>{readableStepLabel(step.label)}</p>
               </div>
-              <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
+              {!compact ? (
+                <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
+                  <StepIcon status={step.status} />
+                  {statusLabels[step.status]}
+                </span>
+              ) : null}
+            </div>
+
+            {compact ? (
+              <span className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
                 <StepIcon status={step.status} />
                 {statusLabels[step.status]}
               </span>
-            </div>
-
-            {!compact ? (
+            ) : (
               <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs leading-5">
                 <dt className="text-slate-500">Job</dt>
                 <dd className="break-words text-right font-medium text-navy">{shortCompositeJobId(step.job_id)}</dd>
@@ -191,17 +205,17 @@ export function CompositeRunViewer({
                 <dt className="text-slate-500">Duracion</dt>
                 <dd className="text-right">{formatDurationHuman(step.duration_seconds)}</dd>
               </dl>
-            ) : null}
+            )}
 
-            {step.safe_message ? <p className="mt-3 break-words text-xs leading-5">{step.safe_message}</p> : null}
-            {step.safe_error ? <p className="mt-3 max-h-28 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00]">{step.safe_error}</p> : null}
+            {step.safe_message ? <p className={compact ? "break-words text-xs leading-5 sm:basis-full" : "mt-3 break-words text-xs leading-5"}>{step.safe_message}</p> : null}
+            {step.safe_error ? <p className={compact ? "max-h-24 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00] sm:basis-full" : "mt-3 max-h-28 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00]"}>{step.safe_error}</p> : null}
           </li>
         ))}
       </ol>
 
-      {message || onRetry ? (
+      {(message && !compact) || onRetry ? (
         <div className="mt-4 flex flex-col gap-3 border-t border-[#d6e1ea] pt-4 sm:flex-row sm:items-center sm:justify-between">
-          {message ? <p className="text-sm font-medium text-navy">{message}</p> : <span />}
+          {message && !compact ? <p className="text-sm font-medium text-navy">{message}</p> : <span />}
           {onRetry ? (
             <button
               className="inline-flex h-9 w-fit items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm font-medium text-navy shadow-sm transition hover:border-sea hover:bg-[#fbfdff]"

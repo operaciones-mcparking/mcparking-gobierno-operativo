@@ -46,7 +46,7 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
   if (!run || !isTerminalRun(run)) {
     return {
       icon: <Loader2 className="h-5 w-5 animate-spin text-sea" aria-hidden="true" />,
-      message: "Este proceso puede tardar algunos minutos. Manten esta ventana abierta mientras se completa la actualizacion.",
+      message: "Paso en curso y progreso actualizado automaticamente.",
       title: "Actualizando datos operacionales",
     };
   }
@@ -70,8 +70,8 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
 
     return {
       icon: <CheckCircle2 className="h-5 w-5 text-[#22613b]" aria-hidden="true" />,
-      message: "Todos los procesos finalizaron con exito. Puedes cerrar esta ventana con tranquilidad.",
-      title: "Actualizacion completada correctamente",
+      message: "Todos los procesos finalizaron correctamente.",
+      title: "Actualizacion completada",
     };
   }
 
@@ -93,27 +93,6 @@ function overlayCopy(run: ReturnType<typeof useCompositeOperationsRun>["run"], r
   };
 }
 
-
-function RefreshSuccessPanel() {
-  return (
-    <div className="rounded-xl border border-[#bfe7cb] bg-[#f1fbf4] p-4 text-sm shadow-sm" role="status" aria-live="polite">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start">
-        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#bfe7cb] bg-white text-[#22613b]">
-          <CheckCircle2 className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0">
-          <h2 className="break-words text-base font-semibold text-[#1f5133]" id="actualizar-datos-overlay-title">
-            Actualizacion completada correctamente
-          </h2>
-          <p className="mt-2 break-words leading-6 text-slate-700" id="actualizar-datos-overlay-description">
-            Todos los procesos finalizaron con exito.<br />
-            Puedes cerrar esta ventana con tranquilidad.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function ActualizarDatosOperacionalesControl({
   className = "",
@@ -139,7 +118,6 @@ export function ActualizarDatosOperacionalesControl({
   const showOverlay = useOverlay && (isConfirming || isStarting || hasRun || isOverlayOpen);
   const isRefreshingAfterSuccess = run?.status === "succeeded" && (refreshStatus === "idle" || refreshStatus === "refreshing");
   const canCloseOverlay = Boolean(run && isTerminalRun(run) && !isRefreshingAfterSuccess);
-  const showRefreshSuccess = run?.status === "succeeded" && refreshStatus === "success";
   const copy = overlayCopy(run, refreshStatus);
 
   useEffect(() => {
@@ -447,23 +425,24 @@ export function ActualizarDatosOperacionalesControl({
               </>
             ) : (
               <>
-                {showRefreshSuccess ? (
-                  <RefreshSuccessPanel />
-                ) : (
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-[#f8fbfd]">
-                      {copy.icon}
-                    </span>
-                    <div>
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-[#f8fbfd]">
+                    {copy.icon}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h2 className="text-base font-semibold text-navy" id="actualizar-datos-overlay-title">
                         {copy.title}
                       </h2>
-                      <p className="mt-2 break-words leading-6" id="actualizar-datos-overlay-description" aria-live="polite">
-                        {copy.message}
-                      </p>
+                      <span className="rounded-md border border-[#d7e3ec] bg-[#f8fbfd] px-2 py-0.5 text-xs font-medium text-slate-600">
+                        {statusLabel(status)}
+                      </span>
                     </div>
+                    <p className="mt-1 break-words text-sm leading-5" id="actualizar-datos-overlay-description" aria-live="polite">
+                      {copy.message}
+                    </p>
                   </div>
-                )}
+                </div>
 
                 {message ? (
                   <p className="mt-4 max-h-28 overflow-y-auto break-words rounded-lg border border-[#ffd4a3] bg-[#fff8ef] px-3 py-2 text-sm text-[#8a4a00]" aria-live="polite">
