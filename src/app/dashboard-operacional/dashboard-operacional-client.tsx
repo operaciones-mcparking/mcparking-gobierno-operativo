@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -32,6 +32,7 @@ type EndpointResponse = {
 };
 
 type DateRangePreset = "today" | "yesterday" | "last7" | "last14" | "thisMonth" | "previousMonth" | "custom";
+type CustomRangeMode = "single" | "range";
 
 type DateRange = {
   from: string;
@@ -153,6 +154,10 @@ function getDateRangeLabel(preset: DateRangePreset) {
 
 function isValidDateRange(range: Pick<DateRange, "from" | "to">) {
   return Boolean(range.from && range.to && range.from <= range.to);
+}
+
+function getCustomRangeMode(range: Pick<DateRange, "from" | "to">): CustomRangeMode {
+  return range.from === range.to ? "single" : "range";
 }
 
 function buildDashboardRangeQuery(range: DateRange) {
@@ -432,22 +437,93 @@ function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: Operati
   );
 }
 
-function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp: number; total: string }) {
+type MarketShareDetail = {
+  label: string;
+  mcp: number;
+  okp: number;
+  total: string;
+};
+
+function marketSharePair(mcpValue: number, okpValue: number) {
+  const total = mcpValue + okpValue;
+
+  return {
+    mcp: total > 0 ? (mcpValue / total) * 100 : 0,
+    okp: total > 0 ? (okpValue / total) * 100 : 0,
+  };
+}
+
+function ShareDistribution({ compact = false, label, mcp, okp }: { compact?: boolean; label: string; mcp: number; okp: number }) {
   const safeMcp = Number.isFinite(mcp) ? Math.max(0, Math.min(100, mcp)) : 0;
   const safeOkp = Number.isFinite(okp) ? Math.max(0, Math.min(100, okp)) : 0;
 
   return (
-    <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-navy">{total}</p>
-      <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-[#dfe9f0]" aria-label={`${label} OKP vs MCP`}>
+    <>
+      <div className={`${compact ? "mt-2 h-2" : "mt-3 h-3"} flex overflow-hidden rounded-full bg-[#dfe9f0]`} aria-label={`${label} OKP vs MCP`}>
         <div className="bg-sea" style={{ width: `${safeOkp}%` }} />
         <div className="bg-clay" style={{ width: `${safeMcp}%` }} />
       </div>
-      <div className="mt-2 flex w-full items-center justify-between gap-2 text-xs text-slate-500">
+      <div className={`${compact ? "mt-1 text-[11px]" : "mt-2 text-xs"} flex w-full items-center justify-between gap-2 text-slate-500`}>
         <p className="text-left">OKP {formatPercent(safeOkp)}</p>
         <p className="text-right">MCP {formatPercent(safeMcp)}</p>
       </div>
+    </>
+  );
+}
+
+function ShareBar({
+  details = [],
+  expanded,
+  label,
+  mcp,
+  okp,
+  onToggle,
+  total,
+}: {
+  details?: MarketShareDetail[];
+  expanded: boolean;
+  label: string;
+  mcp: number;
+  okp: number;
+  onToggle: () => void;
+  total: string;
+}) {
+  const detailId = `market-share-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-detail`;
+  const hasDetails = details.length > 0;
+
+  return (
+    <div className="rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</p>
+          <p className="mt-1 text-lg font-semibold text-navy">{total}</p>
+        </div>
+        <button
+          aria-controls={detailId}
+          aria-expanded={expanded}
+          aria-label={expanded ? `Ocultar detalle de ${label}` : `Ver detalle de ${label}`}
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[#d6e1ea] bg-white text-slate-500 transition hover:bg-[#eef5f8] hover:text-navy focus:outline-none focus:ring-2 focus:ring-sea focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!hasDetails}
+          onClick={onToggle}
+          type="button"
+        >
+          {expanded ? <ChevronUp aria-hidden="true" className="h-4 w-4" /> : <ChevronDown aria-hidden="true" className="h-4 w-4" />}
+        </button>
+      </div>
+      <ShareDistribution label={label} mcp={mcp} okp={okp} />
+      {hasDetails && expanded ? (
+        <div className="mt-4 grid gap-2 border-t border-[#e4edf4] pl-2 pt-3" id={detailId}>
+          {details.map((detail) => (
+            <div className="min-w-0" key={detail.label}>
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{detail.label}</p>
+                <p className="text-sm font-medium text-navy">{detail.total}</p>
+              </div>
+              <ShareDistribution compact label={detail.label} mcp={detail.mcp} okp={detail.okp} />
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -455,6 +531,23 @@ function ShareBar({ label, mcp, okp, total }: { label: string; mcp: number; okp:
 function MarketColumn({ dashboard }: { dashboard: OperationalDashboardViewModel | null }) {
   const totals = dashboard?.totals ?? emptyTotals;
   const marketShare = dashboard?.marketShare;
+  const mcpTotals = groupTotals(dashboard, "MCP");
+  const okpTotals = groupTotals(dashboard, "OKP");
+  const [expandedCards, setExpandedCards] = useState({
+    dbi: false,
+    q: false,
+    venta: false,
+  });
+  const toggleCard = (card: keyof typeof expandedCards) => {
+    setExpandedCards((current) => ({ ...current, [card]: !current[card] }));
+  };
+
+  const ventaBoletaShare = marketSharePair(mcpTotals.reserva_boleta_venta, okpTotals.reserva_boleta_venta);
+  const ventaPackShare = marketSharePair(mcpTotals.pack_vendido_venta, okpTotals.pack_vendido_venta);
+  const dbiBoletaShare = marketSharePair(mcpTotals.reserva_boleta_dbi, okpTotals.reserva_boleta_dbi);
+  const dbiPackShare = marketSharePair(mcpTotals.reserva_pack_dbi, okpTotals.reserva_pack_dbi);
+  const qBoletaShare = marketSharePair(mcpTotals.reserva_boleta_q, okpTotals.reserva_boleta_q);
+  const qPackShare = marketSharePair(mcpTotals.reserva_pack_q, okpTotals.reserva_pack_q);
 
   return (
     <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
@@ -463,9 +556,66 @@ function MarketColumn({ dashboard }: { dashboard: OperationalDashboardViewModel 
         <p className="mt-1 text-xs text-slate-500">Barras calculadas solo con MCP + OKP.</p>
       </div>
       <div className="mt-4 grid gap-3">
-        <ShareBar label="Venta total operacional" mcp={marketShare?.venta_total_operacional.MCP ?? 0} okp={marketShare?.venta_total_operacional.OKP ?? 0} total={formatCurrency(totals.venta_total_operacional)} />
-        <ShareBar label="DBI reservas total" mcp={marketShare?.reserva_total_dbi.MCP ?? 0} okp={marketShare?.reserva_total_dbi.OKP ?? 0} total={formatInteger(totals.reserva_total_dbi)} />
-        <ShareBar label="Q reservas total" mcp={marketShare?.reserva_total_q.MCP ?? 0} okp={marketShare?.reserva_total_q.OKP ?? 0} total={formatInteger(totals.reserva_total_q)} />
+        <ShareBar
+          details={[
+            {
+              label: "Venta boleta",
+              total: formatCurrency(mcpTotals.reserva_boleta_venta + okpTotals.reserva_boleta_venta),
+              ...ventaBoletaShare,
+            },
+            {
+              label: "Venta pack",
+              total: formatCurrency(mcpTotals.pack_vendido_venta + okpTotals.pack_vendido_venta),
+              ...ventaPackShare,
+            },
+          ]}
+          expanded={expandedCards.venta}
+          label="Venta total operacional"
+          mcp={marketShare?.venta_total_operacional.MCP ?? 0}
+          okp={marketShare?.venta_total_operacional.OKP ?? 0}
+          onToggle={() => toggleCard("venta")}
+          total={formatCurrency(totals.venta_total_operacional)}
+        />
+        <ShareBar
+          details={[
+            {
+              label: "DBI reservas boleta",
+              total: formatInteger(mcpTotals.reserva_boleta_dbi + okpTotals.reserva_boleta_dbi),
+              ...dbiBoletaShare,
+            },
+            {
+              label: "DBI reservas pack",
+              total: formatInteger(mcpTotals.reserva_pack_dbi + okpTotals.reserva_pack_dbi),
+              ...dbiPackShare,
+            },
+          ]}
+          expanded={expandedCards.dbi}
+          label="DBI reservas total"
+          mcp={marketShare?.reserva_total_dbi.MCP ?? 0}
+          okp={marketShare?.reserva_total_dbi.OKP ?? 0}
+          onToggle={() => toggleCard("dbi")}
+          total={formatInteger(totals.reserva_total_dbi)}
+        />
+        <ShareBar
+          details={[
+            {
+              label: "Q reservas boleta",
+              total: formatInteger(mcpTotals.reserva_boleta_q + okpTotals.reserva_boleta_q),
+              ...qBoletaShare,
+            },
+            {
+              label: "Q reservas pack",
+              total: formatInteger(mcpTotals.reserva_pack_q + okpTotals.reserva_pack_q),
+              ...qPackShare,
+            },
+          ]}
+          expanded={expandedCards.q}
+          label="Q reservas total"
+          mcp={marketShare?.reserva_total_q.MCP ?? 0}
+          okp={marketShare?.reserva_total_q.OKP ?? 0}
+          onToggle={() => toggleCard("q")}
+          total={formatInteger(totals.reserva_total_q)}
+        />
       </div>
     </section>
   );
@@ -820,27 +970,68 @@ function ParkingSummaryCards({
 
 function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: DateRange) => void; range: DateRange }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [customMode, setCustomMode] = useState<CustomRangeMode>(getCustomRangeMode(range));
   const [customFrom, setCustomFrom] = useState(range.from);
   const [customTo, setCustomTo] = useState(range.to);
   const [customError, setCustomError] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const popoverId = "dashboard-operacional-periodo-popover";
   const selectedLabel = getDateRangeLabel(range.preset);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+
+      if (!(target instanceof Node)) return;
+      if (rootRef.current?.contains(target)) return;
+
+      setIsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+    };
+  }, [isOpen]);
+
+  const openCustomPanel = useCallback(() => {
+    setCustomMode(getCustomRangeMode({ from: range.from, to: range.to }));
+    setCustomFrom(range.from);
+    setCustomTo(range.to);
+    setCustomError(null);
+    setIsOpen(true);
+  }, [range.from, range.to]);
 
   const selectPreset = useCallback((preset: DateRangePreset) => {
     if (preset === "custom") {
-      setCustomFrom(range.from);
-      setCustomTo(range.to);
-      setCustomError(null);
-      setIsOpen(true);
+      openCustomPanel();
       return;
     }
 
     onApplyRange(getPresetDateRange(preset));
     setCustomError(null);
     setIsOpen(false);
-  }, [onApplyRange, range.from, range.to]);
+  }, [onApplyRange, openCustomPanel]);
+
+  const selectCustomMode = useCallback((mode: CustomRangeMode) => {
+    setCustomMode(mode);
+    setCustomError(null);
+
+    if (mode === "single") {
+      setCustomTo(customFrom);
+      return;
+    }
+
+    setCustomTo((current) => current || customFrom);
+  }, [customFrom]);
 
   const applyCustomRange = useCallback(() => {
-    const nextRange: DateRange = { from: customFrom, preset: "custom", to: customTo };
+    const nextRange: DateRange = customMode === "single"
+      ? { from: customFrom, preset: "custom", to: customFrom }
+      : { from: customFrom, preset: "custom", to: customTo };
 
     if (!isValidDateRange(nextRange)) {
       setCustomError("El rango personalizado debe tener Desde menor o igual a Hasta.");
@@ -850,16 +1041,24 @@ function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: Date
     setCustomError(null);
     setIsOpen(false);
     onApplyRange(nextRange);
-  }, [customFrom, customTo, onApplyRange]);
+  }, [customFrom, customMode, customTo, onApplyRange]);
 
   return (
-    <div className="relative grid min-w-0 gap-3 text-sm font-medium text-navy sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end">
+    <div className="relative grid min-w-0 gap-3 text-sm font-medium text-navy sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end" ref={rootRef}>
       <div className="grid min-w-0 gap-1">
         <span>Periodo</span>
         <button
+          aria-controls={popoverId}
           aria-expanded={isOpen}
           className="flex h-10 w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-[#cbd8e3] bg-white px-3 text-left text-sm text-navy outline-none transition hover:bg-[#f8fbfd] focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
-          onClick={() => setIsOpen((current) => !current)}
+          onClick={() => {
+            if (!isOpen && range.preset === "custom") {
+              openCustomPanel();
+              return;
+            }
+
+            setIsOpen((current) => !current);
+          }}
           type="button"
         >
           <span className="min-w-0 truncate">{selectedLabel}</span>
@@ -872,9 +1071,9 @@ function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: Date
       </div>
 
       {isOpen ? (
-        <div className="absolute left-0 top-full z-30 mt-2 w-[min(92vw,34rem)] overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-xl">
-          <div className="grid gap-0 sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <div className="border-b border-[#e4edf4] p-2 sm:border-b-0 sm:border-r">
+        <div className="absolute right-0 top-full z-30 mt-2 w-[calc(100vw-2rem)] max-w-[34rem] overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-xl sm:w-[min(calc(100vw-2rem),34rem)]" id={popoverId}>
+          <div className="grid max-h-[min(80vh,32rem)] gap-0 overflow-y-auto overflow-x-hidden md:grid-cols-[12rem_minmax(0,1fr)]">
+            <div className="border-b border-[#e4edf4] p-2 md:border-b-0 md:border-r">
               {dateRangePresets.map((preset) => (
                 <button
                   className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${range.preset === preset.value ? "bg-[#e8f4f8] font-semibold text-navy" : "text-slate-600 hover:bg-[#f8fbfd]"}`}
@@ -888,27 +1087,62 @@ function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: Date
             </div>
             <div className="grid min-w-0 gap-3 p-3">
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Personalizado</p>
-              <label className="grid gap-1 text-sm font-medium text-navy">
-                Desde
-                <input
-                  className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
-                  onChange={(event) => setCustomFrom(event.target.value)}
-                  type="date"
-                  value={customFrom}
-                />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-navy">
-                Hasta
-                <input
-                  className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
-                  onChange={(event) => setCustomTo(event.target.value)}
-                  type="date"
-                  value={customTo}
-                />
-              </label>
+              <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f1f6f9] p-1" aria-label="Modo de periodo personalizado">
+                <button
+                  aria-pressed={customMode === "single"}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold transition ${customMode === "single" ? "bg-white text-navy shadow-sm" : "text-slate-600 hover:text-navy"}`}
+                  onClick={() => selectCustomMode("single")}
+                  type="button"
+                >
+                  {"Un d\u00eda"}
+                </button>
+                <button
+                  aria-pressed={customMode === "range"}
+                  className={`rounded-md px-3 py-2 text-sm font-semibold transition ${customMode === "range" ? "bg-white text-navy shadow-sm" : "text-slate-600 hover:text-navy"}`}
+                  onClick={() => selectCustomMode("range")}
+                  type="button"
+                >
+                  Rango de fechas
+                </button>
+              </div>
+              {customMode === "single" ? (
+                <label className="grid gap-1 text-sm font-medium text-navy">
+                  Fecha
+                  <input
+                    className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
+                    onChange={(event) => {
+                      setCustomFrom(event.target.value);
+                      setCustomTo(event.target.value);
+                    }}
+                    type="date"
+                    value={customFrom}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="grid gap-1 text-sm font-medium text-navy">
+                    Desde
+                    <input
+                      className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
+                      onChange={(event) => setCustomFrom(event.target.value)}
+                      type="date"
+                      value={customFrom}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-medium text-navy">
+                    Hasta
+                    <input
+                      className="h-10 min-w-0 rounded-lg border border-[#cbd8e3] bg-white px-3 text-sm text-navy outline-none focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40"
+                      onChange={(event) => setCustomTo(event.target.value)}
+                      type="date"
+                      value={customTo}
+                    />
+                  </label>
+                </>
+              )}
               {customError ? <p className="rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-2 text-xs font-medium text-[#8a4a00]">{customError}</p> : null}
               <button
-                className="h-10 rounded-lg bg-navy px-3 text-sm font-semibold text-white transition hover:bg-[#13354b]"
+                className="h-10 w-full rounded-lg bg-navy px-3 text-sm font-semibold text-white transition hover:bg-[#13354b]"
                 onClick={applyCustomRange}
                 type="button"
               >

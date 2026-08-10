@@ -102,6 +102,51 @@ test("D3. custom invalido no ejecuta carga", () => {
   assert.match(client, /if \(!isValidDateRange\(range\)\) \{\s*setError\("El periodo seleccionado no es valido\."\);\s*return false;\s*}/);
 });
 
+test("D3a. personalizado abre modo Un dia cuando from y to coinciden", () => {
+  assert.match(client, /type CustomRangeMode = "single" \| "range"/);
+  assert.match(client, /function getCustomRangeMode\(range: Pick<DateRange, "from" \| "to">\): CustomRangeMode/);
+  assert.match(client, /return range\.from === range\.to \? "single" : "range"/);
+  assert.match(client, /const \[customMode, setCustomMode\] = useState<CustomRangeMode>\(getCustomRangeMode\(range\)\)/);
+  assert.match(client, /setCustomMode\(getCustomRangeMode\(\{ from: range\.from, to: range\.to \}\)\)/);
+});
+
+test("D3b. personalizado muestra selector de modo accesible", () => {
+  assert.match(client, /aria-label="Modo de periodo personalizado"/);
+  assert.match(client, /aria-pressed=\{customMode === "single"\}/);
+  assert.match(client, /aria-pressed=\{customMode === "range"\}/);
+  assert.match(client, /\{"Un d\\u00eda"\}/);
+  assert.match(client, /Rango de fechas/);
+  assert.match(client, /grid grid-cols-2 gap-1 rounded-lg bg-\[#f1f6f9\] p-1/);
+  assert.match(client, /bg-white text-navy shadow-sm/);
+});
+
+test("D3c. modo Un dia muestra una fecha y aplica from igual a to", () => {
+  assert.match(client, /customMode === "single" \? \(/);
+  assert.match(client, /Fecha[\s\S]*type="date"[\s\S]*value=\{customFrom\}/);
+  assert.match(client, /setCustomFrom\(event\.target\.value\);\s*setCustomTo\(event\.target\.value\);/);
+  assert.match(client, /customMode === "single"[\s\S]*\? \{ from: customFrom, preset: "custom", to: customFrom \}/);
+});
+
+test("D3d. modo rango conserva Desde Hasta y validacion existente", () => {
+  assert.match(client, /customMode === "single" \? \([\s\S]*\) : \(/);
+  assert.match(client, /Desde[\s\S]*onChange=\{\(event\) => setCustomFrom\(event\.target\.value\)\}/);
+  assert.match(client, /Hasta[\s\S]*onChange=\{\(event\) => setCustomTo\(event\.target\.value\)\}/);
+  assert.match(client, /: \{ from: customFrom, preset: "custom", to: customTo \}/);
+  assert.match(client, /El rango personalizado debe tener Desde menor o igual a Hasta\./);
+});
+
+test("D3e. cambiar entre modos mantiene contexto de fechas", () => {
+  assert.match(client, /const selectCustomMode = useCallback\(\(mode: CustomRangeMode\) => \{/);
+  assert.match(client, /if \(mode === "single"\) \{\s*setCustomTo\(customFrom\);\s*return;\s*\}/);
+  assert.match(client, /setCustomTo\(\(current\) => current \|\| customFrom\)/);
+});
+
+test("D3f. abrir personalizado desde selector respeta rango actual", () => {
+  assert.match(client, /const openCustomPanel = useCallback\(\(\) => \{/);
+  assert.match(client, /setCustomFrom\(range\.from\);\s*setCustomTo\(range\.to\);/);
+  assert.match(client, /if \(!isOpen && range\.preset === "custom"\)/);
+  assert.match(client, /openCustomPanel\(\);\s*return;/);
+});
 test("D4. refresh operacional reutiliza rango activo", () => {
   assert.match(client, /const \[dateRange, setDateRange\] = useState<DateRange>/);
   assert.match(client, /const loadByRange = useCallback/);
@@ -115,7 +160,7 @@ test("D5. selector de periodo alinea rango y accion sin overflow", () => {
   assert.match(client, /flex h-10 min-w-0 items-center rounded-lg border border-transparent text-sm font-normal text-slate-500 sm:whitespace-nowrap/);
   assert.match(client, /grid min-w-0 gap-3 lg:grid-cols-\[minmax\(0,1fr\)_auto\] lg:items-end/);
   assert.match(client, /<DateRangeSelector onApplyRange=\{loadByRange\} range=\{dateRange\} \/>[\s\S]*<ActualizarDatosOperacionalesControl/);
-  assert.match(client, /w-\[min\(92vw,34rem\)\]/);
+  assert.match(client, /w-\[calc\(100vw-2rem\)\] max-w-\[34rem\]/);
   assert.doesNotMatch(client, /overflow-x-auto|min-w-\[720px\]|min-w-\[1180px\]/);
 });
 
@@ -134,6 +179,56 @@ test("D6. boton compacto reemplaza accion textual sin duplicar flujo", () => {
   assert.doesNotMatch(client, /method: "POST"|\/api\/orquestador\/operaciones\/actualizar-datos/);
 });
 
+test("D7. popover de Periodo se mantiene dentro del viewport", () => {
+  assert.match(client, /absolute right-0 top-full/);
+  assert.match(client, /w-\[calc\(100vw-2rem\)\] max-w-\[34rem\]/);
+  assert.match(client, /sm:w-\[min\(calc\(100vw-2rem\),34rem\)\]/);
+  assert.match(client, /overflow-y-auto overflow-x-hidden/);
+  assert.match(client, /max-h-\[min\(80vh,32rem\)\]/);
+  assert.doesNotMatch(client, /w-\[min\(92vw,34rem\)\]/);
+});
+
+test("D8. popover de Periodo pasa de una a dos columnas sin overflow", () => {
+  assert.match(client, /grid max-h-\[min\(80vh,32rem\)\] gap-0 overflow-y-auto overflow-x-hidden md:grid-cols-\[12rem_minmax\(0,1fr\)\]/);
+  assert.match(client, /border-b border-\[#e4edf4\] p-2 md:border-b-0 md:border-r/);
+  assert.match(client, /className="h-10 w-full rounded-lg bg-navy px-3 text-sm font-semibold text-white transition hover:bg-\[#13354b\]"/);
+  assert.doesNotMatch(client, /sm:grid-cols-\[12rem_minmax\(0,1fr\)\]/);
+});
+test("D9. Periodo cierra con click outside usando listener seguro", () => {
+  assert.match(client, /const rootRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(client, /const popoverId = "dashboard-operacional-periodo-popover"/);
+  assert.match(client, /useEffect\(\(\) => \{\s*if \(!isOpen\) return;/);
+  assert.match(client, /document\.addEventListener\("pointerdown", closeOnOutsidePointerDown\)/);
+  assert.match(client, /document\.removeEventListener\("pointerdown", closeOnOutsidePointerDown\)/);
+  assert.match(client, /setIsOpen\(false\)/);
+});
+
+test("D10. click dentro del popover o trigger no cierra Periodo", () => {
+  assert.match(client, /ref=\{rootRef\}/);
+  assert.match(client, /if \(rootRef\.current\?\.contains\(target\)\) return/);
+  assert.match(client, /aria-controls=\{popoverId\}/);
+  assert.match(client, /id=\{popoverId\}/);
+  assert.match(client, /setIsOpen\(\(current\) => !current\)/);
+});
+
+test("D11. click en controles internos de Personalizado conserva interaccion", () => {
+  assert.match(client, /onClick=\{\(\) => selectCustomMode\("single"\)\}/);
+  assert.match(client, /onClick=\{\(\) => selectCustomMode\("range"\)\}/);
+  assert.match(client, /Fecha[\s\S]*type="date"[\s\S]*value=\{customFrom\}/);
+  assert.match(client, /Desde[\s\S]*type="date"[\s\S]*value=\{customFrom\}/);
+  assert.match(client, /Hasta[\s\S]*type="date"[\s\S]*value=\{customTo\}/);
+  assert.match(client, /onClick=\{applyCustomRange\}/);
+});
+
+test("D12. click outside no cambia responsive presets ni aplicar", () => {
+  assert.match(client, /absolute right-0 top-full/);
+  assert.match(client, /w-\[calc\(100vw-2rem\)\] max-w-\[34rem\]/);
+  assert.match(client, /overflow-y-auto overflow-x-hidden/);
+  assert.match(client, /dateRangePresets\.map/);
+  assert.match(client, /onClick=\{\(\) => selectPreset\(preset\.value\)\}/);
+  assert.match(client, /onApplyRange\(getPresetDateRange\(preset\)\)/);
+  assert.match(client, /onApplyRange\(nextRange\)/);
+});
 test("E. no consulta Supabase ni SQLite desde React", () => {
   assert.doesNotMatch(client, /createClient|SUPABASE_SERVICE_ROLE_KEY|\.rpc\(|sqlite|SQLite|\.\s*from\(\s*["']|schema\("ops_orchestrator"\)/);
 });
@@ -151,7 +246,10 @@ test("G. comparativa MCP OKP y Market size", () => {
   assert.match(client, /marketShare\?\.venta_total_operacional/);
   assert.match(client, /marketShare\?\.reserva_total_dbi/);
   assert.match(client, /marketShare\?\.reserva_total_q/);
-  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>[\s\S]*aria-label=\{`\$\{label\} OKP vs MCP`\}[\s\S]*<p className="text-left">OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p className="text-right">MCP \{formatPercent\(safeMcp\)\}<\/p>/);
+  assert.match(client, /<p className="mt-1 text-lg font-semibold text-navy">\{total\}<\/p>/);
+  assert.match(client, /<ShareDistribution label=\{label\} mcp=\{mcp\} okp=\{okp\} \/>/);
+  assert.match(client, /aria-label=\{`\$\{label\} OKP vs MCP`\}/);
+  assert.match(client, /<p className="text-left">OKP \{formatPercent\(safeOkp\)\}<\/p>[\s\S]*<p className="text-right">MCP \{formatPercent\(safeMcp\)\}<\/p>/);
   assert.doesNotMatch(client, /OTRO existe en los totales por grupo/);
 });
 
@@ -165,7 +263,7 @@ test("G1. barras Market size conectan colores con porcentajes correctos", () => 
   assert.doesNotMatch(client, /<div className="bg-clay" style=\{\{ width: `\$\{safeOkp\}%` \}\} \/>/);
   assert.doesNotMatch(client, /w-1\/4|w-3\/4|w-\[[0-9]+%\]/);
   for (const label of ["Venta total operacional", "DBI reservas total", "Q reservas total"]) {
-    assert.match(client, new RegExp(`ShareBar label="${label}"`));
+    assert.match(client, new RegExp(`<ShareBar[\\s\\S]*?label="${label}"`));
   }
 });
 
@@ -184,14 +282,76 @@ test("G2. calculo visual de barras cubre proporciones y limites", () => {
 });
 
 test("G3. porcentajes Market size quedan en una fila desde mobile", () => {
-  assert.match(client, /<div className="mt-2 flex w-full items-center justify-between gap-2 text-xs text-slate-500">/);
+  assert.match(client, /flex w-full items-center justify-between gap-2 text-slate-500/);
   assert.match(client, /<p className="text-left">OKP \{formatPercent\(safeOkp\)\}<\/p>/);
   assert.match(client, /<p className="text-right">MCP \{formatPercent\(safeMcp\)\}<\/p>/);
   assert.doesNotMatch(client, /mt-2 flex flex-col gap-1 text-xs text-slate-500 sm:flex-row/);
   assert.doesNotMatch(client, /sm:justify-between[\s\S]{0,140}OKP \{formatPercent\(safeOkp\)\}/);
   for (const label of ["Venta total operacional", "DBI reservas total", "Q reservas total"]) {
-    assert.match(client, new RegExp(`ShareBar label="${label}"`));
+    assert.match(client, new RegExp(`<ShareBar[\\s\\S]*?label="${label}"`));
   }
+});
+test("G4. tarjetas Market size son expandibles e independientes", () => {
+  assert.match(client, /import \{ ChevronDown, ChevronUp \} from "lucide-react"/);
+  assert.match(client, /const \[expandedCards, setExpandedCards\] = useState\(\{\s*dbi: false,\s*q: false,\s*venta: false,\s*\}\)/);
+  assert.match(client, /const toggleCard = \(card: keyof typeof expandedCards\) => \{/);
+  assert.match(client, /setExpandedCards\(\(current\) => \(\{ \.\.\.current, \[card\]: !current\[card\] \}\)\)/);
+  assert.match(client, /expanded=\{expandedCards\.venta\}[\s\S]*onToggle=\{\(\) => toggleCard\("venta"\)\}/);
+  assert.match(client, /expanded=\{expandedCards\.dbi\}[\s\S]*onToggle=\{\(\) => toggleCard\("dbi"\)\}/);
+  assert.match(client, /expanded=\{expandedCards\.q\}[\s\S]*onToggle=\{\(\) => toggleCard\("q"\)\}/);
+});
+
+test("G5. chevron Market size es accesible y cambia down/up", () => {
+  assert.match(client, /aria-controls=\{detailId\}/);
+  assert.match(client, /aria-expanded=\{expanded\}/);
+  assert.match(client, /aria-label=\{expanded \? `Ocultar detalle de \$\{label\}` : `Ver detalle de \$\{label\}`\}/);
+  assert.match(client, /<ChevronUp aria-hidden="true" className="h-4 w-4" \/>/);
+  assert.match(client, /<ChevronDown aria-hidden="true" className="h-4 w-4" \/>/);
+  assert.match(client, /focus:outline-none focus:ring-2 focus:ring-sea focus:ring-offset-2/);
+  assert.match(client, /type="button"/);
+});
+
+test("G6. detalle Market size usa componentes reales de venta DBI y Q", () => {
+  for (const label of ["Venta boleta", "Venta pack", "DBI reservas boleta", "DBI reservas pack", "Q reservas boleta", "Q reservas pack"]) {
+    assert.equal(client.includes(`label: "${label}"`), true);
+  }
+  for (const field of [
+    "reserva_boleta_venta",
+    "pack_vendido_venta",
+    "reserva_boleta_dbi",
+    "reserva_pack_dbi",
+    "reserva_boleta_q",
+    "reserva_pack_q",
+  ]) {
+    assert.match(client, new RegExp(`marketSharePair\\(mcpTotals\\.${field}, okpTotals\\.${field}\\)`));
+  }
+  assert.match(client, /formatCurrency\(mcpTotals\.reserva_boleta_venta \+ okpTotals\.reserva_boleta_venta\)/);
+  assert.match(client, /formatCurrency\(mcpTotals\.pack_vendido_venta \+ okpTotals\.pack_vendido_venta\)/);
+  assert.match(client, /formatInteger\(mcpTotals\.reserva_boleta_dbi \+ okpTotals\.reserva_boleta_dbi\)/);
+  assert.match(client, /formatInteger\(mcpTotals\.reserva_pack_dbi \+ okpTotals\.reserva_pack_dbi\)/);
+  assert.match(client, /formatInteger\(mcpTotals\.reserva_boleta_q \+ okpTotals\.reserva_boleta_q\)/);
+  assert.match(client, /formatInteger\(mcpTotals\.reserva_pack_q \+ okpTotals\.reserva_pack_q\)/);
+});
+
+test("G7. detalle Market size evita NaN e Infinity con denominador cero", () => {
+  assert.match(client, /function marketSharePair\(mcpValue: number, okpValue: number\)/);
+  assert.match(client, /const total = mcpValue \+ okpValue/);
+  assert.match(client, /mcp: total > 0 \? \(mcpValue \/ total\) \* 100 : 0/);
+  assert.match(client, /okp: total > 0 \? \(okpValue \/ total\) \* 100 : 0/);
+  assert.match(client, /const safeMcp = Number\.isFinite\(mcp\) \? Math\.max\(0, Math\.min\(100, mcp\)\) : 0/);
+  assert.match(client, /const safeOkp = Number\.isFinite\(okp\) \? Math\.max\(0, Math\.min\(100, okp\)\) : 0/);
+});
+
+test("G8. detalle expandido mantiene estetica compacta y mobile-safe", () => {
+  assert.match(client, /<ShareDistribution label=\{label\} mcp=\{mcp\} okp=\{okp\} \/>/);
+  assert.match(client, /<ShareDistribution compact label=\{detail\.label\} mcp=\{detail\.mcp\} okp=\{detail\.okp\} \/>/);
+  assert.match(client, /className="mt-4 grid gap-2 border-t border-\[#e4edf4\] pl-2 pt-3" id=\{detailId\}/);
+  assert.match(client, /className="flex items-start justify-between gap-3"/);
+  assert.match(client, /compact \? "mt-2 h-2" : "mt-3 h-3"/);
+  assert.match(client, /compact \? "mt-1 text-\[11px\]" : "mt-2 text-xs"/);
+  assert.match(client, /text-\[11px\] font-medium uppercase/);
+  assert.match(client, /text-sm font-medium text-navy/);
+  assert.doesNotMatch(client, /overflow-x-auto[\s\S]{0,220}Market size/);
 });
 test("H. metricas principales solicitadas visibles", () => {
   for (const token of [
@@ -245,7 +405,9 @@ test("I1. drawer de detalle conserva los desgloses operativos", () => {
   assert.match(client, /function ParkingSummaryToggle/);
   assert.equal(client.includes('aria-label={`Ver detalle de ${parkingName}`}'), true);
   assert.match(client, /Ver detalle/);
-  assert.doesNotMatch(client, /Ocultar detalle|aria-expanded={isExpanded}|aria-controls={detailId}/);
+  const drawerMatch = client.match(/function ParkingDetailDrawer[\s\S]*?function ParkingSummaryToggle/);
+  assert.ok(drawerMatch);
+  assert.doesNotMatch(drawerMatch[0], /Ocultar detalle|aria-expanded={isExpanded}|aria-controls={detailId}/);
   assert.match(client, /role="dialog"/);
   assert.match(client, /aria-modal="true"/);
   assert.match(client, /Cerrar detalle operacional/);
@@ -454,9 +616,9 @@ test("Q2. columnas usan orden movil y escritorio sin duplicar contenido", () => 
   assert.equal([...client.matchAll(/<MarketColumn dashboard=\{dashboard\}/g)].length, 1);
   assert.equal([...client.matchAll(/<SystemColumn label="MCP"/g)].length, 1);
   assert.match(client, /Total \/ Market size/);
-  assert.match(client, /ShareBar label="Venta total operacional"/);
-  assert.match(client, /ShareBar label="DBI reservas total"/);
-  assert.match(client, /ShareBar label="Q reservas total"/);
+  assert.match(client, /<ShareBar[\s\S]*?label="Venta total operacional"/);
+  assert.match(client, /<ShareBar[\s\S]*?label="DBI reservas total"/);
+  assert.match(client, /<ShareBar[\s\S]*?label="Q reservas total"/);
 });
 
 test("Q3. bloques mantienen estetica sobria sin colores fuertes por sistema", () => {
@@ -572,9 +734,21 @@ test("S. anticipacion y estadia muestran unidad dias", () => {
   assert.match(client, /<SystemColumn label="OKP"/);
   assert.match(client, /<SystemColumn label="MCP"/);
   assert.doesNotMatch(client, /formatDays\(totals\.precio|formatDays\(totals\.venta|formatDays\(totals\.reserva|formatDays\(totals\.pack_vendido/);
-  assert.doesNotMatch(client + formatters, /No disponible dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¾ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as/);
+  assert.doesNotMatch(client + formatters, /No disponible d.as/);
+  const formatDaysForTest = (value) => {
+    if (!Number.isFinite(value)) return "No disponible";
+    return `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(value)} ${value === 1 ? "d.a" : "d.as"}`;
+  };
+  assert.equal(formatDaysForTest(1), "1 d.a");
+  assert.equal(formatDaysForTest(2.3), "2,3 d.as");
+  assert.equal(formatDaysForTest(0), "0 d.as");
+  assert.equal(formatDaysForTest(0.5), "0,5 d.as");
+  assert.equal(formatDaysForTest(null), "No disponible");
+  assert.equal(formatDaysForTest(undefined), "No disponible");
+  assert.equal(formatDaysForTest(Number.NaN), "No disponible");
+  assert.equal(formatDaysForTest(Number.POSITIVE_INFINITY), "No disponible");
+  assert.notEqual(formatDaysForTest(null), "No disponible d.as");
 });
-
 test("T. formatDays singular plural y valores invalidos", () => {
   const decimalFormatterForTest = new Intl.NumberFormat("es-CL", {
     maximumFractionDigits: 2,
@@ -583,19 +757,20 @@ test("T. formatDays singular plural y valores invalidos", () => {
   const formatDaysForTest = (value) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return "No disponible";
 
-    return `${decimalFormatterForTest.format(value)} ${value === 1 ? "dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­a" : "dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as"}`;
+    return `${decimalFormatterForTest.format(value)} ${value === 1 ? "d.a" : "d.as"}`;
   };
 
-  assert.equal(formatDaysForTest(1), "1 dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­a");
-  assert.equal(formatDaysForTest(2.3), "2,3 dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as");
-  assert.equal(formatDaysForTest(0), "0 dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as");
-  assert.equal(formatDaysForTest(0.5), "0,5 dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as");
+  assert.equal(formatDaysForTest(1), "1 d.a");
+  assert.equal(formatDaysForTest(2.3), "2,3 d.as");
+  assert.equal(formatDaysForTest(0), "0 d.as");
+  assert.equal(formatDaysForTest(0.5), "0,5 d.as");
   assert.equal(formatDaysForTest(null), "No disponible");
   assert.equal(formatDaysForTest(undefined), "No disponible");
   assert.equal(formatDaysForTest(Number.NaN), "No disponible");
   assert.equal(formatDaysForTest(Number.POSITIVE_INFINITY), "No disponible");
-  assert.notEqual(formatDaysForTest(null), "No disponible dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­as");
-});test("U. control exige confirmacion y bloquea doble creacion", () => {
+  assert.notEqual(formatDaysForTest(null), "No disponible d.as");
+});
+test("U. control exige confirmacion y bloquea doble creacion", () => {
   assert.match(compositeControl, /setIsConfirming\(true\)/);
   assert.match(compositeControl, /Confirmacion requerida/);
   assert.match(compositeControl, /Confirmar ejecucion/);
