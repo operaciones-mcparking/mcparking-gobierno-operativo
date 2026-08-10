@@ -67,7 +67,6 @@ function StepIcon({ status }: { status: CompositeRunStepStatus }) {
   return <CircleDashed aria-hidden="true" className={className} />;
 }
 
-
 function readableStepLabel(label: string) {
   if (/reservas/i.test(label)) return "Banco de Reservas";
   if (/packs/i.test(label)) return "Banco de Packs";
@@ -173,42 +172,24 @@ export function CompositeRunViewer({
         </div>
       </div>
 
-      <ol className={compact ? "mt-3 divide-y divide-[#d6e1ea] rounded-lg border border-[#d6e1ea] bg-[#f8fbfd]" : "mt-4 grid gap-3 md:grid-cols-3"}>
+      <ol className={compact ? "mt-3 divide-y divide-[#d6e1ea] rounded-lg border border-[#d6e1ea] bg-[#f8fbfd]" : "mt-4 divide-y divide-[#d6e1ea] rounded-lg border border-[#d6e1ea] bg-[#f8fbfd]"}>
         {run.steps.map((step) => (
-          <li key={step.step} className={compact ? "flex min-w-0 flex-col gap-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between" : "rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] p-3"}>
-            <div className={compact ? "flex min-w-0 items-center gap-2" : "flex items-start justify-between gap-3"}>
-              <div className="min-w-0">
-                {!compact ? <p className="text-xs font-medium text-slate-500">Paso {step.step}</p> : null}
-                <p className={compact ? "break-words font-medium text-navy" : "mt-1 break-words font-medium text-navy"}>{readableStepLabel(step.label)}</p>
-              </div>
-              {!compact ? (
-                <span className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
-                  <StepIcon status={step.status} />
-                  {statusLabels[step.status]}
-                </span>
-              ) : null}
+          <li
+            key={step.step}
+            className="grid gap-2 px-3 py-2 sm:grid-cols-[minmax(14rem,1fr)_9rem_5rem] sm:items-center sm:gap-4"
+          >
+            <div className="min-w-0">
+              {!compact ? <p className="text-xs font-medium text-slate-500">Paso {step.step}</p> : null}
+              <p className={compact ? "truncate whitespace-nowrap font-medium text-navy" : "mt-0.5 truncate whitespace-nowrap font-medium text-navy"}>{readableStepLabel(step.label)}</p>
             </div>
-
-            {compact ? (
+            <div className="sm:flex sm:justify-start">
               <span className={`inline-flex w-fit items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium ${toneClasses[step.status]}`}>
                 <StepIcon status={step.status} />
                 {statusLabels[step.status]}
               </span>
-            ) : (
-              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs leading-5">
-                <dt className="text-slate-500">Job</dt>
-                <dd className="break-words text-right font-medium text-navy">{shortCompositeJobId(step.job_id)}</dd>
-                <dt className="text-slate-500">Worker</dt>
-                <dd className="break-words text-right">{step.worker_id ?? "-"}</dd>
-                <dt className="text-slate-500">Intentos</dt>
-                <dd className="text-right">{step.attempts ?? "-"}</dd>
-                <dt className="text-slate-500">Duracion</dt>
-                <dd className="text-right">{formatDurationHuman(step.duration_seconds)}</dd>
-              </dl>
-            )}
-
-            {step.safe_message ? <p className={compact ? "break-words text-xs leading-5 sm:basis-full" : "mt-3 break-words text-xs leading-5"}>{step.safe_message}</p> : null}
-            {step.safe_error ? <p className={compact ? "max-h-24 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00] sm:basis-full" : "mt-3 max-h-28 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00]"}>{step.safe_error}</p> : null}
+            </div>
+            <p className="text-xs font-medium text-slate-600 sm:text-right">{formatDurationHuman(step.duration_seconds)}</p>
+            {step.safe_error ? <p className="max-h-28 overflow-y-auto break-words text-xs font-medium leading-5 text-[#8a4a00] sm:col-span-3">{step.safe_error}</p> : null}
           </li>
         ))}
       </ol>

@@ -306,10 +306,10 @@ test("AG2. overlay compacto evita overflow y datos tecnicos principales", () => 
   assert.match(viewer, /Banco de Packs/);
   assert.match(viewer, /Metricas del Dashboard/);
   assert.match(viewer, /compact \? "mt-3 divide-y/);
-  assert.match(viewer, /compact \? "flex min-w-0 flex-col gap-2/);
-  assert.match(viewer, /!compact \? <p className="text-xs font-medium text-slate-500">Paso \{step\.step\}<\/p> : null/);
-  assert.match(viewer, /<dl className="mt-3 grid grid-cols-2/);
-  assert.match(viewer, /break-words/);
+  assert.match(viewer, /sm:grid-cols-\[minmax\(14rem,1fr\)_9rem_5rem\]/);
+  assert.match(viewer, /truncate whitespace-nowrap font-medium text-navy/);
+  assert.match(viewer, /sm:text-right/);
+  assert.doesNotMatch(viewer, /step\.safe_message/);
   assert.match(viewer, /max-h-28 overflow-y-auto break-words/);
 });
 
@@ -379,7 +379,7 @@ test("AG6. progreso compacto mantiene paso barra y estados visibles", () => {
   assert.match(viewer, /Ejecutando/);
   assert.match(viewer, /Pendiente/);
   assert.match(viewer, /Error/);
-  assert.match(viewer, /max-h-24 overflow-y-auto break-words text-xs font-medium leading-5 text-\[#8a4a00\]/);
+  assert.match(viewer, /max-h-28 overflow-y-auto break-words text-xs font-medium leading-5 text-\[#8a4a00\]/);
 });
 test("AH. status visible no depende solo del color", () => {
   assert.match(control, /statusLabel/);
