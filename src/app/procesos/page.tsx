@@ -122,6 +122,7 @@ function uniqueCreateProcessAreas(options: CreateProcessAreaOption[]) {
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
+const processListGridColumns = "xl:grid-cols-[minmax(320px,1fr)_180px_180px_120px_150px_150px]";
 type ProcesosPageProps = {
   searchParams?: Promise<{
     country_id?: string;
@@ -262,12 +263,12 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
             />
 
             <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
-              <div className="hidden grid-cols-[1.7fr_160px_160px_100px_100px_100px] border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid">
+              <div className={`hidden border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${processListGridColumns}`}>
                 <span>Proceso</span>
                 <span>Empresa duena</span>
                 <span>Operacion</span>
-                <span>Criticidad</span>
-                <span>Etapas</span>
+                <span className="text-center">Criticidad</span>
+                <span className="text-center">Etapas</span>
                 <span className="text-right">Accion</span>
               </div>
 
@@ -284,56 +285,54 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                       aria-label={`Expandir o contraer ${process.process_name}`}
                       className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe]"
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="grid min-w-0 flex-1 gap-3 xl:grid-cols-[1.7fr_160px_160px_100px_100px_100px] xl:items-center">
-                          <div className="min-w-0">
-                            <h3 className="text-base font-medium text-navy">
-                              {process.process_name}
-                            </h3>
-                            <p className="mt-1 line-clamp-1 text-sm text-slate-600">
-                              {process.definition ?? "Sin definicion"}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs text-slate-500 xl:hidden">Empresa duena</p>
-                            <p className="text-sm font-medium text-navy">
-                              {process.owner_company_name ?? process.company_name ?? "Sin empresa"}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-xs text-slate-500 xl:hidden">Operacion</p>
-                            <p className="text-sm text-slate-700">
-                              {process.area_name ?? "Sin tipo"}
-                            </p>
-                          </div>
-
-                          <div>
-                            <TypedBadge type="criticality" value={process.criticality} />
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            <ValueBadge tone="info">Etapas {process.subprocess_count}</ValueBadge>
-                            <ValueBadge tone="neutral">Roles {process.responsibility_count}</ValueBadge>
-                          </div>
-
-                          <div className="flex justify-start xl:justify-end">
-                            <ProcessDetailModal
-                              ownerRoleBySubprocess={ownerRoleBySubprocess}
-                              process={process}
-                              roleDictionary={roleDictionaryResult.data}
-                              stages={rows}
-                            />
-                          </div>
+                      <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 xl:items-center ${processListGridColumns}`}>
+                        <div className="min-w-0">
+                          <h3 className="text-base font-medium text-navy">
+                            {process.process_name}
+                          </h3>
+                          <p className="mt-1 line-clamp-1 text-sm text-slate-600">
+                            {process.definition ?? "Sin definicion"}
+                          </p>
                         </div>
-                        <span
-                          aria-hidden="true"
-                          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-lg font-medium leading-none text-navy shadow-sm transition group-hover/process:border-teal-200 group-hover/process:bg-teal-50 group-hover/process:text-teal-800"
-                        >
-                          <span className="group-open/process:hidden">+</span>
-                          <span className="hidden group-open/process:inline">-</span>
-                        </span>
+
+                        <div className="col-start-1 xl:col-auto">
+                          <p className="text-xs text-slate-500 xl:hidden">Empresa duena</p>
+                          <p className="text-sm font-medium text-navy">
+                            {process.owner_company_name ?? process.company_name ?? "Sin empresa"}
+                          </p>
+                        </div>
+
+                        <div className="col-start-1 xl:col-auto">
+                          <p className="text-xs text-slate-500 xl:hidden">Operacion</p>
+                          <p className="text-sm text-slate-700">
+                            {process.area_name ?? "Sin tipo"}
+                          </p>
+                        </div>
+
+                        <div className="col-start-1 xl:col-auto xl:flex xl:justify-center">
+                          <TypedBadge type="criticality" value={process.criticality} />
+                        </div>
+
+                        <div className="col-start-1 flex flex-wrap gap-2 xl:col-auto xl:justify-center">
+                          <ValueBadge tone="info">Etapas {process.subprocess_count}</ValueBadge>
+                          <ValueBadge tone="neutral">Roles {process.responsibility_count}</ValueBadge>
+                        </div>
+
+                        <div className="col-start-2 row-span-5 row-start-1 flex items-start justify-end gap-2 xl:col-auto xl:row-auto xl:items-center">
+                          <ProcessDetailModal
+                            ownerRoleBySubprocess={ownerRoleBySubprocess}
+                            process={process}
+                            roleDictionary={roleDictionaryResult.data}
+                            stages={rows}
+                          />
+                          <span
+                            aria-hidden="true"
+                            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-lg font-medium leading-none text-navy shadow-sm transition group-hover/process:border-teal-200 group-hover/process:bg-teal-50 group-hover/process:text-teal-800 xl:mt-0"
+                          >
+                            <span className="group-open/process:hidden">+</span>
+                            <span className="hidden group-open/process:inline">-</span>
+                          </span>
+                        </div>
                       </div>
                     </summary>
 
