@@ -13,6 +13,15 @@ type RunResponse = {
   run?: CompositeRunViewModel;
 };
 
+type ActiveRunResponse = RunResponse & {
+  active?: boolean;
+};
+
+type StartConflictResponse = RunResponse & {
+  activeRunId?: unknown;
+  code?: unknown;
+};
+
 const runStatuses = new Set(["ready", "running", "waiting", "succeeded", "failed", "cancelled"]);
 
 type CompositeOperationsStatus =
@@ -121,7 +130,7 @@ export function useCompositeOperationsRun() {
     window.localStorage.setItem(storageKey, runId);
   }, []);
 
-  const clearStoredRun = useCallback((_reason: "invalid_stored_run_id" | "recovery_404" | "user_close_result") => {
+  const clearStoredRun = useCallback((_reason: "global_active_empty" | "invalid_stored_run_id" | "recovery_404" | "terminal_run" | "user_close_result") => {
     window.localStorage.removeItem(storageKey);
   }, []);
 
@@ -240,6 +249,78 @@ export function useCompositeOperationsRun() {
     [clearStoredRun, persistRunId],
   );
 
+  const loadActiveRun = useCallback(async () => {
+    getControllerRef.current?.abort();
+    const controller = new AbortController();
+    getControllerRef.current = controller;
+
+    try {
+      const response = await fetch("/api/orquestador/operaciones/actualizar-datos/active", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+
+      if (!response.ok) {
+        const safeMessage = await readSafeError(response);
+        if (isMountedRef.current) {
+          setMessage(safeMessage);
+          setStatus(response.status === 401 || response.status === 403 ? "unauthorized" : "network_error");
+        }
+        return null;
+      }
+
+      const responseBody = (await response.json()) as ActiveRunResponse;
+      if (!responseBody.ok) {
+        if (isMountedRef.current) {
+          setMessage("No fue posible consultar la actualizacion operacional activa.");
+          setStatus("network_error");
+        }
+        return null;
+      }
+
+      if (!responseBody.active) {
+        clearStoredRun("global_active_empty");
+        if (isMountedRef.current) {
+          setRun(null);
+          setStatus("idle");
+          setMessage(null);
+        }
+        return null;
+      }
+
+      if (!isCompositeRunViewModel(responseBody.run)) {
+        if (isMountedRef.current) {
+          setMessage("No fue posible consultar la actualizacion operacional activa.");
+          setStatus("network_error");
+        }
+        return null;
+      }
+
+      persistRunId(responseBody.run.run_id);
+      if (isMountedRef.current) {
+        setRun(responseBody.run);
+        setStatus(statusFromRun(responseBody.run));
+        setMessage(null);
+      }
+      return responseBody.run;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return null;
+      }
+
+      if (isMountedRef.current) {
+        setMessage("No fue posible consultar la actualizacion operacional activa.");
+        setStatus("network_error");
+      }
+      return null;
+    } finally {
+      if (getControllerRef.current === controller) {
+        getControllerRef.current = null;
+      }
+    }
+  }, [clearStoredRun, persistRunId]);
+
   const advanceRun = useCallback(async (runId: string) => {
     if (!isValidUuid(runId) || isAdvancingRef.current) {
       return null;
@@ -257,6 +338,7 @@ export function useCompositeOperationsRun() {
         method: "POST",
         signal: controller.signal,
       });
+
 
       if (!response.ok) {
         const safeMessage = await readSafeError(response);
@@ -328,48 +410,68 @@ export function useCompositeOperationsRun() {
   useEffect(() => {
     isMountedRef.current = true;
 
-    const storedRunId = window.localStorage.getItem(storageKey);
-    const normalizedStoredRunId = storedRunId ? normalizeStoredRunId(storedRunId) : null;
-
-    if (normalizedStoredRunId) {
-      if (normalizedStoredRunId !== storedRunId) {
-        persistRunId(normalizedStoredRunId);
-      }
-
-      if (recoveryStartedRef.current) {
-        return () => {
-          isMountedRef.current = false;
-          stopRequests("effect_cleanup_after_duplicate_recovery");
-          recoveryStartedRef.current = false;
-        };
-      }
-
-      recoveryStartedRef.current = true;
-      setStatus("loading");
-      void loadRun(normalizedStoredRunId, { allowNotFoundReset: true }).then((loadedRun) => {
-        if (loadedRun && !isTerminalRun(loadedRun)) {
-          scheduleNext(loadedRun.run_id, 1000);
-        }
-      });
-    } else if (storedRunId) {
-      clearStoredRun("invalid_stored_run_id");
+    if (recoveryStartedRef.current) {
+      return () => {
+        isMountedRef.current = false;
+        stopRequests("effect_cleanup_after_duplicate_recovery");
+        recoveryStartedRef.current = false;
+      };
     }
+
+    recoveryStartedRef.current = true;
+    setStatus("loading");
+    void loadActiveRun().then((activeRun) => {
+      if (activeRun && !isTerminalRun(activeRun)) {
+        scheduleNext(activeRun.run_id, 1000);
+        return;
+      }
+
+      if (activeRun && isTerminalRun(activeRun)) {
+        clearStoredRun("terminal_run");
+        return;
+      }
+
+      const storedRunId = window.localStorage.getItem(storageKey);
+      const normalizedStoredRunId = storedRunId ? normalizeStoredRunId(storedRunId) : null;
+
+      if (normalizedStoredRunId) {
+        if (normalizedStoredRunId !== storedRunId) {
+          persistRunId(normalizedStoredRunId);
+        }
+
+        void loadRun(normalizedStoredRunId, { allowNotFoundReset: true }).then((loadedRun) => {
+          if (loadedRun && !isTerminalRun(loadedRun)) {
+            scheduleNext(loadedRun.run_id, 1000);
+            return;
+          }
+
+          if (loadedRun && isTerminalRun(loadedRun)) {
+            clearStoredRun("terminal_run");
+          }
+        });
+      } else if (storedRunId) {
+        clearStoredRun("invalid_stored_run_id");
+      }
+    });
 
     return () => {
       isMountedRef.current = false;
       stopRequests("effect_cleanup");
       recoveryStartedRef.current = false;
     };
-  }, [clearStoredRun, loadRun, persistRunId, scheduleNext, stopRequests]);
+  }, [clearStoredRun, loadActiveRun, loadRun, persistRunId, scheduleNext, stopRequests]);
 
   useEffect(() => {
     if (!run || isTerminalRun(run)) {
       clearTimer();
+      if (run && isTerminalRun(run)) {
+        clearStoredRun("terminal_run");
+      }
       return;
     }
 
     scheduleNext(run.run_id, 2500);
-  }, [clearTimer, run, scheduleNext]);
+  }, [clearStoredRun, clearTimer, run, scheduleNext]);
 
   const startRun = useCallback(async () => {
     if (isStarting || (run && !isTerminalRun(run))) {
@@ -392,6 +494,25 @@ export function useCompositeOperationsRun() {
         signal: controller.signal,
       });
 
+
+      if (response.status === 409) {
+        const responseBody = (await response.json()) as StartConflictResponse;
+        if (
+          responseBody.code === "operational_update_already_running" &&
+          typeof responseBody.activeRunId === "string" &&
+          isValidUuid(responseBody.activeRunId) &&
+          isCompositeRunViewModel(responseBody.run)
+        ) {
+          persistRunId(responseBody.activeRunId);
+          if (isMountedRef.current) {
+            setRun(responseBody.run);
+            setStatus(statusFromRun(responseBody.run));
+            setMessage(null);
+          }
+          scheduleNext(responseBody.activeRunId, 1000);
+          return true;
+        }
+      }
       if (!response.ok) {
         const safeMessage = await readSafeError(response);
         if (isMountedRef.current) {

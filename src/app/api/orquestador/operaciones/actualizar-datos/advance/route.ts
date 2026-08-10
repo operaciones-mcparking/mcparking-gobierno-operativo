@@ -4,7 +4,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
-  ACTUALIZAR_DATOS_OPERACIONALES_KIND,
   OPERACIONES_ACTIVE_JOB_STATUSES,
   OPERACIONES_SEQUENCE_TOTAL,
   OPERACIONES_TARGET_WORKER_ID,
@@ -18,7 +17,7 @@ import {
   type ActualizarDatosReadinessCode,
 } from "@/lib/orquestador/actualizar-datos-operacionales";
 import {
-  createCompositeJobStep,
+  createOperationalUpdateStepIfMissing,
   listCompositeRunJobs,
   listOrchestratorJobsForGuard,
   listOrchestratorJobTypes,
@@ -128,23 +127,26 @@ export async function POST(request: NextRequest) {
     return publicReadinessError(secondCheck.code);
   }
 
-  const created = await createCompositeJobStep({
-    compositeKind: ACTUALIZAR_DATOS_OPERACIONALES_KIND,
+  const created = await createOperationalUpdateStepIfMissing({
     compositeRunId: runId,
     requestedBy: admin.user.id,
-    sequenceTotal: OPERACIONES_SEQUENCE_TOTAL,
     step: nextStep,
   });
 
-  if (created.error || !created.data) {
+  if (created.error || !created.data || created.data.rows.length === 0) {
     return jsonError("No fue posible avanzar la ejecucion compuesta.", 500);
+  }
+
+  const rowsByStep = new Map(existing.data.map((row) => [row.sequence_index, row]));
+  for (const row of created.data.rows) {
+    rowsByStep.set(row.sequence_index, row);
   }
 
   return NextResponse.json(
     {
       ok: true,
-      run: mapActualizarDatosRun([...existing.data, created.data], runId),
+      run: mapActualizarDatosRun([...rowsByStep.values()], runId),
     },
-    { status: 201 },
+    { status: created.data.created ? 201 : 200 },
   );
 }

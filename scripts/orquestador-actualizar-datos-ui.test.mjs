@@ -446,3 +446,46 @@ test("AI. no altera controles individuales existentes", () => {
 test("AJ. no toca recuperacion", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/recuperacion|^src\/app\/api\/recuperacion|^scripts\/recovery|^supabase\/migrations/m);
 });
+
+test("AK. montaje consulta active global antes de localStorage", () => {
+  assert.match(hook, /fetch\("\/api\/orquestador\/operaciones\/actualizar-datos\/active"/);
+  assert.match(hook, /type ActiveRunResponse/);
+  assert.ok(hook.indexOf('fetch("/api/orquestador/operaciones/actualizar-datos/active"') < hook.indexOf("window.localStorage.getItem(storageKey)"));
+});
+
+test("AL. PC B adopta corrida activa persistida", () => {
+  assert.match(hook, /if \(!responseBody\.active\)/);
+  assert.match(hook, /isCompositeRunViewModel\(responseBody\.run\)/);
+  assert.match(hook, /persistRunId\(responseBody\.run\.run_id\)/);
+  assert.match(hook, /setRun\(responseBody\.run\)/);
+  assert.match(hook, /scheduleNext\(activeRun\.run_id, 1000\)/);
+});
+
+test("AM. localStorage queda como compatibilidad y no autoridad", () => {
+  assert.match(hook, /loadActiveRun\(\)\.then/);
+  assert.match(hook, /clearStoredRun\("global_active_empty"\)/);
+  assert.ok(hook.indexOf("loadActiveRun().then") < hook.indexOf("normalizeStoredRunId(storedRunId)"));
+});
+
+test("AN. start 409 adopta activeRunId sin error generico", () => {
+  assert.match(hook, /response\.status === 409/);
+  assert.match(hook, /operational_update_already_running/);
+  assert.match(hook, /typeof responseBody\.activeRunId === "string"/);
+  assert.match(hook, /persistRunId\(responseBody\.activeRunId\)/);
+  assert.match(hook, /setRun\(responseBody\.run\)/);
+  assert.match(hook, /scheduleNext\(responseBody\.activeRunId, 1000\)/);
+  assert.ok(hook.indexOf("response.status === 409") < hook.indexOf("if (!response.ok)", hook.indexOf("response.status === 409")));
+});
+
+test("AO. terminal limpia seguimiento y detiene polling", () => {
+  assert.match(hook, /clearStoredRun\("terminal_run"\)/);
+  assert.match(hook, /if \(!run \|\| isTerminalRun\(run\)\)/);
+  assert.match(hook, /clearTimer\(\)/);
+});
+
+test("AP. boton indica actualizacion en curso con run activo", () => {
+  assert.match(control, /const triggerLabel = run \? "Actualizacion en curso"/);
+  assert.match(control, /aria-label=\{triggerLabel\}/);
+  assert.match(control, /title=\{triggerLabel\}/);
+  assert.match(control, /disabled=\{!canStart\}/);
+});

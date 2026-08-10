@@ -133,6 +133,7 @@ export function ActualizarDatosOperacionalesControl({
   const onSucceededRef = useRef(onSucceeded);
   const canStart = !isStarting && !run;
   const isBusy = isStarting || status === "starting";
+  const triggerLabel = run ? "Actualizacion en curso" : isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales";
   const useOverlay = presentation === "overlay";
   const hasRun = Boolean(run);
   const showOverlay = useOverlay && (isConfirming || isStarting || hasRun || isOverlayOpen);
@@ -277,11 +278,11 @@ export function ActualizarDatosOperacionalesControl({
 
   const triggerButton = triggerVariant === "compact" ? (
     <button
-      aria-label={isStarting ? "Iniciando actualizacion operacional" : "Actualizar datos operacionales"}
+      aria-label={triggerLabel}
       className="inline-flex h-10 w-full items-center justify-center rounded-lg border border-[#0b3554] bg-navy text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-10"
       disabled={!canStart}
       onClick={openConfirmation}
-      title={isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales"}
+      title={triggerLabel}
       type="button"
     >
       {isStarting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
@@ -294,7 +295,7 @@ export function ActualizarDatosOperacionalesControl({
       type="button"
     >
       <DatabaseZap className="h-4 w-4" />
-      {isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales"}
+      {triggerLabel}
     </button>
   );
 

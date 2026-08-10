@@ -61,6 +61,16 @@ type OrquestadorSingleResult<T> = {
   error: boolean;
 };
 
+type OperationalUpdateRpcRow = RawCompositeRunJobRow & {
+  created: boolean;
+  existing: boolean;
+};
+
+type OperationalUpdateRpcResult = {
+  created: boolean;
+  existing: boolean;
+  rows: RawCompositeRunJobRow[];
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -377,6 +387,79 @@ export async function createCompositeJobStep(input: {
     };
 
     return error || !data ? singleError() : { data, error: false };
+  } catch {
+    return singleError();
+  }
+}
+
+function mapOperationalUpdateRpcRows(data: OperationalUpdateRpcRow[] | null): OperationalUpdateRpcResult | null {
+  if (!data || data.length === 0) {
+    return null;
+  }
+
+  return {
+    created: data.some((row) => row.created),
+    existing: data.some((row) => row.existing),
+    rows: data.map(({ created: _created, existing: _existing, ...row }) => row),
+  };
+}
+
+export async function startOperationalUpdateRun(requestedBy: string): Promise<OrquestadorSingleResult<OperationalUpdateRpcResult>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_start_operational_update", {
+      p_not_before: new Date().toISOString(),
+      p_requested_by: requestedBy,
+    })) as {
+      data: OperationalUpdateRpcRow[] | null;
+      error: { message: string } | null;
+    };
+
+    const result = mapOperationalUpdateRpcRows(data);
+    return error || !result ? singleError() : { data: result, error: false };
+  } catch {
+    return singleError();
+  }
+}
+
+export async function findActiveOperationalUpdateRunJobs(): Promise<OrquestadorResult<RawCompositeRunJobRow>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_get_active_operational_update_jobs")) as {
+      data: RawCompositeRunJobRow[] | null;
+      error: { message: string } | null;
+    };
+
+    return error ? emptyResult() : { data: data ?? [], error: false };
+  } catch {
+    return emptyResult();
+  }
+}
+
+export async function createOperationalUpdateStepIfMissing(input: {
+  compositeRunId: string;
+  requestedBy: string;
+  step: ActualizarDatosStep;
+}): Promise<OrquestadorSingleResult<OperationalUpdateRpcResult>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_operational_update_step_if_missing", {
+      p_composite_run_id: input.compositeRunId,
+      p_job_type: input.step.jobType,
+      p_not_before: new Date().toISOString(),
+      p_payload: input.step.payload,
+      p_priority: input.step.priority,
+      p_requested_by: input.requestedBy,
+      p_requested_source: input.step.requestedSource,
+      p_sequence_index: input.step.sequenceIndex,
+      p_target_worker_id: input.step.targetWorkerId,
+    })) as {
+      data: OperationalUpdateRpcRow[] | null;
+      error: { message: string } | null;
+    };
+
+    const result = mapOperationalUpdateRpcRows(data);
+    return error || !result ? singleError() : { data: result, error: false };
   } catch {
     return singleError();
   }

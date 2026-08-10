@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 const startPath = "src/app/api/orquestador/operaciones/actualizar-datos/route.ts";
 const advancePath = "src/app/api/orquestador/operaciones/actualizar-datos/advance/route.ts";
 const getPath = "src/app/api/orquestador/operaciones/actualizar-datos/[runId]/route.ts";
+const activePath = "src/app/api/orquestador/operaciones/actualizar-datos/active/route.ts";
+const migrationPath = "supabase/migrations/20260810120000_lock_operational_update_runs.sql";
 const helperPath = "src/lib/orquestador/actualizar-datos-operacionales.ts";
 const supabaseAdminPath = "src/lib/orquestador/supabase-admin.ts";
 const compositeMapperPath = "src/lib/orquestador/composite-runs.ts";
@@ -13,6 +15,8 @@ const compositeMapperPath = "src/lib/orquestador/composite-runs.ts";
 const startRoute = readFileSync(startPath, "utf8");
 const advanceRoute = readFileSync(advancePath, "utf8");
 const getRoute = readFileSync(getPath, "utf8");
+const activeRoute = readFileSync(activePath, "utf8");
+const migration = readFileSync(migrationPath, "utf8");
 const helper = readFileSync(helperPath, "utf8");
 const supabaseAdmin = readFileSync(supabaseAdminPath, "utf8");
 const compositeMapper = readFileSync(compositeMapperPath, "utf8");
@@ -77,16 +81,17 @@ test("I. Readiness inicial", () => {
   assert.match(helper, /input\.jobs\.some\(isActualizarDatosActiveJob\)/);
 });
 
-test("J. UUID generado server-side", () => {
-  assert.match(startRoute, /randomUUID/);
-  assert.match(startRoute, /const runId = randomUUID\(\)/);
+test("J. Start delega run_id a RPC atomica server-side", () => {
+  assert.match(startRoute, /startOperationalUpdateRun\(admin\.user\.id\)/);
+  assert.doesNotMatch(startRoute, /randomUUID|const runId = randomUUID\(\)/);
   assert.doesNotMatch(startRoute, /body\.run_id|payload\.run_id/);
 });
 
-test("K. Solo crea etapa 1 al iniciar", () => {
-  assert.match(startRoute, /const firstStep = ACTUALIZAR_DATOS_STEPS\[0\]/);
-  const calls = [...startRoute.matchAll(/createCompositeJobStep\(/g)].length;
-  assert.equal(calls, 1);
+test("K. Start no crea steps desde la ruta", () => {
+  assert.match(startRoute, /startOperationalUpdateRun/);
+  assert.doesNotMatch(startRoute, /createCompositeJobStep\(|ACTUALIZAR_DATOS_STEPS\[0\]/);
+  assert.match(migration, /p_sequence_index := 1/);
+  assert.match(migration, /p_job_type := 'banco_reservas_actualizar'/);
 });
 
 test("L. Etapa 1 contrato exacto", () => {
@@ -102,7 +107,7 @@ test("M. Advance valida UUID", () => {
 
 test("N. Advance no crea mientras etapa activa", () => {
   assert.match(advanceRoute, /OPERACIONES_ACTIVE_JOB_STATUSES\.has\(lastStep\.status\)/);
-  assert.ok(advanceRoute.indexOf("OPERACIONES_ACTIVE_JOB_STATUSES.has(lastStep.status)") < advanceRoute.indexOf("await createCompositeJobStep"));
+  assert.ok(advanceRoute.indexOf("OPERACIONES_ACTIVE_JOB_STATUSES.has(lastStep.status)") < advanceRoute.indexOf("await createOperationalUpdateStepIfMissing"));
 });
 
 test("O. Advance se detiene si failed", () => {
@@ -223,4 +228,36 @@ test("AI. No usa payload enriquecido legacy", () => {
 test("AJ. RPC composite dedicadas", () => {
   assert.match(supabaseAdmin, /orchestrator_create_composite_job_step/);
   assert.match(supabaseAdmin, /orchestrator_list_composite_run_jobs/);
+  assert.match(supabaseAdmin, /orchestrator_start_operational_update/);
+  assert.match(supabaseAdmin, /orchestrator_get_active_operational_update_jobs/);
+  assert.match(supabaseAdmin, /orchestrator_create_operational_update_step_if_missing/);
+});
+
+test("AK. Endpoint active existe y reconstruye desde jobs persistidos", () => {
+  assert.equal(existsSync(activePath), true);
+  assert.match(activeRoute, /export async function GET/);
+  assert.match(activeRoute, /getActiveAdminUser/);
+  assert.match(activeRoute, /findActiveOperationalUpdateRunJobs/);
+  assert.match(activeRoute, /active: false/);
+  assert.match(activeRoute, /mapActualizarDatosRun\(active\.data, runId\)/);
+  assert.doesNotMatch(activeRoute, /localStorage|payload|result|stdout|stderr/);
+});
+
+test("AL. Migracion usa advisory lock transaccional", () => {
+  assert.match(migration, /pg_advisory_xact_lock\(hashtextextended\('actualizar_datos_operacionales_last_month', 0\)\)/);
+  assert.match(migration, /where j\.composite_kind = 'actualizar_datos_operacionales_last_month'/);
+  assert.match(migration, /j\.status not in \('succeeded', 'failed', 'cancelled'\)/);
+});
+
+test("AM. Migracion no abre acceso publico", () => {
+  assert.match(migration, /security definer/gi);
+  assert.match(migration, /set search_path = ''/gi);
+  assert.match(migration, /revoke execute on function public\.orchestrator_start_operational_update\(uuid, timestamptz\) from anon/);
+  assert.match(migration, /revoke execute on function public\.orchestrator_start_operational_update\(uuid, timestamptz\) from authenticated/);
+  assert.match(migration, /grant execute on function public\.orchestrator_start_operational_update\(uuid, timestamptz\) to service_role/);
+});
+
+test("AN. Migracion reutiliza RPC existente de creacion de composite steps", () => {
+  assert.match(migration, /public\.orchestrator_create_composite_job_step/);
+  assert.doesNotMatch(migration, /insert into ops_orchestrator\.orchestrator_jobs/i);
 });

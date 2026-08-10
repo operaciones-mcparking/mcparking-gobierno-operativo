@@ -1,13 +1,9 @@
 export const dynamic = "force-dynamic";
 
-import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
-  ACTUALIZAR_DATOS_OPERACIONALES_KIND,
-  ACTUALIZAR_DATOS_STEPS,
-  OPERACIONES_SEQUENCE_TOTAL,
   OPERACIONES_TARGET_WORKER_ID,
   actualizarDatosReadinessMessage,
   getActualizarDatosReadiness,
@@ -15,10 +11,10 @@ import {
   type ActualizarDatosReadinessCode,
 } from "@/lib/orquestador/actualizar-datos-operacionales";
 import {
-  createCompositeJobStep,
   listOrchestratorJobsForGuard,
   listOrchestratorJobTypes,
   listOrchestratorWorkers,
+  startOperationalUpdateRun,
 } from "@/lib/orquestador/supabase-admin";
 
 function jsonError(message: string, status: number) {
@@ -93,24 +89,31 @@ export async function POST(request: NextRequest) {
     return publicReadinessError(secondCheck.code);
   }
 
-  const runId = randomUUID();
-  const firstStep = ACTUALIZAR_DATOS_STEPS[0];
-  const { data, error } = await createCompositeJobStep({
-    compositeKind: ACTUALIZAR_DATOS_OPERACIONALES_KIND,
-    compositeRunId: runId,
-    requestedBy: admin.user.id,
-    sequenceTotal: OPERACIONES_SEQUENCE_TOTAL,
-    step: firstStep,
-  });
-
-  if (error || !data) {
+  const started = await startOperationalUpdateRun(admin.user.id);
+  if (started.error || !started.data || started.data.rows.length === 0) {
     return jsonError("No fue posible iniciar la actualizacion de datos operacionales.", 500);
+  }
+
+  const runId = started.data.rows[0].composite_run_id;
+  const run = mapActualizarDatosRun(started.data.rows, runId);
+
+  if (started.data.existing && !started.data.created) {
+    return NextResponse.json(
+      {
+        activeRunId: runId,
+        code: "operational_update_already_running",
+        error: "Ya existe una actualizacion operacional en curso.",
+        ok: false,
+        run,
+      },
+      { status: 409 },
+    );
   }
 
   return NextResponse.json(
     {
       ok: true,
-      run: mapActualizarDatosRun([data], runId),
+      run,
     },
     { status: 201 },
   );

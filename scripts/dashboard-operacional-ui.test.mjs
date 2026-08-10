@@ -172,7 +172,9 @@ test("D6. boton compacto reemplaza accion textual sin duplicar flujo", () => {
   assert.match(compositeControl, /triggerVariant = "default"/);
   assert.match(compositeControl, /triggerButton = triggerVariant === "compact"/);
   assert.match(compositeControl, /RefreshCw/);
-  assert.match(compositeControl, /aria-label=\{isStarting \? "Iniciando actualizacion operacional" : "Actualizar datos operacionales"\}/);
+  assert.match(compositeControl, /const triggerLabel = run \? "Actualizacion en curso" : isStarting \? "Iniciando actualizacion\.\.\." : "Actualizar datos operacionales"/);
+  assert.match(compositeControl, /aria-label=\{triggerLabel\}/);
+  assert.match(compositeControl, /title=\{triggerLabel\}/);
   assert.match(compositeControl, /Loader2 className="h-4 w-4 animate-spin"/);
   assert.match(compositeControl, /onClick=\{openConfirmation\}/);
   assert.match(compositeControl, /disabled=\{!canStart\}/);
