@@ -1,5 +1,3 @@
-import { ChevronRight } from "lucide-react";
-
 import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import { ProcessFilters } from "@/components/dashboard/process-filters";
 import { DashboardShell } from "@/components/dashboard/shell";
@@ -282,12 +280,12 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                     className="group/process border-b border-line last:border-b-0"
                     key={process.process_id}
                   >
-                    <summary className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe]">
-                      <div className="grid gap-3 xl:grid-cols-[1.7fr_160px_160px_100px_100px_100px] xl:items-center">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-medium text-sea transition group-open/process:rotate-90 group-hover/process:bg-[#eef7fb]">
-                            <ChevronRight className="h-4 w-4" />
-                          </span>
+                    <summary
+                      aria-label={`Expandir o contraer ${process.process_name}`}
+                      className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe]"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="grid min-w-0 flex-1 gap-3 xl:grid-cols-[1.7fr_160px_160px_100px_100px_100px] xl:items-center">
                           <div className="min-w-0">
                             <h3 className="text-base font-medium text-navy">
                               {process.process_name}
@@ -296,39 +294,46 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                               {process.definition ?? "Sin definicion"}
                             </p>
                           </div>
-                        </div>
 
-                        <div>
-                          <p className="text-xs text-slate-500 xl:hidden">Empresa duena</p>
-                          <p className="text-sm font-medium text-navy">
-                            {process.owner_company_name ?? process.company_name ?? "Sin empresa"}
-                          </p>
-                        </div>
+                          <div>
+                            <p className="text-xs text-slate-500 xl:hidden">Empresa duena</p>
+                            <p className="text-sm font-medium text-navy">
+                              {process.owner_company_name ?? process.company_name ?? "Sin empresa"}
+                            </p>
+                          </div>
 
-                        <div>
-                          <p className="text-xs text-slate-500 xl:hidden">Operacion</p>
-                          <p className="text-sm text-slate-700">
-                            {process.area_name ?? "Sin tipo"}
-                          </p>
-                        </div>
+                          <div>
+                            <p className="text-xs text-slate-500 xl:hidden">Operacion</p>
+                            <p className="text-sm text-slate-700">
+                              {process.area_name ?? "Sin tipo"}
+                            </p>
+                          </div>
 
-                        <div>
-                          <TypedBadge type="criticality" value={process.criticality} />
-                        </div>
+                          <div>
+                            <TypedBadge type="criticality" value={process.criticality} />
+                          </div>
 
-                        <div className="flex flex-wrap gap-2">
-                          <ValueBadge tone="info">Etapas {process.subprocess_count}</ValueBadge>
-                          <ValueBadge tone="neutral">Roles {process.responsibility_count}</ValueBadge>
-                        </div>
+                          <div className="flex flex-wrap gap-2">
+                            <ValueBadge tone="info">Etapas {process.subprocess_count}</ValueBadge>
+                            <ValueBadge tone="neutral">Roles {process.responsibility_count}</ValueBadge>
+                          </div>
 
-                        <div className="flex justify-start xl:justify-end">
-                          <ProcessDetailModal
-                            ownerRoleBySubprocess={ownerRoleBySubprocess}
-                            process={process}
-                            roleDictionary={roleDictionaryResult.data}
-                            stages={rows}
-                          />
+                          <div className="flex justify-start xl:justify-end">
+                            <ProcessDetailModal
+                              ownerRoleBySubprocess={ownerRoleBySubprocess}
+                              process={process}
+                              roleDictionary={roleDictionaryResult.data}
+                              stages={rows}
+                            />
+                          </div>
                         </div>
+                        <span
+                          aria-hidden="true"
+                          className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-lg font-medium leading-none text-navy shadow-sm transition group-hover/process:border-teal-200 group-hover/process:bg-teal-50 group-hover/process:text-teal-800"
+                        >
+                          <span className="group-open/process:hidden">+</span>
+                          <span className="hidden group-open/process:inline">-</span>
+                        </span>
                       </div>
                     </summary>
 
