@@ -1,8 +1,8 @@
 "use client";
 
-import { X } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 
 type FilterOption = {
   id: string;
@@ -13,16 +13,15 @@ type ProcessFiltersProps = {
   companyOptions: string[];
   ownerRoleOptions: FilterOption[];
   personOptions: FilterOption[];
-  processQuery: string;
   processTypeOptions: Array<{ label: string; value: string }>;
+  resultText: string;
+  searchQuery: string;
   selectedCompany: string;
   selectedOwnerRole: string;
   selectedPerson: string;
   selectedProcessType: string;
-  selectedStage: string;
   selectedSupportRole: string;
   selectedType: string;
-  stageQuery: string;
   supportRoleOptions: FilterOption[];
   totalCount: number;
   typeOptions: string[];
@@ -33,38 +32,43 @@ export function ProcessFilters({
   companyOptions,
   ownerRoleOptions,
   personOptions,
-  processQuery,
   processTypeOptions,
+  resultText,
+  searchQuery,
   selectedCompany,
   selectedOwnerRole,
   selectedPerson,
   selectedProcessType,
-  selectedStage,
   selectedSupportRole,
   selectedType,
-  stageQuery,
   supportRoleOptions,
-  totalCount,
   typeOptions,
-  visibleCount,
 }: ProcessFiltersProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
-  const hasFilters =
-    selectedCompany !== "todas" ||
-    selectedType !== "todos" ||
-    selectedProcessType !== "todos" ||
-    selectedOwnerRole !== "todos" ||
-    selectedPerson !== "todos" ||
-    selectedSupportRole !== "todos" ||
-    processQuery.length > 0 ||
-    selectedStage.length > 0;
+  const advancedFilterCount = [
+    selectedProcessType !== "todos",
+    selectedOwnerRole !== "todos",
+    selectedPerson !== "todos",
+    selectedSupportRole !== "todos",
+    selectedCompany !== "todas",
+    selectedType !== "todos",
+  ].filter(Boolean).length;
+  const hasSearch = searchQuery.length > 0;
+  const hasFilters = hasSearch || advancedFilterCount > 0;
+  const [filtersOpen, setFiltersOpen] = useState(advancedFilterCount > 0);
+  const filtersPanelId = "process-advanced-filters";
 
   function updateFilter(name: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
     const nextValue = value.trim();
+
+    if (name === "search") {
+      params.delete("process");
+      params.delete("stage");
+    }
 
     if (!nextValue || nextValue === "todas" || nextValue === "todos") {
       params.delete(name);
@@ -84,16 +88,54 @@ export function ProcessFilters({
   }
 
   return (
-    <section className="mt-2 border-b border-[#d6e1ea] pb-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm font-medium text-navy">Filtros</p>
-          <p className="mt-1 text-sm text-slate-600">
-            {visibleCount} de {totalCount} procesos visibles. Se actualiza al cambiar una opcion.
-          </p>
+    <section className="mt-2 pb-4">
+      <div className="rounded-xl border border-line bg-white p-3 shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center">
+          <label className="min-w-0 flex-1 text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
+            <span className="sr-only">Buscar proceso o etapa</span>
+            <input
+              className="h-11 w-full rounded-lg border border-line bg-[#fbfdfe] px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition placeholder:text-slate-400 focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
+              disabled={isPending}
+              onChange={(event) => updateFilter("search", event.target.value)}
+              placeholder="Buscar proceso o etapa..."
+              value={searchQuery}
+            />
+          </label>
+
+          <div className="flex gap-2 md:shrink-0">
+            <button
+              aria-controls={filtersPanelId}
+              aria-expanded={filtersOpen}
+              className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-medium text-navy transition hover:border-sea hover:bg-[#eef4f8] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 md:flex-none"
+              disabled={isPending}
+              onClick={() => setFiltersOpen((current) => !current)}
+              type="button"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+              {advancedFilterCount > 0 ? `Filtros · ${advancedFilterCount}` : "Filtros"}
+            </button>
+
+            {hasFilters ? (
+              <button
+                className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-line bg-white px-4 text-sm font-medium text-navy transition hover:border-sea hover:bg-[#eef4f8] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 md:flex-none"
+                disabled={isPending}
+                onClick={clearFilters}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+                Limpiar
+              </button>
+            ) : null}
+          </div>
         </div>
 
-        <div className="grid w-full gap-2 sm:grid-cols-2 lg:w-auto lg:grid-cols-4 xl:grid-cols-7">
+        <p className="mt-2 px-1 text-sm text-slate-600">{resultText}</p>
+
+        {filtersOpen ? (
+          <div
+            className="mt-3 grid gap-2 rounded-lg border border-[#d6e1ea] bg-[#fbfdfe] p-3 sm:grid-cols-2 xl:grid-cols-4"
+            id={filtersPanelId}
+          >
           <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
             Tipo proceso
             <select
@@ -109,28 +151,6 @@ export function ProcessFilters({
                 </option>
               ))}
             </select>
-          </label>
-
-          <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
-            Proceso
-            <input
-              className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
-              disabled={isPending}
-              onChange={(event) => updateFilter("process", event.target.value)}
-              placeholder="Buscar"
-              value={processQuery}
-            />
-          </label>
-
-          <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
-            Etapa
-            <input
-              className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
-              disabled={isPending}
-              onChange={(event) => updateFilter("stage", event.target.value)}
-              placeholder="Buscar"
-              value={stageQuery}
-            />
           </label>
 
           <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
@@ -168,7 +188,7 @@ export function ProcessFilters({
           </label>
 
           <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
-            Roles apoyo
+            Roles de apoyo
             <select
               className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
               disabled={isPending}
@@ -184,7 +204,7 @@ export function ProcessFilters({
             </select>
           </label>
 
-          <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
+          <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600 xl:col-start-1">
             Empresa
             <select
               className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
@@ -202,7 +222,7 @@ export function ProcessFilters({
           </label>
 
           <label className="text-xs font-medium uppercase tracking-[0.06em] text-slate-600">
-            Tipo de operacion
+            Tipo de operación
             <select
               className="mt-1 h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-medium normal-case tracking-normal text-navy outline-none transition focus:border-sea focus:bg-white focus:ring-2 focus:ring-[#e6edf3]"
               disabled={isPending}
@@ -217,19 +237,8 @@ export function ProcessFilters({
               ))}
             </select>
           </label>
-
-          {hasFilters ? (
-            <button
-              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-lg border border-line bg-white px-3 text-sm font-medium text-navy transition hover:border-sea hover:bg-[#eef4f8]"
-              disabled={isPending}
-              onClick={clearFilters}
-              type="button"
-            >
-              <X className="h-4 w-4" />
-              Limpiar
-            </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

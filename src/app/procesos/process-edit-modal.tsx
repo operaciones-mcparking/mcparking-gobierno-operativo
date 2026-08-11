@@ -113,7 +113,7 @@ function StageBasicsForm({
         </div>
 
         <div className="mt-4">
-          <Field label="Descripcion">
+          <Field label="Descripción">
             <textarea
               className={`${inputClass} min-h-20`}
               defaultValue={stage.subprocess_description ?? ""}
@@ -248,7 +248,7 @@ function AddStageForm({
         <div>
           <h4 className="text-sm font-medium text-navy">Agregar etapa</h4>
           <p className="mt-1 text-sm leading-5 text-slate-600">
-            Crea una etapa basica. Roles, sistemas, riesgos y controles se completan despues.
+            Crea una etapa básica. Roles, sistemas, riesgos y controles se completan despuÃ©s.
           </p>
         </div>
         <button
@@ -285,7 +285,7 @@ function AddStageForm({
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_180px]">
-        <Field label="Descripcion">
+        <Field label="Descripción">
           <textarea className={`${inputClass} min-h-20`} name="description" />
         </Field>
         <Field label="Frecuencia">
@@ -297,15 +297,21 @@ function AddStageForm({
 }
 
 export function ProcessEditModal({
+  ariaLabel,
   ownerRoleBySubprocess,
   process,
   roleDictionary,
   stages,
+  triggerClassName = "inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#052a5a] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2",
+  triggerLabel = "Editar proceso",
 }: {
+  ariaLabel?: string;
   ownerRoleBySubprocess: Record<string, string>;
   process: ProcessCatalogV2Item;
   roleDictionary: RoleDictionaryItem[];
   stages: ProcessStageV2Row[];
+  triggerClassName?: string;
+  triggerLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const nextSortOrder =
@@ -314,16 +320,18 @@ export function ProcessEditModal({
   return (
     <>
       <button
-        className="inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#052a5a]"
+        aria-label={ariaLabel ?? `Editar proceso ${process.process_name}`}
+        className={triggerClassName}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
           setOpen(true);
         }}
+        title="Editar proceso"
         type="button"
       >
-        <Pencil className="h-4 w-4 text-clay" />
-        Editar proceso
+        <Pencil className="h-4 w-4 text-current" />
+        {triggerLabel ? <span>{triggerLabel}</span> : null}
       </button>
 
       {open ? (
@@ -347,7 +355,7 @@ export function ProcessEditModal({
                   Editar proceso
                 </h2>
                 <p className="mt-1 text-sm leading-5 text-slate-600">
-                  Actualiza la informacion base sin salir de Procesos.
+                  Actualiza la información base sin salir de Procesos.
                 </p>
               </div>
               <button
@@ -373,7 +381,7 @@ export function ProcessEditModal({
                 />
               </Field>
 
-              <Field label="Descripcion corta">
+              <Field label="Descripción corta">
                 <textarea
                   className={`${inputClass} min-h-24`}
                   defaultValue={process.definition ?? ""}
@@ -426,7 +434,7 @@ export function ProcessEditModal({
                     ))}
                   </select>
                 </Field>
-                <Field label="Documentacion">
+                <Field label="Documentación">
                   <select
                     className={inputClass}
                     defaultValue={process.documentation_status}
@@ -464,7 +472,7 @@ export function ProcessEditModal({
                 <div>
                   <h3 className="text-base font-medium text-navy">Etapas / subprocesos</h3>
                   <p className="mt-1 text-sm leading-5 text-slate-600">
-                    Edita la informacion base de cada etapa. Roles, sistemas y riesgos se mantienen en el editor avanzado.
+                    Edita la información base de cada etapa. Roles, sistemas y riesgos se mantienen en el editor avanzado.
                   </p>
                 </div>
                 <span className="text-xs font-medium text-slate-500">{stages.length} etapas</span>

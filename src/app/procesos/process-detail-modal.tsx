@@ -36,7 +36,7 @@ function TextSection({ label, value }: { label: string; value: string | null }) 
   return (
     <section className="rounded-xl border border-[#dce7ef] bg-[#fbfdfe] p-4">
       <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{value ?? "Sin informacion registrada."}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{value ?? "Sin información registrada."}</p>
     </section>
   );
 }
@@ -67,7 +67,7 @@ function ChipList({ items }: { items: string[] }) {
   const uniqueItems = [...new Set(items.filter(Boolean))];
 
   if (uniqueItems.length === 0) {
-    return <span className="text-sm text-slate-500">Sin informacion registrada.</span>;
+    return <span className="text-sm text-slate-500">Sin información registrada.</span>;
   }
 
   return (
@@ -120,7 +120,7 @@ export function ProcessDetailModal({
   return (
     <>
       <button
-        className="inline-flex items-center gap-2 rounded-full bg-[#eef7fb] px-3 py-1 text-xs font-medium text-sea transition hover:bg-[#dff0f7]"
+        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#d6e1ea] bg-white px-3 text-xs font-medium text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -148,7 +148,7 @@ export function ProcessDetailModal({
             <header className="flex items-start justify-between gap-4 border-b border-[#d6e1ea] px-5 py-4">
               <div>
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sea">
-                  Ficha V2 de proceso
+                  Ficha de proceso
                 </p>
                 <h2 className="mt-1 text-lg font-medium text-navy" id={`process-detail-${process.process_id}`}>
                   {process.process_name}

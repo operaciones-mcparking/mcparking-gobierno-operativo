@@ -11,6 +11,7 @@ import {
 } from "@/lib/dashboard/data";
 import { CreateProcessModal } from "./create-process-modal";
 import { ProcessDetailModal } from "./process-detail-modal";
+import { ProcessEditModal } from "./process-edit-modal";
 import { ProcessMacroMap } from "./process-macro-map";
 
 function ownerRoleText(roleName: string | null, personName: string | null) {
@@ -19,48 +20,6 @@ function ownerRoleText(roleName: string | null, personName: string | null) {
   }
 
   return `Dueño: ${roleName} · ${personName ?? "Sin persona asignada"}`;
-}
-
-function AccordionPanel({
-  children,
-  count,
-  defaultOpen = false,
-  description,
-  title,
-}: {
-  children: React.ReactNode;
-  count?: string;
-  defaultOpen?: boolean;
-  description?: string;
-  title: string;
-}) {
-  return (
-    <details
-      className="group mt-4 border-b border-[#d6e1ea] bg-transparent pb-1"
-      open={defaultOpen}
-    >
-      <summary className="cursor-pointer list-none px-1 py-4 transition hover:bg-white/50">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-sm font-medium text-sea transition group-open:bg-teal-50 group-hover:border-teal-200">
-              <span className="group-open:hidden">+</span>
-              <span className="hidden group-open:inline">-</span>
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-base font-medium tracking-tight text-navy">{title}</h2>
-              {description ? (
-                <p className="mt-1 text-sm leading-5 text-slate-600">{description}</p>
-              ) : null}
-            </div>
-          </div>
-          {count ? (
-            <span className="w-fit text-xs font-medium text-slate-500">{count}</span>
-          ) : null}
-        </div>
-      </summary>
-      <div className="pb-5 pt-2">{children}</div>
-    </details>
-  );
 }
 
 function groupedByProcess<T extends { process_id: string; process_name: string }>(items: T[]) {
@@ -157,6 +116,21 @@ function compactList(values: string[], fallback: string) {
   return `${uniqueValues[0]} +${uniqueValues.length - 1}`;
 }
 
+function SupportRoleSummary({ values }: { values: string[] }) {
+  const uniqueValues = [...new Set(values.filter(Boolean))];
+
+  if (uniqueValues.length === 0) {
+    return <span className="text-sm text-slate-500">Sin roles de apoyo</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <ValueBadge tone="neutral">{uniqueValues[0]}</ValueBadge>
+      {uniqueValues.length > 1 ? <ValueBadge tone="info">+{uniqueValues.length - 1}</ValueBadge> : null}
+    </div>
+  );
+}
+
 function processTypeMeta(value: ProcessCatalogV2Item["process_type"]): { label: string; tone: BadgeTone } {
   if (value === "strategic") {
     return { label: "Estrategico", tone: "info" };
@@ -178,7 +152,7 @@ const processTypeOptions = [
   { label: "Operativo", value: "operational" },
   { label: "Soporte", value: "support" },
 ];
-const processListGridColumns = "xl:grid-cols-[120px_minmax(300px,1fr)_180px_180px_110px_220px_150px]";
+const processListGridColumns = "xl:grid-cols-[88px_minmax(260px,1fr)_144px_132px_86px_160px_154px]";
 
 type ProcesosPageProps = {
   searchParams?: Promise<{
@@ -188,6 +162,7 @@ type ProcesosPageProps = {
     person?: string;
     process?: string;
     process_type?: string;
+    search?: string;
     site_id?: string;
     stage?: string;
     support_role?: string;
@@ -203,8 +178,10 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const selectedOwnerRole = params.owner_role ?? "todos";
   const selectedPerson = params.person ?? "todos";
   const selectedSupportRole = params.support_role ?? "todos";
+  const searchQuery = params.search?.trim() ?? "";
   const processQuery = params.process?.trim() ?? "";
   const stageQuery = params.stage?.trim() ?? "";
+  const generalQuery = searchQuery || processQuery || stageQuery;
   const context = {
     countryId: params.country_id ?? null,
     siteId: params.site_id ?? null,
@@ -305,8 +282,9 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
       (selectedOwnerRole === "todos" || process.owner_role_ids.includes(selectedOwnerRole)) &&
       (selectedPerson === "todos" || process.current_person_ids.includes(selectedPerson)) &&
       (selectedSupportRole === "todos" || process.support_role_ids.includes(selectedSupportRole)) &&
-      matchesText(process.process_name, processQuery) &&
-      (!stageQuery || stages.some((stage) => matchesText(stage.subprocess_name, stageQuery)))
+      (!generalQuery ||
+        matchesText(process.process_name, generalQuery) ||
+        stages.some((stage) => matchesText(stage.subprocess_name, generalQuery)))
     );
   });
   const macroMapProcesses = activeProcesses.filter((process) => {
@@ -321,14 +299,11 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const ownerRoleBySubprocess = Object.fromEntries(
     stageOwnerRolesResult.data.map((ownerRole) => [ownerRole.subprocess_id, ownerRole.role_id]),
   );
-  const processCount =
-    filteredProcesses.length === activeProcesses.length
-      ? `${activeProcesses.length} procesos`
-      : `${filteredProcesses.length} de ${activeProcesses.length} procesos`;
+  const resultText = `${filteredProcesses.length} ${filteredProcesses.length === 1 ? "proceso encontrado" : "procesos encontrados"}`;
 
   return (
     <DashboardShell
-      description="Catalogo V2 de procesos oficiales con etapas activas, owners y roles consolidados."
+      description="Catalogo de procesos oficiales con responsables, etapas activas y roles de apoyo."
       eyebrow={`${activeProcesses.length} Procesos`}
       title="Procesos oficiales"
     >
@@ -342,12 +317,18 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
 
       {!catalogResult.error ? <ProcessMacroMap processes={macroMapProcesses} /> : null}
 
-      <AccordionPanel
-        count={processCount}
-        defaultOpen
-        description="Listado principal V2. Abre un proceso solo cuando necesites revisar sus etapas activas."
-        title="Diccionario de procesos oficiales"
-      >
+      <section className="mt-4 border-b border-[#d6e1ea] bg-transparent pb-6">
+        <div className="flex flex-col gap-3 px-1 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-medium tracking-tight text-navy">Diccionario de procesos</h2>
+              <ValueBadge tone="info">{activeProcesses.length} procesos</ValueBadge>
+            </div>
+            <p className="mt-1 text-sm leading-5 text-slate-600">
+              19 procesos organizados por tipo, responsables y etapas.
+            </p>
+          </div>
+        </div>
         {catalogResult.error || matrixResult.error ? (
           <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-medium text-[#86510d]">
             {catalogResult.error?.message ?? matrixResult.error?.message}
@@ -358,31 +339,30 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
               companyOptions={companyOptions}
               ownerRoleOptions={ownerRoleOptions}
               personOptions={personOptions}
-              processQuery={processQuery}
               processTypeOptions={processTypeOptions}
+              searchQuery={generalQuery}
               selectedCompany={selectedCompany}
               selectedOwnerRole={selectedOwnerRole}
               selectedPerson={selectedPerson}
               selectedProcessType={selectedProcessType}
-              selectedStage={stageQuery}
               selectedSupportRole={selectedSupportRole}
               selectedType={selectedType}
-              stageQuery={stageQuery}
               supportRoleOptions={supportRoleOptions}
+              resultText={resultText}
               totalCount={activeProcesses.length}
               typeOptions={typeOptions}
               visibleCount={filteredProcesses.length}
             />
 
             <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
-              <div className={`hidden border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${processListGridColumns}`}>
+              <div className={`hidden gap-3 border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${processListGridColumns}`}>
                 <span>Tipo</span>
                 <span>Proceso</span>
                 <span>Rol dueño</span>
                 <span>Persona actual</span>
                 <span className="text-center">Etapas</span>
                 <span>Roles de apoyo</span>
-                <span className="text-right">Accion</span>
+                <span className="text-right">Acción</span>
               </div>
 
               {filteredProcesses.map((process) => {
@@ -391,7 +371,6 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                 const rows = group?.rows ?? [];
                 const ownerText = compactList(process.owner_role_names, "Sin rol dueño");
                 const personText = compactList(process.current_person_names, "Sin persona asignada");
-                const supportText = compactList(process.support_role_names, "Sin roles de apoyo");
 
                 return (
                   <details
@@ -436,35 +415,55 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
 
                         <div className="col-start-1 xl:col-auto">
                           <p className="text-xs text-slate-500 xl:hidden">Roles de apoyo</p>
-                          <p className="line-clamp-2 text-sm text-slate-700">{supportText}</p>
+                          <SupportRoleSummary values={process.support_role_names} />
                         </div>
 
-                        <div className="col-start-2 row-span-6 row-start-1 flex items-start justify-end gap-2 xl:col-auto xl:row-auto xl:items-center">
+                        <div className="hidden items-center justify-end gap-2 xl:col-auto xl:flex">
                           <ProcessDetailModal
                             ownerRoleBySubprocess={ownerRoleBySubprocess}
                             process={process}
                             roleDictionary={roleDictionaryResult.data}
                             stages={rows}
                           />
-                          <span
-                            aria-hidden="true"
-                            className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-lg font-medium leading-none text-navy shadow-sm transition group-hover/process:border-teal-200 group-hover/process:bg-teal-50 group-hover/process:text-teal-800 xl:mt-0"
-                          >
-                            <span className="group-open/process:hidden">+</span>
-                            <span className="hidden group-open/process:inline">-</span>
-                          </span>
+                          <ProcessEditModal
+                            ariaLabel={`Editar proceso ${process.process_name}`}
+                            ownerRoleBySubprocess={ownerRoleBySubprocess}
+                            process={process}
+                            roleDictionary={roleDictionaryResult.data}
+                            stages={rows}
+                            triggerClassName="hidden h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 xl:inline-flex"
+                            triggerLabel=""
+                          />
+
                         </div>
                       </div>
                     </summary>
 
                     <div className="bg-[#f8fafb] px-4 py-4">
+                      <div className="mb-4 flex flex-col gap-2 sm:flex-row xl:hidden">
+                        <ProcessDetailModal
+                          ownerRoleBySubprocess={ownerRoleBySubprocess}
+                          process={process}
+                          roleDictionary={roleDictionaryResult.data}
+                          stages={rows}
+                        />
+                        <ProcessEditModal
+                          ariaLabel={`Editar proceso ${process.process_name}`}
+                          ownerRoleBySubprocess={ownerRoleBySubprocess}
+                          process={process}
+                          roleDictionary={roleDictionaryResult.data}
+                          stages={rows}
+                          triggerClassName="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
+                          triggerLabel=""
+                        />
+                      </div>
                       {rows.length === 0 ? (
-                        <p className="text-sm text-slate-600">Este proceso aun no tiene etapas activas.</p>
+                        <p className="text-sm text-slate-600">Este proceso aún no tiene etapas activas.</p>
                       ) : (
                         <div>
                           <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                             <div>
-                              <p className="text-sm font-medium text-navy">Vista rapida de etapas activas</p>
+                              <p className="text-sm font-medium text-navy">Vista rápida de etapas activas</p>
                               <p className="text-sm text-slate-600">
                                 Orden operativo, rol dueño e impacto dentro del proceso.
                               </p>
@@ -520,7 +519,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
             </div>
           </>
         )}
-      </AccordionPanel>
+      </section>
     </DashboardShell>
   );
 }
