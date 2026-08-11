@@ -69,10 +69,9 @@ export default async function EditProcessPage({
   const { processId } = await params;
   const messages = await searchParams;
   const supabase = createSupabaseServerClient();
-  const [processResult, matrixResult, rolesResult, systemsResult, roleDictionaryResult] = await Promise.all([
+  const [processResult, matrixResult, systemsResult, roleDictionaryResult] = await Promise.all([
     getEditableProcessCatalogItem(processId),
     getProcessMatrix(processId),
-    supabase.from("roles").select("id,name").order("name"),
     supabase.from("systems").select("id,name").order("name"),
     getRoleDictionary(),
   ]);
@@ -83,7 +82,6 @@ export default async function EditProcessPage({
 
   const process = processResult.data;
   const rows = matrixResult.data;
-  const roles = rolesResult.data ?? [];
   const systems = systemsResult.data ?? [];
   const nextSortOrder =
     rows.reduce((max, row) => Math.max(max, Number(row.sort_order ?? 0)), 0) + 1;
@@ -235,7 +233,6 @@ export default async function EditProcessPage({
         initialRows={rows}
         nextSortOrder={nextSortOrder}
         processId={process.process_id}
-        roles={roles}
         roleDictionary={roleDictionaryResult.data}
         systems={systems}
       />

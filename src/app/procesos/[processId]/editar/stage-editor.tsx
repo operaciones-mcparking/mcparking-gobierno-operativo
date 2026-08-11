@@ -1,14 +1,14 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import { GripVertical, HelpCircle, PlusCircle, Save, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { Archive, GripVertical, HelpCircle, PlusCircle, Save } from "lucide-react";
 
-import { reorderSubprocesses } from "@/app/admin/actions";
 import {
   addSubprocessToProcess,
   deleteSubprocess,
-  updateSubprocessImpacts,
+  reorderSubprocesses,
   updateSubprocessDetail,
+  updateSubprocessImpacts,
 } from "@/app/admin/actions";
 import { Badge, criticalityOptions, TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import type { RoleDictionaryItem } from "@/lib/dashboard/data";
@@ -21,18 +21,25 @@ type StageRow = {
   sort_order: number | null;
   criticality: string;
   owner_role_name: string | null;
+  owner_person_name: string | null;
   user_role_name: string | null;
+  user_person_name: string | null;
   support_role_name: string | null;
+  support_person_name: string | null;
   impact_percent: number | null;
   backup_role_name: string | null;
+  backup_person_name: string | null;
   systems: string | null;
   risks: string | null;
   controls: string | null;
 };
 
-type Role = {
+type RoleOption = {
+  currentPersonName: string | null;
   id: string;
+  level: string | null;
   name: string;
+  roleCode: string | null;
 };
 
 type System = {
@@ -47,7 +54,7 @@ const roleHelp = {
   owner: "Rol responsable de que la etapa exista, funcione y tenga seguimiento.",
   user: "Rol que usa la salida de esta etapa o depende de ella para continuar el proceso.",
   support: "Rol que apoya, entrega informacion o participa sin ser el responsable principal.",
-  backup: "Rol que puede cubrir la etapa si el rol dueño o la persona asignada no está disponible.",
+  backup: "Rol que puede cubrir la etapa si el rol dueno o la persona asignada no esta disponible.",
 };
 
 function RoleLabel({
@@ -97,25 +104,40 @@ function PrimaryButton({ children }: { children: React.ReactNode }) {
 }
 
 function RoleSelect({
+  defaultPersonName,
   defaultRole,
   name,
   roles,
 }: {
+  defaultPersonName?: string | null;
   defaultRole: string | null;
   name: string;
-  roles: Role[];
+  roles: RoleOption[];
 }) {
   const defaultRoleId = roles.find((role) => role.name === defaultRole)?.id ?? "";
+  const [selectedRoleId, setSelectedRoleId] = useState(defaultRoleId);
+  const selectedRole = roles.find((role) => role.id === selectedRoleId);
+  const personName = selectedRole?.currentPersonName ?? defaultPersonName ?? null;
 
   return (
-    <select className={inputClass} defaultValue={defaultRoleId} name={name}>
-      <option value="">No definido</option>
-      {roles.map((role) => (
-        <option key={role.id} value={role.id}>
-          {role.name}
-        </option>
-      ))}
-    </select>
+    <div>
+      <select
+        className={inputClass}
+        defaultValue={defaultRoleId}
+        name={name}
+        onChange={(event) => setSelectedRoleId(event.target.value)}
+      >
+        <option value="">No definido</option>
+        {roles.map((role) => (
+          <option key={role.id} value={role.id}>
+            {role.name}
+          </option>
+        ))}
+      </select>
+      <p className="mt-1 text-xs leading-5 text-slate-500">
+        Persona actual: <span className="font-semibold text-navy">{personName ?? "Sin persona asignada"}</span>
+      </p>
+    </div>
   );
 }
 
@@ -123,23 +145,6 @@ function roleTone(level: string | null) {
   if (level === "directivo" || level === "executive" || level === "board") return "info";
   if (level === "gerencial" || level === "jefatura" || level === "strategic" || level === "tactical") return "warning";
   return "success";
-}
-
-function normalizeRoleName(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
-function hasMatchingSystemRole(dictionaryRole: RoleDictionaryItem, roles: Role[]) {
-  const title = normalizeRoleName(dictionaryRole.role_name);
-  const area = normalizeRoleName(dictionaryRole.area_name ?? "");
-
-  return roles.some((role) => {
-    const roleName = normalizeRoleName(role.name);
-    return roleName.includes(title) || title.includes(roleName) || roleName.includes(area);
-  });
 }
 
 function roleLevelLabel(level: string | null) {
@@ -154,88 +159,101 @@ function roleLevelLabel(level: string | null) {
   return "Operativo";
 }
 
+function uniqueRoleOptions(dictionary: RoleDictionaryItem[]) {
+  const byId = new Map<string, RoleOption>();
+
+  for (const role of dictionary) {
+    if (role.role_status !== "active" || byId.has(role.role_id)) {
+      continue;
+    }
+
+    byId.set(role.role_id, {
+      currentPersonName: role.current_person_name,
+      id: role.role_id,
+      level: role.role_level,
+      name: role.role_name,
+      roleCode: role.role_code,
+    });
+  }
+
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
 function RoleDictionary({
   dictionary,
   roles,
 }: {
   dictionary: RoleDictionaryItem[];
-  roles: Role[];
+  roles: RoleOption[];
 }) {
+  const activeRoleIds = new Set(roles.map((role) => role.id));
+
   return (
     <section className="rounded-xl border border-line bg-white">
       <div className="flex flex-col justify-between gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center">
         <div>
-          <h3 className="text-sm font-medium text-navy">Diccionario de roles operativo</h3>
+          <h3 className="text-sm font-medium text-navy">Diccionario de roles oficial</h3>
           <p className="mt-1 text-xs leading-5 text-slate-600">
-            Usalo como guia para elegir rol dueno, usuario, apoyo o respaldo al construir etapas.
+            Los selectores usan solo roles oficiales activos. La persona actual se deriva del rol.
           </p>
         </div>
-        <span className="text-xs text-slate-500">{dictionary.length} roles base</span>
+        <span className="text-xs text-slate-500">{roles.length} roles activos</span>
       </div>
 
-      {dictionary.length === 0 ? (
+      {roles.length === 0 ? (
         <div className="p-4 text-sm text-slate-600">
-          Todavia no hay diccionario cargado. Crealo o editalo desde Roles y personas.
+          Todavia no hay roles oficiales activos disponibles para asociar etapas.
         </div>
       ) : (
         <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-4">
-        {dictionary.map((role) => {
-          const available = hasMatchingSystemRole(role, roles);
-
-          return (
-            <details
-              className="group rounded-lg border border-line bg-[#fbfcfd] p-3 transition open:bg-white"
-              key={role.role_id}
-            >
-              <summary className="cursor-pointer list-none">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <p className="truncate text-sm font-medium text-navy">{role.role_name}</p>
-                      <Badge tone={roleTone(role.role_level)}>{roleLevelLabel(role.role_level)}</Badge>
+          {dictionary
+            .filter((role) => activeRoleIds.has(role.role_id))
+            .map((role) => (
+              <details
+                className="group rounded-lg border border-line bg-[#fbfcfd] p-3 transition open:bg-white"
+                key={role.role_id}
+              >
+                <summary className="cursor-pointer list-none">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="truncate text-sm font-medium text-navy">{role.role_name}</p>
+                        <Badge tone={roleTone(role.role_level)}>{roleLevelLabel(role.role_level)}</Badge>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-slate-600">
+                        Persona actual:{" "}
+                        <span className="font-medium text-navy">
+                          {role.current_person_name ?? "Sin persona"}
+                        </span>
+                      </p>
                     </div>
-                    <p className="mt-1 truncate text-xs text-slate-600">
-                      Persona actual:{" "}
-                      <span className="font-medium text-navy">
-                        {role.current_person_name ?? "Sin persona"}
-                      </span>
-                    </p>
+                    <ValueBadge tone="success">{role.role_code ?? "Sin codigo"}</ValueBadge>
                   </div>
-                  <ValueBadge tone={available ? "success" : "neutral"}>
-                    {role.role_code ?? "Sin codigo"}
-                  </ValueBadge>
-                </div>
-              </summary>
+                </summary>
 
-              <div className="mt-3 border-t border-line pt-3">
-                <p className="text-xs leading-5 text-slate-700">
-                  {role.role_description ?? "Sin descripcion registrada."}
-                </p>
-                <div className="mt-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">
-                    Responsabilidades
+                <div className="mt-3 border-t border-line pt-3">
+                  <p className="text-xs leading-5 text-slate-700">
+                    {role.role_description ?? "Sin descripcion registrada."}
                   </p>
-                  <ul className="mt-2 space-y-1.5 text-xs leading-5 text-slate-700">
-                    {(role.responsibilities ?? []).slice(0, 3).map((responsibility) => (
-                      <li className="flex gap-2" key={responsibility}>
-                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sea" />
-                        <span>{responsibility}</span>
-                      </li>
-                    ))}
-                    {(role.responsibilities ?? []).length === 0 ? (
-                      <li className="text-slate-500">Sin responsabilidades registradas.</li>
-                    ) : null}
-                  </ul>
+                  <div className="mt-3">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">
+                      Responsabilidades
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-xs leading-5 text-slate-700">
+                      {(role.responsibilities ?? []).slice(0, 3).map((responsibility) => (
+                        <li className="flex gap-2" key={responsibility}>
+                          <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sea" />
+                          <span>{responsibility}</span>
+                        </li>
+                      ))}
+                      {(role.responsibilities ?? []).length === 0 ? (
+                        <li className="text-slate-500">Sin responsabilidades registradas.</li>
+                      ) : null}
+                    </ul>
+                  </div>
                 </div>
-                <p className="mt-3 text-[11px] leading-5 text-slate-500">
-                  {available
-                    ? "Existe una referencia similar entre los roles cargados."
-                    : "Si este rol no aparece en los selectores, revisa su creacion en Roles y personas."}
-                </p>
-              </div>
-            </details>
-          );
-        })}
+              </details>
+            ))}
         </div>
       )}
     </section>
@@ -301,124 +319,40 @@ function moveItem(items: StageRow[], fromIndex: number, toIndex: number) {
   }));
 }
 
-function clampImpact(value: number) {
-  if (Number.isNaN(value)) {
-    return 0;
+function parseImpact(value: string) {
+  if (value.trim() === "") {
+    return null;
   }
 
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
+  const number = Number(value);
 
-function normalizeImpacts(items: StageRow[]) {
-  const currentTotal = items.reduce((total, item) => total + (item.impact_percent ?? 0), 0);
-
-  if (items.length === 0) {
-    return items;
+  if (Number.isNaN(number)) {
+    return null;
   }
 
-  if (currentTotal === 100) {
-    return items;
-  }
-
-  if (currentTotal === 0) {
-    const base = Math.floor(100 / items.length);
-    let remainder = 100 - base * items.length;
-
-    return items.map((item) => {
-      const extra = remainder > 0 ? 1 : 0;
-      remainder -= extra;
-      return { ...item, impact_percent: base + extra };
-    });
-  }
-
-  return distributeRemaining(items, 100, currentTotal);
-}
-
-function distributeRemaining(items: StageRow[], targetTotal: number, currentTotal: number) {
-  const raw = items.map((item) => {
-    const currentImpact = item.impact_percent ?? 0;
-    const exact = (currentImpact / currentTotal) * targetTotal;
-    const floor = Math.floor(exact);
-
-    return {
-      exact,
-      floor,
-      item,
-      remainder: exact - floor,
-    };
-  });
-  let remaining = targetTotal - raw.reduce((total, item) => total + item.floor, 0);
-  const sorted = [...raw].sort((a, b) => b.remainder - a.remainder);
-  const extras = new Map<StageRow, number>();
-
-  for (const entry of sorted) {
-    if (remaining <= 0) {
-      break;
-    }
-
-    extras.set(entry.item, (extras.get(entry.item) ?? 0) + 1);
-    remaining -= 1;
-  }
-
-  return raw.map((entry) => ({
-    ...entry.item,
-    impact_percent: entry.floor + (extras.get(entry.item) ?? 0),
-  }));
-}
-
-function rebalanceImpacts(items: StageRow[], changedIndex: number, nextImpact: number) {
-  if (items.length <= 1) {
-    return items.map((item, index) => ({
-      ...item,
-      impact_percent: index === changedIndex ? 100 : item.impact_percent,
-    }));
-  }
-
-  const changedImpact = clampImpact(nextImpact);
-  const remaining = 100 - changedImpact;
-  const otherItems = items.filter((_, index) => index !== changedIndex);
-  const otherTotal = otherItems.reduce((total, item) => total + (item.impact_percent ?? 0), 0);
-  const balancedOthers =
-    otherTotal > 0
-      ? distributeRemaining(otherItems, remaining, otherTotal)
-      : distributeRemaining(normalizeImpacts(otherItems), remaining, 100);
-  let otherIndex = 0;
-
-  return items.map((item, index) => {
-    if (index === changedIndex) {
-      return { ...item, impact_percent: changedImpact };
-    }
-
-    const balanced = balancedOthers[otherIndex];
-    otherIndex += 1;
-
-    return {
-      ...item,
-      impact_percent: balanced.impact_percent ?? 0,
-    };
-  });
+  return Math.max(0, Math.min(100, number));
 }
 
 export function StageEditor({
   initialRows,
   nextSortOrder,
   processId,
-  roles,
   roleDictionary,
   systems,
 }: {
   initialRows: StageRow[];
   nextSortOrder: number;
   processId: string;
-  roles: Role[];
   roleDictionary: RoleDictionaryItem[];
   systems: System[];
 }) {
-  const [rows, setRows] = useState(normalizeImpacts(initialRows));
+  const roleOptions = useMemo(() => uniqueRoleOptions(roleDictionary), [roleDictionary]);
+  const [rows, setRows] = useState(initialRows);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const impactBaselineRef = useRef<StageRow[] | null>(null);
+  const impactTotal = rows.reduce((total, item) => total + (item.impact_percent ?? 0), 0);
 
   function saveOrder(nextRows: StageRow[]) {
     setMessage("Guardando orden...");
@@ -438,7 +372,7 @@ export function StageEditor({
         processId,
         nextRows.map((row) => ({
           subprocessId: row.subprocess_id,
-          impactPercent: row.impact_percent ?? 0,
+          impactPercent: row.impact_percent,
         })),
       );
       setMessage(result.error ? result.error : "Impactos actualizados");
@@ -447,7 +381,9 @@ export function StageEditor({
 
   function handleImpactChange(index: number, value: string) {
     const baseline = impactBaselineRef.current ?? rows;
-    const nextRows = rebalanceImpacts(baseline, index, Number(value));
+    const nextRows = baseline.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, impact_percent: parseImpact(value) } : item,
+    );
     setRows(nextRows);
   }
 
@@ -477,19 +413,23 @@ export function StageEditor({
       <div className="border-b border-line px-5 py-4">
         <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
           <div>
-            <h2 className="text-xl font-bold text-navy">Etapas existentes</h2>
+            <h2 className="text-xl font-bold text-navy">Etapas / subprocesos</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Arrastra etapas para cambiar su posicion. El nuevo orden se guarda automaticamente.
+              Completa estructura, criticidad, impacto y roles oficiales sin activar el proceso.
             </p>
           </div>
-          <span className="text-sm font-semibold text-sea">
-            {isPending ? "Guardando..." : message}
-          </span>
+          <div className="text-sm sm:text-right">
+            <p className="font-semibold text-sea">{isPending ? "Guardando..." : message}</p>
+            <p className="font-semibold text-navy">Impacto total actual: {impactTotal}%</p>
+            {rows.length > 0 && impactTotal !== 100 ? (
+              <p className="text-xs font-medium text-[#86510d]">La suma de impactos es distinta de 100%.</p>
+            ) : null}
+          </div>
         </div>
       </div>
 
       <div className="space-y-3 px-5 py-5">
-        <RoleDictionary dictionary={roleDictionary} roles={roles} />
+        <RoleDictionary dictionary={roleDictionary} roles={roleOptions} />
 
         <details className="rounded-lg border border-line bg-white">
           <summary className="cursor-pointer list-none px-4 py-3">
@@ -531,33 +471,27 @@ export function StageEditor({
             <div className="rounded-lg border border-line bg-mist p-4">
               <h3 className="font-bold text-navy">2. Peso dentro del proceso</h3>
               <p className="mt-1 text-sm text-slate-600">
-                La suma de todas las etapas debe ser 100%.
+                El impacto puede quedar vacio mientras el proceso siga como borrador.
               </p>
               <Field label="Impacto %">
-                <input
-                  className={inputClass}
-                  max={100}
-                  min={0}
-                  name="impact_percent"
-                  type="number"
-                />
+                <input className={inputClass} max={100} min={0} name="impact_percent" type="number" />
               </Field>
             </div>
 
             <div className="rounded-lg border border-line bg-mist p-4">
               <h3 className="font-bold text-navy">3. Roles asociados</h3>
               <div className="mt-4 grid gap-4 lg:grid-cols-4">
-                <Field label="Rol dueño" help={roleHelp.owner}>
-                  <RoleSelect defaultRole={null} name="owner_role_id" roles={roles} />
+                <Field label="Rol dueno" help={roleHelp.owner}>
+                  <RoleSelect defaultRole={null} name="owner_role_id" roles={roleOptions} />
                 </Field>
                 <Field label="Rol usuario" help={roleHelp.user}>
-                  <RoleSelect defaultRole={null} name="user_role_id" roles={roles} />
+                  <RoleSelect defaultRole={null} name="user_role_id" roles={roleOptions} />
                 </Field>
                 <Field label="Rol apoyo" help={roleHelp.support}>
-                  <RoleSelect defaultRole={null} name="support_role_id" roles={roles} />
+                  <RoleSelect defaultRole={null} name="support_role_id" roles={roleOptions} />
                 </Field>
                 <Field label="Rol respaldo" help={roleHelp.backup}>
-                  <RoleSelect defaultRole={null} name="backup_role_id" roles={roles} />
+                  <RoleSelect defaultRole={null} name="backup_role_id" roles={roleOptions} />
                 </Field>
               </div>
             </div>
@@ -573,18 +507,10 @@ export function StageEditor({
                 </Field>
                 <div className="grid gap-4 lg:grid-cols-2">
                   <Field label="Riesgo principal">
-                    <input
-                      className={inputClass}
-                      name="risk_name"
-                      placeholder="Ej: Pago y reserva no coinciden"
-                    />
+                    <input className={inputClass} name="risk_name" placeholder="Ej: Pago y reserva no coinciden" />
                   </Field>
                   <Field label="Control principal">
-                    <input
-                      className={inputClass}
-                      name="control_name"
-                      placeholder="Ej: Validacion diaria de pagos"
-                    />
+                    <input className={inputClass} name="control_name" placeholder="Ej: Validacion diaria de pagos" />
                   </Field>
                 </div>
               </div>
@@ -618,9 +544,7 @@ export function StageEditor({
                   >
                     <GripVertical className="h-4 w-4" />
                   </span>
-                  <span className="text-sm font-bold text-sea">
-                    Etapa {row.sort_order ?? index + 1}
-                  </span>
+                  <span className="text-sm font-bold text-sea">Etapa {row.sort_order ?? index + 1}</span>
                   <span className="font-bold text-navy">{row.subprocess_name}</span>
                   <span className="text-sm text-slate-600">
                     {row.impact_percent === null ? "Sin impacto" : `${row.impact_percent}%`}
@@ -639,18 +563,13 @@ export function StageEditor({
                       key={impactRow.subprocess_id}
                       name={`impact_all:${impactRow.subprocess_id}`}
                       type="hidden"
-                      value={impactRow.impact_percent ?? 0}
+                      value={impactRow.impact_percent ?? ""}
                     />
                   ))}
 
                   <div className="grid gap-4 lg:grid-cols-[1fr_160px_160px]">
                     <Field label="Nombre etapa">
-                      <input
-                        className={inputClass}
-                        name="name"
-                        required
-                        defaultValue={row.subprocess_name}
-                      />
+                      <input className={inputClass} name="name" required defaultValue={row.subprocess_name} />
                     </Field>
                     <Field label="Impacto %">
                       <input
@@ -659,18 +578,14 @@ export function StageEditor({
                         min={0}
                         name="impact_percent"
                         type="number"
-                        value={row.impact_percent ?? 0}
+                        value={row.impact_percent ?? ""}
                         onBlur={handleImpactBlur}
                         onChange={(event) => handleImpactChange(index, event.target.value)}
                         onFocus={handleImpactFocus}
                       />
                     </Field>
                     <Field label="Criticidad">
-                      <select
-                        className={inputClass}
-                        name="criticality"
-                        defaultValue={row.criticality}
-                      >
+                      <select className={inputClass} name="criticality" defaultValue={row.criticality}>
                         {criticalityOptions.map((option) => (
                           <option key={option.value} value={option.value}>
                             {option.label}
@@ -682,11 +597,7 @@ export function StageEditor({
 
                   <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_180px]">
                     <Field label="Descripcion">
-                      <textarea
-                        className={`${inputClass} min-h-24`}
-                        name="description"
-                        defaultValue={row.subprocess_description ?? ""}
-                      />
+                      <textarea className={`${inputClass} min-h-24`} name="description" defaultValue={row.subprocess_description ?? ""} />
                     </Field>
                     <Field label="Frecuencia">
                       <input className={inputClass} name="frequency" />
@@ -694,34 +605,36 @@ export function StageEditor({
                   </div>
 
                   <div className="mt-4 grid gap-4 lg:grid-cols-4">
-                    <Field label="Rol dueño" help={roleHelp.owner}>
+                    <Field label="Rol dueno" help={roleHelp.owner}>
                       <RoleSelect
+                        defaultPersonName={row.owner_person_name}
                         defaultRole={row.owner_role_name}
                         name="owner_role_id"
-                        roles={roles}
+                        roles={roleOptions}
                       />
                     </Field>
                     <Field label="Rol usuario" help={roleHelp.user}>
                       <RoleSelect
+                        defaultPersonName={row.user_person_name}
                         defaultRole={row.user_role_name}
                         name="user_role_id"
-                        roles={roles}
+                        roles={roleOptions}
                       />
                     </Field>
                     <Field label="Rol apoyo" help={roleHelp.support}>
                       <RoleSelect
+                        defaultPersonName={row.support_person_name}
                         defaultRole={row.support_role_name}
                         name="support_role_id"
-                        roles={roles}
+                        roles={roleOptions}
                       />
                     </Field>
                     <Field label="Rol respaldo" help={roleHelp.backup}>
                       <RoleSelect
-                        defaultRole={
-                          row.backup_role_name === "No definido" ? null : row.backup_role_name
-                        }
+                        defaultPersonName={row.backup_person_name}
+                        defaultRole={row.backup_role_name === "No definido" ? null : row.backup_role_name}
                         name="backup_role_id"
-                        roles={roles}
+                        roles={roleOptions}
                       />
                     </Field>
                   </div>
@@ -737,18 +650,10 @@ export function StageEditor({
                       </Field>
                       <div className="grid gap-4 lg:grid-cols-2">
                         <Field label="Riesgo principal">
-                          <input
-                            className={inputClass}
-                            name="risk_name"
-                            defaultValue={firstListItem(row.risks)}
-                          />
+                          <input className={inputClass} name="risk_name" defaultValue={firstListItem(row.risks)} />
                         </Field>
                         <Field label="Control principal">
-                          <input
-                            className={inputClass}
-                            name="control_name"
-                            defaultValue={firstListItem(row.controls)}
-                          />
+                          <input className={inputClass} name="control_name" defaultValue={firstListItem(row.controls)} />
                         </Field>
                       </div>
                     </div>
@@ -766,11 +671,11 @@ export function StageEditor({
                     className="inline-flex items-center gap-2 rounded-md border border-[#ffd6b0] bg-[#fff7ef] px-4 py-2 text-sm font-bold text-[#86510d] transition hover:bg-[#ffe6ca]"
                     type="submit"
                   >
-                    <Trash2 className="h-4 w-4" />
-                    Eliminar etapa
+                    <Archive className="h-4 w-4" />
+                    Archivar etapa
                   </button>
                   <p className="mt-2 text-xs text-slate-500">
-                    Esto elimina tambien las relaciones de roles y sistemas vinculadas a esta etapa.
+                    Esto oculta la etapa del editor y la ficha normal, conservando sus relaciones historicas.
                   </p>
                 </form>
               </div>

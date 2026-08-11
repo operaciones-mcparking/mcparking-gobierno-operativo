@@ -791,6 +791,11 @@ export async function addSubprocessToProcess(formData: FormData) {
   const { supabase } = await requireAdminAccess();
   const criticality = value(formData, "criticality");
   const impactPercent = numberValue(formData, "impact_percent");
+  const editableError = await assertEditableProcess(supabase, processId);
+
+  if (editableError) {
+    fail(editableError.message, returnTo);
+  }
   const { data, error } = await supabase
     .from("subprocesses")
     .insert({
@@ -1750,7 +1755,7 @@ export async function reorderSubprocesses(processId: string, orderedIds: string[
 
 export async function updateSubprocessImpacts(
   processId: string,
-  impacts: Array<{ subprocessId: string; impactPercent: number }>,
+  impacts: Array<{ subprocessId: string; impactPercent: number | null }>,
 ) {
   const { supabase } = await requireAdminAccess();
 
@@ -1784,6 +1789,102 @@ export async function updateSubprocessImpacts(
   return { error: null };
 }
 
+async function assertEditableProcess(
+  supabase: AdminSupabaseClient,
+  processId: string,
+  subprocessId?: string,
+) {
+  const { data: process, error: processError } = await supabase
+    .from("processes")
+    .select("id,status")
+    .eq("id", processId)
+    .maybeSingle();
+
+  if (processError) {
+    return processError;
+  }
+
+  if (!process) {
+    return new Error("No se encontro el proceso.");
+  }
+
+  if (process.status === "archived") {
+    return new Error("No se puede editar un proceso archivado.");
+  }
+
+  if (!subprocessId) {
+    return null;
+  }
+
+  const { data: subprocess, error: subprocessError } = await supabase
+    .from("subprocesses")
+    .select("id,status")
+    .eq("id", subprocessId)
+    .eq("process_id", processId)
+    .maybeSingle();
+
+  if (subprocessError) {
+    return subprocessError;
+  }
+
+  if (!subprocess) {
+    return new Error("No se encontro la etapa del proceso.");
+  }
+
+  if (subprocess.status === "archived") {
+    return new Error("No se puede editar una etapa archivada.");
+  }
+
+  return null;
+}
+
+async function resolveOfficialRoleCompanyId({
+  supabase,
+  processId,
+  roleId,
+}: {
+  supabase: AdminSupabaseClient;
+  processId: string;
+  roleId: string | null;
+}) {
+  if (!roleId) {
+    return { error: null, roleCompanyId: null };
+  }
+
+  const { data: dictionaryRole, error: dictionaryRoleError } = await supabase
+    .from("v_role_dictionary")
+    .select("role_id,role_status,company_id")
+    .eq("role_id", roleId)
+    .maybeSingle();
+
+  if (dictionaryRoleError) {
+    return { error: dictionaryRoleError, roleCompanyId: null };
+  }
+
+  if (!dictionaryRole || dictionaryRole.role_status !== "active") {
+    return { error: new Error("Selecciona un rol oficial activo."), roleCompanyId: null };
+  }
+
+  if (dictionaryRole.company_id) {
+    return { error: null, roleCompanyId: dictionaryRole.company_id };
+  }
+
+  const { data: process, error: processError } = await supabase
+    .from("processes")
+    .select("operating_company_id, company_id")
+    .eq("id", processId)
+    .maybeSingle();
+
+  if (processError) {
+    return { error: processError, roleCompanyId: null };
+  }
+
+  return {
+    error: null,
+    roleCompanyId: process?.operating_company_id ?? process?.company_id ?? null,
+  };
+}
+
 async function replaceProcessRole({
   supabase,
   criticality,
@@ -1801,6 +1902,22 @@ async function replaceProcessRole({
   roleId: string | null;
   subprocessId: string;
 }) {
+  const editableError = await assertEditableProcess(supabase, processId, subprocessId);
+
+  if (editableError) {
+    return editableError;
+  }
+
+  const roleResolution = await resolveOfficialRoleCompanyId({
+    supabase,
+    processId,
+    roleId,
+  });
+
+  if (roleResolution.error) {
+    return roleResolution.error;
+  }
+
   const { error: deleteError } = await supabase
     .from("process_roles")
     .delete()
@@ -1816,38 +1933,11 @@ async function replaceProcessRole({
     return null;
   }
 
-  const { data: roleCompany, error: roleCompanyError } = await supabase
-    .from("roles")
-    .select("areas(company_id)")
-    .eq("id", roleId)
-    .maybeSingle();
-
-  if (roleCompanyError) {
-    return roleCompanyError;
-  }
-
-  const area = Array.isArray(roleCompany?.areas) ? roleCompany?.areas[0] : roleCompany?.areas;
-  let roleCompanyId = area?.company_id ?? null;
-
-  if (!roleCompanyId) {
-    const { data: process, error: processError } = await supabase
-      .from("processes")
-      .select("operating_company_id, company_id")
-      .eq("id", processId)
-      .maybeSingle();
-
-    if (processError) {
-      return processError;
-    }
-
-    roleCompanyId = process?.operating_company_id ?? process?.company_id ?? null;
-  }
-
   const { error } = await supabase.from("process_roles").insert({
     process_id: processId,
     subprocess_id: subprocessId,
     role_id: roleId,
-    role_company_id: roleCompanyId,
+    role_company_id: roleResolution.roleCompanyId,
     responsibility_type: responsibilityType,
     impact_percent: impactPercent,
     criticality,
@@ -1970,11 +2060,16 @@ export async function updateSubprocessDetail(formData: FormData) {
   const { supabase } = await requireAdminAccess();
   const criticality = value(formData, "criticality");
   const impactPercent = numberValue(formData, "impact_percent");
+  const editableError = await assertEditableProcess(supabase, processId, subprocessId);
+
+  if (editableError) {
+    fail(editableError.message, returnTo);
+  }
   const allImpacts = Array.from(formData.entries())
     .filter(([key]) => key.startsWith("impact_all:"))
     .map(([key, raw]) => ({
       subprocessId: key.replace("impact_all:", ""),
-      impactPercent: typeof raw === "string" && raw.trim().length > 0 ? Number(raw) : 0,
+      impactPercent: typeof raw === "string" && raw.trim().length > 0 ? Number(raw) : null,
     }));
 
   const { error: subprocessError } = await supabase
@@ -2078,9 +2173,15 @@ export async function deleteSubprocess(formData: FormData) {
   const subprocessId = value(formData, "subprocess_id");
   const returnTo = `/procesos/${processId}/editar`;
   const { supabase } = await requireAdminAccess();
+  const editableError = await assertEditableProcess(supabase, processId, subprocessId);
+
+  if (editableError) {
+    fail(editableError.message, returnTo);
+  }
+
   const { error } = await supabase
     .from("subprocesses")
-    .delete()
+    .update({ status: "archived" })
     .eq("id", subprocessId)
     .eq("process_id", processId);
 
@@ -2088,5 +2189,5 @@ export async function deleteSubprocess(formData: FormData) {
     fail(error.message, returnTo);
   }
 
-  done("Etapa eliminada", returnTo);
+  done("Etapa archivada", returnTo);
 }
