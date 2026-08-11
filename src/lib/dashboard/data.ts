@@ -120,6 +120,7 @@ export type ProcessCatalogV2Item = Omit<
   "responsibility_count" | "subprocess_count" | "system_count"
 > & {
   active_stage_count: number;
+  area_id: string | null;
   basic_kpi: string | null;
   company_id: string | null;
   current_person_ids: string[];

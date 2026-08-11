@@ -406,6 +406,30 @@ export function ProcessEditModal({
                 </Field>
               </div>
 
+              <div className="grid gap-4 lg:grid-cols-3">
+                <Field label="Entradas y proveedores">
+                  <textarea
+                    className={`${inputClass} min-h-28`}
+                    defaultValue={process.inputs_providers ?? ""}
+                    name="inputs_providers"
+                  />
+                </Field>
+                <Field label="Salidas y clientes">
+                  <textarea
+                    className={`${inputClass} min-h-28`}
+                    defaultValue={process.outputs_clients ?? ""}
+                    name="outputs_clients"
+                  />
+                </Field>
+                <Field label="KPI basico">
+                  <textarea
+                    className={`${inputClass} min-h-28`}
+                    defaultValue={process.basic_kpi ?? ""}
+                    name="basic_kpi"
+                  />
+                </Field>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Field label="Tipo de proceso">
                   <select className={inputClass} defaultValue={process.process_type} name="process_type">

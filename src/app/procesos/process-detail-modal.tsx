@@ -184,6 +184,7 @@ export function ProcessDetailModal({
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <TextSection label="Objetivo" value={process.objective} />
+                <TextSection label="Resultado esperado" value={process.expected_result} />
                 <TextSection label="Entradas y proveedores" value={process.inputs_providers} />
                 <TextSection label="Salidas y clientes" value={process.outputs_clients} />
                 <TextSection label="KPI basico" value={process.basic_kpi} />

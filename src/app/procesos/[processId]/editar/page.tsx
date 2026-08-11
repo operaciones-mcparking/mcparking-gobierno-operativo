@@ -10,7 +10,7 @@ import {
 import { DashboardShell } from "@/components/dashboard/shell";
 import { updateProcessBasics } from "@/app/admin/actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProcessCatalogItem, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
+import { getProcessCatalogV2Item, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
 import { ArchiveProcessPanel } from "./archive-process-panel";
 import { StageEditor } from "./stage-editor";
 
@@ -70,7 +70,7 @@ export default async function EditProcessPage({
   const messages = await searchParams;
   const supabase = createSupabaseServerClient();
   const [processResult, matrixResult, rolesResult, systemsResult, roleDictionaryResult] = await Promise.all([
-    getProcessCatalogItem(processId),
+    getProcessCatalogV2Item(processId),
     getProcessMatrix(processId),
     supabase.from("roles").select("id,name").order("name"),
     supabase.from("systems").select("id,name").order("name"),
@@ -159,6 +159,30 @@ export default async function EditProcessPage({
               />
             </Field>
           </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Field label="Entradas y proveedores">
+              <textarea
+                className={`${inputClass} min-h-28`}
+                name="inputs_providers"
+                defaultValue={process.inputs_providers ?? ""}
+              />
+            </Field>
+            <Field label="Salidas y clientes">
+              <textarea
+                className={`${inputClass} min-h-28`}
+                name="outputs_clients"
+                defaultValue={process.outputs_clients ?? ""}
+              />
+            </Field>
+            <Field label="KPI basico">
+              <textarea
+                className={`${inputClass} min-h-28`}
+                name="basic_kpi"
+                defaultValue={process.basic_kpi ?? ""}
+              />
+            </Field>
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Tipo de proceso">
               <select className={inputClass} name="process_type" defaultValue={process.process_type}>
