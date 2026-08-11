@@ -1,0 +1,1451 @@
+{
+  "version": "process_catalog_v2",
+  "source_a": {
+    "path": "C:\\Users\\McParking\\Desktop\\Manual Completo de Fichas de Proceso V2 - McParking.docx",
+    "status": "available_locally",
+    "fields_found": [
+      "process_type",
+      "name",
+      "objective",
+      "owner_role_name",
+      "inputs_providers",
+      "outputs_clients",
+      "basic_kpi"
+    ]
+  },
+  "source_b": {
+    "path": "C:\\Users\\McParking\\Desktop\\procesos.docx",
+    "status": "available_locally",
+    "fields_found": [
+      "process_type",
+      "name",
+      "stages",
+      "owner_role_name",
+      "current_person_reference",
+      "support_roles"
+    ]
+  },
+  "processes": [
+    {
+      "canonical_key": "revenue_management",
+      "number": 1,
+      "name": "Revenue Management",
+      "process_type": "strategic",
+      "objective": "Optimizar la estructura tarifaria de las concesiones mediante el análisis dinámico de la oferta, demanda y ocupación para maximizar los ingresos y el ADR.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Responsable Revenue / Analista Revenue",
+      "current_person_reference": "Por asignar",
+      "support_roles": [
+        "Gerente General",
+        "Analista Datos TI"
+      ],
+      "inputs_providers": "Métricas de ocupación, reportes de base de datos (Analista Datos TI), presupuestos y lineamientos del negocio (Gerente General).",
+      "outputs_clients": "Estructura de precios actualizada, reglas de negocio de descuentos. (Clientes: Canal de Reserva Online, TI / Comercial).",
+      "basic_kpi": "ADR (Tarifa Promedio Diaria) e Ingreso Total Mensual por Concesión.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Revenue",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Revision ocupacion",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Analisis demanda",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Definicion precios",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Revision descuentos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Seguimiento ADR/ingresos",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "direccion_planificacion_operacional",
+      "number": 2,
+      "name": "Dirección y Planificación Operacional",
+      "process_type": "strategic",
+      "objective": "Definir el rumbo de la operación del holding, evaluar brechas de rendimiento y tomar decisiones operacionales estratégicas para la expansión.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Gerente General",
+      "current_person_reference": "German",
+      "support_roles": [
+        "Jefe Operaciones",
+        "Gerente Finanzas"
+      ],
+      "inputs_providers": "Reportes de capacidad (Jefe Operaciones), estados de resultados (Gerente Finanzas).",
+      "outputs_clients": "Planes de acción operacionales, metas de crecimiento anual. (Clientes: Todo el equipo directivo y operacional).",
+      "basic_kpi": "% de cumplimiento de objetivos estratégicos anuales y tasa de crecimiento regional.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Direccion",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Definir prioridades",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Revisar capacidad",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Revisar brechas",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Tomar decisiones operativas",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "estrategia_comercial_alianzas",
+      "number": 3,
+      "name": "Estrategia Comercial y Alianzas",
+      "process_type": "strategic",
+      "objective": "Negociar y habilitar alianzas con bancos, convenios corporativos y canales externos para incrementar el flujo de clientes.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "TI / Comercial",
+      "current_person_reference": "Jose Luis",
+      "support_roles": [
+        "Gerente General",
+        "Revenue"
+      ],
+      "inputs_providers": "Requerimientos comerciales de expansión (Gerente General), propuestas tarifarias (Revenue Management).",
+      "outputs_clients": "Contratos de convenio vigentes, integraciones comerciales funcionales. (Clientes: Clientes finales, Canales de reserva).",
+      "basic_kpi": "% de reservas provenientes de convenios y alianzas comerciales.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Tecnologia / Comercial",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Bancos",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Convenios",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Campanas",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Descuentos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Canales comerciales",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "planificacion_capacidad_ocupacion",
+      "number": 4,
+      "name": "Planificación de Capacidad y Ocupación",
+      "process_type": "strategic",
+      "objective": "Prever y gestionar el inventario físico de estacionamientos libres, mitigando cuellos de botella operativos en fechas de alta demanda (peak dates).",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Revenue",
+        "Analista Datos TI"
+      ],
+      "inputs_providers": "Datos de tendencias y reservas futuras (Revenue Management, Analista Datos TI).",
+      "outputs_clients": "Plan de distribución física de espacios, alertas de sobreocupación. (Clientes: Operación en patio, Canales de venta).",
+      "basic_kpi": "Factor de utilización del recinto físico durante fechas críticas o festivos.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Datos",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Revisar ocupacion futura",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Capacidad disponible",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Peak dates",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Restricciones operativas",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "reservas_mcparking",
+      "number": 5,
+      "name": "Reservas McParking",
+      "process_type": "operational",
+      "objective": "Gestionar de forma interna la cotización, aplicación de promociones y registro formal de reservas solicitadas por canales directos.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Atencion al Cliente",
+        "TI / Comercial"
+      ],
+      "inputs_providers": "Solicitudes directas de clientes (Atención al Cliente), lineamientos técnicos (TI / Comercial).",
+      "outputs_clients": "Comprobante de reserva emitido y validado, registro en la base de datos de patio. (Clientes: Cliente final, Operación check-in).",
+      "basic_kpi": "Tiempo promedio de procesamiento y emisión del comprobante de reserva.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Operaciones",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Cotizacion",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Seleccion fechas",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Aplicacion descuentos",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Confirmacion",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Pago",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Envio de comprobante",
+          "sort_order": 6,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "cotizacion_reserva_online",
+      "number": 6,
+      "name": "Cotización y Reserva Online",
+      "process_type": "operational",
+      "objective": "Garantizar la disponibilidad del canal web para que los clientes finales realicen cotizaciones autónomas y cierren reservas de forma digital.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "TI / Comercial",
+      "current_person_reference": "Jose Luis",
+      "support_roles": [
+        "Revenue",
+        "Atencion al Cliente"
+      ],
+      "inputs_providers": "Tarifas cargadas en backend (Revenue Management), plataforma en línea operativa (Sistemas y datos).",
+      "outputs_clients": "Reserva autogestionada confirmada, pasarela de pago procesada de forma correcta. (Clientes: Clientes finales, Atención al cliente).",
+      "basic_kpi": "Tasa de conversión de visitas de la web a reservas concretadas (% Conversión).",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Servicio",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Cliente consulta precio",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Elige fechas",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Revisa disponibilidad",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Inicia reserva",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "check_in_recepcion_vehiculo",
+      "number": 7,
+      "name": "Check-in y Recepción del Vehículo",
+      "process_type": "operational",
+      "objective": "Validar el ingreso de los clientes al estacionamiento, verificando sus datos, patente y entregando las instrucciones correspondientes de seguridad.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Atencion al Cliente"
+      ],
+      "inputs_providers": "Cliente en portería de acceso, reserva válida en sistema (Atención al Cliente / Canales Online).",
+      "outputs_clients": "Vehículo ingresado a patio, cliente registrado y listo para el traslado. (Clientes: Proceso de Custodia, Pasajeros del Shuttle).",
+      "basic_kpi": "Tiempo medio de ciclo del check-in por cliente (en minutos).",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Operaciones",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Validar reserva",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Recibir cliente",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Registrar ingreso",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Revisar patente/datos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Entregar instrucciones",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "custodia_vehiculo",
+      "number": 8,
+      "name": "Custodia del Vehículo",
+      "process_type": "operational",
+      "objective": "Garantizar la protección perimetral e integridad de los automóviles resguardados en patio mediante controles internos y monitoreo tecnológico activo.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Obras Civiles",
+        "Equipo Operativo"
+      ],
+      "inputs_providers": "Vehículo recepcionado y parqueado (Equipo Operativo), mantención de cámaras e iluminación al día (Obras Civiles).",
+      "outputs_clients": "Vehículo mantenido sin siniestros durante el periodo de permanencia. (Clientes: Proceso de Check-out / Cliente final).",
+      "basic_kpi": "Índice de siniestros o incidentes de seguridad reportados en patio (Meta: 0%).",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Operaciones",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Ubicacion vehiculo",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Control interno",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Resguardo",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Monitoreo",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Manejo de incidentes",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "traslado_aeropuerto",
+      "number": 9,
+      "name": "Traslado al Aeropuerto",
+      "process_type": "operational",
+      "objective": "Asegurar el transporte seguro, cómodo y a tiempo de los pasajeros y sus equipajes desde el parking hacia los terminales de salida del aeropuerto.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Equipo Operativo"
+      ],
+      "inputs_providers": "Clientes con check-in finalizado, disponibilidad de vehículos del tipo shuttle (Equipo Operativo).",
+      "outputs_clients": "Pasajeros desembarcados conformes en el aeropuerto, registro de salida de la van. (Clientes: Clientes finales).",
+      "basic_kpi": "Tiempo de espera promedio del cliente para el abordaje del shuttle.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Operaciones",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Coordinar shuttle",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Cargar pasajeros/equipaje",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Traslado al terminal",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Registrar salida",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "atencion_cliente_operacional",
+      "number": 10,
+      "name": "Atención al Cliente Operacional",
+      "process_type": "operational",
+      "objective": "Resolver de forma ágil todas las solicitudes diarias de información, cambios de vuelos, reclamos o atrasos notificados por los usuarios.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Atención al Cliente",
+      "current_person_reference": "Equipo Operativo",
+      "support_roles": [
+        "Jefe Operaciones"
+      ],
+      "inputs_providers": "Consultas y requerimientos por canales presenciales o digitales (Clientes finales), soporte de contingencias (Jefe Operaciones).",
+      "outputs_clients": "Respuestas entregadas, cambios ingresados al sistema operativo. (Clientes: Cliente final, Personal de patio).",
+      "basic_kpi": "Nivel de satisfacción del cliente (CSAT) posterior a la atención.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Servicio",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Resolver dudas",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Cambios",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Atrasos",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Reclamos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Coordinacion con operacion",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "check_out_entrega_vehiculo",
+      "number": 11,
+      "name": "Check-out y Entrega del Vehículo",
+      "process_type": "operational",
+      "objective": "Gestionar el retorno de los clientes desde el aeropuerto, la verificación de su cuenta y la restitución conforme de su vehículo para el cierre del ciclo del servicio.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Atencion al Cliente"
+      ],
+      "inputs_providers": "Solicitud de recogida por aterrizaje (Cliente), estatus de cuenta al día (Atención al Cliente).",
+      "outputs_clients": "Vehículo entregado al propietario en portería, liberación de plaza en sistema. (Clientes: Cliente final, Finanzas).",
+      "basic_kpi": "Tiempo transcurrido desde la solicitud de recogida en aeropuerto hasta la entrega efectiva de la llave.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Servicio",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Solicitud retorno",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Traslado desde aeropuerto",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Validacion salida",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Entrega vehiculo",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Cierre atencion",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "gestion_incidencias_operativas",
+      "number": 12,
+      "name": "Gestión de Incidencias Operativas",
+      "process_type": "operational",
+      "objective": "Detectar, controlar y documentar desviaciones operacionales urgentes o eventos no deseados en patio para mitigar perjuicios económicos y de reputación.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Jefe Operaciones",
+      "current_person_reference": "Diego Vera",
+      "support_roles": [
+        "Atencion al Cliente",
+        "Gerente General"
+      ],
+      "inputs_providers": "Fallas detectadas o reportes de siniestros en recintos (Equipo Operativo, Atención al Cliente), asesoría corporativa (Gerente General).",
+      "outputs_clients": "Incidente resuelto, informe técnico de cierre, planes de remediación aplicados. (Clientes: Afectados, Aseguradoras).",
+      "basic_kpi": "Tiempo medio de resolución de incidencias operacionales (en horas).",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Operaciones",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Detectar problema",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Registrar caso",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Coordinar solucion",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Informar cliente",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Cerrar incidente",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "cierre_operacional_liquidacion_cobranza_inversionistas",
+      "number": 13,
+      "name": "Cierre Operacional, Liquidación y Cobranza a Inversionistas",
+      "process_type": "support",
+      "objective": "Consolidar las transacciones y cierres de caja de las concesiones para calcular, respaldar y emitir las liquidaciones financieras de los inversionistas asociados.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Gerente Finanzas",
+      "current_person_reference": "Sin persona asignada",
+      "support_roles": [
+        "Analista Contable",
+        "Gerente General"
+      ],
+      "inputs_providers": "Cierres operacionales validados (Analista Contable), directrices de distribución societaria (Gerente General).",
+      "outputs_clients": "Informes de liquidación despachados, transferencias de fondos ejecutadas. (Clientes: Inversionistas del Holding).",
+      "basic_kpi": "Días de desfase en el pago de liquidaciones mensuales post-cierre de mes.",
+      "company": {
+        "owner": "El Alba",
+        "operating": "McParking"
+      },
+      "area": "Administracion",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Consolidar operacion",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Revisar ingresos",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Calcular liquidaciones",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Preparar pagos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Respaldar informacion",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "finanzas_contabilidad",
+      "number": 14,
+      "name": "Finanzas y Contabilidad",
+      "process_type": "support",
+      "objective": "Registrar la totalidad de hechos económicos de McParking, controlando la facturación, conciliación bancaria y la preparación de estados financieros legales.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Analista Contable",
+      "current_person_reference": "Romario Larenas",
+      "support_roles": [
+        "Gerente Finanzas"
+      ],
+      "inputs_providers": "Cartolas bancarias, facturas de compras (Proveedores), registros de ingresos devengados (Gerente Finanzas).",
+      "outputs_clients": "Balances mensuales de la empresa, pagos de impuestos al día, registros contables auditados. (Clientes: Gerencia General, Entidades Fiscalizadoras).",
+      "basic_kpi": "% de transacciones bancarias conciliadas antes del cierre mensual de cuentas.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Finanzas",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Conciliacion bancaria",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Facturacion",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Pagos proveedores",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Control gastos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Estados financieros",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "sistemas_datos",
+      "number": 15,
+      "name": "Sistemas y Datos",
+      "process_type": "support",
+      "objective": "Asegurar la estabilidad tecnológica de los sistemas operativos del negocio, la calidad de la base de datos centralizada y dar soporte técnico general al hardware/software.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Analista Datos TI",
+      "current_person_reference": "Agustin Zilleruelo",
+      "support_roles": [
+        "TI / Comercial"
+      ],
+      "inputs_providers": "Reportes de fallas o incidencias de software/hardware (Todo el equipo), requerimientos funcionales (TI / Comercial).",
+      "outputs_clients": "Plataforma de reservas con alto porcentaje de uptime, reportes analíticos de BI e integraciones operativas. (Clientes: Revenue, Operaciones).",
+      "basic_kpi": "Disponibilidad de la plataforma de reservas (% Uptime mensual del sistema).",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Datos",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Mantencion plataforma",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Reportes",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Integraciones",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Calidad de datos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Soporte tecnico",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "infraestructura_mantenciones",
+      "number": 16,
+      "name": "Infraestructura y Mantenciones",
+      "process_type": "support",
+      "objective": "Mantener en estado óptimo las instalaciones físicas de los estacionamientos (cámaras, barreras de acceso, iluminación y señalética) resguardando la continuidad operacional.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Obras Civiles",
+      "current_person_reference": "Nicolas Valdes",
+      "support_roles": [
+        "Jefe Operaciones"
+      ],
+      "inputs_providers": "Plan de mantención preventiva, solicitudes de reparación reactivas por fallas (Jefe Operaciones).",
+      "outputs_clients": "Infraestructura e instalaciones operando bajo estándares de seguridad corporativos. (Clientes: Operación en patio, Clientes finales).",
+      "basic_kpi": "% de cumplimiento del plan de mantenimiento preventivo de los recintos.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Infraestructura",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Mantencion terreno",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Senaletica",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Camaras",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Portones",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Iluminacion",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Mejoras fisicas",
+          "sort_order": 6,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "personas_turnos",
+      "number": 17,
+      "name": "Personas y Turnos",
+      "process_type": "support",
+      "objective": "Planificar y controlar la asignación de turnos del personal en patio y conductores, cubriendo ausencias para garantizar la dotación en periodos peak.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Encargado de Turnos / Personas",
+      "current_person_reference": "Por asignar",
+      "support_roles": [
+        "Jefe Operaciones"
+      ],
+      "inputs_providers": "Proyecciones de volumen de clientes y vuelos (Jefe Operaciones), reportes de licencias o vacaciones.",
+      "outputs_clients": "Malla de turnos semanales/mensuales publicada, registros consolidados de asistencia. (Clientes: Personal operativo).",
+      "basic_kpi": "Tasa de ausentismo no programado y cobertura de dotación en turnos críticos.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Operaciones",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Planificar turnos",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Asistencia",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Reemplazos",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Necesidades operativas",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Coordinacion equipo",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "gestion_proveedores",
+      "number": 18,
+      "name": "Gestión de Proveedores",
+      "process_type": "support",
+      "objective": "Evaluar, cotizar y comprar insumos críticos o contratar servicios de terceros en las condiciones más eficientes de costo, calidad y plazos.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Encargado de Proveedores",
+      "current_person_reference": "Por asignar",
+      "support_roles": [
+        "Finanzas",
+        "Operaciones"
+      ],
+      "inputs_providers": "Requerimientos de compras o repuestos (Operaciones, Finanzas), propuestas técnicas de proveedores del mercado.",
+      "outputs_clients": "Órdenes de compra validadas, contratos comerciales suscritos con terceros. (Clientes: Finanzas, Operaciones).",
+      "basic_kpi": "% de proveedores críticos evaluados con nivel de cumplimiento conforme.",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Contabilidad",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Cotizaciones",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Compras",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Seguimiento servicios",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Pagos",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Evaluacion proveedores",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    },
+    {
+      "canonical_key": "control_documental_administracion",
+      "number": 19,
+      "name": "Control Documental y Administración",
+      "process_type": "support",
+      "objective": "Garantizar la integridad jurídica e institucional del holding mediante el archivo ordenado de contratos de concesión, pólizas de seguros y evidencias de auditorías.",
+      "description": null,
+      "expected_result": null,
+      "owner_role_name": "Analista Contable",
+      "current_person_reference": "Romario Larenas",
+      "support_roles": [
+        "Gerente Finanzas"
+      ],
+      "inputs_providers": "Contratos firmados, actas corporativas, documentos tributarios (Gerente Finanzas).",
+      "outputs_clients": "Repositorio digital y físico indexado, reportes internos de cumplimiento de vigencias. (Clientes: Gerencia General, Auditores).",
+      "basic_kpi": "Tiempo de búsqueda y disponibilidad de documentos legales críticos (Meta: inmediato).",
+      "company": {
+        "owner": "McParking",
+        "operating": "McParking"
+      },
+      "area": "Contabilidad",
+      "criticality": null,
+      "status": "active",
+      "stages": [
+        {
+          "name": "Contratos",
+          "sort_order": 1,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Respaldos",
+          "sort_order": 2,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Documentos tributarios",
+          "sort_order": 3,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Carpetas",
+          "sort_order": 4,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Evidencias",
+          "sort_order": 5,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        },
+        {
+          "name": "Auditoria interna",
+          "sort_order": 6,
+          "description": null,
+          "criticality": null,
+          "owner_role_name": null,
+          "support_roles": []
+        }
+      ]
+    }
+  ],
+  "preflight_3a": {
+    "remote_checked_at": "2026-08-11",
+    "role_resolution": {
+      "owner_roles": {
+        "Responsable Revenue / Analista Revenue": {
+          "classification": "INEXISTENTE",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "D. Requiere decisión del usuario: crear rol funcional o mapearlo explícitamente."
+        },
+        "Gerente General": {
+          "classification": "EXACTO",
+          "matched_role_name": "Gerente General",
+          "matched_role_id_short": "ce2bfa79",
+          "decision": "Usar rol existente."
+        },
+        "TI / Comercial": {
+          "classification": "EXACTO",
+          "matched_role_name": "TI / Comercial",
+          "matched_role_id_short": "10771b45",
+          "decision": "Usar rol existente."
+        },
+        "Jefe Operaciones": {
+          "classification": "EXACTO",
+          "matched_role_name": "Jefe Operaciones",
+          "matched_role_id_short": "d5aeb1c1",
+          "decision": "Usar rol existente."
+        },
+        "Atención al Cliente": {
+          "classification": "EQUIVALENTE_SEGURO",
+          "matched_role_name": "Atencion al Cliente",
+          "matched_role_id_short": "1c13855a",
+          "decision": "Usar rol existente con diferencia solo de acento."
+        },
+        "Gerente Finanzas": {
+          "classification": "EXACTO",
+          "matched_role_name": "Gerente Finanzas",
+          "matched_role_id_short": "bc9176e9",
+          "decision": "Usar rol existente; no tiene persona primaria asignada."
+        },
+        "Analista Contable": {
+          "classification": "EXACTO",
+          "matched_role_name": "Analista Contable",
+          "matched_role_id_short": "bdb81177",
+          "decision": "Usar rol existente."
+        },
+        "Analista Datos TI": {
+          "classification": "EXACTO",
+          "matched_role_name": "Analista Datos TI",
+          "matched_role_id_short": "e2f8a7b5",
+          "decision": "Usar rol existente."
+        },
+        "Obras Civiles": {
+          "classification": "EXACTO",
+          "matched_role_name": "Obras Civiles",
+          "matched_role_id_short": "6f0a82e5",
+          "decision": "Usar rol existente."
+        },
+        "Encargado de Turnos / Personas": {
+          "classification": "INEXISTENTE",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "D. Requiere decisión del usuario: crear rol funcional o dejar temporalmente sin relación."
+        },
+        "Encargado de Proveedores": {
+          "classification": "INEXISTENTE",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "D. Requiere decisión del usuario: crear rol funcional o dejar temporalmente sin relación."
+        }
+      },
+      "support_roles": {
+        "Gerente General": {
+          "classification": "EXACTO",
+          "matched_role_name": "Gerente General",
+          "matched_role_id_short": "ce2bfa79",
+          "decision": "Usar rol existente."
+        },
+        "Analista Datos TI": {
+          "classification": "EXACTO",
+          "matched_role_name": "Analista Datos TI",
+          "matched_role_id_short": "e2f8a7b5",
+          "decision": "Usar rol existente."
+        },
+        "Jefe Operaciones": {
+          "classification": "EXACTO",
+          "matched_role_name": "Jefe Operaciones",
+          "matched_role_id_short": "d5aeb1c1",
+          "decision": "Usar rol existente."
+        },
+        "Gerente Finanzas": {
+          "classification": "EXACTO",
+          "matched_role_name": "Gerente Finanzas",
+          "matched_role_id_short": "bc9176e9",
+          "decision": "Usar rol existente."
+        },
+        "Revenue": {
+          "classification": "NO_ES_ROL",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "No mapear automáticamente; parece área/disciplina."
+        },
+        "Atencion al Cliente": {
+          "classification": "EXACTO",
+          "matched_role_name": "Atencion al Cliente",
+          "matched_role_id_short": "1c13855a",
+          "decision": "Usar rol existente."
+        },
+        "TI / Comercial": {
+          "classification": "EXACTO",
+          "matched_role_name": "TI / Comercial",
+          "matched_role_id_short": "10771b45",
+          "decision": "Usar rol existente."
+        },
+        "Obras Civiles": {
+          "classification": "EXACTO",
+          "matched_role_name": "Obras Civiles",
+          "matched_role_id_short": "6f0a82e5",
+          "decision": "Usar rol existente."
+        },
+        "Equipo Operativo": {
+          "classification": "NO_ES_ROL",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "No mapear automáticamente; en BD aparece como persona/equipo asignado a Atención al Cliente."
+        },
+        "Analista Contable": {
+          "classification": "EXACTO",
+          "matched_role_name": "Analista Contable",
+          "matched_role_id_short": "bdb81177",
+          "decision": "Usar rol existente."
+        },
+        "Finanzas": {
+          "classification": "NO_ES_ROL",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "No mapear automáticamente; es área."
+        },
+        "Operaciones": {
+          "classification": "NO_ES_ROL",
+          "matched_role_name": null,
+          "matched_role_id_short": null,
+          "decision": "No mapear automáticamente; es área."
+        }
+      }
+    },
+    "simulation": {
+      "remote_processes_total": 21,
+      "active_before": 6,
+      "archive": 2,
+      "reuse_or_update": 4,
+      "create": 15,
+      "active_after": 19,
+      "type_after": {
+        "strategic": 4,
+        "operational": 8,
+        "support": 7
+      },
+      "expected_stages_total": 94,
+      "owner_relationships_resolvable": 16,
+      "owner_relationships_total": 19,
+      "support_relationships_resolvable": 22,
+      "support_relationships_total": 29
+    }
+  }
+}
