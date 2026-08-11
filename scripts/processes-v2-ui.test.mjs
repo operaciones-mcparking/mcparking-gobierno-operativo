@@ -57,6 +57,11 @@ assert.doesNotMatch(page, /xl:grid-cols-\[120px_minmax\(300px,1fr\)_180px_180px_
 assert.match(page, /hidden gap-3[\s\S]*xl:grid \$\{processListGridColumns\}/, "desktop header must use the shared grid gap and column definition");
 assert.match(page, /grid grid-cols-\[minmax\(0,1fr\)_auto\] gap-3 xl:items-center \$\{processListGridColumns\}/, "desktop rows must use the same shared grid definition as the header");
 assert.match(page, /<span className="text-right">Acci/, "desktop action header must render as the final column");
+assert.doesNotMatch(page, /<h3 className="text-base font-medium text-navy">[\s\S]*?process\.process_name[\s\S]*?<\/h3>[\s\S]*?<ValueBadge tone="neutral">\{process\.owner_company_name/, "process summary must not render company badges below the process name");
+assert.doesNotMatch(page, /<h3 className="text-base font-medium text-navy">[\s\S]*?process\.process_name[\s\S]*?<\/h3>[\s\S]*?<TypedBadge type="criticality" value=\{process\.criticality\}/, "process summary must not render criticality badges below the process name");
+assert.match(data, /owner_company_name: string \| null/, "company data must remain available for filters and details");
+assert.match(data, /area_name: string \| null/, "area data must remain available for filters and details");
+assert.match(data, /criticality: string/, "criticality data must remain available for filters and details");
 assert.match(page, /process\.active_stage_count/, "process list must render active stage count");
 assert.match(page, /current_person_names\.length === 0/, "process list must show persona fallback state");
 assert.match(page, /function SupportRoleSummary/, "support roles must render through compact chip summary");
@@ -107,4 +112,4 @@ assert.match(detailPage, /getProcessCatalogV2Item/, "process detail page must us
 assert.match(detailPage, /getProcessMatrixV2/, "process detail page must use V2 stage helper");
 assert.doesNotMatch(page + filters + detailModal, /api\/procesos|fetch\(/, "edit UI must not create a new endpoint or fetch flow");
 
-console.log("processes-v2-ui: 66/66 OK");
+console.log("processes-v2-ui: 71/71 OK");

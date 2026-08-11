@@ -390,11 +390,6 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                           <h3 className="text-base font-medium text-navy">
                             {process.process_name}
                           </h3>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <ValueBadge tone="neutral">{process.owner_company_name ?? process.company_name ?? "Sin empresa"}</ValueBadge>
-                            <ValueBadge tone="neutral">{process.area_name ?? "Sin area"}</ValueBadge>
-                            <TypedBadge type="criticality" value={process.criticality} />
-                          </div>
                         </div>
 
                         <div className="col-start-1 xl:col-auto">
