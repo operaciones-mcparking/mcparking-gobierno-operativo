@@ -207,4 +207,36 @@ assert.match(restoreMigrationSql, /where sp.id = v2.id/i, "restore migration upd
 assert.match(restoreMigrationSql, /intersection_count <> 0/i, "restore migration must guard V2/excluded UUID intersection");
 assert.doesNotMatch(restoreMigrationSql, /join public.processes ps+on p.name = target.process_name[sS]*update public.subprocesses/i, "restore migration must not depend on process/stage names for update");
 
+const ownerAlignmentMigrationPath = path.join(rootDir, "supabase", "migrations", "20260811193000_align_process_owners_with_official_roles.sql");
+const ownerAlignmentMigrationSql = fs.readFileSync(ownerAlignmentMigrationPath, "utf8");
+
+assert.match(ownerAlignmentMigrationSql, /\bbegin;[\s\S]*\bcommit;\s*$/i, "owner alignment migration must be transactional");
+assert.doesNotMatch(ownerAlignmentMigrationSql, /\bdelete\b|\btruncate\b|drop\s+table|alter\s+table/i, "owner alignment migration must not remove rows or alter tables");
+assert.match(ownerAlignmentMigrationSql, /Expected 20 active processes before owner alignment/i, "owner alignment migration must guard 20 active processes before applying");
+assert.match(ownerAlignmentMigrationSql, /Expected 19 active processes after owner alignment/i, "owner alignment migration must guard 19 active processes after applying");
+assert.match(ownerAlignmentMigrationSql, /Expected 94 active subprocesses after owner alignment/i, "owner alignment migration must preserve 94 active subprocesses");
+assert.match(ownerAlignmentMigrationSql, /status = 'archived'::public\.record_status/i, "owner alignment migration must archive test1 by status");
+assert.match(ownerAlignmentMigrationSql, /process_roles row count changed unexpectedly/i, "owner alignment migration must preserve process_roles row count");
+
+const ownerAlignmentExpectedSnippets = [
+  "75ed7877-db45-41e5-bc12-f3a616eb0eae",
+  "41eb1c42-7707-4f17-89c5-827725d81f9d",
+  "ce2bfa79-102d-42a3-b8d0-3977831d04f8",
+  "4d09da28-e81c-4b0e-9bb5-a237445b043f",
+  "bad04303-dea5-4db7-9b1b-6ec875e6e9c3",
+  "d5aeb1c1-d306-415b-be7f-1cc5397ae7c1",
+  "56347ff9-295e-40e9-9f67-9cac155605bf",
+  "b6e8fc21-4fd0-4993-abd6-cecd89424844",
+  "bc9176e9-e97c-4739-9b7e-c183d17e3123",
+  "a062ec7d-1af6-42b7-adda-28ad71b4323f",
+];
+
+for (const snippet of ownerAlignmentExpectedSnippets) {
+  assert.ok(ownerAlignmentMigrationSql.includes(snippet), `owner alignment migration must include ${snippet}`);
+}
+
+assert.match(ownerAlignmentMigrationSql, /v_updated <> 6/i, "owner alignment migration must update 6 Revenue owner rows");
+assert.equal(ownerAlignmentMigrationSql.match(/v_updated <> 5/g)?.length, 2, "owner alignment migration must update two groups of 5 owner rows");
+assert.match(ownerAlignmentMigrationSql, /pr\.role_id not in \(/i, "owner alignment migration must reject non-official owner roles after applying");
+
 console.log("process-catalog-v2: 19/19 OK");

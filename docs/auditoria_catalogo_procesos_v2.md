@@ -432,3 +432,55 @@ El archivo `20260811160000_restore_process_catalog_v2_active_stages.sql` fue cor
 - No toca ninguna otra tabla ni columna.
 
 La comparacion read-only actual no reprodujo el deficit 72/94: las 94 filas remotas actuales si tienen coincidencia exacta con `process_catalog_v2.json`. Por eso no se modifico el JSON en esta etapa.
+
+## Etapa 6B - Alineacion de owners con roles oficiales
+
+### Decision aprobada
+
+La pantalla `/estructura` expone 8 roles oficiales activos desde `public.v_role_dictionary`. La pantalla `/procesos` deriva los owners desde `public.v_process_catalog_v2`, que a su vez agrega relaciones desde `public.process_roles`. Antes de la correccion, tres procesos activos seguian usando roles archivados como owner.
+
+| Proceso | Rol owner archivado | Rol owner oficial destino | Filas owner |
+| --- | --- | --- | ---: |
+| Revenue Management | Responsable Revenue / Analista Revenue | Gerente General | 6 |
+| Personas y Turnos | Encargado de Turnos / Personas | Jefe Operaciones | 5 |
+| Gestion de Proveedores | Encargado de Proveedores | Gerente Finanzas | 5 |
+
+El proceso `test1` (`a062ec7d-1af6-42b7-adda-28ad71b4323f`) fue identificado como dato de prueba activo fuera del catalogo V2. El preflight read-only confirmo que no tiene dependencias en `subprocesses`, `process_roles`, `process_systems`, `risks`, `controls`, `metrics` ni `process_clients`.
+
+### SQL preparado
+
+Se preparo la migracion:
+
+`supabase/migrations/20260811193000_align_process_owners_with_official_roles.sql`
+
+Caracteristicas:
+
+- Transaccional (`begin;` / `commit;`).
+- Actualiza solo `public.process_roles.role_id` para las 16 relaciones owner exactas aprobadas.
+- Archiva `test1` por UUID y nombre, sin borrar filas.
+- No crea roles, procesos ni etapas.
+- No toca vistas, Supabase remoto, `/recuperacion` ni Orquestador.
+- Guarda preestado: 20 procesos activos y 94 etapas activas.
+- Guarda postestado: 19 procesos activos, 4 strategic, 8 operational, 7 support, 94 etapas activas.
+- Rechaza owners no oficiales o archivados en procesos activos despues de aplicar.
+
+### Estado final aplicado manualmente
+
+La migracion `20260811193000_align_process_owners_with_official_roles.sql` fue aplicada manualmente en Supabase SQL Editor y el postcheck remoto confirmo el estado final real:
+
+| Metrica | Resultado |
+| --- | ---: |
+| Procesos oficiales activos | 19 |
+| Strategic | 4 |
+| Operational | 8 |
+| Support | 7 |
+| Etapas activas | 94 |
+| Owners no oficiales o archivados en procesos activos | 0 |
+
+| Proceso | Owner final | Estado del rol | Filas owner |
+| --- | --- | --- | ---: |
+| Revenue Management | Gerente General | active | 6 |
+| Personas y Turnos | Jefe Operaciones | active | 5 |
+| Gestion de Proveedores | Gerente Finanzas | active | 5 |
+
+`test1` (`a062ec7d-1af6-42b7-adda-28ad71b4323f`) quedo `archived`. Los roles antiguos `Responsable Revenue / Analista Revenue`, `Encargado de Turnos / Personas` y `Encargado de Proveedores` permanecen `archived`.
