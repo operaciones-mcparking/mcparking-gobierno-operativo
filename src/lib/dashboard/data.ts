@@ -115,7 +115,23 @@ export type ProcessCatalogItem = {
   responsibility_count: number;
   system_count: number;
 };
-
+export type ProcessCatalogV2Item = Omit<
+  ProcessCatalogItem,
+  "responsibility_count" | "subprocess_count" | "system_count"
+> & {
+  active_stage_count: number;
+  basic_kpi: string | null;
+  company_id: string | null;
+  current_person_ids: string[];
+  current_person_names: string[];
+  inputs_providers: string | null;
+  owner_role_ids: string[];
+  owner_role_names: string[];
+  outputs_clients: string | null;
+  support_role_ids: string[];
+  support_role_names: string[];
+  support_role_types: string[];
+};
 export type ProcessMatrixRow = {
   process_id: string;
   process_name: string;
@@ -143,7 +159,9 @@ export type ProcessMatrixRow = {
   risks: string | null;
   controls: string | null;
 };
-
+export type ProcessStageV2Row = ProcessMatrixRow & {
+  subprocess_status: string;
+};
 export type ProcessStageOwnerRole = {
   process_id: string;
   subprocess_id: string;
@@ -632,6 +650,63 @@ export async function getProcessCatalogItem(processId: string) {
   return { data: data as ProcessCatalogItem | null, error };
 }
 
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function normalizeProcessCatalogV2Row(row: Record<string, unknown>) {
+  return {
+    ...row,
+    active_stage_count: Number(row.active_stage_count ?? 0),
+    current_person_ids: stringArray(row.current_person_ids),
+    current_person_names: stringArray(row.current_person_names),
+    owner_role_ids: stringArray(row.owner_role_ids),
+    owner_role_names: stringArray(row.owner_role_names),
+    support_role_ids: stringArray(row.support_role_ids),
+    support_role_names: stringArray(row.support_role_names),
+    support_role_types: stringArray(row.support_role_types),
+  } as ProcessCatalogV2Item;
+}
+
+export async function getProcessCatalogV2(context: DashboardContext = {}) {
+  const supabase = createSupabaseServerClient();
+  let query = supabase
+    .from("v_process_catalog_v2")
+    .select("*")
+    .order("process_type")
+    .order("process_name");
+
+  if (context.countryId) {
+    query = query.eq("country_id", context.countryId);
+  }
+
+  if (context.siteId) {
+    query = query.or(`owner_site_id.eq.${context.siteId},operating_site_id.eq.${context.siteId}`);
+  }
+
+  const { data, error } = await query;
+
+  return {
+    data: (data ?? []).map((row) => normalizeProcessCatalogV2Row(row)),
+    error,
+  };
+}
+
+export async function getProcessCatalogV2Item(processId: string) {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("v_process_catalog_v2")
+    .select("*")
+    .eq("process_id", processId)
+    .maybeSingle();
+
+  return {
+    data: data ? normalizeProcessCatalogV2Row(data) : null,
+    error,
+  };
+}
 export async function getProcessMatrix(processId?: string) {
   const supabase = createSupabaseServerClient();
   let query = supabase
@@ -650,6 +725,23 @@ export async function getProcessMatrix(processId?: string) {
   return { data: (data ?? []) as ProcessMatrixRow[], error };
 }
 
+export async function getProcessMatrixV2(processId?: string) {
+  const supabase = createSupabaseServerClient();
+  let query = supabase
+    .from("v_process_subprocess_matrix_v2")
+    .select("*")
+    .order("process_name")
+    .order("sort_order", { nullsFirst: false })
+    .order("subprocess_name");
+
+  if (processId) {
+    query = query.eq("process_id", processId);
+  }
+
+  const { data, error } = await query;
+
+  return { data: (data ?? []) as ProcessStageV2Row[], error };
+}
 export async function getProcessStageOwnerRoles(processIds: string[] = []) {
   const supabase = createSupabaseServerClient();
   let query = supabase

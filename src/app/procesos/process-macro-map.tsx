@@ -1,5 +1,5 @@
 import { ValueBadge } from "@/components/dashboard/badge";
-import type { ProcessCatalogItem } from "@/lib/dashboard/data";
+import type { ProcessCatalogV2Item } from "@/lib/dashboard/data";
 import { processMapCopy, processMapGroups } from "./process-map-config";
 
 function groupToneClass(tone: "info" | "success" | "warning") {
@@ -19,7 +19,7 @@ function ProcessNode({
   process,
 }: {
   compact?: boolean;
-  process: ProcessCatalogItem;
+  process: ProcessCatalogV2Item;
 }) {
   return (
     <div
@@ -40,7 +40,7 @@ function ProcessLayer({
   processes,
 }: {
   group: (typeof processMapGroups)[number];
-  processes: ProcessCatalogItem[];
+  processes: ProcessCatalogV2Item[];
 }) {
   const isOperational = group.value === "operational";
 
@@ -93,7 +93,7 @@ function SideBlock({
   );
 }
 
-export function ProcessMacroMap({ processes }: { processes: ProcessCatalogItem[] }) {
+export function ProcessMacroMap({ processes }: { processes: ProcessCatalogV2Item[] }) {
   const groups = processMapGroups.map((group) => ({
     ...group,
     processes: processes.filter((process) => process.process_type === group.value),

@@ -1,12 +1,13 @@
-import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
+import { TypedBadge, ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { ProcessFilters } from "@/components/dashboard/process-filters";
 import { DashboardShell } from "@/components/dashboard/shell";
 import {
   getAreaDirectory,
-  getProcessCatalog,
-  getProcessMatrix,
+  getProcessCatalogV2,
+  getProcessMatrixV2,
   getProcessStageOwnerRoles,
   getRoleDictionary,
+  type ProcessCatalogV2Item,
 } from "@/lib/dashboard/data";
 import { CreateProcessModal } from "./create-process-modal";
 import { ProcessDetailModal } from "./process-detail-modal";
@@ -41,8 +42,9 @@ function AccordionPanel({
       <summary className="cursor-pointer list-none px-1 py-4 transition hover:bg-white/50">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm font-medium text-sea transition group-open:rotate-90 group-hover:bg-[#eef7fb]">
-              &gt;
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-sm font-medium text-sea transition group-open:bg-teal-50 group-hover:border-teal-200">
+              <span className="group-open:hidden">+</span>
+              <span className="hidden group-open:inline">-</span>
             </span>
             <div className="min-w-0">
               <h2 className="text-base font-medium tracking-tight text-navy">{title}</h2>
@@ -92,6 +94,11 @@ type CreateProcessAreaOption = CreateProcessOption & {
   company_name: string | null;
 };
 
+type IdNameOption = {
+  id: string;
+  name: string;
+};
+
 function uniqueCreateProcessOptions(options: CreateProcessOption[]) {
   const seen = new Set<string>();
 
@@ -122,12 +129,68 @@ function uniqueCreateProcessAreas(options: CreateProcessAreaOption[]) {
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
 
-const processListGridColumns = "xl:grid-cols-[minmax(320px,1fr)_180px_180px_120px_150px_150px]";
+function uniqueIdNameOptions(pairs: Array<{ id: string; name: string }>) {
+  const byId = new Map<string, string>();
+
+  for (const pair of pairs) {
+    if (pair.id && pair.name && !byId.has(pair.id)) {
+      byId.set(pair.id, pair.name);
+    }
+  }
+
+  return [...byId.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+function compactList(values: string[], fallback: string) {
+  const uniqueValues = [...new Set(values.filter(Boolean))];
+
+  if (uniqueValues.length === 0) {
+    return fallback;
+  }
+
+  if (uniqueValues.length === 1) {
+    return uniqueValues[0];
+  }
+
+  return `${uniqueValues[0]} +${uniqueValues.length - 1}`;
+}
+
+function processTypeMeta(value: ProcessCatalogV2Item["process_type"]): { label: string; tone: BadgeTone } {
+  if (value === "strategic") {
+    return { label: "Estrategico", tone: "info" };
+  }
+
+  if (value === "support") {
+    return { label: "Soporte", tone: "warning" };
+  }
+
+  return { label: "Operativo", tone: "success" };
+}
+
+function matchesText(value: string | null | undefined, query: string) {
+  return !query || (value ?? "").toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es"));
+}
+
+const processTypeOptions = [
+  { label: "Estrategico", value: "strategic" },
+  { label: "Operativo", value: "operational" },
+  { label: "Soporte", value: "support" },
+];
+const processListGridColumns = "xl:grid-cols-[120px_minmax(300px,1fr)_180px_180px_110px_220px_150px]";
+
 type ProcesosPageProps = {
   searchParams?: Promise<{
     country_id?: string;
     empresa?: string;
+    owner_role?: string;
+    person?: string;
+    process?: string;
+    process_type?: string;
     site_id?: string;
+    stage?: string;
+    support_role?: string;
     tipo?: string;
   }>;
 };
@@ -136,18 +199,24 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const params = searchParams ? await searchParams : {};
   const selectedCompany = params.empresa ?? "todas";
   const selectedType = params.tipo ?? "todos";
+  const selectedProcessType = params.process_type ?? "todos";
+  const selectedOwnerRole = params.owner_role ?? "todos";
+  const selectedPerson = params.person ?? "todos";
+  const selectedSupportRole = params.support_role ?? "todos";
+  const processQuery = params.process?.trim() ?? "";
+  const stageQuery = params.stage?.trim() ?? "";
   const context = {
     countryId: params.country_id ?? null,
     siteId: params.site_id ?? null,
   };
   const [catalogResult, matrixResult, areaDirectoryResult, roleDictionaryResult, stageOwnerRolesResult] = await Promise.all([
-    getProcessCatalog(context),
-    getProcessMatrix(),
+    getProcessCatalogV2(context),
+    getProcessMatrixV2(),
     getAreaDirectory(context),
     getRoleDictionary(context),
     getProcessStageOwnerRoles(),
   ]);
-  const activeProcesses = catalogResult.data.filter((process) => process.status === "active");
+  const activeProcesses = catalogResult.data;
   const createProcessSource = activeProcesses.length > 0 ? activeProcesses : catalogResult.data;
   const createProcessCompanies = uniqueCreateProcessOptions([
     ...createProcessSource.flatMap((process) => {
@@ -199,13 +268,45 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
   const typeOptions = Array.from(
     new Set(activeProcesses.map((process) => process.area_name ?? "Sin tipo")),
   ).sort((a, b) => a.localeCompare(b, "es"));
+  const ownerRoleOptions = uniqueIdNameOptions(
+    activeProcesses.flatMap((process) =>
+      process.owner_role_ids.map((id, index) => ({
+        id,
+        name: process.owner_role_names[index] ?? id,
+      })),
+    ),
+  );
+  const personOptions = uniqueIdNameOptions(
+    activeProcesses.flatMap((process) =>
+      process.current_person_ids.map((id, index) => ({
+        id,
+        name: process.current_person_names[index] ?? id,
+      })),
+    ),
+  );
+  const supportRoleOptions = uniqueIdNameOptions(
+    activeProcesses.flatMap((process) =>
+      process.support_role_ids.map((id, index) => ({
+        id,
+        name: process.support_role_names[index] ?? id,
+      })),
+    ),
+  );
+  const stagesByProcess = groupedByProcess(matrixResult.data);
   const filteredProcesses = activeProcesses.filter((process) => {
     const ownerCompany = process.owner_company_name ?? process.company_name;
     const operationType = process.area_name ?? "Sin tipo";
+    const stages = stagesByProcess.find((item) => item.processId === process.process_id)?.rows ?? [];
 
     return (
       (selectedCompany === "todas" || ownerCompany === selectedCompany) &&
-      (selectedType === "todos" || operationType === selectedType)
+      (selectedType === "todos" || operationType === selectedType) &&
+      (selectedProcessType === "todos" || process.process_type === selectedProcessType) &&
+      (selectedOwnerRole === "todos" || process.owner_role_ids.includes(selectedOwnerRole)) &&
+      (selectedPerson === "todos" || process.current_person_ids.includes(selectedPerson)) &&
+      (selectedSupportRole === "todos" || process.support_role_ids.includes(selectedSupportRole)) &&
+      matchesText(process.process_name, processQuery) &&
+      (!stageQuery || stages.some((stage) => matchesText(stage.subprocess_name, stageQuery)))
     );
   });
   const macroMapProcesses = activeProcesses.filter((process) => {
@@ -227,7 +328,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
 
   return (
     <DashboardShell
-      description="Catalogo de procesos oficiales con vista rapida desplegable por proceso."
+      description="Catalogo V2 de procesos oficiales con etapas activas, owners y roles consolidados."
       eyebrow={`${activeProcesses.length} Procesos`}
       title="Procesos oficiales"
     >
@@ -244,7 +345,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
       <AccordionPanel
         count={processCount}
         defaultOpen
-        description="Listado principal. Abre un proceso solo cuando necesites revisar sus etapas."
+        description="Listado principal V2. Abre un proceso solo cuando necesites revisar sus etapas activas."
         title="Diccionario de procesos oficiales"
       >
         {catalogResult.error || matrixResult.error ? (
@@ -255,8 +356,19 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
           <>
             <ProcessFilters
               companyOptions={companyOptions}
+              ownerRoleOptions={ownerRoleOptions}
+              personOptions={personOptions}
+              processQuery={processQuery}
+              processTypeOptions={processTypeOptions}
               selectedCompany={selectedCompany}
+              selectedOwnerRole={selectedOwnerRole}
+              selectedPerson={selectedPerson}
+              selectedProcessType={selectedProcessType}
+              selectedStage={stageQuery}
+              selectedSupportRole={selectedSupportRole}
               selectedType={selectedType}
+              stageQuery={stageQuery}
+              supportRoleOptions={supportRoleOptions}
               totalCount={activeProcesses.length}
               typeOptions={typeOptions}
               visibleCount={filteredProcesses.length}
@@ -264,17 +376,22 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
 
             <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
               <div className={`hidden border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${processListGridColumns}`}>
+                <span>Tipo</span>
                 <span>Proceso</span>
-                <span>Empresa duena</span>
-                <span>Operacion</span>
-                <span className="text-center">Criticidad</span>
+                <span>Rol dueño</span>
+                <span>Persona actual</span>
                 <span className="text-center">Etapas</span>
+                <span>Roles de apoyo</span>
                 <span className="text-right">Accion</span>
               </div>
 
               {filteredProcesses.map((process) => {
+                const typeMeta = processTypeMeta(process.process_type);
                 const group = groupedRows.find((item) => item.processId === process.process_id);
                 const rows = group?.rows ?? [];
+                const ownerText = compactList(process.owner_role_names, "Sin rol dueño");
+                const personText = compactList(process.current_person_names, "Sin persona asignada");
+                const supportText = compactList(process.support_role_names, "Sin roles de apoyo");
 
                 return (
                   <details
@@ -286,39 +403,43 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
                       className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe]"
                     >
                       <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 xl:items-center ${processListGridColumns}`}>
+                        <div className="col-start-1 xl:col-auto">
+                          <ValueBadge tone={typeMeta.tone}>{typeMeta.label}</ValueBadge>
+                        </div>
+
                         <div className="min-w-0">
                           <h3 className="text-base font-medium text-navy">
                             {process.process_name}
                           </h3>
-                          <p className="mt-1 line-clamp-1 text-sm text-slate-600">
-                            {process.definition ?? "Sin definicion"}
-                          </p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <ValueBadge tone="neutral">{process.owner_company_name ?? process.company_name ?? "Sin empresa"}</ValueBadge>
+                            <ValueBadge tone="neutral">{process.area_name ?? "Sin area"}</ValueBadge>
+                            <TypedBadge type="criticality" value={process.criticality} />
+                          </div>
                         </div>
 
                         <div className="col-start-1 xl:col-auto">
-                          <p className="text-xs text-slate-500 xl:hidden">Empresa duena</p>
-                          <p className="text-sm font-medium text-navy">
-                            {process.owner_company_name ?? process.company_name ?? "Sin empresa"}
-                          </p>
+                          <p className="text-xs text-slate-500 xl:hidden">Rol dueño</p>
+                          <p className="text-sm font-medium text-navy">{ownerText}</p>
                         </div>
 
                         <div className="col-start-1 xl:col-auto">
-                          <p className="text-xs text-slate-500 xl:hidden">Operacion</p>
-                          <p className="text-sm text-slate-700">
-                            {process.area_name ?? "Sin tipo"}
+                          <p className="text-xs text-slate-500 xl:hidden">Persona actual</p>
+                          <p className={`text-sm font-medium ${process.current_person_names.length === 0 ? "text-[#86510d]" : "text-navy"}`}>
+                            {personText}
                           </p>
-                        </div>
-
-                        <div className="col-start-1 xl:col-auto xl:flex xl:justify-center">
-                          <TypedBadge type="criticality" value={process.criticality} />
                         </div>
 
                         <div className="col-start-1 flex flex-wrap gap-2 xl:col-auto xl:justify-center">
-                          <ValueBadge tone="info">Etapas {process.subprocess_count}</ValueBadge>
-                          <ValueBadge tone="neutral">Roles {process.responsibility_count}</ValueBadge>
+                          <ValueBadge tone="info">Etapas {process.active_stage_count}</ValueBadge>
                         </div>
 
-                        <div className="col-start-2 row-span-5 row-start-1 flex items-start justify-end gap-2 xl:col-auto xl:row-auto xl:items-center">
+                        <div className="col-start-1 xl:col-auto">
+                          <p className="text-xs text-slate-500 xl:hidden">Roles de apoyo</p>
+                          <p className="line-clamp-2 text-sm text-slate-700">{supportText}</p>
+                        </div>
+
+                        <div className="col-start-2 row-span-6 row-start-1 flex items-start justify-end gap-2 xl:col-auto xl:row-auto xl:items-center">
                           <ProcessDetailModal
                             ownerRoleBySubprocess={ownerRoleBySubprocess}
                             process={process}
@@ -338,19 +459,21 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
 
                     <div className="bg-[#f8fafb] px-4 py-4">
                       {rows.length === 0 ? (
-                        <p className="text-sm text-slate-600">Este proceso aun no tiene etapas.</p>
+                        <p className="text-sm text-slate-600">Este proceso aun no tiene etapas activas.</p>
                       ) : (
                         <div>
-                          <div className="mb-3 flex items-center justify-between gap-3">
+                          <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                             <div>
-                              <p className="text-sm font-medium text-navy">Vista rapida de etapas</p>
+                              <p className="text-sm font-medium text-navy">Vista rapida de etapas activas</p>
                               <p className="text-sm text-slate-600">
                                 Orden operativo, rol dueño e impacto dentro del proceso.
                               </p>
                             </div>
-                            <span className="text-xs font-medium text-slate-500">
-                              {rows.length} etapas
-                            </span>
+                            <div className="flex flex-wrap gap-2 sm:justify-end">
+                              {process.support_role_names.map((roleName) => (
+                                <ValueBadge key={roleName} tone="neutral">{roleName}</ValueBadge>
+                              ))}
+                            </div>
                           </div>
 
                           <div className="overflow-hidden rounded-xl border border-line bg-white">

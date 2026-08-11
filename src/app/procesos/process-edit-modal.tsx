@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Pencil, Save, X } from "lucide-react";
 import { useState } from "react";
@@ -15,8 +15,8 @@ import {
   statusOptions,
 } from "@/components/dashboard/badge";
 import type {
-  ProcessCatalogItem,
-  ProcessMatrixRow,
+  ProcessCatalogV2Item,
+  ProcessStageV2Row,
   RoleDictionaryItem,
 } from "@/lib/dashboard/data";
 
@@ -54,7 +54,7 @@ function StageBasicsForm({
   currentOwnerRoleId: string;
   processId: string;
   roleDictionary: RoleDictionaryItem[];
-  stage: ProcessMatrixRow;
+  stage: ProcessStageV2Row;
   stageNumber: number;
 }) {
   const activeRoles = roleDictionary.filter((role) => role.role_status === "active");
@@ -147,7 +147,7 @@ function roleText(roleName: string | null, personName: string | null) {
   return [roleName, personName ?? "Sin persona asignada"].join(" \u00b7 ");
 }
 
-function ReadOnlyStageRoles({ stage }: { stage: ProcessMatrixRow }) {
+function ReadOnlyStageRoles({ stage }: { stage: ProcessStageV2Row }) {
   const roles = [
     { label: "Usuario", value: roleText(stage.user_role_name, stage.user_person_name) },
     { label: "Apoyo / consultado", value: roleText(stage.support_role_name, stage.support_person_name) },
@@ -182,7 +182,7 @@ function OwnerRoleForm({
   currentOwnerRoleId: string;
   processId: string;
   roles: RoleDictionaryItem[];
-  stage: ProcessMatrixRow;
+  stage: ProcessStageV2Row;
 }) {
   const [selectedRoleId, setSelectedRoleId] = useState(currentOwnerRoleId);
   const selectedRole = roles.find((role) => role.role_id === selectedRoleId);
@@ -303,9 +303,9 @@ export function ProcessEditModal({
   stages,
 }: {
   ownerRoleBySubprocess: Record<string, string>;
-  process: ProcessCatalogItem;
+  process: ProcessCatalogV2Item;
   roleDictionary: RoleDictionaryItem[];
-  stages: ProcessMatrixRow[];
+  stages: ProcessStageV2Row[];
 }) {
   const [open, setOpen] = useState(false);
   const nextSortOrder =

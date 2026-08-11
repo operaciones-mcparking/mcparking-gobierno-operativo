@@ -17,8 +17,8 @@ import { ProcessMatrixTools } from "@/components/dashboard/process-matrix-tools"
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
 import {
   getProcessBottlenecks,
-  getProcessCatalogItem,
-  getProcessMatrix,
+  getProcessCatalogV2Item,
+  getProcessMatrixV2,
 } from "@/lib/dashboard/data";
 
 type Params = Promise<{
@@ -236,8 +236,8 @@ function alertMetricLabel(type: string, value: number) {
 export default async function ProcessDetailPage({ params }: { params: Params }) {
   const { processId } = await params;
   const [processResult, matrixResult, bottleneckResult] = await Promise.all([
-    getProcessCatalogItem(processId),
-    getProcessMatrix(processId),
+    getProcessCatalogV2Item(processId),
+    getProcessMatrixV2(processId),
     getProcessBottlenecks(processId),
   ]);
 
@@ -341,7 +341,7 @@ export default async function ProcessDetailPage({ params }: { params: Params }) 
             icon={CheckCircle2}
             label="Alcance"
             title="Conteos principales calculados desde las relaciones del proceso."
-            value={`${rows.length} etapas · ${process.responsibility_count} roles · ${process.system_count} sistemas`}
+            value={`${process.active_stage_count} etapas activas`}
           />
         </div>
 

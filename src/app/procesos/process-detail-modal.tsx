@@ -1,18 +1,18 @@
-﻿"use client";
+"use client";
 
 import { FileText, X } from "lucide-react";
 import { useState } from "react";
 
 import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
 import type {
-  ProcessCatalogItem,
-  ProcessMatrixRow,
+  ProcessCatalogV2Item,
+  ProcessStageV2Row,
   RoleDictionaryItem,
 } from "@/lib/dashboard/data";
 import { ProcessEditModal } from "./process-edit-modal";
 
-const processTypeLabels: Record<ProcessCatalogItem["process_type"], string> = {
-  operational: "Operativo / Clave",
+const processTypeLabels: Record<ProcessCatalogV2Item["process_type"], string> = {
+  operational: "Operativo",
   strategic: "Estrategico",
   support: "Soporte",
 };
@@ -32,15 +32,54 @@ function DetailItem({
   );
 }
 
+function TextSection({ label, value }: { label: string; value: string | null }) {
+  return (
+    <section className="rounded-xl border border-[#dce7ef] bg-[#fbfdfe] p-4">
+      <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{label}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{value ?? "Sin informacion registrada."}</p>
+    </section>
+  );
+}
+
 function roleText(roleName: string | null, personName: string | null) {
   if (!roleName || roleName === "No definido") {
     return "No definido";
   }
 
-  return [roleName, personName ?? "Sin persona asignada"].join(" \u00b7 ");
+  return [roleName, personName ?? "Sin persona asignada"].join(" · ");
 }
 
-function StageRoles({ stage }: { stage: ProcessMatrixRow }) {
+function compactList(values: string[], fallback: string) {
+  const uniqueValues = [...new Set(values.filter(Boolean))];
+
+  if (uniqueValues.length === 0) {
+    return fallback;
+  }
+
+  if (uniqueValues.length === 1) {
+    return uniqueValues[0];
+  }
+
+  return `${uniqueValues[0]} +${uniqueValues.length - 1}`;
+}
+
+function ChipList({ items }: { items: string[] }) {
+  const uniqueItems = [...new Set(items.filter(Boolean))];
+
+  if (uniqueItems.length === 0) {
+    return <span className="text-sm text-slate-500">Sin informacion registrada.</span>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {uniqueItems.map((item) => (
+        <ValueBadge key={item} tone="neutral">{item}</ValueBadge>
+      ))}
+    </div>
+  );
+}
+
+function StageRoles({ stage }: { stage: ProcessStageV2Row }) {
   const roles = [
     { label: "Dueño", value: roleText(stage.owner_role_name, stage.owner_person_name) },
     { label: "Usuario", value: roleText(stage.user_role_name, stage.user_person_name) },
@@ -69,12 +108,14 @@ export function ProcessDetailModal({
   stages,
 }: {
   ownerRoleBySubprocess: Record<string, string>;
-  process: ProcessCatalogItem;
+  process: ProcessCatalogV2Item;
   roleDictionary: RoleDictionaryItem[];
-  stages: ProcessMatrixRow[];
+  stages: ProcessStageV2Row[];
 }) {
   const [open, setOpen] = useState(false);
   const ownerCompany = process.owner_company_name ?? process.company_name ?? "Sin empresa";
+  const ownerSummary = compactList(process.owner_role_names, "Sin rol dueño");
+  const personSummary = compactList(process.current_person_names, "Sin persona asignada");
 
   return (
     <>
@@ -100,14 +141,14 @@ export function ProcessDetailModal({
           <section
             aria-labelledby={`process-detail-${process.process_id}`}
             aria-modal="true"
-            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#cbd8e3] bg-white shadow-[0_24px_70px_rgba(2,53,116,0.20)]"
+            className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-[#cbd8e3] bg-white shadow-[0_24px_70px_rgba(2,53,116,0.20)]"
             onClick={(event) => event.stopPropagation()}
             role="dialog"
           >
             <header className="flex items-start justify-between gap-4 border-b border-[#d6e1ea] px-5 py-4">
               <div>
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sea">
-                  Ficha rapida de proceso
+                  Ficha V2 de proceso
                 </p>
                 <h2 className="mt-1 text-lg font-medium text-navy" id={`process-detail-${process.process_id}`}>
                   {process.process_name}
@@ -128,34 +169,39 @@ export function ProcessDetailModal({
 
             <div className="grid gap-4 p-5">
               <div className="flex flex-wrap gap-2">
-                <ValueBadge tone="info">{processTypeLabels[process.process_type] ?? "Operativo / Clave"}</ValueBadge>
+                <ValueBadge tone="info">{processTypeLabels[process.process_type] ?? "Operativo"}</ValueBadge>
                 <TypedBadge type="criticality" value={process.criticality} />
                 <TypedBadge type="documentation" value={process.documentation_status} />
                 <TypedBadge type="status" value={process.status} />
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
-                <DetailItem label="Empresa duena" value={ownerCompany} />
-                <DetailItem label="Operacion / area" value={process.area_name ?? "Sin area"} />
-                <DetailItem label="Tipo de proceso" value={processTypeLabels[process.process_type] ?? "Operativo / Clave"} />
-                <DetailItem label="Documentacion" value={<TypedBadge type="documentation" value={process.documentation_status} />} />
-                <DetailItem label="Etapas" value={`${process.subprocess_count} etapas`} />
-                <DetailItem label="Roles" value={`${process.responsibility_count} roles`} />
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <DetailItem label="Empresa / area" value={`${ownerCompany} · ${process.area_name ?? "Sin area"}`} />
+                <DetailItem label="Rol dueño" value={ownerSummary} />
+                <DetailItem label="Persona actual" value={personSummary} />
+                <DetailItem label="Etapas activas" value={`${process.active_stage_count} etapas`} />
               </div>
 
-              <div className="rounded-xl border border-[#dce7ef] bg-[#fbfdfe] p-4">
-                <p className="text-sm font-medium text-navy">Resumen</p>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  {process.objective ?? process.expected_result ?? "Este proceso aun no tiene objetivo o resultado esperado registrado."}
-                </p>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <TextSection label="Objetivo" value={process.objective} />
+                <TextSection label="Entradas y proveedores" value={process.inputs_providers} />
+                <TextSection label="Salidas y clientes" value={process.outputs_clients} />
+                <TextSection label="KPI basico" value={process.basic_kpi} />
+              </div>
+
+              <div className="rounded-xl border border-[#dce7ef] bg-white p-4">
+                <p className="text-sm font-medium text-navy">Roles de apoyo</p>
+                <div className="mt-3">
+                  <ChipList items={process.support_role_names} />
+                </div>
               </div>
 
               <div className="rounded-xl border border-[#dce7ef] bg-white p-4">
                 <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
                   <div>
-                    <p className="text-sm font-medium text-navy">Etapas / subprocesos</p>
+                    <p className="text-sm font-medium text-navy">Etapas / subprocesos activos</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      Vista de solo lectura de las etapas registradas para este proceso.
+                      Vista de solo lectura de las etapas activas registradas para este proceso.
                     </p>
                   </div>
                   <span className="text-xs font-medium text-slate-500">
@@ -194,7 +240,7 @@ export function ProcessDetailModal({
                   </div>
                 ) : (
                   <div className="mt-3 rounded-lg border border-dashed border-[#d6e1ea] bg-[#fbfdfe] px-3 py-3 text-sm text-slate-600">
-                    Este proceso aun no tiene etapas registradas.
+                    Este proceso aun no tiene etapas activas registradas.
                   </div>
                 )}
               </div>
