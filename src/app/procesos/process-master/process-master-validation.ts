@@ -16,6 +16,12 @@ export type ProcessActivationValidation = {
   }>;
 };
 
+export type ProcessActivationCompleteness = {
+  blockingCount: number;
+  completionPercent: number;
+  warningCount: number;
+};
+
 function hasText(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -26,6 +32,10 @@ function activeStages(process: ProcessMasterDto) {
 
 function hasOwner(stage: ProcessMasterStage) {
   return hasText(stage.owner_role_id);
+}
+
+function impactCents(value: number) {
+  return Math.round(value * 100);
 }
 
 export function validateProcessForActivation(process: ProcessMasterDto): ProcessActivationValidation {
@@ -73,15 +83,6 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
     });
   }
 
-  if (!stages.some(hasOwner)) {
-    missingFields.push({
-      key: "owner_role",
-      label: "Rol dueno",
-      section: "Responsabilidad",
-      severity: "blocking",
-    });
-  }
-
   if (!hasText(process.process.area_id)) {
     warnings.push({
       key: "area_id",
@@ -100,22 +101,38 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
     });
   }
 
+  if (!hasText(process.process.expected_result)) {
+    warnings.push({
+      key: "expected_result",
+      label: "Resultado esperado vacio",
+      section: "Definicion del proceso",
+      severity: "warning",
+    });
+  }
+
   for (const stage of stages) {
     if (!hasOwner(stage)) {
-      warnings.push({
+      missingFields.push({
         key: `stage_owner:${stage.id ?? stage.sort_order}`,
-        label: `Etapa sin owner: ${stage.name}`,
+        label: `Rol dueno en etapa: ${stage.name}`,
         section: "Etapas / subprocesos",
-        severity: "warning",
+        severity: "blocking",
       });
     }
 
     if (stage.impact_percent === null) {
-      warnings.push({
+      missingFields.push({
         key: `stage_impact:${stage.id ?? stage.sort_order}`,
         label: `Impacto no definido: ${stage.name}`,
         section: "Etapas / subprocesos",
-        severity: "warning",
+        severity: "blocking",
+      });
+    } else if (stage.impact_percent < 0 || stage.impact_percent > 100) {
+      missingFields.push({
+        key: `stage_impact_range:${stage.id ?? stage.sort_order}`,
+        label: `Impacto fuera de rango: ${stage.name}`,
+        section: "Etapas / subprocesos",
+        severity: "blocking",
       });
     }
 
@@ -127,15 +144,27 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
         severity: "warning",
       });
     }
+
+    if (stage.support_role_ids.length === 0) {
+      warnings.push({
+        key: `stage_support:${stage.id ?? stage.sort_order}`,
+        label: `Sin roles de apoyo: ${stage.name}`,
+        section: "Etapas / subprocesos",
+        severity: "warning",
+      });
+    }
   }
 
-  const impactTotal = stages.reduce((total, stage) => total + (stage.impact_percent ?? 0), 0);
-  if (stages.length > 0 && impactTotal !== 100) {
-    warnings.push({
+  const impactTotalCents = stages.reduce(
+    (total, stage) => total + (stage.impact_percent === null ? 0 : impactCents(stage.impact_percent)),
+    0,
+  );
+  if (stages.length > 0 && impactTotalCents !== 10000) {
+    missingFields.push({
       key: "impact_total",
-      label: "La suma de impactos es distinta de 100",
+      label: `Impacto total: ${impactTotalCents / 100}%`,
       section: "Etapas / subprocesos",
-      severity: "warning",
+      severity: "blocking",
     });
   }
 
@@ -143,5 +172,19 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
     isValid: missingFields.length === 0,
     missingFields,
     warnings,
+  };
+}
+
+export function getProcessActivationCompleteness(
+  validation: ProcessActivationValidation,
+): ProcessActivationCompleteness {
+  const totalRequirements = 10;
+  const blockingCount = validation.missingFields.length;
+  const satisfiedRequirements = Math.max(totalRequirements - blockingCount, 0);
+
+  return {
+    blockingCount,
+    completionPercent: Math.round((satisfiedRequirements / totalRequirements) * 100),
+    warningCount: validation.warnings.length,
   };
 }

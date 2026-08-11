@@ -2,16 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileText, Save } from "lucide-react";
 
-import {
-  criticalityOptions,
-  documentationOptions,
-  statusOptions,
-} from "@/components/dashboard/badge";
+import { criticalityOptions } from "@/components/dashboard/badge";
 import { DashboardShell } from "@/components/dashboard/shell";
-import { updateProcessBasics } from "@/app/admin/actions";
+import { activateProcess, updateProcessBasics } from "@/app/admin/actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { getEditableProcessCatalogItem, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
+import { mapProcessMasterDto } from "@/app/procesos/process-master/process-master-mapper";
+import {
+  getProcessActivationCompleteness,
+  validateProcessForActivation,
+} from "@/app/procesos/process-master/process-master-validation";
 import { ArchiveProcessPanel } from "./archive-process-panel";
+import { ProcessActivationPanel } from "./process-activation-panel";
 import { StageEditor } from "./stage-editor";
 
 type Params = Promise<{
@@ -22,6 +24,12 @@ type SearchParams = Promise<{
   error?: string;
   ok?: string;
 }>;
+
+type ProcessRoleRow = {
+  responsibility_type: string | null;
+  role_id: string | null;
+  subprocess_id: string | null;
+};
 
 function Field({
   children,
@@ -38,14 +46,36 @@ function Field({
   );
 }
 
+function StatePill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-[#d6e1ea] bg-[#f6f9fc] px-3 py-2">
+      <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-bold text-navy">{value}</p>
+    </div>
+  );
+}
+
 const inputClass =
   "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none transition focus:border-sea focus:ring-2 focus:ring-[#e6edf3]";
 
 const processTypeOptions = [
-  { label: "Estratégico", value: "strategic" },
+  { label: "Estrategico", value: "strategic" },
   { label: "Operativo / Clave", value: "operational" },
   { label: "Soporte", value: "support" },
 ];
+
+const statusLabels: Record<string, string> = {
+  active: "Activo",
+  archived: "Archivado",
+  inactive: "Borrador",
+};
+
+const documentationLabels: Record<string, string> = {
+  documented: "Documentado",
+  draft: "Borrador",
+  needs_update: "Requiere actualizacion",
+  not_started: "No iniciado",
+};
 
 function PrimaryButton({ children }: { children: React.ReactNode }) {
   return (
@@ -69,11 +99,17 @@ export default async function EditProcessPage({
   const { processId } = await params;
   const messages = await searchParams;
   const supabase = createSupabaseServerClient();
-  const [processResult, matrixResult, systemsResult, roleDictionaryResult] = await Promise.all([
+  const [processResult, matrixResult, systemsResult, roleDictionaryResult, processRolesResult] = await Promise.all([
     getEditableProcessCatalogItem(processId),
     getProcessMatrix(processId),
     supabase.from("systems").select("id,name").order("name"),
     getRoleDictionary(),
+    supabase
+      .from("process_roles")
+      .select("subprocess_id,role_id,responsibility_type")
+      .eq("process_id", processId)
+      .not("subprocess_id", "is", null)
+      .in("responsibility_type", ["owner", "user", "consulted", "backup"]),
   ]);
 
   if (!processResult.data || processResult.data.status === "archived") {
@@ -83,6 +119,53 @@ export default async function EditProcessPage({
   const process = processResult.data;
   const rows = matrixResult.data;
   const systems = systemsResult.data ?? [];
+  const processRoles = (processRolesResult.data ?? []) as ProcessRoleRow[];
+  const officialActiveRoleIds = new Set(
+    roleDictionaryResult.data.filter((role) => role.role_status === "active").map((role) => role.role_id),
+  );
+  const ownerRoleBySubprocess = Object.fromEntries(
+    processRoles
+      .filter(
+        (role) =>
+          role.responsibility_type === "owner" &&
+          Boolean(role.subprocess_id) &&
+          Boolean(role.role_id) &&
+          officialActiveRoleIds.has(role.role_id ?? ""),
+      )
+      .map((role) => [role.subprocess_id ?? "", role.role_id ?? ""]),
+  );
+  const stageRoleIdsBySubprocess = processRoles.reduce<
+    Record<string, { backup_role_id?: string | null; support_role_ids?: string[]; user_role_id?: string | null }>
+  >((acc, role) => {
+    if (!role.subprocess_id || !role.role_id || !officialActiveRoleIds.has(role.role_id)) {
+      return acc;
+    }
+
+    const current = acc[role.subprocess_id] ?? { support_role_ids: [] };
+
+    if (role.responsibility_type === "backup") {
+      current.backup_role_id = role.role_id;
+    }
+
+    if (role.responsibility_type === "user") {
+      current.user_role_id = role.role_id;
+    }
+
+    if (role.responsibility_type === "consulted") {
+      current.support_role_ids = [...(current.support_role_ids ?? []), role.role_id];
+    }
+
+    acc[role.subprocess_id] = current;
+    return acc;
+  }, {});
+  const masterProcess = mapProcessMasterDto({
+    ownerRoleBySubprocess,
+    process,
+    stageRoleIdsBySubprocess,
+    stages: rows.map((row) => ({ ...row, subprocess_status: "active" })),
+  });
+  const activationValidation = validateProcessForActivation(masterProcess);
+  const activationCompleteness = getProcessActivationCompleteness(activationValidation);
   const nextSortOrder =
     rows.reduce((max, row) => Math.max(max, Number(row.sort_order ?? 0)), 0) + 1;
 
@@ -120,6 +203,20 @@ export default async function EditProcessPage({
           {messages.error}
         </div>
       ) : null}
+
+      {process.status === "inactive" ? (
+        <ProcessActivationPanel
+          action={activateProcess}
+          completeness={activationCompleteness}
+          processId={process.process_id}
+          processName={process.process_name}
+          validation={activationValidation}
+        />
+      ) : (
+        <section className="mt-5 rounded-lg border border-[#c8e6d0] bg-[#f3fbf6] p-5 text-sm font-semibold text-[#24613d]">
+          Activo. Este proceso ya forma parte del Diccionario de procesos oficiales.
+        </section>
+      )}
 
       <section className="mt-5 rounded-lg border border-line bg-white shadow-[0_10px_30px_rgba(0,59,92,0.06)]">
         <div className="border-b border-line px-5 py-4">
@@ -200,28 +297,11 @@ export default async function EditProcessPage({
                 ))}
               </select>
             </Field>
-            <Field label="Estado">
-              <select className={inputClass} name="status" defaultValue={process.status}>
-                {statusOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Documentacion">
-              <select
-                className={inputClass}
-                name="documentation_status"
-                defaultValue={process.documentation_status}
-              >
-                {documentationOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <StatePill label="Estado" value={statusLabels[process.status] ?? process.status} />
+            <StatePill
+              label="Documentacion"
+              value={documentationLabels[process.documentation_status] ?? process.documentation_status}
+            />
           </div>
           <div>
             <PrimaryButton>Guardar proceso</PrimaryButton>

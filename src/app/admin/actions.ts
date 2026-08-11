@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAdminAccess } from "@/lib/auth/admin";
+import { getEditableProcessCatalogItem, getRoleDictionary } from "@/lib/dashboard/data";
+import type { ProcessMasterDto, ProcessMasterStage } from "@/app/procesos/process-master/process-master-types";
+import { validateProcessForActivation } from "@/app/procesos/process-master/process-master-validation";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 type AdminSupabaseClient = Awaited<ReturnType<typeof requireAdminAccess>>["supabase"];
@@ -1614,6 +1617,130 @@ export async function assignProcessSystem(formData: FormData) {
   );
 }
 
+type ActivationSubprocessRow = {
+  criticality: string | null;
+  description: string | null;
+  id: string;
+  impact_percent: number | null;
+  name: string | null;
+  sort_order: number | null;
+  status: string | null;
+};
+
+type ActivationProcessRoleRow = {
+  responsibility_type: string | null;
+  role_id: string | null;
+  subprocess_id: string | null;
+};
+
+async function buildProcessMasterForActivation(
+  supabase: AdminSupabaseClient,
+  processId: string,
+): Promise<{ error: Error | null; process: ProcessMasterDto | null; status: string | null }> {
+  const [processResult, subprocessesResult, rolesResult, roleDictionaryResult] = await Promise.all([
+    getEditableProcessCatalogItem(processId),
+    supabase
+      .from("subprocesses")
+      .select("id,name,description,criticality,impact_percent,sort_order,status")
+      .eq("process_id", processId)
+      .eq("status", "active")
+      .order("sort_order", { nullsFirst: false })
+      .order("name"),
+    supabase
+      .from("process_roles")
+      .select("subprocess_id,role_id,responsibility_type")
+      .eq("process_id", processId)
+      .not("subprocess_id", "is", null)
+      .in("responsibility_type", ["owner", "user", "consulted", "backup"]),
+    getRoleDictionary(),
+  ]);
+
+  const error = processResult.error ?? subprocessesResult.error ?? rolesResult.error ?? roleDictionaryResult.error;
+
+  if (error) {
+    return { error: new Error(error.message), process: null, status: null };
+  }
+
+  if (!processResult.data) {
+    return { error: new Error("No se encontro el proceso."), process: null, status: null };
+  }
+
+  const officialRoles = new Map(
+    roleDictionaryResult.data
+      .filter((role) => role.role_status === "active")
+      .map((role) => [role.role_id, role]),
+  );
+  const roles = (rolesResult.data ?? []) as ActivationProcessRoleRow[];
+  const rolesBySubprocess = new Map<string, ActivationProcessRoleRow[]>();
+
+  for (const role of roles) {
+    if (!role.subprocess_id || !role.role_id || !officialRoles.has(role.role_id)) {
+      continue;
+    }
+
+    const current = rolesBySubprocess.get(role.subprocess_id) ?? [];
+    current.push(role);
+    rolesBySubprocess.set(role.subprocess_id, current);
+  }
+
+  const stages: ProcessMasterStage[] = ((subprocessesResult.data ?? []) as ActivationSubprocessRow[]).map((stage, index) => {
+    const stageRoles = rolesBySubprocess.get(stage.id) ?? [];
+    const owner = stageRoles.find((role) => role.responsibility_type === "owner") ?? null;
+    const user = stageRoles.find((role) => role.responsibility_type === "user") ?? null;
+    const backup = stageRoles.find((role) => role.responsibility_type === "backup") ?? null;
+    const supportRoles = stageRoles.filter((role) => role.responsibility_type === "consulted");
+    const ownerMeta = owner?.role_id ? officialRoles.get(owner.role_id) : null;
+
+    return {
+      backup_role_id: backup?.role_id ?? null,
+      criticality: stage.criticality === "low" || stage.criticality === "high" || stage.criticality === "critical" ? stage.criticality : "medium",
+      description: stage.description,
+      id: stage.id,
+      impact_percent: stage.impact_percent,
+      name: stage.name ?? `Etapa ${index + 1}`,
+      owner_person_name: ownerMeta?.current_person_name ?? null,
+      owner_role_id: owner?.role_id ?? null,
+      owner_role_name: ownerMeta?.role_name ?? null,
+      sort_order: stage.sort_order ?? index + 1,
+      status: "active",
+      support_role_ids: supportRoles.map((role) => role.role_id).filter((roleId): roleId is string => Boolean(roleId)),
+      user_role_id: user?.role_id ?? null,
+    };
+  });
+  const firstOwner = stages.find((stage) => stage.owner_role_id) ?? null;
+
+  return {
+    error: null,
+    process: {
+      process: {
+        area_id: processResult.data.area_id,
+        area_name: processResult.data.area_name,
+        basic_kpi: processResult.data.basic_kpi,
+        company_id: processResult.data.company_id ?? "",
+        company_name: processResult.data.company_name,
+        criticality: processResult.data.criticality === "low" || processResult.data.criticality === "high" || processResult.data.criticality === "critical" ? processResult.data.criticality : "medium",
+        description: processResult.data.definition,
+        documentation_status: processResult.data.documentation_status === "not_started" || processResult.data.documentation_status === "documented" || processResult.data.documentation_status === "needs_update" ? processResult.data.documentation_status : "draft",
+        expected_result: processResult.data.expected_result,
+        id: processResult.data.process_id,
+        inputs_providers: processResult.data.inputs_providers,
+        name: processResult.data.process_name,
+        objective: processResult.data.objective,
+        outputs_clients: processResult.data.outputs_clients,
+        process_type: processResult.data.process_type === "strategic" || processResult.data.process_type === "support" ? processResult.data.process_type : "operational",
+        status: processResult.data.status === "active" || processResult.data.status === "archived" ? processResult.data.status : "inactive",
+      },
+      responsibility: {
+        owner_person_id: null,
+        owner_person_name: firstOwner?.owner_person_name ?? null,
+        owner_role_id: firstOwner?.owner_role_id ?? null,
+        owner_role_name: firstOwner?.owner_role_name ?? null,
+      },
+      stages,
+    },
+    status: processResult.data.status,
+  };
+}
 export async function updateProcessBasics(formData: FormData) {
   const processId = value(formData, "process_id");
   const returnTo = internalReturnTo(formData, `/procesos/${processId}/editar`);
@@ -1630,8 +1757,6 @@ export async function updateProcessBasics(formData: FormData) {
       basic_kpi: optionalValue(formData, "basic_kpi"),
       process_type: processTypeValue(formData),
       criticality: value(formData, "criticality"),
-      status: value(formData, "status"),
-      documentation_status: value(formData, "documentation_status"),
     })
     .eq("id", processId);
 
@@ -1642,6 +1767,67 @@ export async function updateProcessBasics(formData: FormData) {
   done("Proceso actualizado", returnTo);
 }
 
+
+export async function activateProcess(input: FormData | string) {
+  const processId = typeof input === "string" ? input : value(input, "process_id");
+  const returnTo = `/procesos/${processId}/editar`;
+
+  if (!processId) {
+    fail("Proceso no definido", "/procesos");
+  }
+
+  const { supabase } = await requireAdminAccess();
+  const readModel = await buildProcessMasterForActivation(supabase, processId);
+
+  if (readModel.error) {
+    fail(readModel.error.message, returnTo);
+  }
+
+  if (!readModel.process) {
+    fail("No se encontro el proceso.", "/procesos");
+  }
+
+  if (readModel.status === "archived") {
+    fail("No se puede activar un proceso archivado.", returnTo);
+  }
+
+  if (readModel.status === "active") {
+    revalidatePath("/procesos");
+    revalidatePath(`/procesos/${processId}`);
+    revalidatePath(`/procesos/${processId}/editar`);
+    redirect(withMessage(`/procesos/${processId}`, "ok", "El proceso ya estaba activo"));
+  }
+
+  if (readModel.status !== "inactive") {
+    fail("Solo se pueden activar procesos en borrador.", returnTo);
+  }
+
+  const validation = validateProcessForActivation(readModel.process);
+
+  if (!validation.isValid) {
+    const missing = validation.missingFields.map((field) => field.label).join("; ");
+    fail(`No se pudo activar el proceso. Faltan: ${missing}`, returnTo);
+  }
+
+  const { error } = await supabase
+    .from("processes")
+    .update({
+      documentation_status: "documented",
+      status: "active",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", processId)
+    .eq("status", "inactive");
+
+  if (error) {
+    fail(error.message, returnTo);
+  }
+
+  revalidatePath("/procesos");
+  revalidatePath(`/procesos/${processId}`);
+  revalidatePath(`/procesos/${processId}/editar`);
+  redirect(withMessage(`/procesos/${processId}`, "ok", "Proceso activado"));
+}
 export async function updateSubprocessBasics(formData: FormData) {
   const processId = value(formData, "process_id");
   const subprocessId = value(formData, "subprocess_id");

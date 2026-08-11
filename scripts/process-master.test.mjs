@@ -46,7 +46,7 @@ assert.match(mapperSource, /export function mapProcessMasterDto/);
 assert.match(validationSource, /export function validateProcessForActivation/);
 
 const { mapProcessMasterDto } = loadTsModule("src/app/procesos/process-master/process-master-mapper.ts");
-const { validateProcessForActivation } = loadTsModule(
+const { getProcessActivationCompleteness, validateProcessForActivation } = loadTsModule(
   "src/app/procesos/process-master/process-master-validation.ts",
 );
 
@@ -211,8 +211,7 @@ const stageWithoutOwner = validateProcessForActivation({
   ...master,
   stages: [{ ...master.stages[0], owner_role_id: null }],
 });
-assert.ok(stageWithoutOwner.missingFields.some((field) => field.key === "owner_role"));
-assert.ok(stageWithoutOwner.warnings.some((warning) => warning.key.startsWith("stage_owner:")));
+assert.ok(stageWithoutOwner.missingFields.some((field) => field.key.startsWith("stage_owner:")));
 
 const noPerson = validateProcessForActivation({
   ...master,
@@ -220,11 +219,43 @@ const noPerson = validateProcessForActivation({
 });
 assert.ok(noPerson.warnings.some((warning) => warning.key === "owner_person"));
 
+const missingExpectedResult = validateProcessForActivation({
+  ...master,
+  process: { ...master.process, expected_result: null },
+});
+assert.equal(missingExpectedResult.isValid, true, "missing expected result is warning only");
+assert.ok(missingExpectedResult.warnings.some((warning) => warning.key === "expected_result"));
+
+const nullImpact = validateProcessForActivation({
+  ...master,
+  stages: [{ ...master.stages[0], impact_percent: null }],
+});
+assert.equal(nullImpact.isValid, false, "null impact blocks activation");
+assert.ok(nullImpact.missingFields.some((field) => field.key.startsWith("stage_impact:")));
+
+const impactOutOfRange = validateProcessForActivation({
+  ...master,
+  stages: [{ ...master.stages[0], impact_percent: 110 }],
+});
+assert.equal(impactOutOfRange.isValid, false, "impact above 100 blocks activation");
+assert.ok(impactOutOfRange.missingFields.some((field) => field.key.startsWith("stage_impact_range:")));
+
 const badImpact = validateProcessForActivation({
   ...master,
   stages: [{ ...master.stages[0], impact_percent: 80 }],
 });
-assert.ok(badImpact.warnings.some((warning) => warning.key === "impact_total"));
+assert.equal(badImpact.isValid, false, "impact total different from 100 blocks activation");
+assert.ok(badImpact.missingFields.some((field) => field.key === "impact_total"));
+
+const exactImpact = validateProcessForActivation({
+  ...master,
+  stages: [{ ...master.stages[0], impact_percent: 100 }],
+});
+assert.equal(exactImpact.isValid, true, "impact total 100 keeps process valid");
+
+const completeness = getProcessActivationCompleteness(missingObjective);
+assert.equal(completeness.blockingCount, missingObjective.missingFields.length, "completeness exposes blocking count");
+assert.ok(completeness.completionPercent < 100, "missing blocking field lowers completion");
 
 const criticalNoBackup = validateProcessForActivation({
   ...master,
@@ -232,4 +263,4 @@ const criticalNoBackup = validateProcessForActivation({
 });
 assert.ok(criticalNoBackup.warnings.some((warning) => warning.key.startsWith("stage_backup:")));
 
-console.log("process-master: 23/23 OK");
+console.log("process-master: 33/33 OK");
