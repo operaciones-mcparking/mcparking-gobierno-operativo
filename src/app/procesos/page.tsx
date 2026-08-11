@@ -1,61 +1,22 @@
+import Link from "next/link";
+import { PlusCircle } from "lucide-react";
+
 import { ValueBadge } from "@/components/dashboard/badge";
 import { DashboardShell } from "@/components/dashboard/shell";
 import {
-  getAreaDirectory,
   getProcessCatalogV2,
   getProcessMatrixV2,
   getProcessStageOwnerRoles,
   getRoleDictionary,
   type ProcessCatalogV2Item,
 } from "@/lib/dashboard/data";
-import { CreateProcessModal } from "./create-process-modal";
 import { ProcessCatalogClient } from "./process-catalog-client";
 import { ProcessMacroMap } from "./process-macro-map";
-
-type CreateProcessOption = {
-  id: string;
-  name: string;
-};
-
-type CreateProcessAreaOption = CreateProcessOption & {
-  company_id: string | null;
-  company_name: string | null;
-};
 
 type IdNameOption = {
   id: string;
   name: string;
 };
-
-function uniqueCreateProcessOptions(options: CreateProcessOption[]) {
-  const seen = new Set<string>();
-
-  return options
-    .filter((option) => {
-      if (!option.id || seen.has(option.id)) {
-        return false;
-      }
-
-      seen.add(option.id);
-      return true;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, "es"));
-}
-
-function uniqueCreateProcessAreas(options: CreateProcessAreaOption[]) {
-  const seen = new Set<string>();
-
-  return options
-    .filter((option) => {
-      if (!option.id || seen.has(option.id)) {
-        return false;
-      }
-
-      seen.add(option.id);
-      return true;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name, "es"));
-}
 
 function uniqueIdNameOptions(pairs: Array<{ id: string; name: string }>) {
   const byId = new Map<string, string>();
@@ -85,55 +46,13 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
     countryId: params.country_id ?? null,
     siteId: params.site_id ?? null,
   };
-  const [catalogResult, matrixResult, areaDirectoryResult, roleDictionaryResult, stageOwnerRolesResult] = await Promise.all([
+  const [catalogResult, matrixResult, roleDictionaryResult, stageOwnerRolesResult] = await Promise.all([
     getProcessCatalogV2(context),
     getProcessMatrixV2(),
-    getAreaDirectory(context),
     getRoleDictionary(context),
     getProcessStageOwnerRoles(),
   ]);
   const activeProcesses = catalogResult.data;
-  const createProcessSource = activeProcesses.length > 0 ? activeProcesses : catalogResult.data;
-  const createProcessCompanies = uniqueCreateProcessOptions([
-    ...createProcessSource.flatMap((process) => {
-      const options: CreateProcessOption[] = [];
-
-      if (process.owner_company_id && process.owner_company_name) {
-        options.push({ id: process.owner_company_id, name: process.owner_company_name });
-      } else if (process.owner_company_id && process.company_name) {
-        options.push({ id: process.owner_company_id, name: process.company_name });
-      }
-
-      if (process.operating_company_id && process.operating_company_name) {
-        options.push({ id: process.operating_company_id, name: process.operating_company_name });
-      }
-
-      return options;
-    }),
-    ...(areaDirectoryResult.data ?? [])
-      .filter((area) => area.company_id && area.company_name)
-      .map((area) => ({
-        id: area.company_id as string,
-        name: area.company_name as string,
-      })),
-  ]);
-  const createProcessAreas = uniqueCreateProcessAreas([
-    ...(areaDirectoryResult.data ?? []).map((area) => ({
-      company_id: area.company_id,
-      company_name: area.company_name,
-      id: area.id,
-      name: area.name,
-    })),
-    ...roleDictionaryResult.data
-      .filter((role) => role.area_id && role.area_name)
-      .map((role) => ({
-        company_id: role.company_id,
-        company_name: role.company_name,
-        id: role.area_id as string,
-        name: role.area_name as string,
-      })),
-  ]);
-
   const companyOptions = Array.from(
     new Set(
       activeProcesses
@@ -181,11 +100,13 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
       title="Procesos oficiales"
     >
       <div className="mb-4 mt-5 flex justify-end">
-        <CreateProcessModal
-          areas={createProcessAreas}
-          companies={createProcessCompanies}
-          optionsError={areaDirectoryResult.error?.message ?? roleDictionaryResult.error?.message ?? null}
-        />
+        <Link
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white shadow-[0_10px_22px_rgba(2,53,116,0.12)] transition hover:bg-[#075077]"
+          href="/procesos/nuevo"
+        >
+          <PlusCircle className="h-4 w-4 text-clay" />
+          Nuevo proceso
+        </Link>
       </div>
 
       {!catalogResult.error ? <ProcessMacroMap processes={macroMapProcesses} /> : null}

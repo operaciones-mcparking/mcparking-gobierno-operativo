@@ -11,6 +11,8 @@ const migration = read("supabase/migrations/20260811180000_create_process_catalo
 const matrixFixMigration = read("supabase/migrations/20260811183000_fix_process_subprocess_matrix_v2.sql");
 const data = read("src/lib/dashboard/data.ts");
 const page = read("src/app/procesos/page.tsx");
+const newProcessPage = read("src/app/procesos/nuevo/page.tsx");
+const createProcessDraftForm = read("src/app/procesos/nuevo/create-process-draft-form.tsx");
 const processClient = read("src/app/procesos/process-catalog-client.tsx");
 const processUi = page + processClient;
 const filters = read("src/components/dashboard/process-filters.tsx");
@@ -53,6 +55,10 @@ const processCatalogV2Type = data.slice(data.indexOf("export type ProcessCatalog
 assert.doesNotMatch(processCatalogV2Type, /:\s*any\b/, "V2 catalog type must not use any");
 
 assert.match(processUi, /getProcessCatalogV2/, "process list must use V2 catalog helper");
+assert.match(page, /href="\/procesos\/nuevo"/, "Nuevo proceso must navigate to the draft creation route");
+assert.doesNotMatch(page, /CreateProcessModal/, "Nuevo proceso must not open the legacy modal from the list");
+assert.match(newProcessPage, /<CreateProcessDraftForm/, "draft creation route must render the new process form");
+assert.match(createProcessDraftForm, /Guardar borrador/, "draft creation form must expose the draft save action");
 assert.match(processUi, /getProcessMatrixV2/, "process list must use V2 matrix helper");
 assert.match(processUi, /Diccionario de procesos/, "dictionary heading must be clean");
 assert.doesNotMatch(processUi, /Diccionario de procesos oficiales/, "dictionary heading must not use old wording");
@@ -138,4 +144,4 @@ assert.match(detailPage, /getProcessCatalogV2Item/, "process detail page must us
 assert.match(detailPage, /getProcessMatrixV2/, "process detail page must use V2 stage helper");
 assert.doesNotMatch(processUi + filters + detailModal, /api\/procesos|fetch\(/, "edit UI must not create a new endpoint or fetch flow");
 
-console.log("processes-v2-ui: 79/79 OK");
+console.log("processes-v2-ui: 83/83 OK");

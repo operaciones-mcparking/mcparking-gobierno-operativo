@@ -628,6 +628,97 @@ export async function addArea(formData: FormData) {
   );
 }
 
+export async function createProcessDraft(formData: FormData) {
+  const { supabase } = await requireAdminAccess();
+  const returnTo = "/procesos/nuevo";
+  const name = value(formData, "name");
+  const companyId = value(formData, "company_id");
+  const areaId = optionalValue(formData, "area_id");
+  const processType = value(formData, "process_type");
+
+  if (!name) {
+    fail("Ingresa el nombre del proceso.", returnTo);
+  }
+
+  if (!companyId) {
+    fail("Selecciona la empresa del proceso.", returnTo);
+  }
+
+  if (processType !== "strategic" && processType !== "operational" && processType !== "support") {
+    fail("Selecciona un tipo de proceso valido.", returnTo);
+  }
+
+  if (areaId) {
+    const { data: area, error: areaError } = await supabase
+      .from("areas")
+      .select("company_id")
+      .eq("id", areaId)
+      .maybeSingle();
+
+    if (areaError) {
+      fail(areaError.message, returnTo);
+    }
+
+    if (!area || (area.company_id && area.company_id !== companyId)) {
+      fail("El area seleccionada no corresponde a la empresa.", returnTo);
+    }
+  }
+
+  const requestContext = await requestOperationalContext();
+  const explicitSiteId =
+    optionalValue(formData, "operating_site_id") ??
+    optionalValue(formData, "owner_site_id") ??
+    optionalValue(formData, "site_id") ??
+    requestContext.siteId;
+  const explicitContext = await siteOperationalContext(supabase, explicitSiteId);
+  const companyContext = await companyOperationalContext(supabase, companyId);
+  const countryId =
+    optionalValue(formData, "country_id") ??
+    requestContext.countryId ??
+    explicitContext.countryId ??
+    companyContext.countryId;
+  const defaultSiteId = explicitSiteId ?? companyContext.siteId;
+
+  const { data, error } = await supabase
+    .from("processes")
+    .insert({
+      area_id: areaId,
+      basic_kpi: optionalValue(formData, "basic_kpi"),
+      company_id: companyId,
+      country_id: countryId,
+      criticality: value(formData, "criticality") || "medium",
+      description: optionalValue(formData, "description"),
+      documentation_status: "draft",
+      expected_result: optionalValue(formData, "expected_result"),
+      inputs_providers: optionalValue(formData, "inputs_providers"),
+      is_global: false,
+      is_replicable: false,
+      name,
+      objective: optionalValue(formData, "objective"),
+      operating_company_id: companyId,
+      operating_site_id: defaultSiteId,
+      outputs_clients: optionalValue(formData, "outputs_clients"),
+      owner_company_id: companyId,
+      owner_site_id: defaultSiteId,
+      process_type: processType,
+      status: "inactive",
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    fail(
+      error.code === "23505"
+        ? "Ya existe un proceso con ese nombre para la empresa seleccionada."
+        : error.message,
+      returnTo,
+    );
+  }
+
+  revalidatePath("/procesos");
+  revalidatePath(`/procesos/${data.id}/editar`);
+  redirect(withMessage(`/procesos/${data.id}/editar`, "ok", "Borrador guardado"));
+}
 export async function addProcess(formData: FormData) {
   const { supabase } = await requireAdminAccess();
   const returnTo = internalReturnTo(formData, "/admin");

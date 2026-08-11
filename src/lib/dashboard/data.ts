@@ -708,6 +708,164 @@ export async function getProcessCatalogV2Item(processId: string) {
     error,
   };
 }
+
+type EditableProcessLookupRow = Record<string, unknown>;
+
+function rowText(row: EditableProcessLookupRow | undefined, key: string) {
+  const value = row?.[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function rowBoolean(row: EditableProcessLookupRow, key: string) {
+  return row[key] === true;
+}
+
+function rowsById(rows: EditableProcessLookupRow[] | null | undefined) {
+  const map = new Map<string, EditableProcessLookupRow>();
+
+  for (const row of rows ?? []) {
+    const id = rowText(row, "id");
+
+    if (id) {
+      map.set(id, row);
+    }
+  }
+
+  return map;
+}
+
+async function lookupRowsById(
+  supabase: ReturnType<typeof createSupabaseServerClient>,
+  table: string,
+  ids: string[],
+  select: string,
+) {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+
+  if (uniqueIds.length === 0) {
+    return { data: [] as EditableProcessLookupRow[], error: null };
+  }
+
+  const { data, error } = await supabase.from(table).select(select).in("id", uniqueIds);
+
+  return { data: (data ?? []) as unknown as EditableProcessLookupRow[], error };
+}
+
+export async function getEditableProcessCatalogItem(processId: string) {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("processes")
+    .select(
+      "id,name,description,objective,expected_result,inputs_providers,outputs_clients,basic_kpi,process_type,criticality,status,documentation_status,is_replicable,is_global,company_id,area_id,owner_company_id,operating_company_id,country_id,owner_site_id,operating_site_id",
+    )
+    .eq("id", processId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { data: null, error };
+  }
+
+  const process = data as EditableProcessLookupRow;
+  const companyId = rowText(process, "company_id");
+  const ownerCompanyId = rowText(process, "owner_company_id") ?? companyId;
+  const operatingCompanyId = rowText(process, "operating_company_id");
+  const countryId = rowText(process, "country_id");
+  const areaId = rowText(process, "area_id");
+  const ownerSiteId = rowText(process, "owner_site_id");
+  const operatingSiteId = rowText(process, "operating_site_id");
+
+  const [companiesResult, areasResult, countriesResult, sitesResult, stagesResult] = await Promise.all([
+    lookupRowsById(
+      supabase,
+      "companies",
+      [companyId, ownerCompanyId, operatingCompanyId].filter((id): id is string => Boolean(id)),
+      "id,name,company_type,country_id",
+    ),
+    lookupRowsById(supabase, "areas", areaId ? [areaId] : [], "id,name,company_id"),
+    lookupRowsById(supabase, "countries", countryId ? [countryId] : [], "id,name,code"),
+    lookupRowsById(
+      supabase,
+      "sites",
+      [ownerSiteId, operatingSiteId].filter((id): id is string => Boolean(id)),
+      "id,name",
+    ),
+    supabase
+      .from("subprocesses")
+      .select("id", { count: "exact", head: true })
+      .eq("process_id", processId)
+      .eq("status", "active"),
+  ]);
+  const lookupError =
+    companiesResult.error ?? areasResult.error ?? countriesResult.error ?? sitesResult.error ?? stagesResult.error;
+
+  if (lookupError) {
+    return { data: null, error: lookupError };
+  }
+
+  const companies = rowsById(companiesResult.data);
+  const areas = rowsById(areasResult.data);
+  const countries = rowsById(countriesResult.data);
+  const sites = rowsById(sitesResult.data);
+  const company = companyId ? companies.get(companyId) : undefined;
+  const ownerCompany = ownerCompanyId ? companies.get(ownerCompanyId) : undefined;
+  const operatingCompany = operatingCompanyId ? companies.get(operatingCompanyId) : undefined;
+  const country = countryId ? countries.get(countryId) : undefined;
+  const ownerSite = ownerSiteId ? sites.get(ownerSiteId) : undefined;
+  const operatingSite = operatingSiteId ? sites.get(operatingSiteId) : undefined;
+  const area = areaId ? areas.get(areaId) : undefined;
+  const companyName = rowText(company, "name") ?? rowText(ownerCompany, "name") ?? "Sin empresa";
+  const ownerCompanyName = rowText(ownerCompany, "name") ?? companyName;
+
+  return {
+    data: {
+      active_stage_count: stagesResult.count ?? 0,
+      area_id: areaId,
+      area_name: rowText(area, "name"),
+      basic_kpi: rowText(process, "basic_kpi"),
+      company_id: companyId,
+      company_name: companyName,
+      country_code: rowText(country, "code"),
+      country_id: countryId,
+      country_name: rowText(country, "name"),
+      criticality: rowText(process, "criticality") ?? "medium",
+      current_person_ids: [],
+      current_person_names: [],
+      definition: rowText(process, "description"),
+      documentation_status: rowText(process, "documentation_status") ?? "draft",
+      expected_result: rowText(process, "expected_result"),
+      inputs_providers: rowText(process, "inputs_providers"),
+      is_global: rowBoolean(process, "is_global"),
+      is_replicable: rowBoolean(process, "is_replicable"),
+      objective: rowText(process, "objective"),
+      operating_company_id: operatingCompanyId,
+      operating_company_name: rowText(operatingCompany, "name"),
+      operating_company_type: rowText(operatingCompany, "company_type"),
+      operating_site_id: operatingSiteId,
+      operating_site_name: rowText(operatingSite, "name"),
+      outputs_clients: rowText(process, "outputs_clients"),
+      owner_company_id: ownerCompanyId,
+      owner_company_name: ownerCompanyName,
+      owner_company_type: rowText(ownerCompany, "company_type"),
+      owner_role_ids: [],
+      owner_role_names: [],
+      owner_site_id: ownerSiteId,
+      owner_site_name: rowText(ownerSite, "name"),
+      process_id: processId,
+      process_name: rowText(process, "name") ?? "Proceso sin nombre",
+      process_type:
+        rowText(process, "process_type") === "strategic" ||
+        rowText(process, "process_type") === "support"
+          ? (rowText(process, "process_type") as "strategic" | "support")
+          : "operational",
+      status: rowText(process, "status") ?? "inactive",
+      support_role_ids: [],
+      support_role_names: [],
+      support_role_types: [],
+    } satisfies ProcessCatalogV2Item,
+    error: null,
+  };
+}
+
 export async function getProcessMatrix(processId?: string) {
   const supabase = createSupabaseServerClient();
   let query = supabase

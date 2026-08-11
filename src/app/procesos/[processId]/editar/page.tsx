@@ -10,7 +10,7 @@ import {
 import { DashboardShell } from "@/components/dashboard/shell";
 import { updateProcessBasics } from "@/app/admin/actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { getProcessCatalogV2Item, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
+import { getEditableProcessCatalogItem, getProcessMatrix, getRoleDictionary } from "@/lib/dashboard/data";
 import { ArchiveProcessPanel } from "./archive-process-panel";
 import { StageEditor } from "./stage-editor";
 
@@ -70,14 +70,14 @@ export default async function EditProcessPage({
   const messages = await searchParams;
   const supabase = createSupabaseServerClient();
   const [processResult, matrixResult, rolesResult, systemsResult, roleDictionaryResult] = await Promise.all([
-    getProcessCatalogV2Item(processId),
+    getEditableProcessCatalogItem(processId),
     getProcessMatrix(processId),
     supabase.from("roles").select("id,name").order("name"),
     supabase.from("systems").select("id,name").order("name"),
     getRoleDictionary(),
   ]);
 
-  if (!processResult.data) {
+  if (!processResult.data || processResult.data.status === "archived") {
     notFound();
   }
 
