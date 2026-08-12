@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const read = (filePath) => fs.readFileSync(path.join(rootDir, filePath), "utf8");
+const countMatches = (text, pattern) => [...text.matchAll(pattern)].length;
 
 const listPage = read("src/app/procesos/page.tsx");
 const newPage = read("src/app/procesos/nuevo/page.tsx");
@@ -60,9 +61,14 @@ assert.match(draftForm, /visibleAreas = useMemo\([\s\S]*area\.company_id === sel
 assert.match(draftForm, /const safeSelectedAreaId = visibleAreas\.some\(\(area\) => area\.id === selectedAreaId\)/, "area value must be sanitized against visible options");
 assert.match(draftForm, /if \(selectedAreaId !== safeSelectedAreaId\)[\s\S]*setSelectedAreaId\(safeSelectedAreaId\)/, "stale area state must be reconciled after option changes");
 assert.match(draftForm, /value=\{safeSelectedAreaId\}/, "area select must submit the sanitized area value");
+assert.equal(countMatches(draftForm, /name="area_id"/g), 1, "draft form must submit exactly one area_id field");
+assert.equal(countMatches(draftForm, /name="company_id"/g), 1, "draft form must submit exactly one company_id field");
+assert.doesNotMatch(draftForm, /type="hidden"[\s\S]*name="area_id"|name="area_id"[\s\S]*type="hidden"/, "draft form must not include a hidden stale area_id");
+assert.doesNotMatch(draftForm, /defaultValue=\{selectedAreaId\}|defaultValue="[^"]+"[\s\S]*name="area_id"/, "area select must not be uncontrolled by defaultValue");
 assert.match(draftForm, /<option value="">Sin area<\/option>/, "Sin area must submit an empty area_id value");
 assert.doesNotMatch(draftForm, /value="null"|value="undefined"/, "Sin area must not use unsupported sentinel values");
 
+assert.match(actions, /function diagnosticValues\(formData: FormData, key: string\)[\s\S]*\.getAll\(key\)/, "safe diagnostics must inspect all submitted field values");
 assert.match(createAction, /const areaId = optionalValue\(formData, "area_id"\)/, "server must normalize empty area_id to null");
 assert.match(createAction, /\.from\("processes"\)[\s\S]*\.insert\(/, "draft action must insert a process");
 assert.match(createAction, /\.select\("id"\)[\s\S]*\.single\(\)/, "draft action must request the generated process id");
@@ -86,6 +92,10 @@ assert.match(createAction, /if \(!name\)/, "draft action must require name");
 assert.match(createAction, /if \(!companyId\)/, "draft action must require company");
 assert.match(createAction, /processType !== "strategic"[\s\S]*processType !== "operational"[\s\S]*processType !== "support"/, "draft action must require a valid type");
 assert.match(createAction, /area\.company_id && area\.company_id !== companyId/, "draft action must block area/company mismatch");
+assert.match(createAction, /company_id recibido: \$\{companyId \|\| "\(empty\)"\}/, "area mismatch must show received company_id safely");
+assert.match(createAction, /area_id recibido: \$\{areaId\}/, "area mismatch must show received area_id safely");
+assert.match(createAction, /company_id values recibidos: \$\{diagnosticValues\(formData, "company_id"\)/, "area mismatch must show all received company_id values");
+assert.match(createAction, /area_id values recibidos: \$\{diagnosticValues\(formData, "area_id"\)/, "area mismatch must show all received area_id values");
 assert.match(createAction, /redirect\(withMessage\(`\/procesos\/\$\{data\.id\}\/editar`/, "draft action must redirect to editor after create");
 assert.doesNotMatch(createAction, /validateProcessForActivation/, "draft creation must not run activation validation");
 assert.doesNotMatch(createAction, /from\("subprocesses"\)/, "draft creation must not create stages");
@@ -102,4 +112,4 @@ assert.match(editPage, /getEditableProcessCatalogItem\(processId\)/, "edit page 
 assert.match(editPage, /processResult\.data\.status === "archived"/, "edit page must protect archived processes");
 assert.match(data, /p\.status = 'active'::public\.record_status|v_process_catalog_v2/, "official V2 active-only view contract must remain outside draft creation");
 
-console.log("process-create-draft: 57/57 OK");
+console.log("process-create-draft: 66/66 OK");

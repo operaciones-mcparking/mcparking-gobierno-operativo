@@ -67,6 +67,12 @@ function values(formData: FormData, key: string) {
     .filter(Boolean);
 }
 
+function diagnosticValues(formData: FormData, key: string) {
+  return formData
+    .getAll(key)
+    .map((item) => (typeof item === "string" ? item.trim() : "[non-string]"))
+    .map((item) => (item.length > 0 ? item : "(empty)"));
+}
 function withMessage(path: string, key: "error" | "ok", message: string) {
   const [base, query = ""] = path.split("?");
   const params = new URLSearchParams(query);
@@ -663,7 +669,10 @@ export async function createProcessDraft(formData: FormData) {
     }
 
     if (!area || (area.company_id && area.company_id !== companyId)) {
-      fail("El area seleccionada no corresponde a la empresa.", returnTo);
+      fail(
+        `El area seleccionada no corresponde a la empresa. company_id recibido: ${companyId || "(empty)"}. area_id recibido: ${areaId}. area.company_id: ${area?.company_id ?? "(null)"}. company_id values recibidos: ${diagnosticValues(formData, "company_id").join(", ") || "(none)"}. area_id values recibidos: ${diagnosticValues(formData, "area_id").join(", ") || "(none)"}.`,
+        returnTo,
+      );
     }
   }
 
