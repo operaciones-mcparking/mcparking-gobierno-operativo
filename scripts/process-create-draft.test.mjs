@@ -27,6 +27,12 @@ assert.match(newPage, /getAreaDirectory\(context\)/, "new process route must reu
 assert.match(draftForm, /Borrador/, "new process page must show draft state visually");
 assert.match(draftForm, /Guardar borrador/, "primary action must be Guardar borrador");
 assert.doesNotMatch(draftForm, /Crear proceso/, "new process page must not label the action as Crear proceso");
+assert.match(draftForm, /<form action=\{createProcessDraft\}/, "draft form submit must call createProcessDraft");
+assert.match(draftForm, /type="submit"/, "Guardar borrador button must submit the form");
+assert.match(draftForm, /useFormStatus\(\)/, "draft form must use form pending state");
+assert.match(draftForm, /disabled=\{disabled \|\| pending\}/, "pending state must disable the submit button");
+assert.match(draftForm, /pending \? "Guardando\.\.\." : "Guardar borrador"/, "pending state must show Guardando copy");
+assert.match(newPage, /params\.error[\s\S]*\{params\.error\}/, "new process page must show action errors visibly");
 assert.match(draftForm, /href="\/procesos"[\s\S]*Cancelar/, "new process page must provide cancel navigation");
 
 for (const field of [
@@ -52,6 +58,17 @@ assert.match(draftForm, /defaultValue="medium"/, "criticality must have a defaul
 assert.match(draftForm, /setSelectedAreaId\(""\)/, "changing company must clear inconsistent area selection");
 
 assert.match(createAction, /\.from\("processes"\)[\s\S]*\.insert\(/, "draft action must insert a process");
+assert.match(createAction, /\.select\("id"\)[\s\S]*\.single\(\)/, "draft action must request the generated process id");
+assert.match(createAction, /if \(!data\?\.id\)/, "draft action must handle missing process id as an error");
+assert.match(createAction, /Supabase no devolvio el ID del proceso creado/, "missing process id must produce a visible safe error");
+assert.match(createAction, /try \{[\s\S]*requestOperationalContext\(\)[\s\S]*companyOperationalContext\(supabase, companyId\)[\s\S]*\} catch \(error\)/, "draft action must convert context lookup failures into visible errors");
+assert.match(createAction, /const matchingExplicitSiteId =[\s\S]*explicitContext\.companyId === companyId/, "draft action must only trust explicit site context when it belongs to the selected company");
+assert.match(createAction, /\(matchingExplicitSiteId \? explicitContext\.countryId : null\)[\s\S]*companyContext\.countryId[\s\S]*requestContext\.countryId/, "draft action must prefer selected company country before stale request context");
+assert.doesNotMatch(createAction, /requestContext\.countryId \?\?[\s\S]*companyContext\.countryId/, "draft action must not let request country override the selected company country");
+assert.match(createAction, /defaultSiteId = matchingExplicitSiteId \?\? companyContext\.siteId/, "draft action must fall back to the selected company active site");
+assert.doesNotMatch(createAction, /defaultSiteId = explicitSiteId \?\? companyContext\.siteId/, "draft action must not persist stale explicit site ids from the request context");
+assert.match(createAction, /No se pudo guardar el borrador\. \$\{error instanceof Error \? error\.message/, "context errors must be surfaced safely");
+assert.match(createAction, /No se pudo guardar el borrador\. \$\{error\.message\}/, "Supabase insert errors must include safe detail");
 assert.doesNotMatch(createAction, /\.upsert\(/, "draft action must not upsert and overwrite existing processes");
 assert.match(createAction, /status: "inactive"/, "draft action must explicitly save inactive status");
 assert.match(createAction, /documentation_status: "draft"/, "draft action must explicitly save draft documentation status");
@@ -78,4 +95,4 @@ assert.match(editPage, /getEditableProcessCatalogItem\(processId\)/, "edit page 
 assert.match(editPage, /processResult\.data\.status === "archived"/, "edit page must protect archived processes");
 assert.match(data, /p\.status = 'active'::public\.record_status|v_process_catalog_v2/, "official V2 active-only view contract must remain outside draft creation");
 
-console.log("process-create-draft: 34/34 OK");
+console.log("process-create-draft: 49/49 OK");

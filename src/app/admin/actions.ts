@@ -667,20 +667,32 @@ export async function createProcessDraft(formData: FormData) {
     }
   }
 
-  const requestContext = await requestOperationalContext();
-  const explicitSiteId =
-    optionalValue(formData, "operating_site_id") ??
-    optionalValue(formData, "owner_site_id") ??
-    optionalValue(formData, "site_id") ??
-    requestContext.siteId;
-  const explicitContext = await siteOperationalContext(supabase, explicitSiteId);
-  const companyContext = await companyOperationalContext(supabase, companyId);
-  const countryId =
-    optionalValue(formData, "country_id") ??
-    requestContext.countryId ??
-    explicitContext.countryId ??
-    companyContext.countryId;
-  const defaultSiteId = explicitSiteId ?? companyContext.siteId;
+  let countryId: string | null = null;
+  let defaultSiteId: string | null = null;
+
+  try {
+    const requestContext = await requestOperationalContext();
+    const explicitSiteId =
+      optionalValue(formData, "operating_site_id") ??
+      optionalValue(formData, "owner_site_id") ??
+      optionalValue(formData, "site_id") ??
+      requestContext.siteId;
+    const explicitContext = await siteOperationalContext(supabase, explicitSiteId);
+    const companyContext = await companyOperationalContext(supabase, companyId);
+    const matchingExplicitSiteId =
+      explicitSiteId && explicitContext.companyId === companyId ? explicitContext.siteId : null;
+    countryId =
+      optionalValue(formData, "country_id") ??
+      (matchingExplicitSiteId ? explicitContext.countryId : null) ??
+      companyContext.countryId ??
+      requestContext.countryId;
+    defaultSiteId = matchingExplicitSiteId ?? companyContext.siteId;
+  } catch (error) {
+    fail(
+      `No se pudo guardar el borrador. ${error instanceof Error ? error.message : "No se pudo resolver el contexto operativo."}`,
+      returnTo,
+    );
+  }
 
   const { data, error } = await supabase
     .from("processes")
@@ -713,9 +725,13 @@ export async function createProcessDraft(formData: FormData) {
     fail(
       error.code === "23505"
         ? "Ya existe un proceso con ese nombre para la empresa seleccionada."
-        : error.message,
+        : `No se pudo guardar el borrador. ${error.message}`,
       returnTo,
     );
+  }
+
+  if (!data?.id) {
+    fail("No se pudo guardar el borrador. Supabase no devolvio el ID del proceso creado.", returnTo);
   }
 
   revalidatePath("/procesos");
