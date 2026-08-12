@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 import { requireAdminAccess } from "@/lib/auth/admin";
 import { getEditableProcessCatalogItem, getRoleDictionary } from "@/lib/dashboard/data";
 import type { ProcessMasterDto, ProcessMasterStage } from "@/app/procesos/process-master/process-master-types";
@@ -10,6 +11,22 @@ import { validateProcessForActivation } from "@/app/procesos/process-master/proc
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 type AdminSupabaseClient = Awaited<ReturnType<typeof requireAdminAccess>>["supabase"];
+
+function createProcessDraftValidationClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Missing Supabase service environment variables.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
 
 function value(formData: FormData, key: string) {
   const raw = formData.get(key);
@@ -67,12 +84,6 @@ function values(formData: FormData, key: string) {
     .filter(Boolean);
 }
 
-function diagnosticValues(formData: FormData, key: string) {
-  return formData
-    .getAll(key)
-    .map((item) => (typeof item === "string" ? item.trim() : "[non-string]"))
-    .map((item) => (item.length > 0 ? item : "(empty)"));
-}
 function withMessage(path: string, key: "error" | "ok", message: string) {
   const [base, query = ""] = path.split("?");
   const params = new URLSearchParams(query);
@@ -658,24 +669,31 @@ export async function createProcessDraft(formData: FormData) {
   }
 
   if (areaId) {
-    const { data: area, error: areaError } = await supabase
-      .from("areas")
-      .select("company_id")
-      .eq("id", areaId)
-      .maybeSingle();
+    let area: { company_id: string | null; status: string | null } | null = null;
 
-    if (areaError) {
-      fail(areaError.message, returnTo);
-    }
+    try {
+      const { data: areaData, error: areaError } = await createProcessDraftValidationClient()
+        .from("areas")
+        .select("company_id,status")
+        .eq("id", areaId)
+        .maybeSingle();
 
-    if (!area || (area.company_id && area.company_id !== companyId)) {
+      if (areaError) {
+        throw new Error(areaError.message);
+      }
+
+      area = areaData;
+    } catch (error) {
       fail(
-        `El area seleccionada no corresponde a la empresa. company_id recibido: ${companyId || "(empty)"}. area_id recibido: ${areaId}. area.company_id: ${area?.company_id ?? "(null)"}. company_id values recibidos: ${diagnosticValues(formData, "company_id").join(", ") || "(none)"}. area_id values recibidos: ${diagnosticValues(formData, "area_id").join(", ") || "(none)"}.`,
+        `No se pudo guardar el borrador. ${error instanceof Error ? error.message : "No se pudo validar el area seleccionada."}`,
         returnTo,
       );
     }
-  }
 
+    if (!area || area.status !== "active" || area.company_id !== companyId) {
+      fail("El area seleccionada no corresponde a la empresa.", returnTo);
+    }
+  }
   let countryId: string | null = null;
   let defaultSiteId: string | null = null;
 

@@ -151,9 +151,10 @@ export function CreateProcessDraftForm({
               }
               label="Area"
             >
+              <input name="area_id" type="hidden" value={safeSelectedAreaId} />
               <select
+                key={selectedCompanyId}
                 className={inputClass}
-                name="area_id"
                 onChange={(event) => setSelectedAreaId(event.target.value)}
                 value={safeSelectedAreaId}
               >

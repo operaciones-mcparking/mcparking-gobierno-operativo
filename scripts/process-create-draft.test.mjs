@@ -60,15 +60,17 @@ assert.match(draftForm, /onChange=\{\(event\) => \{[\s\S]*setSelectedCompanyId\(
 assert.match(draftForm, /visibleAreas = useMemo\([\s\S]*area\.company_id === selectedCompanyId/, "area options must be filtered by selected company");
 assert.match(draftForm, /const safeSelectedAreaId = visibleAreas\.some\(\(area\) => area\.id === selectedAreaId\)/, "area value must be sanitized against visible options");
 assert.match(draftForm, /if \(selectedAreaId !== safeSelectedAreaId\)[\s\S]*setSelectedAreaId\(safeSelectedAreaId\)/, "stale area state must be reconciled after option changes");
-assert.match(draftForm, /value=\{safeSelectedAreaId\}/, "area select must submit the sanitized area value");
+assert.match(draftForm, /<input name="area_id" type="hidden" value=\{safeSelectedAreaId\} \/>/, "hidden area_id must submit only the sanitized area value");
+assert.match(draftForm, /<select[\s\S]*key=\{selectedCompanyId\}[\s\S]*value=\{safeSelectedAreaId\}/, "area select must be controlled and remounted by selected company");
 assert.equal(countMatches(draftForm, /name="area_id"/g), 1, "draft form must submit exactly one area_id field");
 assert.equal(countMatches(draftForm, /name="company_id"/g), 1, "draft form must submit exactly one company_id field");
-assert.doesNotMatch(draftForm, /type="hidden"[\s\S]*name="area_id"|name="area_id"[\s\S]*type="hidden"/, "draft form must not include a hidden stale area_id");
+assert.doesNotMatch(draftForm, /<select[^>]*name="area_id"/, "area select must not submit a browser-restored value directly");
 assert.doesNotMatch(draftForm, /defaultValue=\{selectedAreaId\}|defaultValue="[^"]+"[\s\S]*name="area_id"/, "area select must not be uncontrolled by defaultValue");
 assert.match(draftForm, /<option value="">Sin area<\/option>/, "Sin area must submit an empty area_id value");
 assert.doesNotMatch(draftForm, /value="null"|value="undefined"/, "Sin area must not use unsupported sentinel values");
 
-assert.match(actions, /function diagnosticValues\(formData: FormData, key: string\)[\s\S]*\.getAll\(key\)/, "safe diagnostics must inspect all submitted field values");
+assert.doesNotMatch(actions, /function diagnosticValues|company_id recibido|area_id recibido|values recibidos/, "temporary diagnostics must be removed after the root cause is fixed");
+assert.match(actions, /function createProcessDraftValidationClient\(\)[\s\S]*SUPABASE_SERVICE_ROLE_KEY/, "draft area validation must use a server-only service role client");
 assert.match(createAction, /const areaId = optionalValue\(formData, "area_id"\)/, "server must normalize empty area_id to null");
 assert.match(createAction, /\.from\("processes"\)[\s\S]*\.insert\(/, "draft action must insert a process");
 assert.match(createAction, /\.select\("id"\)[\s\S]*\.single\(\)/, "draft action must request the generated process id");
@@ -91,11 +93,9 @@ assert.match(createAction, /basic_kpi: optionalValue\(formData, "basic_kpi"\)/, 
 assert.match(createAction, /if \(!name\)/, "draft action must require name");
 assert.match(createAction, /if \(!companyId\)/, "draft action must require company");
 assert.match(createAction, /processType !== "strategic"[\s\S]*processType !== "operational"[\s\S]*processType !== "support"/, "draft action must require a valid type");
-assert.match(createAction, /area\.company_id && area\.company_id !== companyId/, "draft action must block area/company mismatch");
-assert.match(createAction, /company_id recibido: \$\{companyId \|\| "\(empty\)"\}/, "area mismatch must show received company_id safely");
-assert.match(createAction, /area_id recibido: \$\{areaId\}/, "area mismatch must show received area_id safely");
-assert.match(createAction, /company_id values recibidos: \$\{diagnosticValues\(formData, "company_id"\)/, "area mismatch must show all received company_id values");
-assert.match(createAction, /area_id values recibidos: \$\{diagnosticValues\(formData, "area_id"\)/, "area mismatch must show all received area_id values");
+assert.match(createAction, /\.select\("company_id,status"\)/, "draft action must load area company and status for validation");
+assert.match(createAction, /area\.status !== "active" \|\| area\.company_id !== companyId/, "draft action must reject inactive or mismatched areas");
+assert.match(createAction, /fail\("El area seleccionada no corresponde a la empresa\."/, "area mismatch must return the normal non-diagnostic error");
 assert.match(createAction, /redirect\(withMessage\(`\/procesos\/\$\{data\.id\}\/editar`/, "draft action must redirect to editor after create");
 assert.doesNotMatch(createAction, /validateProcessForActivation/, "draft creation must not run activation validation");
 assert.doesNotMatch(createAction, /from\("subprocesses"\)/, "draft creation must not create stages");
@@ -112,4 +112,4 @@ assert.match(editPage, /getEditableProcessCatalogItem\(processId\)/, "edit page 
 assert.match(editPage, /processResult\.data\.status === "archived"/, "edit page must protect archived processes");
 assert.match(data, /p\.status = 'active'::public\.record_status|v_process_catalog_v2/, "official V2 active-only view contract must remain outside draft creation");
 
-console.log("process-create-draft: 66/66 OK");
+console.log("process-create-draft: 70/70 OK");
