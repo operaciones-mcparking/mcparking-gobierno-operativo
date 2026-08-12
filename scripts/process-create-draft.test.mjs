@@ -55,8 +55,15 @@ assert.match(draftForm, /name="name" required/, "name must be required on the dr
 assert.match(draftForm, /name="company_id"[\s\S]*required/, "company must be required on the draft form");
 assert.match(draftForm, /name="process_type" required/, "process type must be required on the draft form");
 assert.match(draftForm, /defaultValue="medium"/, "criticality must have a default");
-assert.match(draftForm, /setSelectedAreaId\(""\)/, "changing company must clear inconsistent area selection");
+assert.match(draftForm, /onChange=\{\(event\) => \{[\s\S]*setSelectedCompanyId\(event\.target\.value\);[\s\S]*setSelectedAreaId\(""\);[\s\S]*\}\}/, "changing company must clear area immediately in the same event");
+assert.match(draftForm, /visibleAreas = useMemo\([\s\S]*area\.company_id === selectedCompanyId/, "area options must be filtered by selected company");
+assert.match(draftForm, /const safeSelectedAreaId = visibleAreas\.some\(\(area\) => area\.id === selectedAreaId\)/, "area value must be sanitized against visible options");
+assert.match(draftForm, /if \(selectedAreaId !== safeSelectedAreaId\)[\s\S]*setSelectedAreaId\(safeSelectedAreaId\)/, "stale area state must be reconciled after option changes");
+assert.match(draftForm, /value=\{safeSelectedAreaId\}/, "area select must submit the sanitized area value");
+assert.match(draftForm, /<option value="">Sin area<\/option>/, "Sin area must submit an empty area_id value");
+assert.doesNotMatch(draftForm, /value="null"|value="undefined"/, "Sin area must not use unsupported sentinel values");
 
+assert.match(createAction, /const areaId = optionalValue\(formData, "area_id"\)/, "server must normalize empty area_id to null");
 assert.match(createAction, /\.from\("processes"\)[\s\S]*\.insert\(/, "draft action must insert a process");
 assert.match(createAction, /\.select\("id"\)[\s\S]*\.single\(\)/, "draft action must request the generated process id");
 assert.match(createAction, /if \(!data\?\.id\)/, "draft action must handle missing process id as an error");
@@ -95,4 +102,4 @@ assert.match(editPage, /getEditableProcessCatalogItem\(processId\)/, "edit page 
 assert.match(editPage, /processResult\.data\.status === "archived"/, "edit page must protect archived processes");
 assert.match(data, /p\.status = 'active'::public\.record_status|v_process_catalog_v2/, "official V2 active-only view contract must remain outside draft creation");
 
-console.log("process-create-draft: 49/49 OK");
+console.log("process-create-draft: 57/57 OK");

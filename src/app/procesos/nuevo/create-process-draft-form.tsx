@@ -78,18 +78,15 @@ export function CreateProcessDraftForm({
     () => areas.filter((area) => !area.company_id || area.company_id === selectedCompanyId),
     [areas, selectedCompanyId],
   );
+  const safeSelectedAreaId = visibleAreas.some((area) => area.id === selectedAreaId)
+    ? selectedAreaId
+    : "";
 
   useEffect(() => {
-    if (!selectedAreaId) {
-      return;
+    if (selectedAreaId !== safeSelectedAreaId) {
+      setSelectedAreaId(safeSelectedAreaId);
     }
-
-    const selectedArea = areas.find((area) => area.id === selectedAreaId);
-
-    if (selectedArea?.company_id && selectedArea.company_id !== selectedCompanyId) {
-      setSelectedAreaId("");
-    }
-  }, [areas, selectedAreaId, selectedCompanyId]);
+  }, [safeSelectedAreaId, selectedAreaId]);
 
   return (
     <form action={createProcessDraft} className="grid gap-5">
@@ -128,7 +125,10 @@ export function CreateProcessDraftForm({
               <select
                 className={inputClass}
                 name="company_id"
-                onChange={(event) => setSelectedCompanyId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedCompanyId(event.target.value);
+                  setSelectedAreaId("");
+                }}
                 required
                 value={selectedCompanyId}
               >
@@ -155,7 +155,7 @@ export function CreateProcessDraftForm({
                 className={inputClass}
                 name="area_id"
                 onChange={(event) => setSelectedAreaId(event.target.value)}
-                value={selectedAreaId}
+                value={safeSelectedAreaId}
               >
                 <option value="">Sin area</option>
                 {visibleAreas.map((area) => (
