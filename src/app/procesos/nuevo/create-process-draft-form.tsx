@@ -47,6 +47,26 @@ function Field({
   );
 }
 
+function DraftSection({
+  children,
+  description,
+  title,
+}: {
+  children: React.ReactNode;
+  description: string;
+  title: string;
+}) {
+  return (
+    <section className="rounded-lg border border-line bg-[#fbfdfe] p-4">
+      <div>
+        <h2 className="text-base font-bold text-navy">{title}</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
+      </div>
+      <div className="mt-4 grid gap-4">{children}</div>
+    </section>
+  );
+}
+
 function SubmitButton({ disabled }: { disabled: boolean }) {
   const { pending } = useFormStatus();
 
@@ -89,33 +109,33 @@ export function CreateProcessDraftForm({
   }, [safeSelectedAreaId, selectedAreaId]);
 
   return (
-    <form action={createProcessDraft} className="grid gap-5">
-      {optionsError ? (
-        <div className="rounded-lg border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d]">
-          No se pudieron cargar todas las opciones operativas: {optionsError}
-        </div>
-      ) : null}
-
-      {!hasCompanies ? (
-        <div className="rounded-lg border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d]">
-          No se pudieron cargar empresas disponibles para crear procesos. Revisa que existan
-          empresas visibles en el contexto operativo actual.
-        </div>
-      ) : null}
-
-      <section className="rounded-lg border border-line bg-white shadow-[0_10px_30px_rgba(0,59,92,0.06)]">
-        <div className="border-b border-line px-5 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-bold text-navy">General</h2>
-            <span className="rounded-full border border-[#cbd8e3] bg-[#f6f8fa] px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-              Borrador
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-slate-600">
-            Guarda la ficha inicial como inactiva para completarla antes de activarla.
+    <form action={createProcessDraft} className="rounded-xl border border-line bg-white p-5 shadow-[0_10px_30px_rgba(0,59,92,0.05)]">
+      <div className="flex flex-col gap-2 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-navy">Nuevo proceso - borrador inicial</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Guarda la base inactiva de la ficha. Etapas, roles y controles se completan despues de tener process_id.
           </p>
         </div>
-        <div className="grid gap-4 px-5 py-5">
+        <span className="w-fit rounded-full border border-[#cbd8e3] bg-[#f6f8fa] px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+          Borrador
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-4">
+        {optionsError ? (
+          <div className="rounded-lg border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d]">
+            No se pudieron cargar todas las opciones operativas: {optionsError}
+          </div>
+        ) : null}
+
+        {!hasCompanies ? (
+          <div className="rounded-lg border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d]">
+            No se pudieron cargar empresas disponibles para crear procesos. Revisa que existan empresas visibles en el contexto operativo actual.
+          </div>
+        ) : null}
+
+        <DraftSection description="Datos base del proceso. La persona actual no se edita aqui: deriva del rol oficial." title="General">
           <Field label="Nombre">
             <input className={inputClass} name="name" required />
           </Field>
@@ -144,11 +164,7 @@ export function CreateProcessDraftForm({
               </select>
             </Field>
             <Field
-              hint={
-                visibleAreas.length === 0
-                  ? "Puedes guardar el borrador sin area y completarla despues."
-                  : undefined
-              }
+              hint={visibleAreas.length === 0 ? "Puedes guardar el borrador sin area y completarla despues." : undefined}
               label="Area"
             >
               <input name="area_id" type="hidden" value={safeSelectedAreaId} />
@@ -188,17 +204,9 @@ export function CreateProcessDraftForm({
               </select>
             </Field>
           </div>
-        </div>
-      </section>
+        </DraftSection>
 
-      <section className="rounded-lg border border-line bg-white shadow-[0_10px_30px_rgba(0,59,92,0.06)]">
-        <div className="border-b border-line px-5 py-4">
-          <h2 className="text-lg font-bold text-navy">Definicion</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Estos campos son opcionales mientras la ficha esta en borrador.
-          </p>
-        </div>
-        <div className="grid gap-4 px-5 py-5">
+        <DraftSection description="Campos documentales existentes. Inicio, fin y alcance requieren schema futuro." title="1. Proposito y alcance">
           <Field label="Descripcion corta">
             <textarea className={`${inputClass} min-h-24`} name="description" />
           </Field>
@@ -210,6 +218,9 @@ export function CreateProcessDraftForm({
               <textarea className={`${inputClass} min-h-28`} name="expected_result" />
             </Field>
           </div>
+        </DraftSection>
+
+        <DraftSection description="Datos combinados disponibles hoy. La separacion proveedores/entradas/salidas/clientes queda para schema futuro." title="2. Entradas / salidas e indicadores">
           <div className="grid gap-4 lg:grid-cols-3">
             <Field label="Entradas y proveedores">
               <textarea className={`${inputClass} min-h-28`} name="inputs_providers" />
@@ -221,10 +232,14 @@ export function CreateProcessDraftForm({
               <textarea className={`${inputClass} min-h-28`} name="basic_kpi" />
             </Field>
           </div>
-        </div>
-      </section>
+        </DraftSection>
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <div className="rounded-lg border border-dashed border-line bg-[#fbfdfe] px-4 py-3 text-sm leading-6 text-slate-600">
+          Etapas, roles, riesgos, controles, documentos y PDCA quedan disponibles despues de guardar el borrador.
+        </div>
+      </div>
+
+      <div className="mt-5 flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:justify-end">
         <Link
           className="inline-flex items-center justify-center rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
           href="/procesos"

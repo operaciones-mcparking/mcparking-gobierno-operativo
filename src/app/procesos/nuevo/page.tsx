@@ -10,6 +10,8 @@ import {
   type ProcessCatalogV2Item,
   type RoleDictionaryItem,
 } from "@/lib/dashboard/data";
+import { ProcessMasterSheet } from "../process-master/process-master-sheet";
+import type { ProcessMasterDto } from "../process-master/process-master-types";
 import {
   CreateProcessDraftForm,
   type DraftAreaOption,
@@ -67,6 +69,36 @@ function processCompanyOptions(process: ProcessCatalogV2Item) {
   return options;
 }
 
+function draftMasterProcess(companyName: string | null): ProcessMasterDto {
+  return {
+    process: {
+      id: null,
+      name: "Nuevo proceso",
+      description: "Ficha inicial como borrador inactivo.",
+      objective: null,
+      expected_result: null,
+      inputs_providers: null,
+      outputs_clients: null,
+      basic_kpi: null,
+      company_id: "",
+      company_name: companyName,
+      area_id: null,
+      area_name: null,
+      process_type: "operational",
+      criticality: "medium",
+      status: "inactive",
+      documentation_status: "draft",
+    },
+    responsibility: {
+      owner_role_id: null,
+      owner_role_name: null,
+      owner_person_id: null,
+      owner_person_name: null,
+    },
+    stages: [],
+  };
+}
+
 export default async function NewProcessPage({ searchParams }: NewProcessPageProps) {
   const params = searchParams ? await searchParams : {};
   const context = {
@@ -103,6 +135,7 @@ export default async function NewProcessPage({ searchParams }: NewProcessPagePro
         name: role.area_name as string,
       })),
   ]);
+  const firstCompanyName = companies[0]?.name ?? null;
 
   return (
     <DashboardShell
@@ -111,16 +144,6 @@ export default async function NewProcessPage({ searchParams }: NewProcessPagePro
       eyebrow="Nuevo proceso"
       title="Nuevo proceso"
     >
-      <div className="mt-5">
-        <Link
-          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
-          href="/procesos"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Volver a procesos
-        </Link>
-      </div>
-
       {params.ok ? (
         <div className="mt-5 rounded-lg border border-[#c8e6d0] bg-[#e4f4ea] p-4 text-sm font-semibold text-[#24613d]">
           {params.ok}
@@ -132,18 +155,31 @@ export default async function NewProcessPage({ searchParams }: NewProcessPagePro
         </div>
       ) : null}
 
-      <div className="mt-5">
-        <CreateProcessDraftForm
-          areas={areas}
-          companies={companies}
-          optionsError={
-            catalogResult.error?.message ??
-            areaDirectoryResult.error?.message ??
-            roleDictionaryResult.error?.message ??
-            null
-          }
-        />
-      </div>
+      <ProcessMasterSheet
+        actions={
+          <Link
+            className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
+            href="/procesos"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver a procesos
+          </Link>
+        }
+        basicsEditor={
+          <CreateProcessDraftForm
+            areas={areas}
+            companies={companies}
+            optionsError={
+              catalogResult.error?.message ??
+              areaDirectoryResult.error?.message ??
+              roleDictionaryResult.error?.message ??
+              null
+            }
+          />
+        }
+        mode="create"
+        process={draftMasterProcess(firstCompanyName)}
+      />
     </DashboardShell>
   );
 }

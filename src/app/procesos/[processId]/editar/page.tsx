@@ -12,18 +12,13 @@ import {
   getProcessActivationCompleteness,
   validateProcessForActivation,
 } from "@/app/procesos/process-master/process-master-validation";
+import { ProcessMasterSheet } from "@/app/procesos/process-master/process-master-sheet";
 import { ArchiveProcessPanel } from "./archive-process-panel";
 import { ProcessActivationPanel } from "./process-activation-panel";
 import { StageEditor } from "./stage-editor";
 
-type Params = Promise<{
-  processId: string;
-}>;
-
-type SearchParams = Promise<{
-  error?: string;
-  ok?: string;
-}>;
+type Params = Promise<{ processId: string }>;
+type SearchParams = Promise<{ error?: string; ok?: string }>;
 
 type ProcessRoleRow = {
   responsibility_type: string | null;
@@ -31,13 +26,7 @@ type ProcessRoleRow = {
   subprocess_id: string | null;
 };
 
-function Field({
-  children,
-  label,
-}: {
-  children: React.ReactNode;
-  label: string;
-}) {
+function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-600">{label}</span>
@@ -89,13 +78,7 @@ function PrimaryButton({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default async function EditProcessPage({
-  params,
-  searchParams,
-}: {
-  params: Params;
-  searchParams: SearchParams;
-}) {
+export default async function EditProcessPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const { processId } = await params;
   const messages = await searchParams;
   const supabase = createSupabaseServerClient();
@@ -137,23 +120,13 @@ export default async function EditProcessPage({
   const stageRoleIdsBySubprocess = processRoles.reduce<
     Record<string, { backup_role_id?: string | null; support_role_ids?: string[]; user_role_id?: string | null }>
   >((acc, role) => {
-    if (!role.subprocess_id || !role.role_id || !officialActiveRoleIds.has(role.role_id)) {
-      return acc;
-    }
+    if (!role.subprocess_id || !role.role_id || !officialActiveRoleIds.has(role.role_id)) return acc;
 
     const current = acc[role.subprocess_id] ?? { support_role_ids: [] };
 
-    if (role.responsibility_type === "backup") {
-      current.backup_role_id = role.role_id;
-    }
-
-    if (role.responsibility_type === "user") {
-      current.user_role_id = role.role_id;
-    }
-
-    if (role.responsibility_type === "consulted") {
-      current.support_role_ids = [...(current.support_role_ids ?? []), role.role_id];
-    }
+    if (role.responsibility_type === "backup") current.backup_role_id = role.role_id;
+    if (role.responsibility_type === "user") current.user_role_id = role.role_id;
+    if (role.responsibility_type === "consulted") current.support_role_ids = [...(current.support_role_ids ?? []), role.role_id];
 
     acc[role.subprocess_id] = current;
     return acc;
@@ -166,155 +139,105 @@ export default async function EditProcessPage({
   });
   const activationValidation = validateProcessForActivation(masterProcess);
   const activationCompleteness = getProcessActivationCompleteness(activationValidation);
-  const nextSortOrder =
-    rows.reduce((max, row) => Math.max(max, Number(row.sort_order ?? 0)), 0) + 1;
+  const nextSortOrder = rows.reduce((max, row) => Math.max(max, Number(row.sort_order ?? 0)), 0) + 1;
+
+  const basicsEditor = (
+    <form action={updateProcessBasics} className="grid gap-4">
+      <input name="process_id" type="hidden" value={process.process_id} />
+      <Field label="Nombre">
+        <input className={inputClass} name="name" required defaultValue={process.process_name} />
+      </Field>
+      <Field label="Definicion">
+        <textarea className={`${inputClass} min-h-24`} name="description" defaultValue={process.definition ?? ""} />
+      </Field>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Field label="Objetivo">
+          <textarea className={`${inputClass} min-h-28`} name="objective" defaultValue={process.objective ?? ""} />
+        </Field>
+        <Field label="Resultado esperado">
+          <textarea className={`${inputClass} min-h-28`} name="expected_result" defaultValue={process.expected_result ?? ""} />
+        </Field>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Field label="Entradas y proveedores">
+          <textarea className={`${inputClass} min-h-28`} name="inputs_providers" defaultValue={process.inputs_providers ?? ""} />
+        </Field>
+        <Field label="Salidas y clientes">
+          <textarea className={`${inputClass} min-h-28`} name="outputs_clients" defaultValue={process.outputs_clients ?? ""} />
+        </Field>
+        <Field label="KPI basico">
+          <textarea className={`${inputClass} min-h-28`} name="basic_kpi" defaultValue={process.basic_kpi ?? ""} />
+        </Field>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <Field label="Tipo de proceso">
+          <select className={inputClass} name="process_type" defaultValue={process.process_type}>
+            {processTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Criticidad">
+          <select className={inputClass} name="criticality" defaultValue={process.criticality}>
+            {criticalityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </Field>
+        <StatePill label="Estado" value={statusLabels[process.status] ?? process.status} />
+        <StatePill label="Documentacion" value={documentationLabels[process.documentation_status] ?? process.documentation_status} />
+      </div>
+      <div><PrimaryButton>Guardar cambios</PrimaryButton></div>
+    </form>
+  );
 
   return (
     <DashboardShell
       background="white"
-      description="Mantencion del proceso, sus datos base y sus etapas operativas."
+      description="Editor maestro del proceso, sus datos documentales y sus etapas operativas."
       eyebrow="Editar proceso"
       title={process.process_name}
     >
       <div className="mt-5 flex flex-wrap gap-2">
-        <Link
-          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
-          href={`/procesos/${process.process_id}`}
-        >
+        <Link className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]" href={`/procesos/${process.process_id}`}>
           <ArrowLeft className="h-4 w-4" />
-          Volver a la ficha
+          Vista previa / Ver ficha
         </Link>
-        <Link
-          className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
-          href="/procesos"
-        >
+        <Link className="inline-flex items-center gap-2 rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]" href="/procesos">
           <FileText className="h-4 w-4" />
           Procesos
         </Link>
       </div>
 
-      {messages.ok ? (
-        <div className="mt-5 rounded-lg border border-[#c8e6d0] bg-[#e4f4ea] p-4 text-sm font-semibold text-[#24613d]">
-          {messages.ok}
-        </div>
-      ) : null}
-      {messages.error ? (
-        <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-semibold text-[#86510d]">
-          {messages.error}
-        </div>
-      ) : null}
+      {messages.ok ? <div className="mt-5 rounded-lg border border-[#c8e6d0] bg-[#e4f4ea] p-4 text-sm font-semibold text-[#24613d]">{messages.ok}</div> : null}
+      {messages.error ? <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-semibold text-[#86510d]">{messages.error}</div> : null}
 
-      {process.status === "inactive" ? (
-        <ProcessActivationPanel
-          action={activateProcess}
-          completeness={activationCompleteness}
-          processId={process.process_id}
-          processName={process.process_name}
-          validation={activationValidation}
-        />
-      ) : (
-        <section className="mt-5 rounded-lg border border-[#c8e6d0] bg-[#f3fbf6] p-5 text-sm font-semibold text-[#24613d]">
-          Activo. Este proceso ya forma parte del Diccionario de procesos oficiales.
-        </section>
-      )}
-
-      <section className="mt-5 rounded-lg border border-line bg-white shadow-[0_10px_30px_rgba(0,59,92,0.06)]">
-        <div className="border-b border-line px-5 py-4">
-          <h2 className="text-xl font-bold text-navy">Datos del proceso</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Informacion principal que aparece en la ficha ejecutiva.
-          </p>
-        </div>
-
-        <form action={updateProcessBasics} className="grid gap-4 px-5 py-5">
-          <input name="process_id" type="hidden" value={process.process_id} />
-          <Field label="Nombre">
-            <input className={inputClass} name="name" required defaultValue={process.process_name} />
-          </Field>
-          <Field label="Definicion">
-            <textarea
-              className={`${inputClass} min-h-24`}
-              name="description"
-              defaultValue={process.definition ?? ""}
+      <ProcessMasterSheet
+        activationPanel={
+          process.status === "inactive" ? (
+            <ProcessActivationPanel
+              action={activateProcess}
+              completeness={activationCompleteness}
+              processId={process.process_id}
+              processName={process.process_name}
+              validation={activationValidation}
             />
-          </Field>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Field label="Objetivo">
-              <textarea
-                className={`${inputClass} min-h-28`}
-                name="objective"
-                defaultValue={process.objective ?? ""}
-              />
-            </Field>
-            <Field label="Resultado esperado">
-              <textarea
-                className={`${inputClass} min-h-28`}
-                name="expected_result"
-                defaultValue={process.expected_result ?? ""}
-              />
-            </Field>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Field label="Entradas y proveedores">
-              <textarea
-                className={`${inputClass} min-h-28`}
-                name="inputs_providers"
-                defaultValue={process.inputs_providers ?? ""}
-              />
-            </Field>
-            <Field label="Salidas y clientes">
-              <textarea
-                className={`${inputClass} min-h-28`}
-                name="outputs_clients"
-                defaultValue={process.outputs_clients ?? ""}
-              />
-            </Field>
-            <Field label="KPI basico">
-              <textarea
-                className={`${inputClass} min-h-28`}
-                name="basic_kpi"
-                defaultValue={process.basic_kpi ?? ""}
-              />
-            </Field>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Field label="Tipo de proceso">
-              <select className={inputClass} name="process_type" defaultValue={process.process_type}>
-                {processTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Criticidad">
-              <select className={inputClass} name="criticality" defaultValue={process.criticality}>
-                {criticalityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <StatePill label="Estado" value={statusLabels[process.status] ?? process.status} />
-            <StatePill
-              label="Documentacion"
-              value={documentationLabels[process.documentation_status] ?? process.documentation_status}
-            />
-          </div>
-          <div>
-            <PrimaryButton>Guardar proceso</PrimaryButton>
-          </div>
-        </form>
-      </section>
-
-      <StageEditor
-        initialRows={rows}
-        nextSortOrder={nextSortOrder}
-        processId={process.process_id}
-        roleDictionary={roleDictionaryResult.data}
-        systems={systems}
+          ) : (
+            <section className="rounded-lg border border-[#c8e6d0] bg-[#f3fbf6] p-5 text-sm font-semibold text-[#24613d]">
+              Activo. Este proceso ya forma parte del Diccionario de procesos oficiales.
+            </section>
+          )
+        }
+        basicsEditor={basicsEditor}
+        completeness={activationCompleteness}
+        mode="edit"
+        process={masterProcess}
+        stageEditor={
+          <StageEditor
+            initialRows={rows}
+            nextSortOrder={nextSortOrder}
+            processId={process.process_id}
+            roleDictionary={roleDictionaryResult.data}
+            systems={systems}
+          />
+        }
+        validation={activationValidation}
       />
 
       {process.status === "active" ? <ArchiveProcessPanel processId={process.process_id} /> : null}

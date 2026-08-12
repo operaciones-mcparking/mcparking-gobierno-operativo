@@ -813,7 +813,7 @@ export async function getEditableProcessCatalogItem(processId: string) {
   const ownerSite = ownerSiteId ? sites.get(ownerSiteId) : undefined;
   const operatingSite = operatingSiteId ? sites.get(operatingSiteId) : undefined;
   const area = areaId ? areas.get(areaId) : undefined;
-  const companyName = rowText(company, "name") ?? rowText(ownerCompany, "name") ?? "Sin empresa";
+  const companyName = rowText(company, "name") ?? rowText(ownerCompany, "name") ?? rowText(operatingCompany, "name") ?? "Sin empresa";
   const ownerCompanyName = rowText(ownerCompany, "name") ?? companyName;
 
   return {

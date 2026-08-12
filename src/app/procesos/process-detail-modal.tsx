@@ -1,6 +1,7 @@
 "use client";
 
-import { FileText, X } from "lucide-react";
+import Link from "next/link";
+import { FileText, Pencil, X } from "lucide-react";
 import { useState } from "react";
 
 import { TypedBadge, ValueBadge } from "@/components/dashboard/badge";
@@ -9,7 +10,6 @@ import type {
   ProcessStageV2Row,
   RoleDictionaryItem,
 } from "@/lib/dashboard/data";
-import { ProcessEditModal } from "./process-edit-modal";
 
 const processTypeLabels: Record<ProcessCatalogV2Item["process_type"], string> = {
   operational: "Operativo",
@@ -36,7 +36,7 @@ function TextSection({ label, value }: { label: string; value: string | null }) 
   return (
     <section className="rounded-xl border border-[#dce7ef] bg-[#fbfdfe] p-4">
       <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500">{label}</p>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{value ?? "Sin información registrada."}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{value ?? "Sin informacion registrada."}</p>
     </section>
   );
 }
@@ -46,7 +46,7 @@ function roleText(roleName: string | null, personName: string | null) {
     return "No definido";
   }
 
-  return [roleName, personName ?? "Sin persona asignada"].join(" · ");
+  return [roleName, personName ?? "Sin persona asignada"].join(" - ");
 }
 
 function compactList(values: string[], fallback: string) {
@@ -67,7 +67,7 @@ function ChipList({ items }: { items: string[] }) {
   const uniqueItems = [...new Set(items.filter(Boolean))];
 
   if (uniqueItems.length === 0) {
-    return <span className="text-sm text-slate-500">Sin información registrada.</span>;
+    return <span className="text-sm text-slate-500">Sin informacion registrada.</span>;
   }
 
   return (
@@ -81,7 +81,7 @@ function ChipList({ items }: { items: string[] }) {
 
 function StageRoles({ stage }: { stage: ProcessStageV2Row }) {
   const roles = [
-    { label: "Dueño", value: roleText(stage.owner_role_name, stage.owner_person_name) },
+    { label: "Dueno", value: roleText(stage.owner_role_name, stage.owner_person_name) },
     { label: "Usuario", value: roleText(stage.user_role_name, stage.user_person_name) },
     { label: "Apoyo", value: roleText(stage.support_role_name, stage.support_person_name) },
     { label: "Respaldo", value: roleText(stage.backup_role_name, stage.backup_person_name) },
@@ -114,7 +114,7 @@ export function ProcessDetailModal({
 }) {
   const [open, setOpen] = useState(false);
   const ownerCompany = process.owner_company_name ?? process.company_name ?? "Sin empresa";
-  const ownerSummary = compactList(process.owner_role_names, "Sin rol dueño");
+  const ownerSummary = compactList(process.owner_role_names, "Sin rol dueno");
   const personSummary = compactList(process.current_person_names, "Sin persona asignada");
 
   return (
@@ -176,8 +176,8 @@ export function ProcessDetailModal({
               </div>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <DetailItem label="Empresa / area" value={`${ownerCompany} · ${process.area_name ?? "Sin area"}`} />
-                <DetailItem label="Rol dueño" value={ownerSummary} />
+                <DetailItem label="Empresa / area" value={`${ownerCompany} - ${process.area_name ?? "Sin area"}`} />
+                <DetailItem label="Rol dueno" value={ownerSummary} />
                 <DetailItem label="Persona actual" value={personSummary} />
                 <DetailItem label="Etapas activas" value={`${process.active_stage_count} etapas`} />
               </div>
@@ -254,12 +254,15 @@ export function ProcessDetailModal({
                 >
                   Cerrar
                 </button>
-                <ProcessEditModal
-                  ownerRoleBySubprocess={ownerRoleBySubprocess}
-                  process={process}
-                  roleDictionary={roleDictionary}
-                  stages={stages}
-                />
+                <Link
+                  aria-label={`Editar proceso ${process.process_name}`}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-[#052a5a] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
+                  href={`/procesos/${process.process_id}/editar`}
+                  title="Editar proceso"
+                >
+                  <Pencil className="h-4 w-4 text-clay" />
+                  Editar proceso
+                </Link>
               </div>
             </div>
           </section>

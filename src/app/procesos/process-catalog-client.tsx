@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Pencil } from "lucide-react";
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { ProcessFilters, type ProcessFilterState, type ProcessFilterName } from "@/components/dashboard/process-filters";
 import type {
@@ -10,14 +12,13 @@ import type {
   RoleDictionaryItem,
 } from "@/lib/dashboard/data";
 import { ProcessDetailModal } from "./process-detail-modal";
-import { ProcessEditModal } from "./process-edit-modal";
 
 function ownerRoleText(roleName: string | null, personName: string | null) {
   if (!roleName || roleName === "No definido") {
-    return "Dueño: No definido";
+    return "Dueno: No definido";
   }
 
-  return `Dueño: ${roleName} · ${personName ?? "Sin persona asignada"}`;
+  return `Dueno: ${roleName} - ${personName ?? "Sin persona asignada"}`;
 }
 
 function groupedByProcess<T extends { process_id: string; process_name: string }>(items: T[]) {
@@ -197,18 +198,18 @@ export function ProcessCatalogClient({
         <div className={`hidden gap-3 border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${processListGridColumns}`}>
           <span>Tipo</span>
           <span>Proceso</span>
-          <span>Rol dueño</span>
+          <span>Rol dueno</span>
           <span>Persona actual</span>
           <span className="text-center">Etapas</span>
           <span>Roles de apoyo</span>
-          <span className="text-right">Acción</span>
+          <span className="text-right">Accion</span>
         </div>
 
         {filteredProcesses.map((process) => {
           const typeMeta = processTypeMeta(process.process_type);
           const group = groupedRows.find((item) => item.processId === process.process_id);
           const rows = group?.rows ?? [];
-          const ownerText = compactList(process.owner_role_names, "Sin rol dueño");
+          const ownerText = compactList(process.owner_role_names, "Sin rol dueno");
           const personText = compactList(process.current_person_names, "Sin persona asignada");
 
           return (
@@ -232,7 +233,7 @@ export function ProcessCatalogClient({
                   </div>
 
                   <div className="col-start-1 xl:col-auto">
-                    <p className="text-xs text-slate-500 xl:hidden">Rol dueño</p>
+                    <p className="text-xs text-slate-500 xl:hidden">Rol dueno</p>
                     <p className="text-sm font-medium text-navy">{ownerText}</p>
                   </div>
 
@@ -259,15 +260,15 @@ export function ProcessCatalogClient({
                       roleDictionary={roleDictionary}
                       stages={rows}
                     />
-                    <ProcessEditModal
-                      ariaLabel={`Editar proceso ${process.process_name}`}
-                      ownerRoleBySubprocess={ownerRoleBySubprocess}
-                      process={process}
-                      roleDictionary={roleDictionary}
-                      stages={rows}
-                      triggerClassName="hidden h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 xl:inline-flex"
-                      triggerLabel=""
-                    />
+                    <Link
+                      aria-label={`Editar proceso ${process.process_name}`}
+                      className="hidden h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 xl:inline-flex"
+                      href={`/procesos/${process.process_id}/editar`}
+                      onClick={(event) => event.stopPropagation()}
+                      title="Editar proceso"
+                    >
+                      <Pencil className="h-4 w-4 text-current" />
+                    </Link>
 
                   </div>
                 </div>
@@ -281,25 +282,25 @@ export function ProcessCatalogClient({
                     roleDictionary={roleDictionary}
                     stages={rows}
                   />
-                  <ProcessEditModal
-                    ariaLabel={`Editar proceso ${process.process_name}`}
-                    ownerRoleBySubprocess={ownerRoleBySubprocess}
-                    process={process}
-                    roleDictionary={roleDictionary}
-                    stages={rows}
-                    triggerClassName="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
-                    triggerLabel=""
-                  />
+                  <Link
+                    aria-label={`Editar proceso ${process.process_name}`}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
+                    href={`/procesos/${process.process_id}/editar`}
+                    onClick={(event) => event.stopPropagation()}
+                    title="Editar proceso"
+                  >
+                    <Pencil className="h-4 w-4 text-current" />
+                  </Link>
                 </div>
                 {rows.length === 0 ? (
-                  <p className="text-sm text-slate-600">Este proceso aún no tiene etapas activas.</p>
+                  <p className="text-sm text-slate-600">Este proceso aun no tiene etapas activas.</p>
                 ) : (
                   <div>
                     <div className="mb-3 flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
                       <div>
-                        <p className="text-sm font-medium text-navy">Vista rápida de etapas activas</p>
+                        <p className="text-sm font-medium text-navy">Vista rapida de etapas activas</p>
                         <p className="text-sm text-slate-600">
-                          Orden operativo, rol dueño e impacto dentro del proceso.
+                          Orden operativo, rol dueno e impacto dentro del proceso.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2 sm:justify-end">

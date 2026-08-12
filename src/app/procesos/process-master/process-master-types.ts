@@ -24,8 +24,17 @@ export type ProcessMasterStage = {
   owner_role_name: string | null;
   owner_person_name: string | null;
   user_role_id: string | null;
+  user_role_name?: string | null;
+  user_person_name?: string | null;
   support_role_ids: string[];
+  support_role_names?: string[];
+  support_person_names?: string[];
   backup_role_id: string | null;
+  backup_role_name?: string | null;
+  backup_person_name?: string | null;
+  systems?: string | null;
+  risks?: string | null;
+  controls?: string | null;
 };
 
 export type ProcessMasterDto = {

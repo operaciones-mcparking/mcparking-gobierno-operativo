@@ -189,23 +189,25 @@ function RoleDictionary({
   const activeRoleIds = new Set(roles.map((role) => role.id));
 
   return (
-    <section className="rounded-xl border border-line bg-white">
-      <div className="flex flex-col justify-between gap-2 border-b border-line px-4 py-3 sm:flex-row sm:items-center">
-        <div>
-          <h3 className="text-sm font-medium text-navy">Diccionario de roles oficial</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-600">
-            Los selectores usan solo roles oficiales activos. La persona actual se deriva del rol.
-          </p>
+    <details className="rounded-xl border border-line bg-white">
+      <summary className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#eef4f8]">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div>
+            <h3 className="text-sm font-medium text-navy">{roles.length} roles oficiales disponibles - Ver diccionario</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Los selectores usan solo roles oficiales activos. La persona actual se deriva del rol.
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-sea">Abrir ayuda</span>
         </div>
-        <span className="text-xs text-slate-500">{roles.length} roles activos</span>
-      </div>
+      </summary>
 
       {roles.length === 0 ? (
-        <div className="p-4 text-sm text-slate-600">
+        <div className="border-t border-line p-4 text-sm text-slate-600">
           Todavia no hay roles oficiales activos disponibles para asociar etapas.
         </div>
       ) : (
-        <div className="grid gap-2 p-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-2 border-t border-line p-3 md:grid-cols-2 xl:grid-cols-4">
           {dictionary
             .filter((role) => activeRoleIds.has(role.role_id))
             .map((role) => (
@@ -256,10 +258,9 @@ function RoleDictionary({
             ))}
         </div>
       )}
-    </section>
+    </details>
   );
 }
-
 function splitList(value: string | null) {
   if (!value) {
     return [];
