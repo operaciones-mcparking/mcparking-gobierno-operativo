@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Pencil } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { ProcessFilters, type ProcessFilterState, type ProcessFilterName } from "@/components/dashboard/process-filters";
+import type { ProcessOperationTypeOption } from "@/lib/procesos/process-company-options";
 import type {
   ProcessCatalogV2Item,
   ProcessStageOwnerRole,
@@ -63,6 +63,7 @@ function SupportRoleSummary({ values }: { values: string[] }) {
     return <span className="text-sm text-slate-500">Sin roles de apoyo</span>;
   }
 
+
   return (
     <div className="flex flex-wrap gap-1.5">
       <ValueBadge tone="neutral">{uniqueValues[0]}</ValueBadge>
@@ -92,7 +93,8 @@ const processTypeOptions = [
   { label: "Operativo", value: "operational" },
   { label: "Soporte", value: "support" },
 ];
-const processListGridColumns = "xl:grid-cols-[88px_minmax(260px,1fr)_144px_132px_86px_160px_154px]";
+const legacyProcessListGridColumns = "xl:grid-cols-[88px_minmax(260px,1fr)_136px_126px_78px_144px_146px]";
+const newProcessListGridColumns = "xl:grid-cols-[88px_minmax(340px,1fr)_148px_140px_78px_146px]";
 
 const emptyFilters: ProcessFilterState = {
   company: "todas",
@@ -111,6 +113,7 @@ type FilterOption = {
 
 type ProcessCatalogClientProps = {
   activeProcesses: ProcessCatalogV2Item[];
+  catalogMode?: "all" | "new-only";
   companyOptions: string[];
   matrixRows: ProcessStageV2Row[];
   ownerRoleOptions: FilterOption[];
@@ -118,11 +121,12 @@ type ProcessCatalogClientProps = {
   roleDictionary: RoleDictionaryItem[];
   stageOwnerRoles: ProcessStageOwnerRole[];
   supportRoleOptions: FilterOption[];
-  typeOptions: string[];
+  typeOptions: ProcessOperationTypeOption[];
 };
 
 export function ProcessCatalogClient({
   activeProcesses,
+  catalogMode = "all",
   companyOptions,
   matrixRows,
   ownerRoleOptions,
@@ -133,6 +137,10 @@ export function ProcessCatalogClient({
   typeOptions,
 }: ProcessCatalogClientProps) {
   const [filters, setFilters] = useState<ProcessFilterState>(emptyFilters);
+  const catalogProcesses = useMemo(
+    () => catalogMode === "new-only" ? activeProcesses.filter((process) => Boolean(process.process_code?.trim())) : activeProcesses,
+    [activeProcesses, catalogMode],
+  );
   const stagesByProcess = useMemo(() => groupedByProcess(matrixRows), [matrixRows]);
   const ownerRoleBySubprocess = useMemo(
     () => Object.fromEntries(stageOwnerRoles.map((ownerRole) => [ownerRole.subprocess_id, ownerRole.role_id])),
@@ -141,24 +149,23 @@ export function ProcessCatalogClient({
   const filteredProcesses = useMemo(() => {
     const generalQuery = filters.search.trim();
 
-    return activeProcesses.filter((process) => {
+    return catalogProcesses.filter((process) => {
       const ownerCompany = process.owner_company_name ?? process.company_name;
-      const operationType = process.area_name ?? "Sin tipo";
       const stages = stagesByProcess.find((item) => item.processId === process.process_id)?.rows ?? [];
 
       return (
         (filters.company === "todas" || ownerCompany === filters.company) &&
-        (filters.type === "todos" || operationType === filters.type) &&
+        (filters.type === "todos" || process.area_id === filters.type) &&
         (filters.processType === "todos" || process.process_type === filters.processType) &&
         (filters.ownerRole === "todos" || process.owner_role_ids.includes(filters.ownerRole)) &&
         (filters.person === "todos" || process.current_person_ids.includes(filters.person)) &&
-        (filters.supportRole === "todos" || process.support_role_ids.includes(filters.supportRole)) &&
+        (catalogMode === "new-only" || filters.supportRole === "todos" || process.support_role_ids.includes(filters.supportRole)) &&
         (!generalQuery ||
           matchesText(process.process_name, generalQuery) ||
           stages.some((stage) => matchesText(stage.subprocess_name, generalQuery)))
       );
     });
-  }, [activeProcesses, filters, stagesByProcess]);
+  }, [catalogMode, catalogProcesses, filters, stagesByProcess]);
   const filteredProcessIds = useMemo(
     () => new Set(filteredProcesses.map((process) => process.process_id)),
     [filteredProcesses],
@@ -168,6 +175,8 @@ export function ProcessCatalogClient({
     [filteredProcessIds, matrixRows],
   );
   const resultText = `${filteredProcesses.length} ${filteredProcesses.length === 1 ? "proceso encontrado" : "procesos encontrados"}`;
+  const newProcesses = filteredProcesses.filter((process) => Boolean(process.process_code));
+  const historicalProcesses = filteredProcesses.filter((process) => !process.process_code);
 
   function updateFilter(name: ProcessFilterName, value: string) {
     setFilters((current) => ({ ...current, [name]: value }));
@@ -176,36 +185,43 @@ export function ProcessCatalogClient({
   function clearFilters() {
     setFilters(emptyFilters);
   }
+  function renderProcessGroup(
+    title: string,
+    description: string,
+    processes: ProcessCatalogV2Item[],
+    secondary = false,
+    newModel = false,
+  ) {
+    const gridColumns = newModel ? newProcessListGridColumns : legacyProcessListGridColumns;
+    const hideGroupHeader = catalogMode === "new-only" && newModel;
 
-  return (
-    <>
-      <ProcessFilters
-        companyOptions={companyOptions}
-        filters={filters}
-        ownerRoleOptions={ownerRoleOptions}
-        personOptions={personOptions}
-        processTypeOptions={processTypeOptions}
-        resultText={resultText}
-        supportRoleOptions={supportRoleOptions}
-        totalCount={activeProcesses.length}
-        typeOptions={typeOptions}
-        visibleCount={filteredProcesses.length}
-        onClearFilters={clearFilters}
-        onFilterChange={updateFilter}
-      />
-
-      <div className="mt-4 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]">
-        <div className={`hidden gap-3 border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${processListGridColumns}`}>
+    return (
+      <section className={hideGroupHeader ? "mt-3" : secondary ? "mt-7 border-t border-line pt-6" : "mt-5"}>
+        {hideGroupHeader ? null : (
+          <div className="flex flex-wrap items-start justify-between gap-3 px-1">
+          <div>
+            <h3 className={secondary ? "text-sm font-semibold text-slate-700" : "text-base font-semibold text-navy"}>
+              {title}
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">{description}</p>
+          </div>
+          <ValueBadge tone={secondary ? "neutral" : "info"}>
+            {processes.length} {processes.length === 1 ? "proceso" : "procesos"}
+          </ValueBadge>
+          </div>
+        )}
+        <div className={`${hideGroupHeader ? "" : "mt-3 "}overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]`}>
+        <div className={`hidden gap-3 border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${gridColumns}`}>
           <span>Tipo</span>
           <span>Proceso</span>
           <span>Rol dueno</span>
           <span>Persona actual</span>
           <span className="text-center">Etapas</span>
-          <span>Roles de apoyo</span>
+          {newModel ? null : <span>Roles de apoyo</span>}
           <span className="text-right">Accion</span>
         </div>
 
-        {filteredProcesses.map((process) => {
+        {processes.map((process) => {
           const typeMeta = processTypeMeta(process.process_type);
           const group = groupedRows.find((item) => item.processId === process.process_id);
           const rows = group?.rows ?? [];
@@ -218,10 +234,12 @@ export function ProcessCatalogClient({
               key={process.process_id}
             >
               <summary
+                aria-disabled={newModel && rows.length === 0}
                 aria-label={`Expandir o contraer ${process.process_name}`}
-                className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe]"
+                className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe] aria-disabled:cursor-default"
+                onClick={newModel && rows.length === 0 ? (event) => event.preventDefault() : undefined}
               >
-                <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 xl:items-center ${processListGridColumns}`}>
+                <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 xl:items-center ${gridColumns}`}>
                   <div className="col-start-1 xl:col-auto">
                     <ValueBadge tone={typeMeta.tone}>{typeMeta.label}</ValueBadge>
                   </div>
@@ -248,10 +266,12 @@ export function ProcessCatalogClient({
                     <ValueBadge tone="info">Etapas {process.active_stage_count}</ValueBadge>
                   </div>
 
-                  <div className="col-start-1 xl:col-auto">
-                    <p className="text-xs text-slate-500 xl:hidden">Roles de apoyo</p>
-                    <SupportRoleSummary values={process.support_role_names} />
-                  </div>
+                  {newModel ? null : (
+                    <div className="col-start-1 xl:col-auto">
+                      <p className="text-xs text-slate-500 xl:hidden">Roles de apoyo</p>
+                      <SupportRoleSummary values={process.support_role_names} />
+                    </div>
+                  )}
 
                   <div className="hidden items-center justify-end gap-2 xl:col-auto xl:flex">
                     <ProcessDetailModal
@@ -260,15 +280,16 @@ export function ProcessCatalogClient({
                       roleDictionary={roleDictionary}
                       stages={rows}
                     />
-                    <Link
-                      aria-label={`Editar proceso ${process.process_name}`}
+                    <a
+                      aria-label={`Descargar ficha PDF de ${process.process_name}`}
                       className="hidden h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 xl:inline-flex"
-                      href={`/procesos/${process.process_id}/editar`}
+                      download
+                      href={`/api/procesos/${process.process_id}/pdf`}
                       onClick={(event) => event.stopPropagation()}
-                      title="Editar proceso"
+                      title="Descargar PDF"
                     >
-                      <Pencil className="h-4 w-4 text-current" />
-                    </Link>
+                      <FileDown className="h-4 w-4" />
+                    </a>
 
                   </div>
                 </div>
@@ -282,15 +303,16 @@ export function ProcessCatalogClient({
                     roleDictionary={roleDictionary}
                     stages={rows}
                   />
-                  <Link
-                    aria-label={`Editar proceso ${process.process_name}`}
+                  <a
+                    aria-label={`Descargar ficha PDF de ${process.process_name}`}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
-                    href={`/procesos/${process.process_id}/editar`}
+                    download
+                    href={`/api/procesos/${process.process_id}/pdf`}
                     onClick={(event) => event.stopPropagation()}
-                    title="Editar proceso"
+                    title="Descargar PDF"
                   >
-                    <Pencil className="h-4 w-4 text-current" />
-                  </Link>
+                    <FileDown className="h-4 w-4" />
+                  </a>
                 </div>
                 {rows.length === 0 ? (
                   <p className="text-sm text-slate-600">Este proceso aun no tiene etapas activas.</p>
@@ -300,43 +322,56 @@ export function ProcessCatalogClient({
                       <div>
                         <p className="text-sm font-medium text-navy">Vista rapida de etapas activas</p>
                         <p className="text-sm text-slate-600">
-                          Orden operativo, rol dueno e impacto dentro del proceso.
+                          {newModel
+                            ? "Nombre y descripcion documental de cada etapa."
+                            : "Orden operativo, rol dueno e impacto dentro del proceso."}
                         </p>
                       </div>
-                      <div className="flex flex-wrap gap-2 sm:justify-end">
-                        {process.support_role_names.map((roleName) => (
-                          <ValueBadge key={roleName} tone="neutral">{roleName}</ValueBadge>
-                        ))}
-                      </div>
+                      {newModel ? null : (
+                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                          {process.support_role_names.map((roleName) => (
+                            <ValueBadge key={roleName} tone="neutral">{roleName}</ValueBadge>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="overflow-hidden rounded-xl border border-line bg-white">
                       {rows.map((row, rowIndex) => (
-                        <div
-                          className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 md:grid-cols-[42px_minmax(220px,1.4fr)_minmax(220px,1fr)_120px] md:items-center"
-                          key={row.subprocess_id}
-                        >
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef7fb] text-sm font-medium text-sea">
-                            {row.sort_order ?? rowIndex + 1}
+                        newModel ? (
+                          <div
+                            className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 sm:grid-cols-[42px_minmax(0,1fr)] sm:items-start"
+                            key={row.subprocess_id}
+                          >
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef7fb] text-sm font-medium text-sea">
+                              {row.sort_order ?? rowIndex + 1}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-navy">{row.subprocess_name}</p>
+                              <p className="mt-1 text-sm leading-5 text-slate-600">
+                                {row.subprocess_description?.trim() || "Sin descripcion"}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-navy">
-                              {row.subprocess_name}
-                            </p>
+                        ) : (
+                          <div
+                            className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 md:grid-cols-[42px_minmax(220px,1.4fr)_minmax(220px,1fr)_120px] md:items-center"
+                            key={row.subprocess_id}
+                          >
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eef7fb] text-sm font-medium text-sea">
+                              {row.sort_order ?? rowIndex + 1}
+                            </div>
+                            <div className="min-w-0"><p className="text-sm font-medium text-navy">{row.subprocess_name}</p></div>
+                            <div className="min-w-0 text-sm">
+                              <p className="text-xs text-slate-500">Responsable funcional</p>
+                              <p className="mt-1 font-medium text-navy">{ownerRoleText(row.owner_role_name, row.owner_person_name)}</p>
+                            </div>
+                            <div className="text-sm">
+                              <p className="text-xs text-slate-500">Impacto</p>
+                              <p className="mt-1 font-medium text-navy">{row.impact_percent === null ? "-" : `${row.impact_percent}%`}</p>
+                            </div>
                           </div>
-                          <div className="min-w-0 text-sm">
-                            <p className="text-xs text-slate-500">Responsable funcional</p>
-                            <p className="mt-1 font-medium text-navy">
-                              {ownerRoleText(row.owner_role_name, row.owner_person_name)}
-                            </p>
-                          </div>
-                          <div className="text-sm">
-                            <p className="text-xs text-slate-500">Impacto</p>
-                            <p className="mt-1 font-medium text-navy">
-                              {row.impact_percent === null ? "-" : `${row.impact_percent}%`}
-                            </p>
-                          </div>
-                        </div>
+                        )
                       ))}
                     </div>
                   </div>
@@ -346,12 +381,46 @@ export function ProcessCatalogClient({
           );
         })}
 
-        {filteredProcesses.length === 0 ? (
+        {processes.length === 0 ? (
           <div className="px-4 py-8 text-sm text-slate-600">
-            No hay procesos para los filtros seleccionados.
+            No hay procesos en este grupo para los filtros seleccionados.
           </div>
         ) : null}
       </div>
+      </section>
+    );
+  }
+  return (
+    <>
+      <ProcessFilters
+        catalogMode={catalogMode}
+        companyOptions={companyOptions}
+        filters={filters}
+        ownerRoleOptions={ownerRoleOptions}
+        personOptions={personOptions}
+        processTypeOptions={processTypeOptions}
+        resultText={resultText}
+        supportRoleOptions={supportRoleOptions}
+        totalCount={catalogProcesses.length}
+        typeOptions={typeOptions}
+        visibleCount={filteredProcesses.length}
+        onClearFilters={clearFilters}
+        onFilterChange={updateFilter}
+      />
+
+      {renderProcessGroup(
+        "Procesos nuevos",
+        "Procesos creados con código documental asignado.",
+        newProcesses,
+        false,
+        true,
+      )}
+      {catalogMode === "all" ? renderProcessGroup(
+        "Procesos históricos / por documentar",
+        "Procesos existentes que aún no tienen código documental.",
+        historicalProcesses,
+        true,
+      ) : null}
     </>
   );
 }

@@ -1,0 +1,45 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const actions = read("src/app/admin/actions.ts");
+const start = actions.indexOf("export async function saveProcessMetrics");
+const end = actions.indexOf("export async function saveProcessRisksAndControls", start);
+const save = actions.slice(start, end);
+const editor = read("src/app/procesos/process-master/process-metrics-editor.tsx");
+const loader = read("src/lib/procesos/process-master-relations.ts");
+const sheet = read("src/app/procesos/process-master/process-master-sheet.tsx");
+const editPage = read("src/app/procesos/[processId]/editar/page.tsx");
+const detailPage = read("src/app/procesos/[processId]/page.tsx");
+const readModel = read("src/lib/procesos/process-master-read-model.ts");
+const createForm = read("src/app/procesos/nuevo/create-process-draft-form.tsx");
+
+assert.match(loader, /^import "server-only";/, "metric reads must remain server-only");
+assert.match(loader, /from\("metrics"\)[\s\S]*process_id[\s\S]*subprocess_id[\s\S]*status", "active"/, "only active process-level metrics must load");
+assert.match(loader, /metric_responsible_roles/, "metric responsibles must load from their bridge table");
+assert.match(loader, /v_role_dictionary[\s\S]*role_status[\s\S]*company_id/, "metric responsibles must resolve through active official company roles");
+assert.match(save, /assertEditableProcess/, "metric writes must require an editable process");
+assert.match(save, /validateProcessResponsibleRoles/, "metric writes must validate official company roles server-side");
+assert.match(save, /new Set\(row\.responsibleRoleIds\)/, "duplicate responsible roles must be rejected");
+assert.match(save, /from\('metrics'\)[\s\S]*\.is\('subprocess_id', null\)[\s\S]*\.eq\('status', 'active'\)/, "metric synchronization must only consider active process-level rows");
+assert.match(save, /sort_order: index \+ 1/, "metric rows must preserve stable order");
+assert.match(save, /\.update\(values\)[\s\S]*\.insert\(/, "metric rows must support update and insert");
+assert.match(save, /metric_responsible_roles[\s\S]*metric_id[\s\S]*removedIds[\s\S]*\.delete\(\)/, "one save must synchronize assignments and removed metrics");
+assert.doesNotMatch(save, /owner_role_id\s*:/, "new metric saves must not write the legacy singular owner");
+assert.match(editor, /^'use client';[\s\S]*useState<EditableMetric\[\]>/, "metrics must edit in local client state");
+assert.match(editor, /h-\[72px\] min-h-\[72px\]/, "metric textareas must use the approved compact height");
+for (const label of ["Indicador", "Formula / criterio", "Meta", "Frecuencia", "Responsable"]) assert.match(editor, new RegExp(`>${label}<`), `metric editor must include ${label}`);
+for (const frequency of ["Diaria", "Semanal", "Quincenal", "Mensual", "Trimestral", "Semestral", "Anual"]) assert.match(editor, new RegExp(frequency), `frequency ${frequency} must be allowed`);
+assert.match(editor, /useProcessMasterSaveSection[\s\S]*id: 'metrics'[\s\S]*\+ Agregar indicador/, "metrics must add locally and register one coordinated section save");
+assert.doesNotMatch(editor, /<form|action=\{action\}/, "metrics must not submit one form per row");
+assert.match(editPage, /getProcessMetricsForMaster[\s\S]*ProcessMetricsEditor[\s\S]*action=\{saveProcessMetrics\}/, "edit must load and connect metric CRUD");
+assert.match(detailPage + readModel, /getProcessMasterReadModel[\s\S]*getProcessMetricsForMaster[\s\S]*process\.metrics = metricsResult\.data/, "readonly must load real metrics through the shared read model");
+assert.match(sheet, /4\. INDICADORES Y OBJETIVOS/, "readonly must expose section 4");
+assert.match(sheet, /responsible_roles\.map/, "readonly metrics must resolve responsible role names");
+assert.match(sheet, /join\(" \\u00b7 "\)/, "readonly metrics must join role names with a middle dot");
+assert.match(createForm, /4\. INDICADORES Y OBJETIVOS[\s\S]*Disponible en el borrador del proceso/, "create wizard must reserve section 4 without fake persistence");
+
+console.log("process-master-metrics: OK");

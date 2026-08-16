@@ -3,29 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 import { requireAdminAccess } from "@/lib/auth/admin";
 import { getEditableProcessCatalogItem, getRoleDictionary } from "@/lib/dashboard/data";
-import type { ProcessMasterDto, ProcessMasterStage } from "@/app/procesos/process-master/process-master-types";
+import type { ProcessMasterDto, ProcessMasterStage, ProcessMetricSaveRow, ProcessRiskControlSaveRow } from "@/app/procesos/process-master/process-master-types";
 import { validateProcessForActivation } from "@/app/procesos/process-master/process-master-validation";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 type AdminSupabaseClient = Awaited<ReturnType<typeof requireAdminAccess>>["supabase"];
+type ProcessAdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
-function createProcessDraftValidationClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("Missing Supabase service environment variables.");
+function createProcessDraftValidationClient(returnTo = "/procesos/nuevo") {
+  try {
+    return createSupabaseAdminClient();
+  } catch {
+    fail("No se pudo inicializar el servicio seguro de procesos.", returnTo);
   }
-
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
 }
 
 function value(formData: FormData, key: string) {
@@ -36,6 +29,78 @@ function value(formData: FormData, key: string) {
 function optionalValue(formData: FormData, key: string) {
   const raw = value(formData, key);
   return raw.length > 0 ? raw : null;
+}
+function processWriteErrorMessage(error: { code?: string; message: string }, fallback: string) {
+  if (error.message.includes("process_code") || error.message.includes("idx_processes_process_code_unique_ci")) {
+    return "Ya existe un proceso con ese codigo.";
+  }
+
+  if (error.code === "23505") {
+    return "Ya existe un proceso con ese nombre para la empresa seleccionada.";
+  }
+
+  return fallback;
+}
+
+async function validateSelectedProcessCompany(supabase: ProcessAdminClient, companyId: string) {
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id")
+    .eq("id", companyId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error) {
+    return new Error("No se pudo validar la empresa seleccionada.");
+  }
+
+  return data ? null : new Error("Selecciona una empresa estructural activa.");
+}
+async function validateSelectedProcessOperationType(
+  supabase: ProcessAdminClient,
+  areaId: string | null,
+  companyId: string,
+) {
+  if (!areaId) return null;
+
+  const { data, error } = await supabase
+    .from("areas")
+    .select("id,company_id,status")
+    .eq("id", areaId)
+    .maybeSingle();
+
+  if (error) return new Error("No se pudo validar el Tipo de operación seleccionado.");
+  if (!data || data.status !== "active") return new Error("Selecciona un Tipo de operación activo.");
+  return data.company_id === companyId
+    ? null
+    : new Error("El Tipo de operación no corresponde a la empresa seleccionada.");
+}
+async function validateOfficialProcessOwner(
+  supabase: ProcessAdminClient,
+  ownerRoleId: string | null,
+  companyId?: string | null,
+) {
+  if (!ownerRoleId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("v_role_dictionary")
+    .select("role_id,role_status,company_id")
+    .eq("role_id", ownerRoleId)
+    .maybeSingle();
+
+  if (error) {
+    return new Error("No se pudo validar el rol dueno del proceso.");
+  }
+
+  if (!data || data.role_status !== "active") {
+    return new Error("Selecciona un rol oficial activo como dueno del proceso.");
+  }
+
+  return companyId && data.company_id !== companyId
+    ? new Error("El rol dueno no corresponde a la empresa seleccionada.")
+    : null;
 }
 
 function checkbox(formData: FormData, key: string) {
@@ -648,52 +713,75 @@ export async function addArea(formData: FormData) {
   );
 }
 
-export async function createProcessDraft(formData: FormData) {
+async function persistProcessDraft(formData: FormData) {
   const { supabase } = await requireAdminAccess();
-  const returnTo = "/procesos/nuevo";
+  const returnTo = internalReturnTo(formData, "/procesos/nuevo");
+  const draftIntent = value(formData, "draft_intent");
+  const inlineDraft = draftIntent === "wizard_next" || draftIntent === "add_stage" || draftIntent === "add_role";
+  const rejectDraft = (message: string) => {
+    if (inlineDraft) return { error: message, processId: null };
+    fail(message, returnTo);
+  };
   const name = value(formData, "name");
   const companyId = value(formData, "company_id");
   const areaId = optionalValue(formData, "area_id");
+  const ownerRoleId = optionalValue(formData, "owner_role_id");
   const processType = value(formData, "process_type");
+  let processAdmin: ProcessAdminClient;
+  try {
+    processAdmin = createSupabaseAdminClient();
+  } catch {
+    return rejectDraft("No se pudo inicializar el servicio seguro de procesos.");
+  }
 
   if (!name) {
-    fail("Ingresa el nombre del proceso.", returnTo);
+    return rejectDraft("Ingresa el nombre del proceso.");
   }
 
   if (!companyId) {
-    fail("Selecciona la empresa del proceso.", returnTo);
+    return rejectDraft("Selecciona una empresa.");
   }
+
+  let companyError: Error | null;
+
+  try {
+    companyError = await validateSelectedProcessCompany(processAdmin, companyId);
+  } catch {
+    return rejectDraft("No se pudo validar la empresa seleccionada.");
+  }
+
+  if (companyError) {
+    return rejectDraft(companyError.message);
+  }
+
+  let operationTypeError: Error | null;
+  try {
+    operationTypeError = await validateSelectedProcessOperationType(processAdmin, areaId, companyId);
+  } catch {
+    return rejectDraft("No se pudo validar el Tipo de operación seleccionado.");
+  }
+  if (operationTypeError) return rejectDraft(operationTypeError.message);
 
   if (processType !== "strategic" && processType !== "operational" && processType !== "support") {
-    fail("Selecciona un tipo de proceso valido.", returnTo);
+    return rejectDraft("Selecciona un tipo de proceso valido.");
   }
 
-  if (areaId) {
-    let area: { company_id: string | null; status: string | null } | null = null;
-
-    try {
-      const { data: areaData, error: areaError } = await createProcessDraftValidationClient()
-        .from("areas")
-        .select("company_id,status")
-        .eq("id", areaId)
-        .maybeSingle();
-
-      if (areaError) {
-        throw new Error(areaError.message);
-      }
-
-      area = areaData;
-    } catch (error) {
-      fail(
-        `No se pudo guardar el borrador. ${error instanceof Error ? error.message : "No se pudo validar el area seleccionada."}`,
-        returnTo,
-      );
-    }
-
-    if (!area || area.status !== "active" || area.company_id !== companyId) {
-      fail("El area seleccionada no corresponde a la empresa.", returnTo);
-    }
+  if (optionalValue(formData, "process_code") || optionalValue(formData, "version")) {
+    return rejectDraft("El codigo y la version documental no se pueden definir manualmente.");
   }
+
+  let ownerError: Error | null;
+
+  try {
+    ownerError = await validateOfficialProcessOwner(processAdmin, ownerRoleId, companyId);
+  } catch {
+    return rejectDraft("No se pudo validar el rol dueno del proceso.");
+  }
+
+  if (ownerError) {
+    return rejectDraft(ownerError.message);
+  }
+
   let countryId: string | null = null;
   let defaultSiteId: string | null = null;
 
@@ -714,103 +802,91 @@ export async function createProcessDraft(formData: FormData) {
       companyContext.countryId ??
       requestContext.countryId;
     defaultSiteId = matchingExplicitSiteId ?? companyContext.siteId;
-  } catch (error) {
-    fail(
-      `No se pudo guardar el borrador. ${error instanceof Error ? error.message : "No se pudo resolver el contexto operativo."}`,
-      returnTo,
+  } catch {
+    return rejectDraft(
+      "No se pudo resolver el contexto operativo del proceso.",
     );
   }
 
-  const { data, error } = await supabase
-    .from("processes")
-    .insert({
-      area_id: areaId,
-      basic_kpi: optionalValue(formData, "basic_kpi"),
-      company_id: companyId,
-      country_id: countryId,
-      criticality: value(formData, "criticality") || "medium",
-      description: optionalValue(formData, "description"),
-      documentation_status: "draft",
-      expected_result: optionalValue(formData, "expected_result"),
-      inputs_providers: optionalValue(formData, "inputs_providers"),
-      is_global: false,
-      is_replicable: false,
-      name,
-      objective: optionalValue(formData, "objective"),
-      operating_company_id: companyId,
-      operating_site_id: defaultSiteId,
-      outputs_clients: optionalValue(formData, "outputs_clients"),
-      owner_company_id: companyId,
-      owner_site_id: defaultSiteId,
-      process_type: processType,
-      status: "inactive",
-    })
-    .select("id")
-    .single();
-
-  if (error) {
-    fail(
-      error.code === "23505"
-        ? "Ya existe un proceso con ese nombre para la empresa seleccionada."
-        : `No se pudo guardar el borrador. ${error.message}`,
-      returnTo,
-    );
-  }
-
-  if (!data?.id) {
-    fail("No se pudo guardar el borrador. Supabase no devolvio el ID del proceso creado.", returnTo);
-  }
-
-  revalidatePath("/procesos");
-  revalidatePath(`/procesos/${data.id}/editar`);
-  redirect(withMessage(`/procesos/${data.id}/editar`, "ok", "Borrador guardado"));
-}
-export async function addProcess(formData: FormData) {
-  const { supabase } = await requireAdminAccess();
-  const returnTo = internalReturnTo(formData, "/admin");
-  const requestContext = await requestOperationalContext();
-  const companyId = value(formData, "company_id");
-  const explicitSiteId =
-    optionalValue(formData, "operating_site_id") ??
-    optionalValue(formData, "owner_site_id") ??
-    optionalValue(formData, "site_id") ??
-    requestContext.siteId;
-  const explicitContext = await siteOperationalContext(supabase, explicitSiteId);
-  const companyContext = await companyOperationalContext(supabase, companyId);
-  const countryId =
-    optionalValue(formData, "country_id") ??
-    requestContext.countryId ??
-    explicitContext.countryId ??
-    companyContext.countryId;
-  const defaultSiteId = explicitSiteId ?? companyContext.siteId;
-
-  const { error } = await supabase.from("processes").upsert(
+  const { data, error } = await processAdmin.rpc(
+    "create_process_draft_with_document_header",
     {
-      company_id: companyId,
-      area_id: optionalValue(formData, "area_id"),
-      country_id: countryId,
-      owner_company_id: optionalValue(formData, "owner_company_id") ?? companyId,
-      operating_company_id: optionalValue(formData, "operating_company_id") ?? companyId,
-      owner_site_id: optionalValue(formData, "owner_site_id") ?? defaultSiteId,
-      operating_site_id: optionalValue(formData, "operating_site_id") ?? defaultSiteId,
-      name: value(formData, "name"),
-      description: optionalValue(formData, "description"),
-      objective: optionalValue(formData, "objective"),
-      expected_result: optionalValue(formData, "expected_result"),
-      process_type: processTypeValue(formData),
-      criticality: value(formData, "criticality"),
-      documentation_status: value(formData, "documentation_status"),
-      is_replicable: checkbox(formData, "is_replicable"),
-      is_global: checkbox(formData, "is_global"),
+      p_owner_role_id: ownerRoleId,
+      p_process: {
+        area_id: areaId,
+        client_destination: optionalValue(formData, "client_destination"),
+        company_id: companyId,
+        country_id: countryId,
+        criticality: value(formData, "criticality") || "medium",
+        name,
+        operating_site_id: defaultSiteId,
+        owner_site_id: defaultSiteId,
+        process_end: optionalValue(formData, "process_end"),
+        process_inputs: optionalValue(formData, "process_inputs"),
+        process_outputs: optionalValue(formData, "process_outputs"),
+        process_start: optionalValue(formData, "process_start"),
+        process_type: processType,
+        purpose: optionalValue(formData, "purpose"),
+        scope: optionalValue(formData, "scope"),
+        supplier_origin: optionalValue(formData, "supplier_origin"),
+      },
     },
-    { onConflict: "company_id,name" },
   );
 
   if (error) {
-    fail(error.message, returnTo);
+    return rejectDraft(processWriteErrorMessage(error, "No se pudo guardar el borrador."));
   }
 
-  done("Proceso guardado", returnTo);
+  const created = (Array.isArray(data) ? data[0] : null) as { process_id?: string } | null;
+
+  if (!created?.process_id) {
+    return rejectDraft("No fue posible crear el proceso. Intenta nuevamente.");
+  }
+
+  revalidatePath("/procesos");
+  revalidatePath(`/procesos/${created.process_id}/editar`);
+
+  if (inlineDraft) {
+    return { error: null, processId: created.process_id };
+  }
+
+  if (returnTo !== "/procesos/nuevo") {
+    done("Proceso guardado", returnTo);
+  }
+
+  redirect(withMessage(`/procesos/${created.process_id}/editar`, "ok", "Borrador guardado"));
+}
+
+export async function createProcessDraft(formData: FormData): Promise<void> {
+  formData.delete("draft_intent");
+  await persistProcessDraft(formData);
+}
+
+export async function autoCreateProcessDraft(
+  formData: FormData,
+  intent: "wizard_next" | "add_stage" | "add_role",
+) {
+  formData.set("draft_intent", intent);
+  return persistProcessDraft(formData);
+}
+
+export async function autoCreateProcessDraftForRelation(
+  formData: FormData,
+  intent: "add_stage" | "add_role",
+) {
+  return autoCreateProcessDraft(formData, intent);
+}
+
+export async function addProcess(formData: FormData) {
+  if (!value(formData, "process_type")) {
+    formData.set("process_type", "operational");
+  }
+
+  if (!value(formData, "return_to")) {
+    formData.set("return_to", "/admin");
+  }
+
+  return createProcessDraft(formData);
 }
 
 export async function addSubprocess(formData: FormData) {
@@ -833,87 +909,37 @@ export async function addSubprocess(formData: FormData) {
 
 export async function addSubprocessToProcess(formData: FormData) {
   const processId = value(formData, "process_id");
-  const returnTo = `/procesos/${processId}/editar`;
   const { supabase } = await requireAdminAccess();
-  const criticality = value(formData, "criticality");
-  const impactPercent = numberValue(formData, "impact_percent");
   const editableError = await assertEditableProcess(supabase, processId);
 
   if (editableError) {
-    fail(editableError.message, returnTo);
+    return { error: editableError.message, stage: null };
   }
+
   const { data, error } = await supabase
     .from("subprocesses")
     .insert({
       process_id: processId,
       name: value(formData, "name"),
       description: optionalValue(formData, "description"),
-      frequency: optionalValue(formData, "frequency"),
-      criticality,
       sort_order: numberValue(formData, "sort_order"),
-      impact_percent: impactPercent,
     })
-    .select("id")
+    .select("id,name,description,sort_order")
     .single();
 
-  if (error) {
-    fail(error.message, returnTo);
+  if (error || !data) {
+    return { error: error?.message ?? "No se pudo crear la etapa.", stage: null };
   }
 
-  const roleUpdates = [
-    {
-      responsibilityType: "owner",
-      roleId: optionalValue(formData, "owner_role_id"),
-      impactPercent,
+  return {
+    error: null,
+    stage: {
+      sort_order: data.sort_order,
+      subprocess_description: data.description,
+      subprocess_id: data.id,
+      subprocess_name: data.name,
     },
-    {
-      responsibilityType: "user",
-      roleId: optionalValue(formData, "user_role_id"),
-      impactPercent,
-    },
-    {
-      responsibilityType: "consulted",
-      roleId: optionalValue(formData, "support_role_id"),
-      impactPercent: null,
-    },
-    {
-      responsibilityType: "backup",
-      roleId: optionalValue(formData, "backup_role_id"),
-      impactPercent: null,
-    },
-  ];
-
-  for (const update of roleUpdates) {
-    const roleError = await replaceProcessRole({
-      supabase,
-      criticality,
-      impactPercent: update.impactPercent,
-      processId,
-      responsibilityType: update.responsibilityType,
-      roleId: update.roleId,
-      subprocessId: data.id,
-    });
-
-    if (roleError) {
-      fail(roleError.message, returnTo);
-    }
-  }
-
-  const supportError = await replaceSubprocessSupport({
-    supabase,
-    controlName: optionalValue(formData, "control_name"),
-    processId,
-    riskName: optionalValue(formData, "risk_name"),
-    riskSeverity: criticality,
-    subprocessId: data.id,
-    systemIds: values(formData, "system_ids"),
-  });
-
-  if (supportError) {
-    fail(supportError.message, returnTo);
-  }
-
-  done("Etapa agregada", returnTo);
+  };
 }
 
 export async function addRole(formData: FormData) {
@@ -1762,56 +1788,577 @@ async function buildProcessMasterForActivation(
         company_id: processResult.data.company_id ?? "",
         company_name: processResult.data.company_name,
         criticality: processResult.data.criticality === "low" || processResult.data.criticality === "high" || processResult.data.criticality === "critical" ? processResult.data.criticality : "medium",
+        processCode: processResult.data.process_code,
+        version: processResult.data.version,
+        masterUpdatedAt: processResult.data.master_updated_at,
+        createdAt: processResult.data.created_at,
+        effectiveDate: processResult.data.effective_date,
         description: processResult.data.definition,
         documentation_status: processResult.data.documentation_status === "not_started" || processResult.data.documentation_status === "documented" || processResult.data.documentation_status === "needs_update" ? processResult.data.documentation_status : "draft",
         expected_result: processResult.data.expected_result,
         id: processResult.data.process_id,
         inputs_providers: processResult.data.inputs_providers,
+        supplier_origin: processResult.data.supplier_origin,
+        process_inputs: processResult.data.process_inputs,
+        process_outputs: processResult.data.process_outputs,
+        client_destination: processResult.data.client_destination,
         name: processResult.data.process_name,
         objective: processResult.data.objective,
+        processStart: processResult.data.process_start,
+        processEnd: processResult.data.process_end,
+        scope: processResult.data.scope,
         outputs_clients: processResult.data.outputs_clients,
+        pdca: {
+          plan: processResult.data.pdca_plan,
+          do: processResult.data.pdca_do,
+          check: processResult.data.pdca_check,
+          act: processResult.data.pdca_act,
+        },
         process_type: processResult.data.process_type === "strategic" || processResult.data.process_type === "support" ? processResult.data.process_type : "operational",
         status: processResult.data.status === "active" || processResult.data.status === "archived" ? processResult.data.status : "inactive",
       },
       responsibility: {
-        owner_person_id: null,
-        owner_person_name: firstOwner?.owner_person_name ?? null,
-        owner_role_id: firstOwner?.owner_role_id ?? null,
-        owner_role_name: firstOwner?.owner_role_name ?? null,
+        owner_person_id: processResult.data.owner_person_id,
+        owner_person_name: processResult.data.owner_person_name ?? firstOwner?.owner_person_name ?? null,
+        owner_role_id: processResult.data.owner_role_id ?? firstOwner?.owner_role_id ?? null,
+        owner_role_name: processResult.data.owner_role_name ?? firstOwner?.owner_role_name ?? null,
       },
       stages,
+      roleProfiles: [],
+      metrics: [],
+      risks: [],
     },
     status: processResult.data.status,
   };
 }
-export async function updateProcessBasics(formData: FormData) {
-  const processId = value(formData, "process_id");
-  const returnTo = internalReturnTo(formData, `/procesos/${processId}/editar`);
+export async function saveProcessRoleProfiles(
+  processId: string,
+  rows: Array<{
+    accountability: string;
+    authority: string;
+    clientId: string;
+    profileId: string | null;
+    responsibility: string;
+    roleId: string;
+    sortOrder: number;
+  }>,
+): Promise<{ data: Array<{ clientId: string; id: string }> | null; error: string | null }> {
   const { supabase } = await requireAdminAccess();
-  const { error } = await supabase
-    .from("processes")
-    .update({
-      name: value(formData, "name"),
-      description: optionalValue(formData, "description"),
-      objective: optionalValue(formData, "objective"),
-      expected_result: optionalValue(formData, "expected_result"),
-      inputs_providers: optionalValue(formData, "inputs_providers"),
-      outputs_clients: optionalValue(formData, "outputs_clients"),
-      basic_kpi: optionalValue(formData, "basic_kpi"),
-      process_type: processTypeValue(formData),
-      criticality: value(formData, "criticality"),
-    })
-    .eq("id", processId);
+  if (!processId || !Array.isArray(rows)) return { data: null, error: 'Proceso o bloque de roles no definido.' };
 
-  if (error) {
-    fail(error.message, returnTo);
+  const editableError = await assertEditableProcess(supabase, processId);
+  if (editableError) return { data: null, error: editableError.message };
+
+  const normalizedRows = rows.map((row, index) => ({
+    accountability: typeof row.accountability === 'string' ? row.accountability.trim() : '',
+    authority: typeof row.authority === 'string' ? row.authority.trim() : '',
+    clientId: typeof row.clientId === 'string' ? row.clientId : '',
+    profileId: typeof row.profileId === 'string' && row.profileId.trim() ? row.profileId.trim() : null,
+    responsibility: typeof row.responsibility === 'string' ? row.responsibility.trim() : '',
+    roleId: typeof row.roleId === 'string' ? row.roleId.trim() : '',
+    sortOrder: Number.isInteger(row.sortOrder) && row.sortOrder >= 0 ? row.sortOrder : index,
+  }));
+  if (normalizedRows.some((row) => !row.clientId || !row.roleId)) {
+    return { data: null, error: 'Selecciona un rol oficial en cada fila.' };
   }
 
-  done("Proceso actualizado", returnTo);
+  const submittedProfileIds = normalizedRows.flatMap((row) => row.profileId ? [row.profileId] : []);
+  if (new Set(submittedProfileIds).size !== submittedProfileIds.length) {
+    return { data: null, error: 'Una fila documental no puede enviarse más de una vez.' };
+  }
+
+  const processAdmin = createSupabaseAdminClient();
+  const [{ data: process, error: processError }, { data: existingProfiles, error: existingError }] = await Promise.all([
+    processAdmin.from('processes').select('company_id').eq('id', processId).maybeSingle(),
+    processAdmin.from('process_role_profiles').select('id').eq('process_id', processId),
+  ]);
+  if (processError || !process) return { data: null, error: 'El proceso ya no está disponible.' };
+  if (existingError) return { data: null, error: 'No se pudieron cargar los perfiles actuales.' };
+
+  const existingProfileIds = new Set((existingProfiles ?? []).map((profile) => profile.id as string));
+  if (submittedProfileIds.some((profileId) => !existingProfileIds.has(profileId))) {
+    return { data: null, error: 'Una fila de rol no pertenece al proceso indicado.' };
+  }
+
+  const uniqueRoleIds = [...new Set(normalizedRows.map((row) => row.roleId))];
+  if (uniqueRoleIds.length) {
+    const { data: officialRoles, error: rolesError } = await processAdmin
+      .from('v_role_dictionary')
+      .select('role_id,company_id')
+      .in('role_id', uniqueRoleIds)
+      .eq('role_status', 'active');
+    if (rolesError) return { data: null, error: 'No se pudieron validar los roles oficiales.' };
+
+    const validRoleIds = new Set(
+      (officialRoles ?? [])
+        .filter((role) => role.company_id === process.company_id)
+        .map((role) => role.role_id),
+    );
+    if (uniqueRoleIds.some((roleId) => !validRoleIds.has(roleId))) {
+      return { data: null, error: 'Todos los roles deben estar activos y pertenecer a la empresa del proceso.' };
+    }
+  }
+
+  const savedProfiles: Array<{ clientId: string; id: string }> = [];
+  for (const row of normalizedRows) {
+    const values = {
+      accountability_description: row.accountability || null,
+      authority_description: row.authority || null,
+      responsibility_description: row.responsibility || null,
+      role_id: row.roleId,
+      sort_order: row.sortOrder,
+      status: 'active',
+    };
+
+    if (row.profileId) {
+      const { data: updatedProfile, error: updateError } = await processAdmin
+        .from('process_role_profiles')
+        .update(values)
+        .eq('id', row.profileId)
+        .eq('process_id', processId)
+        .select('id')
+        .maybeSingle();
+      if (updateError || !updatedProfile) return { data: null, error: 'No se pudo actualizar una fila de rol.' };
+      savedProfiles.push({ clientId: row.clientId, id: updatedProfile.id as string });
+      continue;
+    }
+
+    const { data: insertedProfile, error: insertError } = await processAdmin
+      .from('process_role_profiles')
+      .insert({ ...values, process_id: processId })
+      .select('id')
+      .single();
+    if (insertError || !insertedProfile) return { data: null, error: 'No se pudo crear una fila de rol.' };
+    savedProfiles.push({ clientId: row.clientId, id: insertedProfile.id as string });
+  }
+
+  const desiredProfileIds = new Set(savedProfiles.map((profile) => profile.id));
+  const removedProfileIds = [...existingProfileIds].filter((profileId) => !desiredProfileIds.has(profileId));
+  if (removedProfileIds.length) {
+    const { error: deleteError } = await processAdmin
+      .from('process_role_profiles')
+      .delete()
+      .eq('process_id', processId)
+      .in('id', removedProfileIds);
+    if (deleteError) return { data: null, error: 'Los perfiles se guardaron, pero no fue posible quitar las filas eliminadas.' };
+  }
+
+  return { data: savedProfiles, error: null };
+}const processMetricFrequencies = new Set([
+  '',
+  'Diaria',
+  'Semanal',
+  'Quincenal',
+  'Mensual',
+  'Trimestral',
+  'Semestral',
+  'Anual',
+]);
+
+function normalizedResponsibleRoleIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((roleId) => typeof roleId === 'string' && roleId.trim() ? [roleId.trim()] : []);
 }
 
+async function validateProcessResponsibleRoles(
+  supabase: ProcessAdminClient,
+  processId: string,
+  roleIds: string[],
+) {
+  const { data: process, error: processError } = await supabase
+    .from('processes')
+    .select('company_id')
+    .eq('id', processId)
+    .maybeSingle();
+  if (processError || !process) return new Error('El proceso ya no esta disponible.');
+  if (!roleIds.length) return null;
 
-export async function activateProcess(input: FormData | string) {
+  const { data: roles, error: rolesError } = await supabase
+    .from('v_role_dictionary')
+    .select('role_id,company_id')
+    .in('role_id', roleIds)
+    .eq('role_status', 'active');
+  if (rolesError) return new Error('No se pudieron validar los roles responsables.');
+
+  const validRoleIds = new Set(
+    (roles ?? [])
+      .filter((role) => role.company_id === process.company_id)
+      .map((role) => role.role_id),
+  );
+  return validRoleIds.size === roleIds.length && roleIds.every((roleId) => validRoleIds.has(roleId))
+    ? null
+    : new Error('Todos los responsables deben ser roles oficiales activos de la empresa del proceso.');
+}
+
+async function syncResponsibleRoles(
+  supabase: ProcessAdminClient,
+  table: 'metric_responsible_roles' | 'control_responsible_roles',
+  parentColumn: 'metric_id' | 'control_id',
+  parentId: string,
+  roleIds: string[],
+) {
+  const { data: existingRows, error: existingError } = await supabase
+    .from(table)
+    .select('role_id')
+    .eq(parentColumn, parentId);
+  if (existingError) return existingError;
+
+  if (roleIds.length) {
+    const { error: upsertError } = await supabase.from(table).upsert(
+      roleIds.map((roleId, sortOrder) => ({
+        [parentColumn]: parentId,
+        role_id: roleId,
+        sort_order: sortOrder,
+      })),
+      { onConflict: `${parentColumn},role_id` },
+    );
+    if (upsertError) return upsertError;
+  }
+
+  const desiredRoleIds = new Set(roleIds);
+  const removedRoleIds = (existingRows ?? [])
+    .map((row) => row.role_id as string)
+    .filter((roleId) => !desiredRoleIds.has(roleId));
+  if (!removedRoleIds.length) return null;
+
+  const { error: deleteError } = await supabase
+    .from(table)
+    .delete()
+    .eq(parentColumn, parentId)
+    .in('role_id', removedRoleIds);
+  return deleteError;
+}
+
+export async function saveProcessMetrics(
+  processId: string,
+  rows: ProcessMetricSaveRow[],
+): Promise<{ data: ProcessMetricSaveRow[] | null; error: string | null }> {
+  const { supabase } = await requireAdminAccess();
+  if (!processId || !Array.isArray(rows)) return { data: null, error: 'Proceso o indicadores no definidos.' };
+  if (rows.length > 100) return { data: null, error: 'No se pueden guardar mas de 100 indicadores a la vez.' };
+  const editableError = await assertEditableProcess(supabase, processId);
+  if (editableError) return { data: null, error: editableError.message };
+
+  const normalizedRows = rows.map((row) => ({
+    formula: typeof row.formula === 'string' ? row.formula.trim() : '',
+    frequency: typeof row.frequency === 'string' ? row.frequency.trim() : '',
+    id: typeof row.id === 'string' && row.id.trim() ? row.id.trim() : null,
+    name: typeof row.name === 'string' ? row.name.trim() : '',
+    responsibleRoleIds: normalizedResponsibleRoleIds(row.responsibleRoleIds),
+    target: typeof row.target === 'string' ? row.target.trim() : '',
+  }));
+  if (normalizedRows.some((row) => !row.name)) return { data: null, error: 'Ingresa el nombre de cada indicador.' };
+  if (normalizedRows.some((row) => row.name.length > 200 || row.formula.length > 2000 || row.target.length > 1000)) {
+    return { data: null, error: 'Uno de los indicadores supera el largo permitido.' };
+  }
+  if (normalizedRows.some((row) => !processMetricFrequencies.has(row.frequency))) return { data: null, error: 'Selecciona una frecuencia valida.' };
+  if (normalizedRows.some((row) => new Set(row.responsibleRoleIds).size !== row.responsibleRoleIds.length)) {
+    return { data: null, error: 'Un responsable no puede repetirse dentro del mismo indicador.' };
+  }
+
+  const processAdmin = createSupabaseAdminClient();
+  const allRoleIds = [...new Set(normalizedRows.flatMap((row) => row.responsibleRoleIds))];
+  const roleError = await validateProcessResponsibleRoles(processAdmin, processId, allRoleIds);
+  if (roleError) return { data: null, error: roleError.message };
+
+  const { data: existingRows, error: existingError } = await processAdmin
+    .from('metrics')
+    .select('id')
+    .eq('process_id', processId)
+    .is('subprocess_id', null)
+    .eq('status', 'active');
+  if (existingError) return { data: null, error: 'No se pudieron cargar los indicadores actuales.' };
+  const existingIds = new Set((existingRows ?? []).map((row) => row.id as string));
+  if (normalizedRows.some((row) => row.id && !existingIds.has(row.id))) {
+    return { data: null, error: 'Uno de los indicadores no pertenece a este proceso.' };
+  }
+
+  const savedRows: ProcessMetricSaveRow[] = [];
+  for (const [index, row] of normalizedRows.entries()) {
+    let metricId = row.id;
+    const values = {
+      formula: row.formula || null,
+      frequency: row.frequency || null,
+      name: row.name,
+      sort_order: index + 1,
+      target: row.target || null,
+    };
+    if (metricId) {
+      const { data, error } = await processAdmin
+        .from('metrics')
+        .update(values)
+        .eq('id', metricId)
+        .eq('process_id', processId)
+        .is('subprocess_id', null)
+        .select('id')
+        .maybeSingle();
+      if (error || !data) return { data: null, error: 'No se pudo actualizar uno de los indicadores.' };
+    } else {
+      const { data, error } = await processAdmin
+        .from('metrics')
+        .insert({ ...values, process_id: processId, status: 'active', subprocess_id: null })
+        .select('id')
+        .single();
+      if (error || !data) return { data: null, error: 'No se pudo crear uno de los indicadores.' };
+      metricId = data.id as string;
+    }
+
+    const assignmentError = await syncResponsibleRoles(
+      processAdmin,
+      'metric_responsible_roles',
+      'metric_id',
+      metricId,
+      row.responsibleRoleIds,
+    );
+    if (assignmentError) return { data: null, error: 'No se pudieron sincronizar los responsables de indicadores.' };
+    savedRows.push({ ...row, id: metricId });
+  }
+
+  const desiredIds = new Set(savedRows.flatMap((row) => row.id ? [row.id] : []));
+  const removedIds = [...existingIds].filter((id) => !desiredIds.has(id));
+  if (removedIds.length) {
+    const { error } = await processAdmin
+      .from('metrics')
+      .delete()
+      .eq('process_id', processId)
+      .is('subprocess_id', null)
+      .in('id', removedIds);
+    if (error) return { data: null, error: 'Los indicadores se guardaron, pero no fue posible quitar las filas eliminadas.' };
+  }
+
+  return { data: savedRows, error: null };
+}
+
+export async function saveProcessRisksAndControls(
+  processId: string,
+  rows: ProcessRiskControlSaveRow[],
+): Promise<{ data: ProcessRiskControlSaveRow[] | null; error: string | null }> {
+  const { supabase } = await requireAdminAccess();
+  if (!processId || !Array.isArray(rows)) return { data: null, error: 'Proceso o riesgos no definidos.' };
+  if (rows.length > 100) return { data: null, error: 'No se pueden guardar mas de 100 controles a la vez.' };
+  const editableError = await assertEditableProcess(supabase, processId);
+  if (editableError) return { data: null, error: editableError.message };
+
+  const normalizedRows = rows.map((row) => ({
+    controlId: typeof row.controlId === 'string' && row.controlId.trim() ? row.controlId.trim() : null,
+    controlName: typeof row.controlName === 'string' ? row.controlName.trim() : '',
+    evidence: typeof row.evidence === 'string' ? row.evidence.trim() : '',
+    responsibleRoleIds: normalizedResponsibleRoleIds(row.responsibleRoleIds),
+    riskId: typeof row.riskId === 'string' && row.riskId.trim() ? row.riskId.trim() : null,
+    riskName: typeof row.riskName === 'string' ? row.riskName.trim() : '',
+    riskType: row.riskType === 'opportunity' ? 'opportunity' as const : 'risk' as const,
+  }));
+  if (normalizedRows.some((row) => row.riskName.length > 500 || row.controlName.length > 500 || row.evidence.length > 2000)) {
+    return { data: null, error: 'Uno de los riesgos o controles supera el largo permitido.' };
+  }
+  if (normalizedRows.some((row) => !row.riskName || !row.controlName)) {
+    return { data: null, error: 'Completa el riesgo u oportunidad y su control en cada fila.' };
+  }
+  if (normalizedRows.some((row) => new Set(row.responsibleRoleIds).size !== row.responsibleRoleIds.length)) {
+    return { data: null, error: 'Un responsable no puede repetirse dentro del mismo control.' };
+  }
+
+  const existingRiskDefinitions = new Map<string, string>();
+  for (const row of normalizedRows) {
+    if (!row.riskId) continue;
+    const definition = `${row.riskType}\u0000${row.riskName}`;
+    const previous = existingRiskDefinitions.get(row.riskId);
+    if (previous && previous !== definition) {
+      return { data: null, error: 'Las filas de un mismo riesgo deben conservar el mismo tipo y descripcion.' };
+    }
+    existingRiskDefinitions.set(row.riskId, definition);
+  }
+
+  const processAdmin = createSupabaseAdminClient();
+  const allRoleIds = [...new Set(normalizedRows.flatMap((row) => row.responsibleRoleIds))];
+  const roleError = await validateProcessResponsibleRoles(processAdmin, processId, allRoleIds);
+  if (roleError) return { data: null, error: roleError.message };
+
+  const { data: riskRows, error: riskError } = await processAdmin
+    .from('risks')
+    .select('id')
+    .eq('process_id', processId)
+    .is('subprocess_id', null)
+    .eq('status', 'active');
+  if (riskError) return { data: null, error: 'No se pudieron cargar los riesgos actuales.' };
+  const existingRiskIds = new Set((riskRows ?? []).map((row) => row.id as string));
+  if (normalizedRows.some((row) => row.riskId && !existingRiskIds.has(row.riskId))) {
+    return { data: null, error: 'Uno de los riesgos no pertenece a este proceso.' };
+  }
+
+  const riskIds = [...existingRiskIds];
+  const { data: controlRows, error: controlError } = riskIds.length
+    ? await processAdmin
+        .from('controls')
+        .select('id,risk_id')
+        .eq('process_id', processId)
+        .in('risk_id', riskIds)
+        .eq('status', 'active')
+    : { data: [], error: null };
+  if (controlError) return { data: null, error: 'No se pudieron cargar los controles actuales.' };
+  const existingControlById = new Map((controlRows ?? []).map((row) => [row.id as string, row.risk_id as string]));
+  if (normalizedRows.some((row) => row.controlId && (!existingControlById.has(row.controlId) || existingControlById.get(row.controlId) !== row.riskId))) {
+    return { data: null, error: 'Uno de los controles no pertenece al riesgo indicado.' };
+  }
+
+  const updatedRiskIds = new Set<string>();
+  const savedRows: ProcessRiskControlSaveRow[] = [];
+  for (const row of normalizedRows) {
+    let riskId = row.riskId;
+    if (riskId && !updatedRiskIds.has(riskId)) {
+      const { data, error } = await processAdmin
+        .from('risks')
+        .update({ name: row.riskName, risk_type: row.riskType })
+        .eq('id', riskId)
+        .eq('process_id', processId)
+        .is('subprocess_id', null)
+        .select('id')
+        .maybeSingle();
+      if (error || !data) return { data: null, error: 'No se pudo actualizar uno de los riesgos.' };
+      updatedRiskIds.add(riskId);
+    } else if (!riskId) {
+      const { data, error } = await processAdmin
+        .from('risks')
+        .insert({ name: row.riskName, process_id: processId, risk_type: row.riskType, severity: 'medium', status: 'active', subprocess_id: null })
+        .select('id')
+        .single();
+      if (error || !data) return { data: null, error: 'No se pudo crear uno de los riesgos.' };
+      riskId = data.id as string;
+      updatedRiskIds.add(riskId);
+    }
+
+    let controlId = row.controlId;
+    const controlValues = { evidence: row.evidence || null, name: row.controlName };
+    if (controlId) {
+      const { data, error } = await processAdmin
+        .from('controls')
+        .update(controlValues)
+        .eq('id', controlId)
+        .eq('process_id', processId)
+        .eq('risk_id', riskId)
+        .select('id')
+        .maybeSingle();
+      if (error || !data) return { data: null, error: 'No se pudo actualizar uno de los controles.' };
+    } else {
+      const { data, error } = await processAdmin
+        .from('controls')
+        .insert({ ...controlValues, process_id: processId, risk_id: riskId, status: 'active' })
+        .select('id')
+        .single();
+      if (error || !data) return { data: null, error: 'No se pudo crear uno de los controles.' };
+      controlId = data.id as string;
+    }
+
+    const assignmentError = await syncResponsibleRoles(
+      processAdmin,
+      'control_responsible_roles',
+      'control_id',
+      controlId,
+      row.responsibleRoleIds,
+    );
+    if (assignmentError) return { data: null, error: 'No se pudieron sincronizar los responsables de controles.' };
+    savedRows.push({ ...row, controlId, riskId });
+  }
+
+  const desiredControlIds = new Set(savedRows.flatMap((row) => row.controlId ? [row.controlId] : []));
+  const removedControlIds = [...existingControlById.keys()].filter((id) => !desiredControlIds.has(id));
+  if (removedControlIds.length) {
+    const { error } = await processAdmin
+      .from('controls')
+      .delete()
+      .eq('process_id', processId)
+      .in('id', removedControlIds);
+    if (error) return { data: null, error: 'Los riesgos se guardaron, pero no fue posible quitar los controles eliminados.' };
+  }
+
+  return { data: savedRows, error: null };
+}
+async function persistProcessBasics(formData: FormData): Promise<{ error: string | null }> {
+  const processId = value(formData, "process_id");
+  const { supabase } = await requireAdminAccess();
+  const areaProvided = formData.has("area_id");
+  const areaId = areaProvided ? optionalValue(formData, "area_id") : null;
+  const ownerRoleProvided = formData.has("owner_role_id");
+  const ownerRoleId = ownerRoleProvided ? optionalValue(formData, "owner_role_id") : null;
+
+  if (!processId) return { error: "Proceso no definido." };
+
+  const editableError = await assertEditableProcess(supabase, processId);
+  if (editableError) return { error: editableError.message };
+
+  if (areaProvided) {
+    let validationClient: ProcessAdminClient;
+    try {
+      validationClient = createSupabaseAdminClient();
+    } catch {
+      return { error: "No se pudo inicializar el servicio seguro de procesos." };
+    }
+    const { data: processContext, error: processContextError } = await validationClient
+      .from("processes")
+      .select("company_id,area_id")
+      .eq("id", processId)
+      .maybeSingle();
+    if (processContextError || !processContext?.company_id) return { error: "No se pudo validar la empresa del proceso." };
+    if (areaId !== processContext.area_id) {
+      const operationTypeError = await validateSelectedProcessOperationType(validationClient, areaId, processContext.company_id);
+      if (operationTypeError) return { error: operationTypeError.message };
+    }
+  }
+
+  if (ownerRoleProvided) {
+    let validationClient: ProcessAdminClient;
+    try {
+      validationClient = createSupabaseAdminClient();
+    } catch {
+      return { error: "No se pudo inicializar el servicio seguro de procesos." };
+    }
+    const ownerError = await validateOfficialProcessOwner(validationClient, ownerRoleId);
+    if (ownerError) return { error: ownerError.message };
+  }
+
+  const updates: Record<string, unknown> = {};
+  const optionalFields = [
+    "purpose",
+    "process_start",
+    "process_end",
+    "scope",
+    "supplier_origin",
+    "process_inputs",
+    "process_outputs",
+    "client_destination",
+  ] as const;
+
+  if (formData.has("name")) {
+    const name = value(formData, "name");
+    if (!name) return { error: "Ingresa el nombre del proceso." };
+    updates.name = name;
+  }
+  if (areaProvided) updates.area_id = areaId;
+  if (formData.has("process_type")) updates.process_type = processTypeValue(formData);
+  if (ownerRoleProvided) updates.owner_role_id = ownerRoleId;
+
+  for (const field of optionalFields) {
+    if (!formData.has(field)) continue;
+    const column = field === "purpose" ? "objective" : field;
+    updates[column] = optionalValue(formData, field);
+  }
+
+  if (Object.keys(updates).length === 0) return { error: "No se recibieron cambios para guardar." };
+
+  const { error } = await supabase.from("processes").update(updates).eq("id", processId);
+  return { error: error ? processWriteErrorMessage(error, "No se pudo actualizar el proceso.") : null };
+}
+
+export async function saveProcessBasicsInline(formData: FormData): Promise<{ error: string | null }> {
+  return persistProcessBasics(formData);
+}
+
+export async function updateProcessBasics(formData: FormData) {
+  const returnTo = internalReturnTo(formData, `/procesos/${value(formData, "process_id")}/editar`);
+  const result = await persistProcessBasics(formData);
+  if (result.error) fail(result.error, returnTo);
+  done("Proceso actualizado", returnTo);
+}export async function activateProcess(input: FormData | string) {
   const processId = typeof input === "string" ? input : value(input, "process_id");
   const returnTo = `/procesos/${processId}/editar`;
 
@@ -1960,6 +2507,71 @@ export async function archiveProcess(formData: FormData) {
   redirect(withMessage("/procesos", "ok", "Proceso archivado"));
 }
 
+export async function deleteProcessPermanently(formData: FormData) {
+  const processId = value(formData, "process_id");
+  const confirmationText = value(formData, "confirmation_text");
+
+  if (!processId || confirmationText !== "CONFIRMAR") {
+    return { error: "Escribe CONFIRMAR exactamente para eliminar el proceso." };
+  }
+
+  await requireAdminAccess();
+  let supabase: ProcessAdminClient;
+  try {
+    supabase = createSupabaseAdminClient();
+  } catch (error) {
+    console.error("[deleteProcessPermanently] admin client initialization failed", error);
+    return { error: "No se pudo eliminar definitivamente el proceso." };
+  }
+
+  const { data: process, error: processError } = await supabase
+    .from("processes")
+    .select("id,name")
+    .eq("id", processId)
+    .maybeSingle();
+
+  if (processError || !process) {
+    console.error("[deleteProcessPermanently] process verification failed", {
+      code: processError?.code,
+      details: processError?.details,
+      hint: processError?.hint,
+      message: processError?.message,
+      processId,
+    });
+    return { error: "No se pudo eliminar definitivamente el proceso." };
+  }
+
+  const rpcPayload = {
+    p_confirmation_name: confirmationText,
+    p_process_id: processId,
+  };
+  const { data, error } = await supabase.rpc("delete_process_permanently", rpcPayload);
+
+  if (error) {
+    console.error("[deleteProcessPermanently] RPC failed", {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      message: error.message,
+      processId,
+    });
+    return { error: "No se pudo eliminar definitivamente el proceso." };
+  }
+
+  const deleted = Array.isArray(data)
+    ? data.some((row) => row.process_id === processId && row.process_name === process.name)
+    : false;
+  if (!deleted) {
+    console.error("[deleteProcessPermanently] RPC returned no matching deleted process", { processId });
+    return { error: "No se pudo eliminar definitivamente el proceso." };
+  }
+
+  revalidatePath("/procesos");
+  revalidatePath("/estructura");
+  revalidatePath(`/procesos/${processId}`);
+  revalidatePath(`/procesos/${processId}/editar`);
+  return { error: null };
+}
 export async function reorderSubprocesses(processId: string, orderedIds: string[]) {
   const { supabase } = await requireAdminAccess();
 
@@ -1974,10 +2586,6 @@ export async function reorderSubprocesses(processId: string, orderedIds: string[
       return { error: error.message };
     }
   }
-
-  revalidatePath(`/procesos/${processId}`);
-  revalidatePath(`/procesos/${processId}/editar`);
-  revalidatePath("/procesos");
 
   return { error: null };
 }
@@ -2282,131 +2890,50 @@ async function replaceSubprocessSupport({
   return controlError;
 }
 
-export async function updateSubprocessDetail(formData: FormData) {
+export async function updateSubprocessDetail(formData: FormData): Promise<{
+  error: string | null;
+  stage: { sort_order: number | null; subprocess_description: string | null; subprocess_id: string; subprocess_name: string } | null;
+}> {
   const processId = value(formData, "process_id");
   const subprocessId = value(formData, "subprocess_id");
-  const returnTo = `/procesos/${processId}/editar`;
+  const name = value(formData, "name");
   const { supabase } = await requireAdminAccess();
-  const criticality = value(formData, "criticality");
-  const impactPercent = numberValue(formData, "impact_percent");
   const editableError = await assertEditableProcess(supabase, processId, subprocessId);
 
-  if (editableError) {
-    fail(editableError.message, returnTo);
-  }
-  const allImpacts = Array.from(formData.entries())
-    .filter(([key]) => key.startsWith("impact_all:"))
-    .map(([key, raw]) => ({
-      subprocessId: key.replace("impact_all:", ""),
-      impactPercent: typeof raw === "string" && raw.trim().length > 0 ? Number(raw) : null,
-    }));
+  if (editableError) return { error: editableError.message, stage: null };
+  if (!name) return { error: "Ingresa el nombre de la etapa.", stage: null };
 
-  const { error: subprocessError } = await supabase
+  const { data, error } = await supabase
     .from("subprocesses")
     .update({
-      name: value(formData, "name"),
+      name,
       description: optionalValue(formData, "description"),
-      frequency: optionalValue(formData, "frequency"),
-      criticality,
       sort_order: numberValue(formData, "sort_order"),
-      impact_percent: impactPercent,
     })
     .eq("id", subprocessId)
-    .eq("process_id", processId);
+    .eq("process_id", processId)
+    .select("id,name,description,sort_order")
+    .maybeSingle();
 
-  if (subprocessError) {
-    fail(subprocessError.message, returnTo);
-  }
-
-  for (const impact of allImpacts) {
-    const { error: impactSubprocessError } = await supabase
-      .from("subprocesses")
-      .update({ impact_percent: impact.impactPercent })
-      .eq("id", impact.subprocessId)
-      .eq("process_id", processId);
-
-    if (impactSubprocessError) {
-      fail(impactSubprocessError.message, returnTo);
-    }
-
-    const { error: impactRoleError } = await supabase
-      .from("process_roles")
-      .update({ impact_percent: impact.impactPercent })
-      .eq("process_id", processId)
-      .eq("subprocess_id", impact.subprocessId)
-      .in("responsibility_type", ["owner", "user"]);
-
-    if (impactRoleError) {
-      fail(impactRoleError.message, returnTo);
-    }
-  }
-
-  const roleUpdates = [
-    {
-      responsibilityType: "owner",
-      roleId: optionalValue(formData, "owner_role_id"),
-      impactPercent,
+  if (error || !data) return { error: error?.message ?? "No se pudo actualizar la etapa.", stage: null };
+  return {
+    error: null,
+    stage: {
+      sort_order: data.sort_order,
+      subprocess_description: data.description,
+      subprocess_id: data.id,
+      subprocess_name: data.name,
     },
-    {
-      responsibilityType: "user",
-      roleId: optionalValue(formData, "user_role_id"),
-      impactPercent,
-    },
-    {
-      responsibilityType: "consulted",
-      roleId: optionalValue(formData, "support_role_id"),
-      impactPercent: null,
-    },
-    {
-      responsibilityType: "backup",
-      roleId: optionalValue(formData, "backup_role_id"),
-      impactPercent: null,
-    },
-  ];
-
-  for (const update of roleUpdates) {
-    const error = await replaceProcessRole({
-      supabase,
-      criticality,
-      impactPercent: update.impactPercent,
-      processId,
-      responsibilityType: update.responsibilityType,
-      roleId: update.roleId,
-      subprocessId,
-    });
-
-    if (error) {
-      fail(error.message, returnTo);
-    }
-  }
-
-  const supportError = await replaceSubprocessSupport({
-    supabase,
-    controlName: optionalValue(formData, "control_name"),
-    processId,
-    riskName: optionalValue(formData, "risk_name"),
-    riskSeverity: criticality,
-    subprocessId,
-    systemIds: values(formData, "system_ids"),
-  });
-
-  if (supportError) {
-    fail(supportError.message, returnTo);
-  }
-
-  done("Etapa actualizada", returnTo);
+  };
 }
 
-export async function deleteSubprocess(formData: FormData) {
+export async function deleteSubprocess(formData: FormData): Promise<{ error: string | null }> {
   const processId = value(formData, "process_id");
   const subprocessId = value(formData, "subprocess_id");
-  const returnTo = `/procesos/${processId}/editar`;
   const { supabase } = await requireAdminAccess();
   const editableError = await assertEditableProcess(supabase, processId, subprocessId);
 
-  if (editableError) {
-    fail(editableError.message, returnTo);
-  }
+  if (editableError) return { error: editableError.message };
 
   const { error } = await supabase
     .from("subprocesses")
@@ -2414,9 +2941,5 @@ export async function deleteSubprocess(formData: FormData) {
     .eq("id", subprocessId)
     .eq("process_id", processId);
 
-  if (error) {
-    fail(error.message, returnTo);
-  }
-
-  done("Etapa archivada", returnTo);
+  return { error: error?.message ?? null };
 }

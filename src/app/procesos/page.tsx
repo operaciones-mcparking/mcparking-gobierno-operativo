@@ -10,6 +10,7 @@ import {
   getRoleDictionary,
   type ProcessCatalogV2Item,
 } from "@/lib/dashboard/data";
+import { getActiveProcessOperationTypeOptions } from "@/lib/procesos/process-company-options";
 import { ProcessCatalogClient } from "./process-catalog-client";
 import { ProcessMacroMap } from "./process-macro-map";
 
@@ -46,11 +47,12 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
     countryId: params.country_id ?? null,
     siteId: params.site_id ?? null,
   };
-  const [catalogResult, matrixResult, roleDictionaryResult, stageOwnerRolesResult] = await Promise.all([
+  const [catalogResult, matrixResult, roleDictionaryResult, stageOwnerRolesResult, operationTypeResult] = await Promise.all([
     getProcessCatalogV2(context),
     getProcessMatrixV2(),
     getRoleDictionary(context),
     getProcessStageOwnerRoles(),
+    getActiveProcessOperationTypeOptions(),
   ]);
   const activeProcesses = catalogResult.data;
   const companyOptions = Array.from(
@@ -59,9 +61,6 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
         .map((process) => process.owner_company_name ?? process.company_name)
         .filter(Boolean),
     ),
-  ).sort((a, b) => a.localeCompare(b, "es"));
-  const typeOptions = Array.from(
-    new Set(activeProcesses.map((process) => process.area_name ?? "Sin tipo")),
   ).sort((a, b) => a.localeCompare(b, "es"));
   const ownerRoleOptions = uniqueIdNameOptions(
     activeProcesses.flatMap((process) =>
@@ -119,13 +118,13 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
               <ValueBadge tone="info">{activeProcesses.length} procesos</ValueBadge>
             </div>
             <p className="mt-1 text-sm leading-5 text-slate-600">
-              19 procesos organizados por tipo, responsables y etapas.
+              Procesos organizados por tipo, responsables y etapas.
             </p>
           </div>
         </div>
-        {catalogResult.error || matrixResult.error ? (
+        {catalogResult.error || matrixResult.error || operationTypeResult.error ? (
           <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-medium text-[#86510d]">
-            {catalogResult.error?.message ?? matrixResult.error?.message}
+            {catalogResult.error?.message ?? matrixResult.error?.message ?? operationTypeResult.error?.message}
           </div>
         ) : (
           <ProcessCatalogClient
@@ -137,7 +136,7 @@ export default async function ProcesosPage({ searchParams }: ProcesosPageProps) 
             roleDictionary={roleDictionaryResult.data}
             stageOwnerRoles={stageOwnerRolesResult.data}
             supportRoleOptions={supportRoleOptions}
-            typeOptions={typeOptions}
+            typeOptions={operationTypeResult.data}
           />
         )}
       </section>

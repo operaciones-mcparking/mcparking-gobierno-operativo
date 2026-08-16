@@ -11,6 +11,7 @@ const actions = read("src/app/admin/actions.ts");
 const editPage = read("src/app/procesos/[processId]/editar/page.tsx");
 const activationPanel = read("src/app/procesos/[processId]/editar/process-activation-panel.tsx");
 const validation = read("src/app/procesos/process-master/process-master-validation.ts");
+const sheet = read("src/app/procesos/process-master/process-master-sheet.tsx");
 
 const actionStart = actions.indexOf("export async function activateProcess");
 const actionEnd = actions.indexOf("export async function updateSubprocessBasics", actionStart);
@@ -21,15 +22,25 @@ const activateAction = actions.slice(actionStart, actionEnd);
 assert.match(editPage, /process\.status === "inactive" \? \(/, "activation panel must render only for inactive drafts");
 assert.match(editPage, /<ProcessActivationPanel/, "edit page must show activation completeness panel");
 assert.match(editPage, /action=\{activateProcess\}/, "activation panel must use activateProcess action");
-assert.match(editPage, /Activo\. Este proceso ya forma parte/, "active processes must show active state instead of activation button");
+assert.match(editPage, /process\.status === "active" \? "Vigente" : "Borrador"/, "active processes must show Vigente in the compact documentary metadata");
+assert.doesNotMatch(editPage, /Activo\. Este proceso ya forma parte/, "active state must not be duplicated in a large banner");
 assert.doesNotMatch(editPage, /name="status"/, "editor must not expose direct status editing");
 assert.doesNotMatch(editPage, /name="documentation_status"/, "editor must not expose direct documentation status editing");
 assert.match(activationPanel, /Activar proceso/, "activation button copy must be visible");
-assert.match(activationPanel, /disabled=\{!isReady\}/, "activation button must be disabled when blocking requirements exist");
-assert.match(activationPanel, /window\.confirm/, "activation must ask for confirmation before submit");
+assert.match(activationPanel, /disabled=\{!isReady \|\| hasChanges \|\| isSaving\}/, "activation must stay disabled for blocking requirements, dirty state or master save");
+assert.match(activationPanel, /Guarda la ficha para habilitar la activacion/, "dirty readiness must explain why activation is still disabled");
+assert.doesNotMatch(activationPanel, /window\.confirm|window\.alert|window\.prompt/, "activation must not use native browser dialogs");
+assert.match(activationPanel, /aria-modal="true"[\s\S]*role="dialog"/, "activation must use an accessible corporate confirmation modal");
+assert.match(activationPanel, /confirmOpen[\s\S]*setConfirmOpen\(true\)/, "activation button must open the confirmation modal");
+assert.match(activationPanel, /<form action=\{action\}>[\s\S]*name="process_id"[\s\S]*<ActivationSubmitButton/, "confirmation must preserve the existing server action");
+assert.match(activationPanel, /useFormStatus[\s\S]*Activando\.\.\./, "confirmation must preserve pending feedback");
 assert.match(activationPanel, /validation\.warnings\.map/, "confirmation must include warnings when present");
-assert.match(activationPanel, /Falta:/, "blocking requirements must be visible");
-assert.match(activationPanel, /Advertencias:/, "warnings must be visible");
+assert.match(activationPanel, /validation\.missingFields\.length > 0[\s\S]*Faltantes/, "blocking requirements must render only when present");
+assert.match(activationPanel, /validation\.warnings\.length > 0[\s\S]*Advertencias/, "warnings must render only when present");
+assert.match(activationPanel, /hasDetails[\s\S]*Ver detalles[\s\S]*detailsOpen && hasDetails/, "status details must expand inside the single activation block and disappear when empty");
+assert.match(activationPanel, /Estas advertencias no impiden activar el proceso/, "ready warnings must be explicitly non-blocking");
+assert.doesNotMatch(sheet, /CompletenessStrip|activationPanel/, "the documentary sheet must not render a duplicate status or activation block");
+assert.ok(editPage.indexOf("<ProcessActivationPanel") < editPage.indexOf("<ProcessMasterSheet"), "the unified status block must render before the documentary sheet");
 
 assert.match(actions, /buildProcessMasterForActivation/, "server action must rebuild activation read model");
 assert.match(actions, /getEditableProcessCatalogItem\(processId\)/, "server action must reload process before activation");
@@ -52,10 +63,10 @@ assert.match(activateAction, /revalidatePath\(`\/procesos\/\$\{processId\}`\)/, 
 assert.match(activateAction, /revalidatePath\(`\/procesos\/\$\{processId\}\/editar`\)/, "activation must revalidate edit page");
 assert.match(activateAction, /redirect\(withMessage\(`\/procesos\/\$\{processId\}`/, "activation must redirect to process detail");
 
-assert.match(validation, /key: `stage_owner:/, "missing stage owner must be blocking");
-assert.match(validation, /key: `stage_impact:/, "null stage impact must be blocking");
-assert.match(validation, /key: `stage_impact_range:/, "out-of-range impact must be blocking");
-assert.match(validation, /key: "impact_total"[\s\S]*severity: "blocking"/, "impact total different from 100 must be blocking");
+assert.doesNotMatch(validation, /key: `stage_owner:/, "stage owner must not block V1 activation");
+assert.doesNotMatch(validation, /key: `stage_impact:/, "stage impact must not block V1 activation");
+assert.doesNotMatch(validation, /key: `stage_impact_range:/, "stage impact range must not block V1 activation");
+assert.doesNotMatch(validation, /key: "impact_total"/, "impact total must not block V1 activation");
 assert.match(validation, /export function getProcessActivationCompleteness/, "completion helper must be centralized");
 
-console.log("process-activation: 34/34 OK");
+console.log("process-activation: 37/37 OK");

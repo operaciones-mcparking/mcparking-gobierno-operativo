@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 
 import { ProcessMatrixTools } from "@/components/dashboard/process-matrix-tools";
 import { DashboardShell } from "@/components/dashboard/shell";
-import { getProcessCatalogV2Item, getProcessMatrixV2 } from "@/lib/dashboard/data";
-import { mapProcessMasterDto } from "@/app/procesos/process-master/process-master-mapper";
+import { getProcessMatrixV2 } from "@/lib/dashboard/data";
+import { getProcessMasterReadModel } from "@/lib/procesos/process-master-read-model";
 import {
   ProcessMasterReadonlyActions,
   ProcessMasterSheet,
@@ -15,30 +15,26 @@ type Params = Promise<{
 
 export default async function ProcessDetailPage({ params }: { params: Params }) {
   const { processId } = await params;
-  const [processResult, matrixResult] = await Promise.all([
-    getProcessCatalogV2Item(processId),
+  const [readModelResult, matrixResult] = await Promise.all([
+    getProcessMasterReadModel(processId),
     getProcessMatrixV2(processId),
   ]);
 
-  if (!processResult.data) {
+  if (!readModelResult.data) {
     notFound();
   }
 
-  const process = processResult.data;
+  const masterProcess = readModelResult.data;
   const rows = matrixResult.data;
-  const masterProcess = mapProcessMasterDto({
-    process,
-    stages: rows,
-  });
 
   return (
     <DashboardShell
       description="Ficha maestra de lectura construida desde el modelo unico del proceso."
       eyebrow="Ficha de proceso"
-      title={process.process_name}
+      title="Ficha de proceso"
     >
       <ProcessMasterSheet
-        actions={<ProcessMasterReadonlyActions processId={process.process_id} />}
+        actions={<ProcessMasterReadonlyActions processId={masterProcess.process.id ?? processId} />}
         mode="readonly"
         process={masterProcess}
       />

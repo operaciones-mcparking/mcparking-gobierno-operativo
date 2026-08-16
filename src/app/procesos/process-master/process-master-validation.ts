@@ -1,4 +1,4 @@
-import type { ProcessMasterDto, ProcessMasterStage } from "./process-master-types";
+import type { ProcessMasterDto } from "./process-master-types";
 
 export type ProcessActivationValidation = {
   isValid: boolean;
@@ -22,45 +22,53 @@ export type ProcessActivationCompleteness = {
   warningCount: number;
 };
 
+export type ProcessActivationSnapshot = {
+  activeStageCount: number;
+  areaId: string | null;
+  clientDestination: string | null;
+  companyId: string | null;
+  name: string | null;
+  objective: string | null;
+  ownerPersonName: string | null;
+  processInputs: string | null;
+  processOutputs: string | null;
+  processType: string | null;
+  supplierOrigin: string | null;
+};
+
 function hasText(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function activeStages(process: ProcessMasterDto) {
-  return process.stages.filter((stage) => stage.status === "active");
+export function createProcessActivationSnapshot(process: ProcessMasterDto): ProcessActivationSnapshot {
+  return {
+    activeStageCount: process.stages.filter((stage) => stage.status === "active").length,
+    areaId: process.process.area_id,
+    clientDestination: process.process.client_destination,
+    companyId: process.process.company_id,
+    name: process.process.name,
+    objective: process.process.objective,
+    ownerPersonName: process.responsibility.owner_person_name,
+    processInputs: process.process.process_inputs,
+    processOutputs: process.process.process_outputs,
+    processType: process.process.process_type,
+    supplierOrigin: process.process.supplier_origin,
+  };
 }
 
-function hasOwner(stage: ProcessMasterStage) {
-  return hasText(stage.owner_role_id);
-}
-
-function impactCents(value: number) {
-  return Math.round(value * 100);
-}
-
-export function validateProcessForActivation(process: ProcessMasterDto): ProcessActivationValidation {
+export function evaluateProcessActivationReadiness(snapshot: ProcessActivationSnapshot): ProcessActivationValidation {
   const missingFields: ProcessActivationValidation["missingFields"] = [];
   const warnings: ProcessActivationValidation["warnings"] = [];
-  const stages = activeStages(process);
 
   const requiredFields = [
-    { key: "name", label: "Nombre", section: "Informacion general", value: process.process.name },
-    { key: "company_id", label: "Empresa", section: "Informacion general", value: process.process.company_id },
-    { key: "process_type", label: "Tipo de proceso", section: "Informacion general", value: process.process.process_type },
-    { key: "objective", label: "Objetivo", section: "Definicion del proceso", value: process.process.objective },
-    {
-      key: "inputs_providers",
-      label: "Entradas y proveedores",
-      section: "Definicion del proceso",
-      value: process.process.inputs_providers,
-    },
-    {
-      key: "outputs_clients",
-      label: "Salidas y clientes",
-      section: "Definicion del proceso",
-      value: process.process.outputs_clients,
-    },
-    { key: "basic_kpi", label: "KPI basico", section: "Definicion del proceso", value: process.process.basic_kpi },
+    { key: "name", label: "Nombre", section: "Informacion general", value: snapshot.name },
+    { key: "company_id", label: "Empresa", section: "Informacion general", value: snapshot.companyId },
+    { key: "process_type", label: "Tipo de proceso", section: "Informacion general", value: snapshot.processType },
+    { key: "objective", label: "Proposito", section: "Proposito y alcance", value: snapshot.objective },
+    { key: "supplier_origin", label: "Proveedor / Origen", section: "Entradas, actividades y salidas", value: snapshot.supplierOrigin },
+    { key: "process_inputs", label: "Entradas", section: "Entradas, actividades y salidas", value: snapshot.processInputs },
+    { key: "process_outputs", label: "Salidas", section: "Entradas, actividades y salidas", value: snapshot.processOutputs },
+    { key: "client_destination", label: "Cliente / Destino", section: "Entradas, actividades y salidas", value: snapshot.clientDestination },
   ];
 
   for (const field of requiredFields) {
@@ -74,7 +82,7 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
     }
   }
 
-  if (stages.length === 0) {
+  if (snapshot.activeStageCount === 0) {
     missingFields.push({
       key: "active_stage",
       label: "Al menos una etapa activa",
@@ -83,88 +91,21 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
     });
   }
 
-  if (!hasText(process.process.area_id)) {
+  if (!hasText(snapshot.areaId)) {
     warnings.push({
       key: "area_id",
-      label: "Area no asignada",
+      label: "Tipo de operación no asignado",
       section: "Informacion general",
       severity: "warning",
     });
   }
 
-  if (!hasText(process.responsibility.owner_person_name)) {
+  if (!hasText(snapshot.ownerPersonName)) {
     warnings.push({
       key: "owner_person",
       label: "Persona actual no asignada",
       section: "Responsabilidad",
       severity: "warning",
-    });
-  }
-
-  if (!hasText(process.process.expected_result)) {
-    warnings.push({
-      key: "expected_result",
-      label: "Resultado esperado vacio",
-      section: "Definicion del proceso",
-      severity: "warning",
-    });
-  }
-
-  for (const stage of stages) {
-    if (!hasOwner(stage)) {
-      missingFields.push({
-        key: `stage_owner:${stage.id ?? stage.sort_order}`,
-        label: `Rol dueno en etapa: ${stage.name}`,
-        section: "Etapas / subprocesos",
-        severity: "blocking",
-      });
-    }
-
-    if (stage.impact_percent === null) {
-      missingFields.push({
-        key: `stage_impact:${stage.id ?? stage.sort_order}`,
-        label: `Impacto no definido: ${stage.name}`,
-        section: "Etapas / subprocesos",
-        severity: "blocking",
-      });
-    } else if (stage.impact_percent < 0 || stage.impact_percent > 100) {
-      missingFields.push({
-        key: `stage_impact_range:${stage.id ?? stage.sort_order}`,
-        label: `Impacto fuera de rango: ${stage.name}`,
-        section: "Etapas / subprocesos",
-        severity: "blocking",
-      });
-    }
-
-    if (stage.criticality === "critical" && !hasText(stage.backup_role_id)) {
-      warnings.push({
-        key: `stage_backup:${stage.id ?? stage.sort_order}`,
-        label: `Etapa critica sin respaldo: ${stage.name}`,
-        section: "Etapas / subprocesos",
-        severity: "warning",
-      });
-    }
-
-    if (stage.support_role_ids.length === 0) {
-      warnings.push({
-        key: `stage_support:${stage.id ?? stage.sort_order}`,
-        label: `Sin roles de apoyo: ${stage.name}`,
-        section: "Etapas / subprocesos",
-        severity: "warning",
-      });
-    }
-  }
-
-  const impactTotalCents = stages.reduce(
-    (total, stage) => total + (stage.impact_percent === null ? 0 : impactCents(stage.impact_percent)),
-    0,
-  );
-  if (stages.length > 0 && impactTotalCents !== 10000) {
-    missingFields.push({
-      key: "impact_total",
-      label: `Impacto total: ${impactTotalCents / 100}%`,
-      section: "Etapas / subprocesos",
-      severity: "blocking",
     });
   }
 
@@ -175,10 +116,13 @@ export function validateProcessForActivation(process: ProcessMasterDto): Process
   };
 }
 
+export function validateProcessForActivation(process: ProcessMasterDto): ProcessActivationValidation {
+  return evaluateProcessActivationReadiness(createProcessActivationSnapshot(process));
+}
 export function getProcessActivationCompleteness(
   validation: ProcessActivationValidation,
 ): ProcessActivationCompleteness {
-  const totalRequirements = 10;
+  const totalRequirements = 9;
   const blockingCount = validation.missingFields.length;
   const satisfiedRequirements = Math.max(totalRequirements - blockingCount, 0);
 

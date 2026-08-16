@@ -68,12 +68,30 @@ export function mapProcessMasterDto({
     process: {
       id: process.process_id,
       name: process.process_name,
+      processCode: process.process_code,
+      version: process.version,
+      masterUpdatedAt: process.master_updated_at,
+      createdAt: process.created_at,
+      effectiveDate: process.effective_date,
       description: process.definition,
       objective: process.objective,
       expected_result: process.expected_result,
+      processStart: process.process_start,
+      processEnd: process.process_end,
+      scope: process.scope,
       inputs_providers: process.inputs_providers,
       outputs_clients: process.outputs_clients,
+      supplier_origin: process.supplier_origin,
+      process_inputs: process.process_inputs,
+      process_outputs: process.process_outputs,
+      client_destination: process.client_destination,
       basic_kpi: process.basic_kpi,
+      pdca: {
+        plan: process.pdca_plan,
+        do: process.pdca_do,
+        check: process.pdca_check,
+        act: process.pdca_act,
+      },
       company_id: process.company_id ?? "",
       company_name: process.owner_company_name ?? process.company_name ?? process.operating_company_name,
       area_id: process.area_id,
@@ -85,13 +103,17 @@ export function mapProcessMasterDto({
     },
     responsibility: {
       owner_role_id:
+        process.owner_role_id ??
         (firstOwnerStage ? ownerRoleBySubprocess[firstOwnerStage.subprocess_id] : null) ??
         process.owner_role_ids[0] ??
         null,
-      owner_role_name: firstOwnerStage?.owner_role_name ?? process.owner_role_names[0] ?? null,
-      owner_person_id: process.current_person_ids[0] ?? null,
-      owner_person_name: firstOwnerStage?.owner_person_name ?? process.current_person_names[0] ?? null,
+      owner_role_name: process.owner_role_name ?? firstOwnerStage?.owner_role_name ?? process.owner_role_names[0] ?? null,
+      owner_person_id: process.owner_person_id ?? process.current_person_ids[0] ?? null,
+      owner_person_name: process.owner_person_name ?? firstOwnerStage?.owner_person_name ?? process.current_person_names[0] ?? null,
     },
+    roleProfiles: [],
+    metrics: [],
+    risks: [],
     stages: activeStages.map((stage, index) => {
       const roleIds = stageRoleIdsBySubprocess[stage.subprocess_id] ?? {};
 

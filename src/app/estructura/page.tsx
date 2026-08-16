@@ -1,6 +1,10 @@
+import Link from "next/link";
 import { DashboardShell, Panel } from "@/components/dashboard/shell";
 import {
   getAreaDirectory,
+  getProcessCatalogV2,
+  getProcessMatrixV2,
+  getProcessStageOwnerRoles,
   getArchivedRoleDictionary,
   getPersonDirectory,
   getRoleDictionary,
@@ -15,12 +19,26 @@ import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
 import { StructureExplorer } from "./structure-explorer";
 import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, PlusCircle } from "lucide-react";
+import { ProcessCatalogClient } from "@/app/procesos/process-catalog-client";
+import { getActiveProcessOperationTypeOptions } from "@/lib/procesos/process-company-options";
 
 type SearchParams = Promise<{
   country_id?: string;
   site_id?: string;
 }>;
+
+type IdNameOption = { id: string; name: string };
+
+function uniqueIdNameOptions(pairs: IdNameOption[]) {
+  const byId = new Map<string, string>();
+  for (const pair of pairs) {
+    if (pair.id && pair.name && !byId.has(pair.id)) byId.set(pair.id, pair.name);
+  }
+  return [...byId.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
 
 type OrgMetric = {
   label: string;
@@ -720,13 +738,26 @@ export default async function EstructuraPage({
     roleGovernanceResult,
     peopleResult,
     areasResult,
+    processCatalogResult,
+    processMatrixResult,
+    processStageOwnerRolesResult,
+    processOperationTypeResult,
   ] = await Promise.all([
     getRoleDictionary(context),
     getArchivedRoleDictionary(context),
     getRoleGovernanceProcesses(),
     getPersonDirectory(context),
     getAreaDirectory(context),
+    getProcessCatalogV2(context),
+    getProcessMatrixV2(),
+    getProcessStageOwnerRoles(),
+    getActiveProcessOperationTypeOptions(),
   ]);
+  const newProcesses = processCatalogResult.data.filter((process) => Boolean(process.process_code?.trim()));
+  const processCompanyOptions = Array.from(new Set(newProcesses.map((process) => process.owner_company_name ?? process.company_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "es"));
+  const processOwnerRoleOptions = uniqueIdNameOptions(newProcesses.flatMap((process) => process.owner_role_ids.map((id, index) => ({ id, name: process.owner_role_names[index] ?? id }))));
+  const processPersonOptions = uniqueIdNameOptions(newProcesses.flatMap((process) => process.current_person_ids.map((id, index) => ({ id, name: process.current_person_names[index] ?? id }))));
+  const processSupportRoleOptions = uniqueIdNameOptions(newProcesses.flatMap((process) => process.support_role_ids.map((id, index) => ({ id, name: process.support_role_names[index] ?? id }))));
   const dynamicRoles =
     roleDictionaryResult.data.length > 0 ? roleDictionaryToOrgRoles(roleDictionaryResult.data) : orgRoles;
   const archivedRoles = roleDictionaryToOrgRoles(archivedRoleDictionaryResult.data);
@@ -831,6 +862,42 @@ export default async function EstructuraPage({
           roles={dynamicRoles}
         />
       </Panel>
+
+      <section className="scroll-mt-24" id="procesos">
+        <Panel
+          action={
+            <Link
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white transition hover:bg-[#075077]"
+              href="/procesos/nuevo"
+            >
+              <PlusCircle className="h-4 w-4 text-clay" />
+              Nuevo proceso
+            </Link>
+          }
+          count={`${newProcesses.length} ${newProcesses.length === 1 ? "proceso" : "procesos"}`}
+          description="Procesos documentados mediante la ficha de proceso."
+          title="Procesos"
+        >
+          {processCatalogResult.error || processMatrixResult.error || processOperationTypeResult.error ? (
+            <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-medium text-[#86510d]">
+              {processCatalogResult.error?.message ?? processMatrixResult.error?.message ?? processOperationTypeResult.error?.message}
+            </div>
+          ) : (
+            <ProcessCatalogClient
+              activeProcesses={newProcesses}
+              catalogMode="new-only"
+              companyOptions={processCompanyOptions}
+              matrixRows={processMatrixResult.data}
+              ownerRoleOptions={processOwnerRoleOptions}
+              personOptions={processPersonOptions}
+              roleDictionary={roleDictionaryResult.data}
+              stageOwnerRoles={processStageOwnerRolesResult.data}
+              supportRoleOptions={processSupportRoleOptions}
+              typeOptions={processOperationTypeResult.data}
+            />
+          )}
+        </Panel>
+      </section>
     </DashboardShell>
   );
 }

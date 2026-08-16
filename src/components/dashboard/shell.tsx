@@ -5,13 +5,11 @@ import {
   AlertTriangle,
   Building2,
   Database,
-  GitBranch,
   LogOut,
   MessageCircle,
   Network,
   PlusCircle,
   Settings,
-  Users,
   Workflow,
   type LucideIcon,
 } from "lucide-react";
@@ -25,13 +23,11 @@ const modules: Array<{ items: Array<{ adminOnly?: boolean; helper: string; href:
     items: [
       { href: "/estructura", icon: Network, iconKey: "network", label: "Estructura", helper: "Gobierno operativo" },
       { href: "/empresas", icon: Building2, iconKey: "building", label: "Empresas", helper: "McParking y clientes" },
-      { href: "/roles-personas", icon: Users, iconKey: "users", label: "Roles y personas", helper: "Diccionario vivo" },
     ],
     label: "Estructura",
   },
   {
     items: [
-      { href: "/procesos", icon: GitBranch, iconKey: "git-branch", label: "Procesos", helper: "Modelo operativo" },
       { href: "/sistemas", icon: Database, iconKey: "database", label: "Sistemas", helper: "Herramientas" },
       { href: "/recuperacion", icon: MessageCircle, iconKey: "message-circle", label: "Carritos perdidos", helper: "Recuperación WhatsApp" },
     ],

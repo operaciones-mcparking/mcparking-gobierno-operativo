@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const actions = read("src/app/admin/actions.ts");
+const start = actions.indexOf("export async function saveProcessRisksAndControls");
+const end = actions.indexOf("export async function updateProcessBasics", start);
+const save = actions.slice(start, end);
+const editor = read("src/app/procesos/process-master/process-risks-controls-editor.tsx");
+const loader = read("src/lib/procesos/process-master-relations.ts");
+const sheet = read("src/app/procesos/process-master/process-master-sheet.tsx");
+const editPage = read("src/app/procesos/[processId]/editar/page.tsx");
+const detailPage = read("src/app/procesos/[processId]/page.tsx");
+const readModel = read("src/lib/procesos/process-master-read-model.ts");
+const createForm = read("src/app/procesos/nuevo/create-process-draft-form.tsx");
+
+assert.match(loader, /from\("risks"\)[\s\S]*subprocess_id[\s\S]*status", "active"/, "only active process-level risks must load");
+assert.match(loader, /from\("controls"\)[\s\S]*risk_id[\s\S]*status", "active"/, "only active controls of those risks must load");
+assert.match(loader, /control_responsible_roles/, "control responsibles must load from their bridge table");
+assert.match(loader, /v_role_dictionary[\s\S]*company_id/, "control responsibles must resolve through official company roles");
+assert.match(save, /assertEditableProcess[\s\S]*validateProcessResponsibleRoles/, "risk-control writes must validate process and roles server-side");
+assert.match(save, /riskType: row\.riskType === 'opportunity'/, "risk type must be constrained to risk or opportunity");
+assert.match(save, /existingRiskDefinitions[\s\S]*mismo riesgo/, "shared risks must keep one consistent definition");
+assert.match(save, /from\('risks'\)[\s\S]*subprocess_id[\s\S]*status', 'active'/, "only active process-level risks may be edited");
+assert.match(save, /from\('controls'\)[\s\S]*risk_id[\s\S]*status', 'active'/, "only active controls may be synchronized");
+assert.match(save, /updatedRiskIds[\s\S]*\.update\(\{ name: row\.riskName, risk_type: row\.riskType \}\)/, "one shared risk may back multiple control rows");
+assert.match(save, /control_responsible_roles[\s\S]*removedControlIds[\s\S]*from\('controls'\)[\s\S]*\.delete\(\)/, "one save must synchronize control assignments and deleted controls");
+assert.doesNotMatch(save, /from\('risks'\)\s*\.delete\(\)/, "deleting a line must never auto-delete its risk");
+assert.doesNotMatch(save, /owner_role_id\s*:/, "new controls must not write the legacy singular owner");
+assert.match(editor, /^'use client';[\s\S]*useState<EditableRiskControl\[\]>/, "section 5 must edit in local client state");
+assert.match(editor, /risk\.controls\.map/, "existing risk-control one-to-many rows must flatten without losing risk ids");
+assert.match(editor, /Vincular control a riesgo existente[\s\S]*selectExistingRisk/, "new controls must be able to reuse an existing real risk id");
+assert.match(editor, /row\.riskId === source\.riskId/, "editing a shared risk definition must update its sibling controls locally");
+assert.match(editor, /value="risk">Riesgo<[\s\S]*value="opportunity">Oportunidad</, "risk type must use the approved selector");
+for (const label of ["Riesgo / oportunidad", "Control", "Evidencia", "Responsable"]) assert.match(editor, new RegExp(`>${label}<`), `section 5 must include ${label}`);
+assert.match(editor, /useProcessMasterSaveSection[\s\S]*id: 'risks'[\s\S]*\+ Agregar riesgo \/ oportunidad/, "section 5 must add locally and register one coordinated section save");
+assert.doesNotMatch(editor, /<form|action=\{action\}/, "section 5 must not submit one form per row");
+assert.match(editPage, /getProcessRisksForMaster[\s\S]*ProcessRisksControlsEditor[\s\S]*action=\{saveProcessRisksAndControls\}/, "edit must connect section 5 CRUD");
+assert.match(detailPage + readModel, /getProcessMasterReadModel[\s\S]*getProcessRisksForMaster[\s\S]*process\.risks = risksResult\.data/, "readonly must load real risks and controls through the shared read model");
+assert.match(sheet, /5\. RIESGOS, CONTROLES Y OPORTUNIDADES/, "readonly must expose section 5");
+assert.match(sheet, /control\?\.responsible_roles\.map/, "readonly controls must resolve responsible role names");
+assert.match(sheet, /join\(" \\u00b7 "\)/, "readonly controls must join role names with a middle dot");
+assert.match(createForm, /5\. RIESGOS, CONTROLES Y OPORTUNIDADES[\s\S]*Disponible en el borrador del proceso/, "create wizard must reserve section 5 without fake persistence");
+
+console.log("process-master-risks-controls: OK");

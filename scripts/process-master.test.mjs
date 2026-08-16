@@ -55,6 +55,21 @@ const completeProcess = {
   area_id: "area-1",
   area_name: "Operaciones",
   basic_kpi: "Reservas completadas",
+  process_code: "PROC-001",
+  master_updated_at: "2026-08-13T12:00:00.000Z",
+  version: "1.0",
+  effective_date: "2026-08-11",
+  process_start: "Cliente inicia solicitud",
+  process_end: "Reserva queda cerrada",
+  scope: "Reservas web y atencion",
+  supplier_origin: "Cliente y sistema de reservas",
+  process_inputs: "Solicitud y datos de pago",
+  process_outputs: "Reserva confirmada",
+  client_destination: "Cliente y Operaciones",
+  pdca_plan: "Planificar capacidad",
+  pdca_do: "Ejecutar reserva",
+  pdca_check: "Revisar conversion",
+  pdca_act: "Ajustar reglas",
   company_id: "company-1",
   company_name: "McParking",
   country_code: "CL",
@@ -79,6 +94,10 @@ const completeProcess = {
   owner_company_id: "company-1",
   owner_company_name: "McParking",
   owner_company_type: "operator",
+  owner_role_id: "role-1",
+  owner_role_name: "Encargado de Operaciones",
+  owner_person_id: "person-1",
+  owner_person_name: "Ana Perez",
   owner_role_ids: ["role-1"],
   owner_role_names: ["Encargado de Operaciones"],
   owner_site_id: null,
@@ -135,6 +154,23 @@ const master = mapProcessMasterDto({
 });
 
 assert.equal(master.process.name, completeProcess.process_name, "mapper preserves name");
+assert.equal(master.process.processCode, completeProcess.process_code, "mapper preserves process code");
+assert.equal(master.process.version, completeProcess.version, "mapper preserves version");
+assert.equal(master.process.masterUpdatedAt, completeProcess.master_updated_at, "mapper preserves master updated timestamp");
+assert.equal(master.process.effectiveDate, completeProcess.effective_date, "mapper preserves effective date");
+assert.equal(master.process.processStart, completeProcess.process_start, "mapper preserves process start");
+assert.equal(master.process.processEnd, completeProcess.process_end, "mapper preserves process end");
+assert.equal(master.process.scope, completeProcess.scope, "mapper preserves scope");
+assert.equal(master.process.supplier_origin, completeProcess.supplier_origin, "mapper preserves supplier origin");
+assert.equal(master.process.process_inputs, completeProcess.process_inputs, "mapper preserves separated inputs");
+assert.equal(master.process.process_outputs, completeProcess.process_outputs, "mapper preserves separated outputs");
+assert.equal(master.process.client_destination, completeProcess.client_destination, "mapper preserves client destination");
+assert.deepEqual(master.process.pdca, {
+  plan: completeProcess.pdca_plan,
+  do: completeProcess.pdca_do,
+  check: completeProcess.pdca_check,
+  act: completeProcess.pdca_act,
+}, "mapper preserves PDCA fields");
 assert.equal(master.process.objective, completeProcess.objective, "mapper preserves objective");
 assert.equal(master.process.expected_result, completeProcess.expected_result, "mapper preserves expected_result");
 assert.equal(master.process.inputs_providers, completeProcess.inputs_providers, "mapper preserves inputs_providers");
@@ -154,9 +190,28 @@ const nullMaster = mapProcessMasterDto({
     basic_kpi: null,
     current_person_ids: [],
     current_person_names: [],
+    effective_date: null,
     inputs_providers: null,
     objective: null,
+    pdca_plan: null,
+    pdca_do: null,
+    pdca_check: null,
+    pdca_act: null,
+    process_code: null,
+    master_updated_at: null,
+    process_start: null,
+    process_end: null,
+    scope: null,
+    supplier_origin: null,
+    process_inputs: null,
+    process_outputs: null,
+    client_destination: null,
+    version: null,
     outputs_clients: null,
+    owner_role_id: null,
+    owner_role_name: null,
+    owner_person_id: null,
+    owner_person_name: null,
     owner_role_ids: [],
     owner_role_names: [],
   },
@@ -172,6 +227,9 @@ const nullMaster = mapProcessMasterDto({
 });
 
 assert.equal(nullMaster.process.inputs_providers, null, "mapper preserves null inputs");
+assert.equal(nullMaster.process.processCode, null, "mapper preserves null process code");
+assert.equal(nullMaster.process.effectiveDate, null, "mapper preserves null effective date");
+assert.deepEqual(nullMaster.process.pdca, { plan: null, do: null, check: null, act: null }, "mapper preserves null PDCA fields");
 assert.equal(nullMaster.responsibility.owner_role_id, null, "mapper does not invent owner role");
 assert.equal(nullMaster.responsibility.owner_person_name, null, "mapper does not invent person");
 
@@ -186,81 +244,37 @@ const missingObjective = validateProcessForActivation({
 assert.equal(missingObjective.isValid, false, "missing objective blocks activation");
 assert.ok(missingObjective.missingFields.some((field) => field.key === "objective"));
 
-const missingInputs = validateProcessForActivation({
-  ...master,
-  process: { ...master.process, inputs_providers: null },
-});
-assert.ok(missingInputs.missingFields.some((field) => field.key === "inputs_providers"));
-
-const missingOutputs = validateProcessForActivation({
-  ...master,
-  process: { ...master.process, outputs_clients: null },
-});
-assert.ok(missingOutputs.missingFields.some((field) => field.key === "outputs_clients"));
-
-const missingKpi = validateProcessForActivation({
-  ...master,
-  process: { ...master.process, basic_kpi: null },
-});
-assert.ok(missingKpi.missingFields.some((field) => field.key === "basic_kpi"));
+for (const field of ["supplier_origin", "process_inputs", "process_outputs", "client_destination"]) {
+  const missingFlowField = validateProcessForActivation({
+    ...master,
+    process: { ...master.process, [field]: null },
+  });
+  assert.ok(missingFlowField.missingFields.some((item) => item.key === field), `${field} blocks activation`);
+}
 
 const noStages = validateProcessForActivation({ ...master, stages: [] });
 assert.ok(noStages.missingFields.some((field) => field.key === "active_stage"));
 
-const stageWithoutOwner = validateProcessForActivation({
+const stageWithoutLegacyFields = validateProcessForActivation({
   ...master,
-  stages: [{ ...master.stages[0], owner_role_id: null }],
+  stages: [{
+    ...master.stages[0],
+    backup_role_id: null,
+    criticality: "critical",
+    impact_percent: null,
+    owner_role_id: null,
+    support_role_ids: [],
+  }],
 });
-assert.ok(stageWithoutOwner.missingFields.some((field) => field.key.startsWith("stage_owner:")));
-
+assert.equal(stageWithoutLegacyFields.isValid, true, "stage legacy fields do not block activation");
 const noPerson = validateProcessForActivation({
   ...master,
   responsibility: { ...master.responsibility, owner_person_name: null },
 });
 assert.ok(noPerson.warnings.some((warning) => warning.key === "owner_person"));
 
-const missingExpectedResult = validateProcessForActivation({
-  ...master,
-  process: { ...master.process, expected_result: null },
-});
-assert.equal(missingExpectedResult.isValid, true, "missing expected result is warning only");
-assert.ok(missingExpectedResult.warnings.some((warning) => warning.key === "expected_result"));
-
-const nullImpact = validateProcessForActivation({
-  ...master,
-  stages: [{ ...master.stages[0], impact_percent: null }],
-});
-assert.equal(nullImpact.isValid, false, "null impact blocks activation");
-assert.ok(nullImpact.missingFields.some((field) => field.key.startsWith("stage_impact:")));
-
-const impactOutOfRange = validateProcessForActivation({
-  ...master,
-  stages: [{ ...master.stages[0], impact_percent: 110 }],
-});
-assert.equal(impactOutOfRange.isValid, false, "impact above 100 blocks activation");
-assert.ok(impactOutOfRange.missingFields.some((field) => field.key.startsWith("stage_impact_range:")));
-
-const badImpact = validateProcessForActivation({
-  ...master,
-  stages: [{ ...master.stages[0], impact_percent: 80 }],
-});
-assert.equal(badImpact.isValid, false, "impact total different from 100 blocks activation");
-assert.ok(badImpact.missingFields.some((field) => field.key === "impact_total"));
-
-const exactImpact = validateProcessForActivation({
-  ...master,
-  stages: [{ ...master.stages[0], impact_percent: 100 }],
-});
-assert.equal(exactImpact.isValid, true, "impact total 100 keeps process valid");
-
 const completeness = getProcessActivationCompleteness(missingObjective);
 assert.equal(completeness.blockingCount, missingObjective.missingFields.length, "completeness exposes blocking count");
 assert.ok(completeness.completionPercent < 100, "missing blocking field lowers completion");
 
-const criticalNoBackup = validateProcessForActivation({
-  ...master,
-  stages: [{ ...master.stages[0], backup_role_id: null, criticality: "critical" }],
-});
-assert.ok(criticalNoBackup.warnings.some((warning) => warning.key.startsWith("stage_backup:")));
-
-console.log("process-master: 33/33 OK");
+console.log("process-master: 46/46 OK");

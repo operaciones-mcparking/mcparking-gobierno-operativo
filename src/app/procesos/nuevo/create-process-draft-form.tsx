@@ -1,21 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useFormStatus } from "react-dom";
-import { Save } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { createProcessDraft } from "@/app/admin/actions";
-import { criticalityOptions } from "@/components/dashboard/badge";
+import { autoCreateProcessDraft } from "@/app/admin/actions";
+import { ProcessDocumentRow, ProcessDocumentSection } from "@/app/procesos/process-master/process-document-layout";
+import { ProcessWizardShell, type ProcessWizardStep } from "@/app/procesos/process-master/process-wizard-shell";
 
 export type DraftCompanyOption = {
   id: string;
   name: string;
 };
 
-export type DraftAreaOption = {
-  company_id: string | null;
-  company_name: string | null;
+export type DraftOperationTypeOption = {
+  companyId: string;
+  id: string;
+  name: string;
+};
+
+export type DraftRoleOption = {
+  companyId: string | null;
   id: string;
   name: string;
 };
@@ -29,225 +33,206 @@ const processTypeOptions = [
   { label: "Soporte", value: "support" },
 ];
 
-function Field({
-  children,
-  hint,
-  label,
-}: {
-  children: React.ReactNode;
-  hint?: string;
-  label: string;
-}) {
+function Field({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <label className="block">
-      <span className="text-sm font-bold text-slate-600">{label}</span>
+    <label className="block min-w-0">
+      <span className="text-[11px] font-bold uppercase tracking-[0.07em] text-slate-500">{label}</span>
       <div className="mt-1">{children}</div>
-      {hint ? <p className="mt-1 text-xs leading-5 text-slate-500">{hint}</p> : null}
     </label>
   );
 }
 
-function DraftSection({
-  children,
-  description,
-  title,
-}: {
-  children: React.ReactNode;
-  description: string;
-  title: string;
-}) {
-  return (
-    <section className="rounded-lg border border-line bg-[#fbfdfe] p-4">
-      <div>
-        <h2 className="text-base font-bold text-navy">{title}</h2>
-        <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
-      </div>
-      <div className="mt-4 grid gap-4">{children}</div>
-    </section>
-  );
-}
-
-function SubmitButton({ disabled }: { disabled: boolean }) {
-  const { pending } = useFormStatus();
-
-  return (
-    <button
-      className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white transition hover:bg-[#075077] disabled:cursor-not-allowed disabled:opacity-60"
-      disabled={disabled || pending}
-      type="submit"
-    >
-      <Save className="h-4 w-4 text-clay" />
-      {pending ? "Guardando..." : "Guardar borrador"}
-    </button>
-  );
-}
-
 export function CreateProcessDraftForm({
-  areas,
   companies,
+  operationTypes,
   optionsError,
+  roles,
 }: {
-  areas: DraftAreaOption[];
   companies: DraftCompanyOption[];
+  operationTypes: DraftOperationTypeOption[];
   optionsError?: string | null;
+  roles: DraftRoleOption[];
 }) {
-  const [selectedCompanyId, setSelectedCompanyId] = useState(companies[0]?.id ?? "");
-  const [selectedAreaId, setSelectedAreaId] = useState("");
-  const hasCompanies = companies.length > 0;
-  const visibleAreas = useMemo(
-    () => areas.filter((area) => !area.company_id || area.company_id === selectedCompanyId),
-    [areas, selectedCompanyId],
+  const defaultCompanyId =
+    companies.find((company) => company.name.trim().toLocaleLowerCase("es") === "mcparking")?.id ?? "";
+  const [selectedCompanyId, setSelectedCompanyId] = useState(defaultCompanyId);
+  const [selectedOperationTypeId, setSelectedOperationTypeId] = useState("");
+  const [selectedOwnerRoleId, setSelectedOwnerRoleId] = useState("");
+  const [autoSaveMessage, setAutoSaveMessage] = useState<string | null>(null);
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+  const autoSaveInFlightRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const router = useRouter();
+  const visibleOperationTypes = useMemo(
+    () => operationTypes.filter((operationType) => operationType.companyId === selectedCompanyId),
+    [operationTypes, selectedCompanyId],
   );
-  const safeSelectedAreaId = visibleAreas.some((area) => area.id === selectedAreaId)
-    ? selectedAreaId
-    : "";
+  const visibleRoles = useMemo(
+    () => roles.filter((role) => role.companyId === selectedCompanyId),
+    [roles, selectedCompanyId],
+  );
 
-  useEffect(() => {
-    if (selectedAreaId !== safeSelectedAreaId) {
-      setSelectedAreaId(safeSelectedAreaId);
+  async function prepareDraftForWizard({ currentStep, nextStep }: { currentStep: number; nextStep: number }) {
+    if (currentStep !== 1 || nextStep !== 2) return true;
+    if (!formRef.current || isCreatingDraft || autoSaveInFlightRef.current) return false;
+
+    const formData = new FormData(formRef.current);
+    const hasName = String(formData.get("name") ?? "").trim().length > 0;
+    const hasCompany = String(formData.get("company_id") ?? "").trim().length > 0;
+    const hasProcessType = String(formData.get("process_type") ?? "").trim().length > 0;
+
+    if (!hasName || !hasCompany || !hasProcessType) {
+      setAutoSaveMessage("Completa Proceso, Empresa y Tipo para continuar.");
+      return false;
     }
-  }, [safeSelectedAreaId, selectedAreaId]);
 
-  return (
-    <form action={createProcessDraft} className="rounded-xl border border-line bg-white p-5 shadow-[0_10px_30px_rgba(0,59,92,0.05)]">
-      <div className="flex flex-col gap-2 border-b border-line pb-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-navy">Nuevo proceso - borrador inicial</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600">
-            Guarda la base inactiva de la ficha. Etapas, roles y controles se completan despues de tener process_id.
-          </p>
-        </div>
-        <span className="w-fit rounded-full border border-[#cbd8e3] bg-[#f6f8fa] px-2.5 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-          Borrador
-        </span>
-      </div>
+    autoSaveInFlightRef.current = true;
+    setIsCreatingDraft(true);
+    setAutoSaveMessage("Guardando borrador...");
+    try {
+      const result = await autoCreateProcessDraft(formData, "wizard_next");
+      if (!result?.processId) {
+        autoSaveInFlightRef.current = false;
+        setIsCreatingDraft(false);
+        setAutoSaveMessage(result?.error ?? "No se pudo guardar el borrador.");
+        return false;
+      }
 
-      <div className="mt-5 grid gap-4">
-        {optionsError ? (
-          <div className="rounded-lg border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d]">
-            No se pudieron cargar todas las opciones operativas: {optionsError}
+      setAutoSaveMessage("Borrador guardado automaticamente");
+      sessionStorage.setItem(`process-wizard-scroll:${result.processId}`, String(window.scrollY));
+      router.replace(`/procesos/${result.processId}/editar?wizard=create&step=2`, { scroll: false });
+      return false;
+    } catch {
+      autoSaveInFlightRef.current = false;
+      setIsCreatingDraft(false);
+      setAutoSaveMessage("No se pudo guardar el borrador.");
+      return false;
+    }
+  }
+
+  const steps: ProcessWizardStep[] = [
+    {
+      id: "header",
+      label: "Cabecera",
+      content: (
+        <section aria-labelledby="new-process-header-title" className="overflow-hidden rounded-lg border border-[#dbe4eb] bg-white">
+          <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-sea">Ficha de proceso</p>
+              <h2 className="mt-1 text-lg font-bold text-navy" id="new-process-header-title">Cabecera documental</h2>
+            </div>
+            <span className="inline-flex rounded-full border border-[#cbd8e3] bg-[#f6f8fa] px-2.5 py-1 text-xs font-bold text-slate-600">Borrador</span>
           </div>
-        ) : null}
-
-        {!hasCompanies ? (
-          <div className="rounded-lg border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d]">
-            No se pudieron cargar empresas disponibles para crear procesos. Revisa que existan empresas visibles en el contexto operativo actual.
-          </div>
-        ) : null}
-
-        <DraftSection description="Datos base del proceso. La persona actual no se edita aqui: deriva del rol oficial." title="General">
-          <Field label="Nombre">
-            <input className={inputClass} name="name" required />
-          </Field>
-
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 bg-[#f8fafc] px-5 py-4 sm:grid-cols-2">
+            {optionsError ? (
+              <div className="rounded-md border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d] sm:col-span-2">
+                No se pudieron cargar todas las opciones de la cabecera: {optionsError}
+              </div>
+            ) : null}
+            {!defaultCompanyId ? (
+              <div className="rounded-md border border-[#ffd6b0] bg-[#fff4e8] px-3 py-2 text-sm font-medium text-[#86510d] sm:col-span-2">
+                No se encontro una empresa estructural activa llamada McParking. No es posible crear el borrador.
+              </div>
+            ) : null}
+            <div className="sm:col-span-2">
+              <Field label="Proceso"><input className={`${inputClass} text-base font-bold text-navy`} name="name" placeholder="Nombre del proceso" required /></Field>
+            </div>
             <Field label="Empresa">
               <select
                 className={inputClass}
                 name="company_id"
                 onChange={(event) => {
                   setSelectedCompanyId(event.target.value);
-                  setSelectedAreaId("");
+                  setSelectedOperationTypeId("");
+                  setSelectedOwnerRoleId("");
                 }}
                 required
                 value={selectedCompanyId}
               >
-                {hasCompanies ? (
-                  companies.map((company) => (
-                    <option key={company.id} value={company.id}>
-                      {company.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No hay empresas disponibles</option>
-                )}
+                <option disabled value="">Selecciona una empresa</option>
+                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
               </select>
             </Field>
-            <Field
-              hint={visibleAreas.length === 0 ? "Puedes guardar el borrador sin area y completarla despues." : undefined}
-              label="Area"
-            >
-              <input name="area_id" type="hidden" value={safeSelectedAreaId} />
-              <select
-                key={selectedCompanyId}
-                className={inputClass}
-                onChange={(event) => setSelectedAreaId(event.target.value)}
-                value={safeSelectedAreaId}
-              >
-                <option value="">Sin area</option>
-                {visibleAreas.map((area) => (
-                  <option key={area.id} value={area.id}>
-                    {area.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Tipo de proceso">
-              <select className={inputClass} name="process_type" required defaultValue="operational">
-                {processTypeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+              <select className={inputClass} defaultValue="operational" name="process_type" required>
+                {processTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </Field>
-            <Field label="Criticidad">
-              <select className={inputClass} name="criticality" defaultValue="medium">
-                {criticalityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+            <div>
+              <Field label="Dueno del proceso">
+                <select className={inputClass} name="owner_role_id" onChange={(event) => setSelectedOwnerRoleId(event.target.value)} value={selectedOwnerRoleId}>
+                  <option value="">Sin rol dueno</option>
+                  {visibleRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                </select>
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">La persona actual se deriva del rol oficial.</p>
+            </div>
+            <Field label="Tipo de operación">
+              <select className={inputClass} name="area_id" onChange={(event) => setSelectedOperationTypeId(event.target.value)} value={selectedOperationTypeId}>
+                <option value="">Sin tipo de operación</option>
+                {visibleOperationTypes.map((operationType) => <option key={operationType.id} value={operationType.id}>{operationType.name}</option>)}
               </select>
             </Field>
+            {autoSaveMessage ? <p aria-live="polite" className="text-xs font-medium text-slate-600 sm:col-span-2">{autoSaveMessage}</p> : null}
           </div>
-        </DraftSection>
-
-        <DraftSection description="Campos documentales existentes. Inicio, fin y alcance requieren schema futuro." title="1. Proposito y alcance">
-          <Field label="Descripcion corta">
-            <textarea className={`${inputClass} min-h-24`} name="description" />
-          </Field>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Field label="Objetivo">
-              <textarea className={`${inputClass} min-h-28`} name="objective" />
-            </Field>
-            <Field label="Resultado esperado">
-              <textarea className={`${inputClass} min-h-28`} name="expected_result" />
-            </Field>
+        </section>
+      ),
+    },
+    {
+      id: "purpose",
+      label: "Proposito y alcance",
+      content: (
+        <ProcessDocumentSection title={"1. PROP\u00d3SITO Y ALCANCE"}>
+          <div className="divide-y divide-line">
+            <ProcessDocumentRow label={"PROP\u00d3SITO"}><textarea aria-label="Proposito" className={`${inputClass} min-h-24`} name="purpose" /></ProcessDocumentRow>
+            <ProcessDocumentRow label="INICIO"><textarea aria-label="Inicio" className={`${inputClass} min-h-20`} name="process_start" /></ProcessDocumentRow>
+            <ProcessDocumentRow label="FIN"><textarea aria-label="Fin" className={`${inputClass} min-h-20`} name="process_end" /></ProcessDocumentRow>
+            <ProcessDocumentRow label="ALCANCE"><textarea aria-label="Alcance" className={`${inputClass} min-h-20`} name="scope" /></ProcessDocumentRow>
           </div>
-        </DraftSection>
-
-        <DraftSection description="Datos combinados disponibles hoy. La separacion proveedores/entradas/salidas/clientes queda para schema futuro." title="2. Entradas / salidas e indicadores">
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Field label="Entradas y proveedores">
-              <textarea className={`${inputClass} min-h-28`} name="inputs_providers" />
-            </Field>
-            <Field label="Salidas y clientes">
-              <textarea className={`${inputClass} min-h-28`} name="outputs_clients" />
-            </Field>
-            <Field label="KPI basico">
-              <textarea className={`${inputClass} min-h-28`} name="basic_kpi" />
-            </Field>
+        </ProcessDocumentSection>
+      ),
+    },
+    {
+      id: "flow",
+      label: "Entradas y salidas",
+      content: (
+        <ProcessDocumentSection title={"2. ENTRADAS, ACTIVIDADES Y SALIDAS"}>
+          <div className="divide-y divide-line">
+            <ProcessDocumentRow label="PROVEEDOR / ORIGEN"><textarea aria-label="Proveedor / Origen" className={`${inputClass} min-h-24`} name="supplier_origin" /></ProcessDocumentRow>
+            <ProcessDocumentRow label="ENTRADAS"><textarea aria-label="Entradas" className={`${inputClass} min-h-24`} name="process_inputs" /></ProcessDocumentRow>
+            <ProcessDocumentRow label="ACTIVIDADES CLAVE / ETAPAS"><p className="text-sm text-slate-500">El editor de etapas se habilita al crear el borrador.</p></ProcessDocumentRow>
+            <ProcessDocumentRow label="SALIDAS"><textarea aria-label="Salidas" className={`${inputClass} min-h-24`} name="process_outputs" /></ProcessDocumentRow>
+            <ProcessDocumentRow label="CLIENTE / DESTINO"><textarea aria-label="Cliente / Destino" className={`${inputClass} min-h-24`} name="client_destination" /></ProcessDocumentRow>
           </div>
-        </DraftSection>
+        </ProcessDocumentSection>
+      ),
+    },
+    {
+      id: "roles",
+      label: "Roles y responsabilidades",
+      content: <ProcessDocumentSection title={"3. ROLES, RESPONSABILIDADES Y AUTORIDAD"}><div className="px-4 py-4 text-sm text-slate-600">Disponible en el borrador del proceso.</div></ProcessDocumentSection>,
+    },
+    {
+      id: "metrics",
+      label: "Indicadores y objetivos",
+      content: <ProcessDocumentSection title={"4. INDICADORES Y OBJETIVOS"}><div className="px-4 py-4 text-sm text-slate-600">Disponible en el borrador del proceso.</div></ProcessDocumentSection>,
+    },
+    {
+      id: "risks",
+      label: "Riesgos y controles",
+      content: <ProcessDocumentSection title={"5. RIESGOS, CONTROLES Y OPORTUNIDADES"}><div className="px-4 py-4 text-sm text-slate-600">Disponible en el borrador del proceso.</div></ProcessDocumentSection>,
+    },
+  ];
 
-        <div className="rounded-lg border border-dashed border-line bg-[#fbfdfe] px-4 py-3 text-sm leading-6 text-slate-600">
-          Etapas, roles, riesgos, controles, documentos y PDCA quedan disponibles despues de guardar el borrador.
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-col-reverse gap-2 border-t border-line pt-4 sm:flex-row sm:justify-end">
-        <Link
-          className="inline-flex items-center justify-center rounded-md border border-line bg-white px-4 py-2 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef4f8]"
-          href="/procesos"
-        >
-          Cancelar
-        </Link>
-        <SubmitButton disabled={!hasCompanies} />
-      </div>
+  return (
+    <form onSubmit={(event) => event.preventDefault()} ref={formRef}>
+      <ProcessWizardShell
+        mode="create"
+        onBeforeNavigate={prepareDraftForWizard}
+        pending={isCreatingDraft}
+        pendingNextLabel="Guardando borrador..."
+        steps={steps}
+      />
     </form>
   );
 }

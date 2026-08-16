@@ -122,10 +122,30 @@ export type ProcessCatalogV2Item = Omit<
   active_stage_count: number;
   area_id: string | null;
   basic_kpi: string | null;
+  process_code: string | null;
+  master_updated_at: string | null;
+  created_at: string | null;
+  owner_role_id: string | null;
+  owner_role_name: string | null;
+  owner_person_id: string | null;
+  owner_person_name: string | null;
+  version: string | null;
+  effective_date: string | null;
+  process_start: string | null;
+  process_end: string | null;
+  scope: string | null;
+  pdca_plan: string | null;
+  pdca_do: string | null;
+  pdca_check: string | null;
+  pdca_act: string | null;
   company_id: string | null;
   current_person_ids: string[];
   current_person_names: string[];
   inputs_providers: string | null;
+  supplier_origin: string | null;
+  process_inputs: string | null;
+  process_outputs: string | null;
+  client_destination: string | null;
   owner_role_ids: string[];
   owner_role_names: string[];
   outputs_clients: string | null;
@@ -657,10 +677,37 @@ function stringArray(value: unknown) {
     : [];
 }
 
+function optionalText(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+const processMasterProcessFieldsSelect =
+  "process_code,version,owner_role_id,master_updated_at,created_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination,pdca_plan,pdca_do,pdca_check,pdca_act";
+
 function normalizeProcessCatalogV2Row(row: Record<string, unknown>) {
   return {
     ...row,
     active_stage_count: Number(row.active_stage_count ?? 0),
+    process_code: optionalText(row.process_code),
+    master_updated_at: optionalText(row.master_updated_at),
+    created_at: optionalText(row.created_at),
+    owner_role_id: optionalText(row.owner_role_id),
+    owner_role_name: optionalText(row.owner_role_name),
+    owner_person_id: optionalText(row.owner_person_id),
+    owner_person_name: optionalText(row.owner_person_name),
+    version: optionalText(row.version),
+    effective_date: optionalText(row.effective_date),
+    process_start: optionalText(row.process_start),
+    process_end: optionalText(row.process_end),
+    scope: optionalText(row.scope),
+    supplier_origin: optionalText(row.supplier_origin),
+    process_inputs: optionalText(row.process_inputs),
+    process_outputs: optionalText(row.process_outputs),
+    client_destination: optionalText(row.client_destination),
+    pdca_plan: optionalText(row.pdca_plan),
+    pdca_do: optionalText(row.pdca_do),
+    pdca_check: optionalText(row.pdca_check),
+    pdca_act: optionalText(row.pdca_act),
     current_person_ids: stringArray(row.current_person_ids),
     current_person_names: stringArray(row.current_person_names),
     owner_role_ids: stringArray(row.owner_role_ids),
@@ -672,6 +719,7 @@ function normalizeProcessCatalogV2Row(row: Record<string, unknown>) {
 }
 
 export async function getProcessCatalogV2(context: DashboardContext = {}) {
+  noStore();
   const supabase = createSupabaseServerClient();
   let query = supabase
     .from("v_process_catalog_v2")
@@ -687,25 +735,98 @@ export async function getProcessCatalogV2(context: DashboardContext = {}) {
     query = query.or(`owner_site_id.eq.${context.siteId},operating_site_id.eq.${context.siteId}`);
   }
 
-  const { data, error } = await query;
+  const [catalogResult, processMetadataResult, roleDictionaryResult] = await Promise.all([
+    query,
+    supabase
+      .from("processes")
+      .select("id,process_code,owner_role_id")
+      .eq("status", "active"),
+    supabase
+      .from("v_role_dictionary")
+      .select("role_id,role_name,current_person_id,current_person_name"),
+  ]);
+  const processMetadataById = new Map(
+    (processMetadataResult.data ?? []).map((process) => [process.id, process]),
+  );
+  const roleDictionaryById = new Map(
+    (roleDictionaryResult.data ?? []).map((role) => [role.role_id, role]),
+  );
 
   return {
-    data: (data ?? []).map((row) => normalizeProcessCatalogV2Row(row)),
-    error,
+    data: (catalogResult.data ?? []).map((row) => {
+      const metadata = processMetadataById.get(String(row.process_id));
+      const canonicalOwnerRoleId = optionalText(metadata?.owner_role_id);
+      const canonicalOwner = canonicalOwnerRoleId
+        ? roleDictionaryById.get(canonicalOwnerRoleId)
+        : null;
+
+      return normalizeProcessCatalogV2Row({
+        ...row,
+        process_code: optionalText(metadata?.process_code),
+        owner_role_id: canonicalOwnerRoleId,
+        owner_role_name: canonicalOwner?.role_name ?? null,
+        owner_person_id: canonicalOwner?.current_person_id ?? null,
+        owner_person_name: canonicalOwner?.current_person_name ?? null,
+        owner_role_ids: canonicalOwnerRoleId
+          ? canonicalOwner
+            ? [canonicalOwnerRoleId]
+            : []
+          : row.owner_role_ids,
+        owner_role_names: canonicalOwnerRoleId
+          ? canonicalOwner?.role_name
+            ? [canonicalOwner.role_name]
+            : []
+          : row.owner_role_names,
+        current_person_ids: canonicalOwnerRoleId
+          ? canonicalOwner?.current_person_id
+            ? [canonicalOwner.current_person_id]
+            : []
+          : row.current_person_ids,
+        current_person_names: canonicalOwnerRoleId
+          ? canonicalOwner?.current_person_name
+            ? [canonicalOwner.current_person_name]
+            : []
+          : row.current_person_names,
+      });
+    }),
+    error: catalogResult.error ?? processMetadataResult.error ?? roleDictionaryResult.error,
   };
 }
 
 export async function getProcessCatalogV2Item(processId: string) {
   const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from("v_process_catalog_v2")
-    .select("*")
-    .eq("process_id", processId)
-    .maybeSingle();
+  const [catalogResult, processFieldsResult] = await Promise.all([
+    supabase
+      .from("v_process_catalog_v2")
+      .select("*")
+      .eq("process_id", processId)
+      .maybeSingle(),
+    supabase
+      .from("processes")
+      .select(processMasterProcessFieldsSelect)
+      .eq("id", processId)
+      .maybeSingle(),
+  ]);
+  const ownerRoleId = optionalText(processFieldsResult.data?.owner_role_id);
+  const ownerRoleResult = ownerRoleId
+    ? await supabase
+        .from("v_role_dictionary")
+        .select("role_id,role_name,current_person_id,current_person_name")
+        .eq("role_id", ownerRoleId)
+        .maybeSingle()
+    : { data: null, error: null };
 
   return {
-    data: data ? normalizeProcessCatalogV2Row(data) : null,
-    error,
+    data: catalogResult.data
+      ? normalizeProcessCatalogV2Row({
+          ...catalogResult.data,
+          ...(processFieldsResult.data ?? {}),
+          owner_role_name: ownerRoleResult.data?.role_name ?? null,
+          owner_person_id: ownerRoleResult.data?.current_person_id ?? null,
+          owner_person_name: ownerRoleResult.data?.current_person_name ?? null,
+        })
+      : null,
+    error: catalogResult.error ?? processFieldsResult.error ?? ownerRoleResult.error,
   };
 }
 
@@ -756,7 +877,7 @@ export async function getEditableProcessCatalogItem(processId: string) {
   const { data, error } = await supabase
     .from("processes")
     .select(
-      "id,name,description,objective,expected_result,inputs_providers,outputs_clients,basic_kpi,process_type,criticality,status,documentation_status,is_replicable,is_global,company_id,area_id,owner_company_id,operating_company_id,country_id,owner_site_id,operating_site_id",
+      "id,name,description,objective,expected_result,inputs_providers,outputs_clients,basic_kpi,process_code,version,owner_role_id,master_updated_at,created_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination,pdca_plan,pdca_do,pdca_check,pdca_act,process_type,criticality,status,documentation_status,is_replicable,is_global,company_id,area_id,owner_company_id,operating_company_id,country_id,owner_site_id,operating_site_id",
     )
     .eq("id", processId)
     .maybeSingle();
@@ -773,8 +894,9 @@ export async function getEditableProcessCatalogItem(processId: string) {
   const areaId = rowText(process, "area_id");
   const ownerSiteId = rowText(process, "owner_site_id");
   const operatingSiteId = rowText(process, "operating_site_id");
+  const ownerRoleId = rowText(process, "owner_role_id");
 
-  const [companiesResult, areasResult, countriesResult, sitesResult, stagesResult] = await Promise.all([
+  const [companiesResult, areasResult, countriesResult, sitesResult, stagesResult, ownerRoleResult] = await Promise.all([
     lookupRowsById(
       supabase,
       "companies",
@@ -794,9 +916,21 @@ export async function getEditableProcessCatalogItem(processId: string) {
       .select("id", { count: "exact", head: true })
       .eq("process_id", processId)
       .eq("status", "active"),
+    ownerRoleId
+      ? supabase
+          .from("v_role_dictionary")
+          .select("role_id,role_name,current_person_id,current_person_name")
+          .eq("role_id", ownerRoleId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
   const lookupError =
-    companiesResult.error ?? areasResult.error ?? countriesResult.error ?? sitesResult.error ?? stagesResult.error;
+    companiesResult.error ??
+    areasResult.error ??
+    countriesResult.error ??
+    sitesResult.error ??
+    stagesResult.error ??
+    ownerRoleResult.error;
 
   if (lookupError) {
     return { data: null, error: lookupError };
@@ -822,6 +956,26 @@ export async function getEditableProcessCatalogItem(processId: string) {
       area_id: areaId,
       area_name: rowText(area, "name"),
       basic_kpi: rowText(process, "basic_kpi"),
+      process_code: rowText(process, "process_code"),
+      master_updated_at: rowText(process, "master_updated_at"),
+      created_at: rowText(process, "created_at"),
+      owner_role_id: ownerRoleId,
+      owner_role_name: ownerRoleResult.data?.role_name ?? null,
+      owner_person_id: ownerRoleResult.data?.current_person_id ?? null,
+      owner_person_name: ownerRoleResult.data?.current_person_name ?? null,
+      version: rowText(process, "version"),
+      effective_date: rowText(process, "effective_date"),
+      process_start: rowText(process, "process_start"),
+      process_end: rowText(process, "process_end"),
+      scope: rowText(process, "scope"),
+      supplier_origin: rowText(process, "supplier_origin"),
+      process_inputs: rowText(process, "process_inputs"),
+      process_outputs: rowText(process, "process_outputs"),
+      client_destination: rowText(process, "client_destination"),
+      pdca_plan: rowText(process, "pdca_plan"),
+      pdca_do: rowText(process, "pdca_do"),
+      pdca_check: rowText(process, "pdca_check"),
+      pdca_act: rowText(process, "pdca_act"),
       company_id: companyId,
       company_name: companyName,
       country_code: rowText(country, "code"),

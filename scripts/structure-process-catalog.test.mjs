@@ -1,0 +1,43 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+
+const structure = readFileSync("src/app/estructura/page.tsx", "utf8");
+const catalog = readFileSync("src/app/procesos/process-catalog-client.tsx", "utf8");
+const filters = readFileSync("src/components/dashboard/process-filters.tsx", "utf8");
+const shell = readFileSync("src/components/dashboard/shell.tsx", "utf8");
+const roleDictionaryModal = readFileSync("src/app/estructura/role-dictionary-modal.tsx", "utf8");
+
+assert.doesNotMatch(shell, /href:\s*"\/procesos"[\s\S]*label:\s*"Procesos"/);
+assert.doesNotMatch(shell, /href:\s*"\/roles-personas"|label:\s*"Roles y personas"|helper:\s*"Diccionario vivo"/);
+assert.ok(existsSync("src/app/roles-personas/page.tsx"), "/roles-personas must remain directly accessible");
+assert.match(structure, /RoleDictionaryModal/);
+assert.match(roleDictionaryModal, /Roles y personas/);
+assert.ok(existsSync("src/app/procesos/page.tsx"), "/procesos must remain available");
+assert.match(structure, /title="Organigrama operativo"/);
+assert.match(structure, /title="Matriz web de procesos por rol"/);
+assert.match(structure, /title="Procesos"/);
+assert.match(structure, /<section className="scroll-mt-24" id="procesos">[\s\S]*title="Procesos"/);
+assert.ok(structure.indexOf('title="Matriz web de procesos por rol"') < structure.indexOf('title="Procesos"'));
+assert.match(structure, /process_code\?\.trim\(\)/);
+assert.match(structure, /catalogMode="new-only"/);
+assert.match(structure, /href="\/procesos\/nuevo"/);
+assert.match(structure, /activeProcesses=\{newProcesses\}/);
+assert.match(structure, /newProcesses\.length/);
+assert.match(catalog, /catalogMode === "new-only"[\s\S]*process_code\?\.trim\(\)/);
+assert.match(catalog, /hideGroupHeader = catalogMode === "new-only" && newModel/);
+assert.match(catalog, /\{hideGroupHeader \? null : \(/);
+assert.match(catalog, /catalogMode === "all" \? renderProcessGroup\([\s\S]*Procesos hist.ricos \/ por documentar/);
+assert.match(catalog, /\/api\/procesos\/\$\{process\.process_id\}\/pdf/);
+assert.match(catalog, /ProcessDetailModal/);
+assert.match(catalog, /subprocess_description\?\.trim\(\)/);
+assert.match(catalog, /<ProcessFilters/);
+assert.match(catalog, /<ProcessFilters[\s\S]*catalogMode=\{catalogMode\}/);
+assert.match(catalog, /catalogMode === "new-only" \|\| filters\.supportRole === "todos"/);
+assert.match(filters, /const newOnly = catalogMode === "new-only"/);
+assert.match(filters, /const filtersVisible = newOnly \|\| filtersOpen/);
+assert.match(filters, /\{newOnly \? null : \([\s\S]*Roles de apoyo/);
+assert.match(filters, /newOnly \? "lg:grid-cols-3" : "xl:grid-cols-4"/);
+assert.match(filters, /\{newOnly \? \([\s\S]*disabled=\{!hasFilters\}[\s\S]*Limpiar/);
+assert.match(filters, /onFilterChange\("search", event\.target\.value\)/);
+
+console.log("structure-process-catalog: 30/30 OK");
