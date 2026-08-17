@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { FileDown } from "lucide-react";
+import { ArrowDown, ArrowUp, FileDown } from "lucide-react";
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { ProcessFilters, type ProcessFilterState, type ProcessFilterName } from "@/components/dashboard/process-filters";
 import type { ProcessOperationTypeOption } from "@/lib/procesos/process-company-options";
@@ -95,6 +95,42 @@ const processTypeOptions = [
 ];
 const legacyProcessListGridColumns = "xl:grid-cols-[88px_minmax(260px,1fr)_136px_126px_78px_144px_146px]";
 const newProcessListGridColumns = "xl:grid-cols-[88px_minmax(340px,1fr)_148px_140px_78px_146px]";
+type ProcessSortKey = "type" | "process" | "owner" | "person" | "stages";
+type ProcessSortState = { direction: "ascending" | "descending"; key: ProcessSortKey };
+
+const processTypeSortOrder: Record<ProcessCatalogV2Item["process_type"], number> = {
+  strategic: 0,
+  operational: 1,
+  support: 2,
+};
+const processSortCollator = new Intl.Collator("es", { numeric: true, sensitivity: "base" });
+
+function processSortText(values: string[], fallback: string) {
+  return values.length > 0 ? values.join(" ") : fallback;
+}
+
+function sortOfficialProcesses(processes: ProcessCatalogV2Item[], sort: ProcessSortState | null) {
+  if (!sort) return processes;
+
+  return [...processes].sort((left, right) => {
+    let comparison = 0;
+    if (sort.key === "type") comparison = processTypeSortOrder[left.process_type] - processTypeSortOrder[right.process_type];
+    if (sort.key === "process") comparison = processSortCollator.compare(left.process_name, right.process_name);
+    if (sort.key === "owner") comparison = processSortCollator.compare(
+      processSortText(left.owner_role_names, "Sin rol dueno"),
+      processSortText(right.owner_role_names, "Sin rol dueno"),
+    );
+    if (sort.key === "person") comparison = processSortCollator.compare(
+      processSortText(left.current_person_names, "Sin persona asignada"),
+      processSortText(right.current_person_names, "Sin persona asignada"),
+    );
+    if (sort.key === "stages") comparison = left.active_stage_count - right.active_stage_count;
+
+    if (comparison === 0) comparison = processSortCollator.compare(left.process_name, right.process_name);
+    if (comparison === 0) comparison = left.process_id.localeCompare(right.process_id);
+    return sort.direction === "ascending" ? comparison : -comparison;
+  });
+}
 
 const emptyFilters: ProcessFilterState = {
   company: "todas",
@@ -137,6 +173,7 @@ export function ProcessCatalogClient({
   typeOptions,
 }: ProcessCatalogClientProps) {
   const [filters, setFilters] = useState<ProcessFilterState>(emptyFilters);
+  const [sort, setSort] = useState<ProcessSortState | null>(null);
   const catalogProcesses = useMemo(
     () => catalogMode === "new-only" ? activeProcesses.filter((process) => Boolean(process.process_code?.trim())) : activeProcesses,
     [activeProcesses, catalogMode],
@@ -175,8 +212,12 @@ export function ProcessCatalogClient({
     [filteredProcessIds, matrixRows],
   );
   const resultText = `${filteredProcesses.length} ${filteredProcesses.length === 1 ? "proceso encontrado" : "procesos encontrados"}`;
-  const newProcesses = filteredProcesses.filter((process) => Boolean(process.process_code));
-  const historicalProcesses = filteredProcesses.filter((process) => !process.process_code);
+  const newProcesses = useMemo(() => filteredProcesses.filter((process) => Boolean(process.process_code)), [filteredProcesses]);
+  const historicalProcesses = useMemo(() => filteredProcesses.filter((process) => !process.process_code), [filteredProcesses]);
+  const sortedNewProcesses = useMemo(
+    () => catalogMode === "new-only" ? sortOfficialProcesses(newProcesses, sort) : newProcesses,
+    [catalogMode, newProcesses, sort],
+  );
 
   function updateFilter(name: ProcessFilterName, value: string) {
     setFilters((current) => ({ ...current, [name]: value }));
@@ -184,6 +225,28 @@ export function ProcessCatalogClient({
 
   function clearFilters() {
     setFilters(emptyFilters);
+  }
+
+  function toggleSort(key: ProcessSortKey) {
+    setSort((current) => current?.key === key
+      ? { key, direction: current.direction === "ascending" ? "descending" : "ascending" }
+      : { key, direction: "ascending" });
+  }
+
+  function sortableHeader(label: string, key: ProcessSortKey, centered = false) {
+    const active = sort?.key === key;
+    return (
+      <div aria-sort={active ? sort.direction : "none"} className={centered ? "text-center" : undefined} role="columnheader">
+        <button
+          className={`inline-flex items-center gap-1 rounded-sm px-0.5 py-0.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${active ? "font-bold text-navy" : "hover:text-navy"}`}
+          onClick={() => toggleSort(key)}
+          type="button"
+        >
+          {label}
+          {active ? (sort.direction === "ascending" ? <ArrowUp aria-hidden="true" className="h-3.5 w-3.5" /> : <ArrowDown aria-hidden="true" className="h-3.5 w-3.5" />) : null}
+        </button>
+      </div>
+    );
   }
   function renderProcessGroup(
     title: string,
@@ -212,13 +275,13 @@ export function ProcessCatalogClient({
         )}
         <div className={`${hideGroupHeader ? "" : "mt-3 "}overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_18px_rgba(2,53,116,0.03)]`}>
         <div className={`hidden gap-3 border-b border-line bg-[#f8fafb] px-4 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-slate-500 xl:grid ${gridColumns}`}>
-          <span>Tipo</span>
-          <span>Proceso</span>
-          <span>Rol dueno</span>
-          <span>Persona actual</span>
-          <span className="text-center">Etapas</span>
+          {catalogMode === "new-only" ? sortableHeader("Tipo", "type") : <span>Tipo</span>}
+          {catalogMode === "new-only" ? sortableHeader("Proceso", "process") : <span>Proceso</span>}
+          {catalogMode === "new-only" ? sortableHeader("Rol dueno", "owner") : <span>Rol dueno</span>}
+          {catalogMode === "new-only" ? sortableHeader("Persona actual", "person") : <span>Persona actual</span>}
+          {catalogMode === "new-only" ? sortableHeader("Etapas", "stages", true) : <span className="text-center">Etapas</span>}
           {newModel ? null : <span>Roles de apoyo</span>}
-          <span className="text-right">Accion</span>
+          <span className="text-right" role="columnheader">Accion</span>
         </div>
 
         {processes.map((process) => {
@@ -411,7 +474,7 @@ export function ProcessCatalogClient({
       {renderProcessGroup(
         "Procesos nuevos",
         "Procesos creados con código documental asignado.",
-        newProcesses,
+        sortedNewProcesses,
         false,
         true,
       )}

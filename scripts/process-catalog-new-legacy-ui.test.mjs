@@ -9,7 +9,7 @@ assert.match(client, /\{newModel \? null : <span>Roles de apoyo<\/span>\}/);
 assert.match(client, /newModel \? null : \([\s\S]*<SupportRoleSummary values=\{process\.support_role_names\}/);
 assert.match(client, /newModel \? \([\s\S]*row\.subprocess_name[\s\S]*row\.subprocess_description\?\.trim\(\) \|\| "Sin descripcion"/);
 assert.match(client, /\) : \([\s\S]*Responsable funcional[\s\S]*Impacto/);
-assert.match(client, /newProcesses,[\s\S]*false,[\s\S]*true,/);
+assert.match(client, /sortedNewProcesses,[\s\S]*false,[\s\S]*true,/);
 assert.match(client, /historicalProcesses,[\s\S]*true,/);
 assert.match(client, /aria-disabled=\{newModel && rows\.length === 0\}[\s\S]*event\.preventDefault\(\)/);
 assert.match(client, /Etapas \{process\.active_stage_count\}/);
