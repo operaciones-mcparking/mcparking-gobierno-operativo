@@ -66,6 +66,7 @@ const sample = {
   })),
   roleProfiles: [{
     id: "profile-1",
+    sort_order: 0,
     role_id: "role-id",
     role_name: "Jefe de Operaciones",
     current_person_name: "Diego Vera",

@@ -23,6 +23,7 @@ import { AlertTriangle, PlusCircle } from "lucide-react";
 import { ProcessCatalogClient } from "@/app/procesos/process-catalog-client";
 import { getActiveProcessOperationTypeOptions } from "@/lib/procesos/process-company-options";
 import { getProcessDrafts } from "@/lib/procesos/process-drafts";
+import { ProcessExcelDownloadButton } from "./process-excel-download-button";
 
 type SearchParams = Promise<{
   country_id?: string;
@@ -869,13 +870,16 @@ export default async function EstructuraPage({
       <section className="scroll-mt-24" id="procesos">
         <Panel
           action={
-            <Link
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white transition hover:bg-[#075077]"
-              href="/procesos/nuevo"
-            >
-              <PlusCircle className="h-4 w-4 text-clay" />
-              Nuevo proceso
-            </Link>
+            <>
+              <ProcessExcelDownloadButton />
+              <Link
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white transition hover:bg-[#075077]"
+                href="/procesos/nuevo"
+              >
+                <PlusCircle className="h-4 w-4 text-clay" />
+                Nuevo proceso
+              </Link>
+            </>
           }
           count={`${newProcesses.length + processDraftsResult.data.length} ${newProcesses.length + processDraftsResult.data.length === 1 ? "proceso" : "procesos"}`}
           description="Procesos documentados mediante la ficha de proceso."

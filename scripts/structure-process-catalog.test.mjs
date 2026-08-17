@@ -20,6 +20,7 @@ assert.match(structure, /<section className="scroll-mt-24" id="procesos">[\s\S]*
 assert.ok(structure.indexOf('title="Matriz web de procesos por rol"') < structure.indexOf('title="Procesos"'));
 assert.match(structure, /process_code\?\.trim\(\)/);
 assert.match(structure, /catalogMode="new-only"/);
+assert.match(structure, /<ProcessExcelDownloadButton \/>/);
 assert.match(structure, /href="\/procesos\/nuevo"/);
 assert.match(structure, /activeProcesses=\{newProcesses\}/);
 assert.match(structure, /newProcesses\.length/);
@@ -40,4 +41,4 @@ assert.match(filters, /newOnly \? "lg:grid-cols-3" : "xl:grid-cols-4"/);
 assert.match(filters, /\{newOnly \? \([\s\S]*disabled=\{!hasFilters\}[\s\S]*Limpiar/);
 assert.match(filters, /onFilterChange\("search", event\.target\.value\)/);
 
-console.log("structure-process-catalog: 30/30 OK");
+console.log("structure-process-catalog: 31/31 OK");

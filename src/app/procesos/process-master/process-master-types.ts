@@ -87,6 +87,7 @@ export type ProcessMasterDto = {
 };
 export type ProcessMasterRoleProfile = {
   id: string;
+  sort_order: number;
   role_id: string;
   role_name: string;
   current_person_name: string | null;

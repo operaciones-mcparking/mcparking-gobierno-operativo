@@ -9,6 +9,7 @@ type RoleProfileRow = {
   id: string;
   responsibility_description: string | null;
   role_id: string;
+  sort_order: number | null;
 };
 type OfficialRoleRow = {
   role_id: string;
@@ -56,6 +57,7 @@ export async function getProcessRoleProfilesForMaster({ processId }: { processId
       responsibility: profile.responsibility_description,
       role_id: role.role_id,
       role_name: role.role_name,
+      sort_order: profile.sort_order ?? 0,
     }];
   });
 
