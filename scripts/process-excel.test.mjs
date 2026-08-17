@@ -9,6 +9,7 @@ const route = readFileSync("src/app/api/procesos/export/route.ts", "utf8");
 const button = readFileSync("src/app/estructura/process-excel-download-button.tsx", "utf8");
 const structure = readFileSync("src/app/estructura/page.tsx", "utf8");
 const roleLoader = readFileSync("src/lib/procesos/process-role-profiles.ts", "utf8");
+const readModel = readFileSync("src/lib/procesos/process-master-read-model.ts", "utf8");
 
 function processFixture(overrides = {}) {
   return {
@@ -53,6 +54,7 @@ function processFixture(overrides = {}) {
     stages: [
       { id: "stage-2", name: "Cerrar", description: "Cierre", criticality: "medium", impact_percent: null, sort_order: 2, status: "active", owner_role_id: null, owner_role_name: null, owner_person_name: null, user_role_id: null, support_role_ids: [], backup_role_id: null },
       { id: "stage-1", name: "Recibir", description: "Recepción", criticality: "medium", impact_percent: null, sort_order: 1, status: "active", owner_role_id: null, owner_role_name: null, owner_person_name: null, user_role_id: null, support_role_ids: [], backup_role_id: null },
+      { id: "stage-3", name: "Archivar", description: null, criticality: "medium", impact_percent: null, sort_order: 3, status: "active", owner_role_id: null, owner_role_name: null, owner_person_name: null, user_role_id: null, support_role_ids: [], backup_role_id: null },
     ],
     roleProfiles: [
       { id: "profile-2", sort_order: 1, role_id: "role-id", role_name: "Jefe de Operaciones", current_person_name: "Diego Vera", responsibility: "Supervisar", authority: "Resolver", accountability: "Informar", is_process_owner: false, participations: [] },
@@ -86,7 +88,7 @@ test("generates the five-sheet master workbook with stable relationships", async
   assert.deepEqual(processes.getRow(1).values.slice(1), ["Código", "Proceso", "Estado", "Empresa", "Tipo de proceso", "Tipo de operación", "Rol dueño", "Persona actual", "Propósito", "Inicio", "Fin", "Alcance", "Proveedor / Origen", "Entradas", "Salidas", "Cliente / Destino", "Cantidad de etapas", "Última edición"]);
   assert.equal(processes.getCell("A2").value, "PROC-000002");
   assert.equal(processes.getCell("A3").value, "PROC-000019");
-  assert.equal(processes.getCell("Q2").value, 2);
+  assert.equal(processes.getCell("Q2").value, 3);
   assert.equal(processes.views[0]?.state, "frozen");
   assert.equal(processes.views[0]?.ySplit, 1);
   assert.ok(processes.autoFilter);
@@ -95,6 +97,16 @@ test("generates the five-sheet master workbook with stable relationships", async
   assert.deepEqual(stages.getRow(1).values.slice(1), ["Código proceso", "Proceso", "Nº etapa", "Etapa", "Descripción"]);
   assert.equal(stages.getCell("C2").value, 1);
   assert.equal(stages.getCell("D2").value, "Recibir");
+  assert.equal(stages.getCell("E2").value, "Recepción");
+  assert.equal(stages.getCell("D3").value, "Cerrar");
+  assert.equal(stages.getCell("E3").value, "Cierre");
+  assert.equal(stages.getCell("D4").value, "Archivar");
+  assert.equal(stages.getCell("E4").value, "");
+  const descriptions = [];
+  for (let row = 2; row <= stages.rowCount; row += 1) descriptions.push(String(stages.getCell(row, 5).value ?? ""));
+  assert.equal(descriptions.every((description) => description === "231"), false);
+  assert.notEqual(stages.getCell("E2").value, stages.getCell("C2").value);
+  assert.notEqual(stages.getCell("E2").value, "stage-1");
 
   const roles = workbook.getWorksheet("Roles y responsabilidades");
   assert.deepEqual(roles.getRow(1).values.slice(1), ["Código proceso", "Proceso", "Orden", "Rol", "Responsabilidad", "Autoridad", "Rendición de cuentas"]);
@@ -115,6 +127,11 @@ test("generates the five-sheet master workbook with stable relationships", async
   assert.equal(risks.getCell("E3").value, "Alerta");
 });
 
+test("read model hydrates stage descriptions from the canonical subprocess column", () => {
+  assert.match(readModel, /from\("subprocesses"\)[\s\S]*select\("id,description"\)[\s\S]*eq\("process_id", processId\)[\s\S]*eq\("status", "active"\)/);
+  assert.match(readModel, /subprocess_description: stageDescriptionById\.get\(stage\.subprocess_id\) \?\? null/);
+  assert.doesNotMatch(readModel, /subprocess_description:\s*stage\.(sort_order|subprocess_id|impact_percent)/);
+});
 test("uses a dated Excel filename", () => {
   assert.equal(processMasterExcelFilename(new Date("2026-08-17T12:00:00Z")), "Maestro_de_Procesos_2026-08-17.xlsx");
 });
@@ -145,4 +162,4 @@ test("role loader exposes persisted sort order without deduplicating profiles", 
   assert.doesNotMatch(roleLoader, /new Map\([^\n]*profiles|dedup/i);
 });
 
-console.log("process-excel: 5/5 OK");
+console.log("process-excel: 6/6 OK");
