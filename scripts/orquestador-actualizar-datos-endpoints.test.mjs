@@ -204,12 +204,12 @@ test("AE. No expone command_preview", () => {
   assertNoUnsafeDto(startRoute + advanceRoute + getRoute + compositeMapper);
 });
 
-test("AF. No altera controles existentes", () => {
+test("AF. Solo altera el control Dashboard autorizado por polling live", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/worker-health-check-button\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/source-connection-check-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-reservas-last-week-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-packs-update-control\.tsx$/m);
-  assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
+  assert.match(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
 });
 
 test("AG. No toca recuperacion", () => {

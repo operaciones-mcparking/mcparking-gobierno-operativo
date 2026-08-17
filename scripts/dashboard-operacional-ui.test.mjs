@@ -888,7 +888,7 @@ test("AA. overlay usa dialog accesible y se recupera cuando existe run", () => {
   assert.match(compositeControl, /presentation\?: "inline" \| "overlay"/);
   assert.match(compositeControl, /presentation = "inline"/);
   assert.match(compositeControl, /const useOverlay = presentation === "overlay"/);
-  assert.match(compositeControl, /const showOverlay = useOverlay && \(isConfirming \|\| isStarting \|\| hasRun \|\| isOverlayOpen\)/);
+  assert.match(compositeControl, /const showOverlay = useOverlay && \(isConfirming \|\| isStarting \|\| isOverlayOpen\)/);
   assert.match(compositeControl, /aria-labelledby="actualizar-datos-overlay-title"/);
   assert.match(compositeControl, /aria-modal="true"/);
   assert.match(compositeControl, /role="dialog"/);
@@ -902,7 +902,7 @@ test("AA. overlay usa dialog accesible y se recupera cuando existe run", () => {
 
 test("AB. overlay muestra carga real y reutiliza CompositeRunViewer", () => {
   assert.match(compositeControl, /Actualizando datos operacionales/);
-  assert.match(compositeControl, /Manten esta ventana abierta/);
+  assert.match(compositeControl, /La ejecucion continuara en segundo plano/);
   assert.match(compositeControl, /Loader2/);
   assert.match(compositeControl, /animate-spin/);
   assert.match(compositeControl, /const viewer = run \? <CompositeRunViewer/);
@@ -913,9 +913,8 @@ test("AB. overlay muestra carga real y reutiliza CompositeRunViewer", () => {
 test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () => {
   assert.match(compositeControl, /Actualizacion de procesos completada/);
   assert.match(compositeControl, /Actualizando indicadores del Dashboard/);
-  assert.match(compositeControl, /Actualizacion completada correctamente/);
-  assert.match(compositeControl, /Todos los procesos finalizaron con exito/);
-  assert.match(compositeControl, /Puedes cerrar esta ventana con tranquilidad/);
+  assert.match(compositeControl, /title: "Actualizacion completada"/);
+  assert.match(compositeControl, /Todos los procesos finalizaron correctamente/);
   assert.match(compositeControl, /no fue posible actualizar los indicadores visibles/);
   assert.match(compositeControl, /vuelve a seleccionar la fecha/);
   assert.doesNotMatch(compositeControl, /usar Refrescar/);
@@ -924,16 +923,19 @@ test("AC. overlay distingue succeeded failed cancelled y refresh posterior", () 
   assert.match(compositeControl, /Actualizacion cancelada/);
   assert.match(compositeControl, /run\.status === "failed"/);
   assert.match(compositeControl, /run\.status === "succeeded"/);
-  assert.match(compositeControl, /role="status"/);
+  assert.match(compositeControl, /id="actualizar-datos-overlay-description" aria-live="polite"/);
   assert.match(compositeControl, /aria-live="polite"/);
   assert.doesNotMatch(compositeControl, /payload|stack trace|stdout|stderr|SUPABASE|confeti|corneta|ilustracion/i);
 });
 
-test("AD. cierre del overlay espera el refresh despues de succeeded", () => {
+test("AD. cierre del overlay siempre esta disponible y no cancela una corrida activa", () => {
   assert.match(compositeControl, /const isRefreshingAfterSuccess = run\?\.status === "succeeded" && \(refreshStatus === "idle" \|\| refreshStatus === "refreshing"\)/);
-  assert.match(compositeControl, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\) && !isRefreshingAfterSuccess\)/);
-  assert.match(compositeControl, /disabled=\{!canCloseOverlay\}/);
+  assert.match(compositeControl, /const canCloseOverlay = Boolean\(run\)/);
+  assert.doesNotMatch(compositeControl, /disabled=\{!canCloseOverlay\}/);
   assert.match(compositeControl, /if \(!canCloseOverlay\) \{/);
+  assert.match(compositeControl, /setIsOverlayOpen\(false\);[\s\S]*if \(run && isTerminalRun\(run\) && !isRefreshingAfterSuccess\)/);
+  assert.match(compositeControl, /openedOverlayRunIdRef\.current !== run\.run_id/);
+  assert.match(compositeControl, /La ejecucion continuara en segundo plano y puedes revisar su estado en Centro de Control\./);
   assert.match(compositeControl, /Cerrar resultado/);
   assert.match(compositeControl, /Cerrar/);
 });

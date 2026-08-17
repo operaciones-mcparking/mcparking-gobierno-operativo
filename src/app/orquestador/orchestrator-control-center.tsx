@@ -18,9 +18,10 @@ import { KpiCard, Panel } from "@/components/dashboard/shell";
 import { BANCO_PACKS_TARGET_WORKER_ID, BANCO_PACKS_UPDATE_JOB_TYPE, getBancoPacksUpdateReadiness } from "@/lib/orquestador/banco-packs-actualizar-packs";
 import { BANCO_RESERVAS_LAST_WEEK_JOB_TYPE, BANCO_RESERVAS_TARGET_WORKER_ID, getBancoReservasReadiness } from "@/lib/orquestador/banco-reservas-last-week";
 import { DASHBOARD_LAST_MONTH_JOB_TYPE, DASHBOARD_TARGET_WORKER_ID, getDashboardLastMonthReadiness } from "@/lib/orquestador/dashboard-last-month";
+import { classifyWorkerHealth, type WorkerHealth } from "@/lib/orquestador/liveness";
 import {
   listOrchestratorEvents,
-  listOrchestratorJobs,
+  listOrchestratorJobsPage,
   listOrchestratorJobTypes,
   listOrchestratorWorkers,
 } from "@/lib/orquestador/supabase-admin";
@@ -37,6 +38,7 @@ import { WorkerHealthCheckButton } from "./worker-health-check-button";
 type LoadResult = {
   errors: string[];
   events: OrchestratorEvent[];
+  hasMoreJobs: boolean;
   jobs: OrchestratorJob[];
   jobTypes: OrchestratorJobType[];
   workers: OrchestratorWorker[];
@@ -145,6 +147,15 @@ function ControlCenterSection({
   );
 }
 
+function workerHealthDisplay(health: WorkerHealth) {
+  return {
+    AVAILABLE: { label: "Disponible", tone: "success" as const },
+    BUSY: { label: "Ejecutando", tone: "info" as const },
+    STALE: { label: "Sin señal", tone: "warning" as const },
+    OFFLINE_OR_UNKNOWN: { label: "Estado desconocido", tone: "danger" as const },
+  }[health];
+}
+
 function OperationStatusBadge({ label, tone }: { label: string; tone: "danger" | "info" | "success" | "warning" }) {
   const classes = {
     danger: "border-[#ffd4a3] bg-[#fff8ef] text-[#8a4a00]",
@@ -159,7 +170,7 @@ function OperationStatusBadge({ label, tone }: { label: string; tone: "danger" |
 async function loadOrquestadorData(): Promise<LoadResult> {
   const [workers, jobs, events, jobTypes] = await Promise.all([
     listOrchestratorWorkers(),
-    listOrchestratorJobs(),
+    listOrchestratorJobsPage({ limit: 51 }),
     listOrchestratorEvents(),
     listOrchestratorJobTypes(),
   ]);
@@ -174,14 +185,15 @@ async function loadOrquestadorData(): Promise<LoadResult> {
   return {
     errors,
     events: events.data,
-    jobs: jobs.data,
+    hasMoreJobs: jobs.data.length > 50,
+    jobs: jobs.data.slice(0, 50),
     jobTypes: jobTypes.data,
     workers: workers.data,
   };
 }
 
 export async function OrchestratorControlCenter() {
-  const { errors, events, jobs, jobTypes, workers } = await loadOrquestadorData();
+  const { errors, events, hasMoreJobs, jobs, jobTypes, workers } = await loadOrquestadorData();
   const activeWorkers = workers.filter((worker) => worker.status !== "offline").length;
   const activeJobs = jobs.filter((job) => ["queued", "claimed", "running"].includes(job.status)).length;
   const runningJobs = jobs.filter((job) => ["claimed", "running"].includes(job.status)).length;
@@ -266,7 +278,7 @@ export async function OrchestratorControlCenter() {
       </ControlCenterSection>
 
       <Panel count={`${jobs.length} procesos`} title="Procesos recientes">
-        <RecentProcesses jobs={jobs} />
+        <RecentProcesses hasMore={hasMoreJobs} jobs={jobs} />
       </Panel>
 
       <ControlCenterSection title="Diagnostico tecnico">
@@ -283,17 +295,21 @@ export async function OrchestratorControlCenter() {
                 </tr>
               </DataTableHead>
               <DataTableBody>
-                {workers.map((worker) => (
-                  <DataTableRow key={worker.worker_id}>
-                    <DataTableCell strong>{worker.worker_id}</DataTableCell>
-                    <DataTableCell>{worker.display_name ?? "Sin nombre"}</DataTableCell>
-                    <DataTableCell>
-                      <StatusBadge value={worker.status} />
-                    </DataTableCell>
-                    <DataTableCell>{formatDate(worker.last_seen_at)}</DataTableCell>
-                    <DataTableCell>{shortId(worker.locked_job_id)}</DataTableCell>
-                  </DataTableRow>
-                ))}
+                {workers.map((worker) => {
+                  const health = workerHealthDisplay(classifyWorkerHealth(worker));
+
+                  return (
+                    <DataTableRow key={worker.worker_id}>
+                      <DataTableCell strong>{worker.worker_id}</DataTableCell>
+                      <DataTableCell>{worker.display_name ?? "Sin nombre"}</DataTableCell>
+                      <DataTableCell>
+                        <OperationStatusBadge label={health.label} tone={health.tone} />
+                      </DataTableCell>
+                      <DataTableCell>{formatDate(worker.last_seen_at)}</DataTableCell>
+                      <DataTableCell>{shortId(worker.locked_job_id)}</DataTableCell>
+                    </DataTableRow>
+                  );
+                })}
               </DataTableBody>
             </DataTable>
             {workers.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay workers registrados.</p> : null}

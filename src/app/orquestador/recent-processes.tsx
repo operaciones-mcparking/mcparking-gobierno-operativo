@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { ChevronRight, Loader2, Search } from "lucide-react";
+import { useState, type FormEvent } from "react";
 
 import {
   DataTable,
@@ -15,6 +15,7 @@ import { formatDurationHuman } from "./composite-run-viewer";
 import { JobTechnicalDetailButton } from "./job-technical-detail-button";
 
 type RecentProcessesProps = {
+  hasMore: boolean;
   jobs: OrchestratorJob[];
 };
 
@@ -228,7 +229,13 @@ function RecentProcessMobileCard({ job, onOpen }: { job: OrchestratorJob; onOpen
   );
 }
 
-export function RecentProcesses({ jobs }: RecentProcessesProps) {
+export function RecentProcesses({ hasMore, jobs }: RecentProcessesProps) {
+  const [items, setItems] = useState(jobs);
+  const [canLoadMore, setCanLoadMore] = useState(hasMore);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [jobIdQuery, setJobIdQuery] = useState("");
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [openToken, setOpenToken] = useState<string | null>(null);
 
@@ -237,8 +244,72 @@ export function RecentProcesses({ jobs }: RecentProcessesProps) {
     setOpenToken(`${job.id}:${Date.now()}`);
   }
 
+  async function loadMore() {
+    const cursor = items.at(-1);
+    if (!cursor || !canLoadMore || isLoadingMore) return;
+
+    setIsLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ beforeCreatedAt: cursor.created_at, beforeId: cursor.id });
+      const response = await fetch("/api/orquestador/jobs/history?" + params.toString(), { cache: "no-store" });
+      const body = await response.json() as { error?: string; hasMore?: boolean; jobs?: OrchestratorJob[]; ok?: boolean };
+      if (!response.ok || !body.ok || !Array.isArray(body.jobs)) {
+        setSearchMessage(body.error ?? "No fue posible cargar más procesos.");
+        return;
+      }
+
+      const nextJobs = body.jobs;
+      setItems((current) => {
+        const ids = new Set(current.map((job) => job.id));
+        return [...current, ...nextJobs.filter((job) => !ids.has(job.id))];
+      });
+      setCanLoadMore(body.hasMore === true);
+      setSearchMessage(null);
+    } catch {
+      setSearchMessage("No fue posible cargar más procesos.");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
+
+  async function searchJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const jobId = jobIdQuery.trim();
+    setIsSearching(true);
+    setSearchMessage(null);
+    try {
+      const response = await fetch("/api/orquestador/jobs/history?jobId=" + encodeURIComponent(jobId), { cache: "no-store" });
+      const body = await response.json() as { error?: string; job?: OrchestratorJob; ok?: boolean };
+      if (!response.ok || !body.ok || !body.job) {
+        setSearchMessage(response.status === 404 ? "No encontrado" : body.error ?? "No fue posible buscar el job.");
+        return;
+      }
+
+      setItems((current) => current.some((job) => job.id === body.job?.id) ? current : [body.job as OrchestratorJob, ...current]);
+      openJob(body.job);
+    } catch {
+      setSearchMessage("No fue posible buscar el job.");
+    } finally {
+      setIsSearching(false);
+    }
+  }
   return (
     <>
+      <form className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-end" onSubmit={searchJob}>
+        <label className="grid flex-1 gap-1 text-xs font-medium text-slate-600">
+          Buscar por Job ID
+          <span className="flex h-10 items-center gap-2 rounded-lg border border-[#cbd8e3] bg-white px-3 focus-within:border-sea">
+            <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            <input className="min-w-0 flex-1 bg-transparent text-sm text-navy outline-none" onChange={(event) => setJobIdQuery(event.target.value)} placeholder="UUID completo" type="text" value={jobIdQuery} />
+          </span>
+        </label>
+        <button className="inline-flex h-10 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-4 text-sm font-medium text-navy disabled:opacity-60" disabled={isSearching || !jobIdQuery.trim()} type="submit">
+          {isSearching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+          Buscar
+        </button>
+      </form>
+      {searchMessage ? <p className="mt-2 text-sm text-[#8a4a00]" aria-live="polite">{searchMessage}</p> : null}
+
       <div className="mt-5 hidden lg:block">
         <DataTable minWidth="1040px">
           <DataTableHead>
@@ -255,7 +326,7 @@ export function RecentProcesses({ jobs }: RecentProcessesProps) {
             </tr>
           </DataTableHead>
           <DataTableBody>
-            {jobs.map((job) => (
+            {items.map((job) => (
               <RecentProcessDesktopRow job={job} key={job.id} onOpen={openJob} />
             ))}
           </DataTableBody>
@@ -263,12 +334,21 @@ export function RecentProcesses({ jobs }: RecentProcessesProps) {
       </div>
 
       <div className="mt-5 grid gap-3 lg:hidden">
-        {jobs.map((job) => (
+        {items.map((job) => (
           <RecentProcessMobileCard job={job} key={job.id} onOpen={openJob} />
         ))}
       </div>
 
-      {jobs.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay procesos recientes.</p> : null}
+            {items.length === 0 ? <p className="mt-4 text-sm text-slate-600">No hay procesos recientes.</p> : null}
+
+      {canLoadMore ? (
+        <div className="mt-4 flex justify-center">
+          <button className="inline-flex h-10 items-center justify-center rounded-lg border border-[#cbd8e3] bg-white px-4 text-sm font-medium text-navy disabled:opacity-60" disabled={isLoadingMore} onClick={loadMore} type="button">
+            {isLoadingMore ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            Cargar más
+          </button>
+        </div>
+      ) : null}
 
       {selectedJobId ? <JobTechnicalDetailButton autoOpenKey={openToken} hideTrigger jobId={selectedJobId} /> : null}
     </>

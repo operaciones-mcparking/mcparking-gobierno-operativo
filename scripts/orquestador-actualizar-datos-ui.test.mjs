@@ -353,7 +353,7 @@ test("AG4. exito final depende del refresh del Dashboard", () => {
   assert.match(control, /Actualizando indicadores del Dashboard/);
   assert.match(control, /Los procesos finalizaron correctamente, pero no fue posible actualizar los indicadores visibles/);
   assert.match(control, /const isRefreshingAfterSuccess = run\?\.status === "succeeded" && \(refreshStatus === "idle" \|\| refreshStatus === "refreshing"\)/);
-  assert.match(control, /const canCloseOverlay = Boolean\(run && isTerminalRun\(run\) && !isRefreshingAfterSuccess\)/);
+  assert.match(control, /const canCloseOverlay = Boolean\(run\)/);
 });
 
 test("AG5. modal completado queda compacto y sin mensaje duplicado", () => {
@@ -448,12 +448,12 @@ test("AH5. diagnostico tecnico conserva tablas existentes al final", () => {
   assert.match(controlCenter, /<DataTable minWidth="900px">/);
   assert.ok(controlCenter.indexOf('title="Diagnostico tecnico"') > controlCenter.indexOf('title="Procesos recientes"'));
 });
-test("AI. no altera controles individuales existentes", () => {
+test("AI. solo altera el control Dashboard autorizado por polling live", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/worker-health-check-button\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/source-connection-check-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-reservas-last-week-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-packs-update-control\.tsx$/m);
-  assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
+  assert.match(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
 });
 
 test("AJ. no toca recuperacion", () => {

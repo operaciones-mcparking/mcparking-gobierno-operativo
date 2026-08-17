@@ -4,6 +4,7 @@ import { BarChart3 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { dashboardLastMonthReadinessMessage, type DashboardLastMonthReadinessCode } from "@/lib/orquestador/dashboard-last-month";
+import { JobLivenessPanel } from "./job-liveness-panel";
 
 const DASHBOARD_EXPECTED_JOB_TYPE = "dashboard_actualizar_metricas";
 
@@ -117,8 +118,8 @@ function shortId(value: string) {
 function statusLabel(status: string) {
   if (status === "queued") return "En cola";
   if (status === "claimed" || status === "running") return "Ejecutando";
-  if (status === "succeeded") return "Completado";
-  if (status === "failed") return "Fallo";
+  if (status === "succeeded") return "Listo";
+  if (status === "failed") return "Fallido";
   if (status === "cancelled") return "Cancelado";
   return status;
 }
@@ -133,6 +134,8 @@ export function DashboardLastMonthControl({ readinessCode }: { readinessCode: Da
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
+
     return () => {
       isMountedRef.current = false;
       abortControllerRef.current?.abort();
@@ -140,36 +143,44 @@ export function DashboardLastMonthControl({ readinessCode }: { readinessCode: Da
   }, []);
 
   async function pollJob(jobId: string, signal: AbortSignal) {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
       await waitUntilVisible(signal);
-      await delay(attempt === 0 ? 700 : 30000, signal);
+      await delay(attempt === 0 ? 700 : 20_000, signal);
       await waitUntilVisible(signal);
 
-      const response = await fetch("/api/orquestador/jobs", { cache: "no-store", signal });
+      try {
+        const response = await fetch("/api/orquestador/jobs", { cache: "no-store", signal });
 
-      if (!response.ok) {
-        if (isMountedRef.current) {
-          setMessage("No fue posible consultar el estado de la actualizacion de metricas.");
+        if (!response.ok) {
+          if (isMountedRef.current) {
+            setMessage("No fue posible consultar el estado de la actualizacion de metricas. Se reintentara automaticamente.");
+          }
+          continue;
         }
-        return;
-      }
 
-      const payload = (await response.json()) as JobsResponse;
-      const nextJob = payload.jobs?.find((job) => job.id === jobId && job.job_type === DASHBOARD_EXPECTED_JOB_TYPE) ?? null;
+        const payload = (await response.json()) as JobsResponse;
+        const nextJob = payload.jobs?.find((job) => job.id === jobId && job.job_type === DASHBOARD_EXPECTED_JOB_TYPE) ?? null;
 
-      if (!nextJob) {
-        continue;
-      }
+        if (!nextJob) {
+          continue;
+        }
 
-      if (isMountedRef.current) {
-        setJobStatus(nextJob);
-      }
-
-      if (terminalStatuses.has(nextJob.status)) {
         if (isMountedRef.current) {
+          setJobStatus(nextJob);
           setMessage(null);
         }
-        return;
+
+        if (terminalStatuses.has(nextJob.status)) {
+          return;
+        }
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+
+        if (isMountedRef.current) {
+          setMessage("No fue posible consultar el estado de la actualizacion de metricas. Se reintentara automaticamente.");
+        }
       }
     }
 
@@ -177,7 +188,6 @@ export function DashboardLastMonthControl({ readinessCode }: { readinessCode: Da
       setMessage("La actualizacion de metricas sigue pendiente. Este timeout visual no cancela el job; actualiza el estado mas tarde.");
     }
   }
-
   async function createDashboardJob() {
     if (isSubmitting || readinessCode !== "ready") {
       return;
@@ -303,6 +313,10 @@ export function DashboardLastMonthControl({ readinessCode }: { readinessCode: Da
           {jobStatus?.error_message ? <p>{jobStatus.error_message}</p> : null}
           {message ? <p>{message}</p> : null}
         </div>
+      ) : null}
+
+      {jobStatus && !terminalStatuses.has(jobStatus.status) ? (
+        <JobLivenessPanel allowActions={false} compact jobId={jobStatus.id} />
       ) : null}
 
       {isConfirming ? (

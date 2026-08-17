@@ -18,6 +18,7 @@ export type RawJobRow = {
   requested_source?: string | null;
   target_worker_id?: string | null;
   locked_by_worker_id?: string | null;
+  priority?: number | null;
   payload?: JsonRecord | null;
   result?: JsonRecord | null;
   error_message?: string | null;
@@ -25,6 +26,11 @@ export type RawJobRow = {
   max_attempts?: number | null;
   started_at?: string | null;
   finished_at?: string | null;
+  last_heartbeat_at?: string | null;
+  composite_run_id?: string | null;
+  composite_kind?: string | null;
+  sequence_index?: number | null;
+  sequence_total?: number | null;
   created_at: string;
 };
 
@@ -56,6 +62,9 @@ export type OrchestratorWorker = {
   last_seen_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+  currentJobId: string | null;
+  instanceId: string | null;
+  startedAt: string | null;
 };
 
 export type HealthCheckResult = {
@@ -114,6 +123,13 @@ export type OrchestratorJob = {
   job_type: string;
   status: string;
   worker_id: string | null;
+  lastHeartbeatAt: string | null;
+  requestedSource: string | null;
+  priority: number | null;
+  compositeRunId: string | null;
+  compositeKind: string | null;
+  sequenceIndex: number | null;
+  sequenceTotal: number | null;
   attempts: number | null;
   max_attempts: number | null;
   error_message: string | null;
@@ -134,6 +150,8 @@ export type OrchestratorEvent = {
   worker_id: string | null;
   event_type: string;
   message: string | null;
+  stage: string | null;
+  substage: string | null;
   created_at: string;
 };
 
@@ -178,6 +196,17 @@ function safeString(value: unknown) {
   return typeof value === "string" ? sanitizeOperationalText(value) : null;
 }
 
+function safeTimestamp(value: unknown) {
+  if (typeof value !== "string" || !Number.isFinite(new Date(value).getTime())) {
+    return null;
+  }
+  return value;
+}
+
+function safeMetadataString(metadata: JsonRecord | null | undefined, key: string) {
+  const value = safeString(metadata?.[key]);
+  return value && value.length <= 200 ? value : null;
+}
 function safeNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -291,6 +320,9 @@ export function safeWorkerRow(row: RawWorkerRow): OrchestratorWorker {
     last_seen_at: row.last_seen_at,
     created_at: row.created_at ?? null,
     updated_at: row.updated_at ?? null,
+    currentJobId: row.current_job_id,
+    instanceId: safeMetadataString(row.metadata, "instance_id"),
+    startedAt: safeTimestamp(row.metadata?.started_at),
   };
 }
 
@@ -300,6 +332,13 @@ export function safeJobRow(row: RawJobRow): OrchestratorJob {
     job_type: row.job_type,
     status: row.status,
     worker_id: row.locked_by_worker_id ?? row.target_worker_id ?? null,
+    lastHeartbeatAt: row.last_heartbeat_at ?? null,
+    requestedSource: sanitizeOperationalText(row.requested_source),
+    priority: row.priority ?? null,
+    compositeRunId: row.composite_run_id ?? null,
+    compositeKind: row.composite_kind ?? null,
+    sequenceIndex: row.sequence_index ?? null,
+    sequenceTotal: row.sequence_total ?? null,
     attempts: row.attempts ?? null,
     max_attempts: row.max_attempts ?? null,
     error_message: sanitizeOperationalText(row.error_message),
@@ -322,6 +361,8 @@ export function safeEventRow(row: RawEventRow): OrchestratorEvent {
     worker_id: row.worker_id,
     event_type: row.event_type,
     message: sanitizeOperationalText(row.message),
+    stage: safeString(row.data?.stage),
+    substage: safeString(row.data?.substage),
     created_at: row.created_at,
   };
 }

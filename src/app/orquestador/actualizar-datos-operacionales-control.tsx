@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { CompositeRunViewer } from "./composite-run-viewer";
+import { JobLivenessPanel } from "./job-liveness-panel";
 import { useCompositeOperationsRun } from "./use-composite-operations-run";
 
 const steps = [
@@ -107,6 +108,7 @@ export function ActualizarDatosOperacionalesControl({
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>("idle");
   const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const openedOverlayRunIdRef = useRef<string | null>(null);
   const completedRunRef = useRef<string | null>(null);
   const refreshingRunRef = useRef<string | null>(null);
   const onSucceededRef = useRef(onSucceeded);
@@ -114,18 +116,19 @@ export function ActualizarDatosOperacionalesControl({
   const isBusy = isStarting || status === "starting";
   const triggerLabel = run ? "Actualizacion en curso" : isStarting ? "Iniciando actualizacion..." : "Actualizar datos operacionales";
   const useOverlay = presentation === "overlay";
-  const hasRun = Boolean(run);
-  const showOverlay = useOverlay && (isConfirming || isStarting || hasRun || isOverlayOpen);
+  const showOverlay = useOverlay && (isConfirming || isStarting || isOverlayOpen);
   const isRefreshingAfterSuccess = run?.status === "succeeded" && (refreshStatus === "idle" || refreshStatus === "refreshing");
-  const canCloseOverlay = Boolean(run && isTerminalRun(run) && !isRefreshingAfterSuccess);
+  const canCloseOverlay = Boolean(run);
   const copy = overlayCopy(run, refreshStatus);
+  const activeJobId = run?.steps.find((step) => step.step === run.current_step)?.job_id ?? null;
 
   useEffect(() => {
     onSucceededRef.current = onSucceeded;
   }, [onSucceeded]);
 
   useEffect(() => {
-    if (run && useOverlay) {
+    if (run && useOverlay && openedOverlayRunIdRef.current !== run.run_id) {
+      openedOverlayRunIdRef.current = run.run_id;
       setIsOverlayOpen(true);
     }
   }, [run, useOverlay]);
@@ -211,11 +214,14 @@ export function ActualizarDatosOperacionalesControl({
       return;
     }
 
-    clearRun();
     setIsOverlayOpen(false);
-    setRefreshStatus("idle");
-    completedRunRef.current = null;
-    refreshingRunRef.current = null;
+
+    if (run && isTerminalRun(run) && !isRefreshingAfterSuccess) {
+      clearRun();
+      setRefreshStatus("idle");
+      completedRunRef.current = null;
+      refreshingRunRef.current = null;
+    }
   }
 
   const actions = run ? (
@@ -231,7 +237,6 @@ export function ActualizarDatosOperacionalesControl({
       {useOverlay ? (
         <button
           className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#cbd8e3] bg-navy px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[#08325e] disabled:cursor-not-allowed disabled:opacity-60 sm:w-fit"
-          disabled={!canCloseOverlay}
           onClick={closeOverlay}
           ref={closeButtonRef}
           type="button"
@@ -451,6 +456,14 @@ export function ActualizarDatosOperacionalesControl({
                 ) : null}
 
                 {viewer}
+
+                {activeJobId && !isTerminalRun(run) ? <JobLivenessPanel allowActions={false} compact jobId={activeJobId} /> : null}
+
+                {!isTerminalRun(run) ? (
+                  <p className="mt-3 text-xs leading-5 text-slate-500">
+                    La ejecucion continuara en segundo plano y puedes revisar su estado en Centro de Control.
+                  </p>
+                ) : null}
 
                 <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   {actions}

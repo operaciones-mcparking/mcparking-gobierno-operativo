@@ -19,11 +19,13 @@ export type RawCompositeRunJobRow = {
   requested_source: string | null;
   target_worker_id: string | null;
   locked_by_worker_id: string | null;
+  priority: number | null;
   attempts: number | null;
   max_attempts: number | null;
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
+  last_heartbeat_at: string | null;
   created_at: string;
   updated_at: string | null;
   composite_run_id: string;
@@ -41,8 +43,10 @@ export type CompositeRunStepViewModel = {
   status: CompositeRunStepStatus;
   worker_id: string | null;
   attempts: number | null;
+  priority: number | null;
   started_at: string | null;
   finished_at: string | null;
+  last_heartbeat_at: string | null;
   duration_seconds: number | null;
   safe_message: string | null;
   safe_error: string | null;
@@ -212,8 +216,10 @@ export function mapCompositeRunJobs(rows: RawCompositeRunJobRow[], options: Comp
       status,
       worker_id: row?.locked_by_worker_id ?? row?.target_worker_id ?? null,
       attempts: row?.attempts ?? null,
+      priority: row?.priority ?? null,
       started_at: row?.started_at ?? null,
       finished_at: row?.finished_at ?? null,
+      last_heartbeat_at: row?.last_heartbeat_at ?? null,
       duration_seconds: calculateCompositeDurationSeconds(row?.started_at, row?.finished_at),
       safe_message: row?.requested_source ? sanitizeOperationalText(row.requested_source) : null,
       safe_error: sanitizeOperationalText(row?.error_message),

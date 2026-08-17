@@ -217,12 +217,12 @@ test("AB. no ejecuta POST", () => {
   assert.doesNotMatch(mapperSource + viewerSource, /fetch\(|method:\s*"POST"|export async function POST/);
 });
 
-test("AC. no altera controles existentes", () => {
+test("AC. solo altera el control Dashboard autorizado por polling live", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/worker-health-check-button\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/source-connection-check-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-reservas-last-week-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-packs-update-control\.tsx$/m);
-  assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
+  assert.match(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
 });
 
 test("AD. no toca recuperacion", () => {

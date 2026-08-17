@@ -29,6 +29,7 @@ import {
   safeJobRow,
   safeJobTypeRow,
   safeWorkerRow,
+  sanitizeOperationalText,
   type OrchestratorEvent,
   type OrchestratorJob,
   type OrchestratorJobType,
@@ -39,6 +40,7 @@ import {
   type RawWorkerRow,
 } from "@/lib/orquestador/types";
 import type { RawCompositeRunJobRow } from "@/lib/orquestador/composite-runs";
+import type { RecoveryCandidateJob, RecoveryResult } from "@/lib/orquestador/liveness";
 import type { ActualizarDatosStep } from "@/lib/orquestador/actualizar-datos-operacionales";
 import {
   mapJobTechnicalDetail,
@@ -162,10 +164,10 @@ export async function listOrchestratorWorkers(): Promise<OrquestadorResult<Orche
   }
 }
 
-export async function listOrchestratorJobs(): Promise<OrquestadorResult<OrchestratorJob>> {
+export async function listOrchestratorJobs(limit = 20): Promise<OrquestadorResult<OrchestratorJob>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = (await supabase.rpc("orchestrator_list_jobs", { p_limit: 20 })) as {
+    const { data, error } = (await supabase.rpc("orchestrator_list_jobs", { p_limit: Math.max(1, Math.min(Math.trunc(limit), 100)) })) as {
       data: RawJobRow[] | null;
       error: { message: string } | null;
     };
@@ -176,6 +178,39 @@ export async function listOrchestratorJobs(): Promise<OrquestadorResult<Orchestr
   }
 }
 
+export async function listOrchestratorJobsPage(input: {
+  beforeCreatedAt?: string | null;
+  beforeId?: string | null;
+  limit?: number;
+} = {}): Promise<OrquestadorResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_list_jobs_page", {
+      p_before_created_at: input.beforeCreatedAt ?? null,
+      p_before_id: input.beforeId ?? null,
+      p_limit: Math.max(1, Math.min(Math.trunc(input.limit ?? 50), 100)),
+    })) as { data: RawJobRow[] | null; error: { message?: string } | null };
+
+    return error ? emptyResult() : { data: (data ?? []).map(safeJobRow), error: false };
+  } catch {
+    return emptyResult();
+  }
+}
+
+export async function getOrchestratorJobById(jobId: string): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_get_job_by_id", {
+      p_job_id: jobId,
+    })) as { data: RawJobRow[] | null; error: { message?: string } | null };
+
+    if (error) return singleError();
+    const row = data?.[0] ?? null;
+    return { data: row ? safeJobRow(row) : null, error: false };
+  } catch {
+    return singleError();
+  }
+}
 export async function listOrchestratorJobsForGuard(): Promise<OrquestadorResult<OrchestratorJob>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
@@ -478,6 +513,133 @@ export async function listCompositeRunJobs(runId: string): Promise<OrquestadorRe
     return error ? emptyResult() : { data: data ?? [], error: false };
   } catch {
     return emptyResult();
+  }
+}
+
+export type RetrySourceJob = {
+  id: string;
+  jobType: string;
+  status: string;
+  targetWorkerId: string | null;
+  priority: number | null;
+  requestedSource: string | null;
+  payload: Record<string, unknown>;
+  compositeRunId: string | null;
+  compositeKind: string | null;
+  sequenceIndex: number | null;
+  sequenceTotal: number | null;
+};
+
+function recoveryCandidate(value: unknown): RecoveryCandidateJob | null {
+  if (!isRecord(value)) return null;
+  const jobId = typeof value.job_id === "string" ? value.job_id : typeof value.id === "string" ? value.id : null;
+  const lockedByWorkerId = typeof value.locked_by_worker_id === "string" ? value.locked_by_worker_id : null;
+  if (!jobId || typeof value.status !== "string") return null;
+  return { jobId, lockedByWorkerId, status: value.status };
+}
+
+function recoveryCandidates(value: unknown) {
+  return Array.isArray(value) ? value.map(recoveryCandidate).filter((item): item is RecoveryCandidateJob => Boolean(item)) : [];
+}
+
+function mapRecoveryResult(value: unknown): RecoveryResult | null {
+  if (!isRecord(value) || typeof value.dry_run !== "boolean") return null;
+  return {
+    dryRun: value.dry_run,
+    workerBefore: isRecord(value.worker_before) ? value.worker_before : null,
+    workerAfter: isRecord(value.worker_after) ? value.worker_after : null,
+    candidateJobs: recoveryCandidates(value.candidate_jobs),
+    updatedJobs: recoveryCandidates(value.updated_jobs),
+    eventsInserted: typeof value.events_inserted === "number" ? value.events_inserted : 0,
+    activeJobsAfter: typeof value.active_jobs_after === "number" ? value.active_jobs_after : 0,
+    message: typeof value.message === "string" ? sanitizeOperationalText(value.message) : null,
+  };
+}
+
+export async function listOrchestratorJobEvents(jobId: string, limit = 50): Promise<OrquestadorResult<OrchestratorEvent>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_list_job_events", {
+      p_job_id: jobId,
+      p_limit: Math.max(1, Math.min(Math.trunc(limit), 200)),
+    })) as { data: RawEventRow[] | null; error: { message?: string } | null };
+    return error ? emptyResult() : { data: (data ?? []).map(safeEventRow), error: false };
+  } catch {
+    return emptyResult();
+  }
+}
+
+export async function recoverOrchestratorStuckWorker(input: {
+  workerId: string;
+  recentHours: number;
+  reason: string;
+  dryRun: boolean;
+}): Promise<OrquestadorSingleResult<RecoveryResult>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_recover_stuck_worker", {
+      p_worker_id: input.workerId,
+      p_recent_hours: input.recentHours,
+      p_reason: input.reason,
+      p_dry_run: input.dryRun,
+    })) as { data: unknown; error: { message?: string } | null };
+    const result = mapRecoveryResult(data);
+    return error || !result ? singleError() : { data: result, error: false };
+  } catch {
+    return singleError();
+  }
+}
+
+export async function getOrchestratorJobForRetry(jobId: string): Promise<OrquestadorSingleResult<RetrySourceJob>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_get_job_for_retry", { p_job_id: jobId })) as {
+      data: unknown;
+      error: { message?: string } | null;
+    };
+    const row = Array.isArray(data) ? data[0] : data;
+    if (error || !isRecord(row) || typeof row.id !== "string" || typeof row.job_type !== "string" || typeof row.status !== "string" || !isRecord(row.payload)) {
+      return singleError();
+    }
+    return {
+      data: {
+        id: row.id,
+        jobType: row.job_type,
+        status: row.status,
+        targetWorkerId: typeof row.target_worker_id === "string" ? row.target_worker_id : null,
+        priority: typeof row.priority === "number" ? row.priority : null,
+        requestedSource: typeof row.requested_source === "string" ? row.requested_source : null,
+        payload: row.payload,
+        compositeRunId: typeof row.composite_run_id === "string" ? row.composite_run_id : null,
+        compositeKind: typeof row.composite_kind === "string" ? row.composite_kind : null,
+        sequenceIndex: typeof row.sequence_index === "number" ? row.sequence_index : null,
+        sequenceTotal: typeof row.sequence_total === "number" ? row.sequence_total : null,
+      },
+      error: false,
+    };
+  } catch {
+    return singleError();
+  }
+}
+export async function createRetryOrchestratorJob(input: {
+  source: RetrySourceJob;
+  requestedBy: string;
+}): Promise<OrquestadorSingleResult<OrchestratorJob>> {
+  if (input.source.priority === null) return singleError();
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_create_job", {
+      p_job_type: input.source.jobType,
+      p_requested_by: input.requestedBy,
+      p_requested_source: "retry_web_orchestrator",
+      p_target_worker_id: input.source.targetWorkerId,
+      p_priority: input.source.priority,
+      p_payload: input.source.payload,
+      p_not_before: new Date().toISOString(),
+    })) as { data: RawJobRow | null; error: { message?: string } | null };
+    return error || !data ? singleError() : { data: safeJobRow(data), error: false };
+  } catch {
+    return singleError();
   }
 }
 export async function getOperationalDashboardRpcData(query: OperationalDashboardQuery): Promise<OrquestadorSingleResult<unknown>> {

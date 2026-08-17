@@ -4,6 +4,7 @@ import { AlertTriangle, Clipboard, FileText, LoaderCircle, X } from "lucide-reac
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { JobTechnicalDetailViewModel, ReservasOperationalSummary } from "@/lib/orquestador/job-technical-detail";
+import { JobLivenessPanel } from "./job-liveness-panel";
 
 type DetailResponse = {
   detail?: JobTechnicalDetailViewModel;
@@ -225,6 +226,7 @@ export function JobTechnicalDetailButton({
 
             {detail ? (
               <div className="mt-4 grid gap-4">
+                <JobLivenessPanel jobId={jobId} />
                 <section className="rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] p-3">
                   <h3 className="font-medium text-navy">Resumen</h3>
                   <dl className="mt-3 grid gap-x-4 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
