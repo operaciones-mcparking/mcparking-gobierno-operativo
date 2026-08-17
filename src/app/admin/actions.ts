@@ -13,6 +13,17 @@ import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 type AdminSupabaseClient = Awaited<ReturnType<typeof requireAdminAccess>>["supabase"];
 type ProcessAdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
+export type ExistingProcessConflict = {
+  action: "continue" | "view" | "none";
+  companyName: string;
+  id: string;
+  lastEditedAt: string | null;
+  name: string;
+  ownerRoleName: string | null;
+  processCode: string | null;
+  status: string;
+};
+
 function createProcessDraftValidationClient(returnTo = "/procesos/nuevo") {
   try {
     return createSupabaseAdminClient();
@@ -719,7 +730,7 @@ async function persistProcessDraft(formData: FormData) {
   const draftIntent = value(formData, "draft_intent");
   const inlineDraft = draftIntent === "wizard_next" || draftIntent === "add_stage" || draftIntent === "add_role";
   const rejectDraft = (message: string) => {
-    if (inlineDraft) return { error: message, processId: null };
+    if (inlineDraft) return { error: message, existingProcess: null, processId: null };
     fail(message, returnTo);
   };
   const name = value(formData, "name");
@@ -780,6 +791,45 @@ async function persistProcessDraft(formData: FormData) {
 
   if (ownerError) {
     return rejectDraft(ownerError.message);
+  }
+
+  const existingResult = await processAdmin
+    .from("processes")
+    .select("id,name,status,documentation_status,process_code,master_updated_at,updated_at,owner_role_id")
+    .eq("company_id", companyId)
+    .eq("name", name)
+    .maybeSingle();
+
+  if (existingResult.error) {
+    return rejectDraft("No se pudo comprobar si el proceso ya existe.");
+  }
+
+  if (existingResult.data) {
+    const [companyResult, ownerResult] = await Promise.all([
+      processAdmin.from("companies").select("name").eq("id", companyId).maybeSingle(),
+      existingResult.data.owner_role_id
+        ? processAdmin.from("v_role_dictionary").select("role_name").eq("role_id", existingResult.data.owner_role_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+    const editable = existingResult.data.status === "inactive" && existingResult.data.documentation_status === "draft";
+    const active = existingResult.data.status === "active";
+    const existingProcess: ExistingProcessConflict = {
+      action: editable ? "continue" : active ? "view" : "none",
+      companyName: companyResult.data?.name ?? "la empresa seleccionada",
+      id: existingResult.data.id,
+      lastEditedAt: existingResult.data.master_updated_at ?? existingResult.data.updated_at ?? null,
+      name: existingResult.data.name,
+      ownerRoleName: ownerResult.data?.role_name ?? null,
+      processCode: existingResult.data.process_code ?? null,
+      status: editable ? "Borrador" : active ? "Vigente" : "No disponible",
+    };
+
+    if (inlineDraft) return { error: null, existingProcess, processId: null };
+    return rejectDraft(
+      editable
+        ? `Ya existe un borrador con este nombre para ${existingProcess.companyName}.`
+        : `Ya existe un proceso con este nombre para ${existingProcess.companyName}.`,
+    );
   }
 
   let countryId: string | null = null;
@@ -847,7 +897,7 @@ async function persistProcessDraft(formData: FormData) {
   revalidatePath(`/procesos/${created.process_id}/editar`);
 
   if (inlineDraft) {
-    return { error: null, processId: created.process_id };
+    return { error: null, existingProcess: null, processId: created.process_id };
   }
 
   if (returnTo !== "/procesos/nuevo") {

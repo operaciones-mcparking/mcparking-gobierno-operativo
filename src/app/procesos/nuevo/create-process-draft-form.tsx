@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { autoCreateProcessDraft } from "@/app/admin/actions";
+import { autoCreateProcessDraft, type ExistingProcessConflict } from "@/app/admin/actions";
 import { ProcessDocumentRow, ProcessDocumentSection } from "@/app/procesos/process-master/process-document-layout";
 import { ProcessWizardShell, type ProcessWizardStep } from "@/app/procesos/process-master/process-wizard-shell";
 
@@ -59,6 +60,7 @@ export function CreateProcessDraftForm({
   const [selectedOperationTypeId, setSelectedOperationTypeId] = useState("");
   const [selectedOwnerRoleId, setSelectedOwnerRoleId] = useState("");
   const [autoSaveMessage, setAutoSaveMessage] = useState<string | null>(null);
+  const [existingProcess, setExistingProcess] = useState<ExistingProcessConflict | null>(null);
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
   const autoSaveInFlightRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -91,6 +93,13 @@ export function CreateProcessDraftForm({
     setAutoSaveMessage("Guardando borrador...");
     try {
       const result = await autoCreateProcessDraft(formData, "wizard_next");
+      if (result?.existingProcess) {
+        autoSaveInFlightRef.current = false;
+        setIsCreatingDraft(false);
+        setAutoSaveMessage(null);
+        setExistingProcess(result.existingProcess);
+        return false;
+      }
       if (!result?.processId) {
         autoSaveInFlightRef.current = false;
         setIsCreatingDraft(false);
@@ -135,7 +144,7 @@ export function CreateProcessDraftForm({
               </div>
             ) : null}
             <div className="sm:col-span-2">
-              <Field label="Proceso"><input className={`${inputClass} text-base font-bold text-navy`} name="name" placeholder="Nombre del proceso" required /></Field>
+              <Field label="Proceso"><input className={`${inputClass} text-base font-bold text-navy`} name="name" onChange={() => setExistingProcess(null)} placeholder="Nombre del proceso" required /></Field>
             </div>
             <Field label="Empresa">
               <select
@@ -145,6 +154,7 @@ export function CreateProcessDraftForm({
                   setSelectedCompanyId(event.target.value);
                   setSelectedOperationTypeId("");
                   setSelectedOwnerRoleId("");
+                  setExistingProcess(null);
                 }}
                 required
                 value={selectedCompanyId}
@@ -174,6 +184,28 @@ export function CreateProcessDraftForm({
               </select>
             </Field>
             {autoSaveMessage ? <p aria-live="polite" className="text-xs font-medium text-slate-600 sm:col-span-2">{autoSaveMessage}</p> : null}
+            {existingProcess ? (
+              <div className="rounded-md border border-[#ffd6b0] bg-[#fff4e8] px-3 py-3 text-sm text-[#86510d] sm:col-span-2">
+                <p className="font-semibold">
+                  {existingProcess.action === "continue"
+                    ? `Ya existe un borrador con este nombre para ${existingProcess.companyName}.`
+                    : `Ya existe un proceso activo con este nombre para ${existingProcess.companyName}.`}
+                </p>
+                <p className="mt-1 text-xs">
+                  {existingProcess.processCode ?? "Sin codigo"}
+                  {existingProcess.ownerRoleName ? ` · ${existingProcess.ownerRoleName}` : ""}
+                  {existingProcess.lastEditedAt ? ` · Ultima edicion ${new Intl.DateTimeFormat("es-CL").format(new Date(existingProcess.lastEditedAt))}` : ""}
+                </p>
+                {existingProcess.action !== "none" ? (
+                  <Link
+                    className="mt-3 inline-flex h-9 items-center justify-center rounded-md border border-[#d6a65c] bg-white px-3 text-sm font-bold text-navy transition hover:bg-[#fffaf2] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea"
+                    href={existingProcess.action === "continue" ? `/procesos/${existingProcess.id}/editar` : `/procesos/${existingProcess.id}`}
+                  >
+                    {existingProcess.action === "continue" ? "Continuar borrador" : "Ver proceso"}
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </section>
       ),

@@ -91,7 +91,7 @@ assert.match(createAction, /\.rpc\([\s\S]*"create_process_draft_with_document_he
 assert.match(contractMigration, /v_process_code := public\.reserve_process_code\(\)[\s\S]*insert into public\.processes/, "V1 RPC must reserve and insert in one transaction");
 assert.match(createAction, /if \(!created\?\.process_id\)/, "draft action must handle missing process id as an error");
 assert.match(createAction, /draftIntent[\s\S]*wizard_next[\s\S]*add_stage[\s\S]*add_role/, "draft action must expose wizard, stage and role inline intents");
-assert.match(createAction, /if \(inlineDraft\)[\s\S]*return \{ error: null, processId: created\.process_id \}/, "inline draft creation must return the persisted process id");
+assert.match(createAction, /if \(inlineDraft\)[\s\S]*return \{ error: null, existingProcess: null, processId: created\.process_id \}/, "inline draft creation must return the persisted process id");
 assert.equal(countMatches(createAction, /create_process_draft_with_document_header/g), 1, "manual and inline creation must share the same atomic RPC");
 assert.match(createAction, /No fue posible crear el proceso\. Intenta nuevamente\./, "missing process id must produce a visible safe error");
 assert.match(createAction, /try \{[\s\S]*requestOperationalContext\(\)[\s\S]*companyOperationalContext\(supabase, companyId\)[\s\S]*\} catch \{/, "draft action must convert context lookup failures into visible errors");

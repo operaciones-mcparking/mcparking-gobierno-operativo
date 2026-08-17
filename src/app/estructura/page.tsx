@@ -22,6 +22,7 @@ import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
 import { AlertTriangle, PlusCircle } from "lucide-react";
 import { ProcessCatalogClient } from "@/app/procesos/process-catalog-client";
 import { getActiveProcessOperationTypeOptions } from "@/lib/procesos/process-company-options";
+import { getProcessDrafts } from "@/lib/procesos/process-drafts";
 
 type SearchParams = Promise<{
   country_id?: string;
@@ -742,6 +743,7 @@ export default async function EstructuraPage({
     processMatrixResult,
     processStageOwnerRolesResult,
     processOperationTypeResult,
+    processDraftsResult,
   ] = await Promise.all([
     getRoleDictionary(context),
     getArchivedRoleDictionary(context),
@@ -752,6 +754,7 @@ export default async function EstructuraPage({
     getProcessMatrixV2(),
     getProcessStageOwnerRoles(),
     getActiveProcessOperationTypeOptions(),
+    getProcessDrafts(context),
   ]);
   const newProcesses = processCatalogResult.data.filter((process) => Boolean(process.process_code?.trim()));
   const processCompanyOptions = Array.from(new Set(newProcesses.map((process) => process.owner_company_name ?? process.company_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "es"));
@@ -874,27 +877,55 @@ export default async function EstructuraPage({
               Nuevo proceso
             </Link>
           }
-          count={`${newProcesses.length} ${newProcesses.length === 1 ? "proceso" : "procesos"}`}
+          count={`${newProcesses.length + processDraftsResult.data.length} ${newProcesses.length + processDraftsResult.data.length === 1 ? "proceso" : "procesos"}`}
           description="Procesos documentados mediante la ficha de proceso."
           title="Procesos"
         >
-          {processCatalogResult.error || processMatrixResult.error || processOperationTypeResult.error ? (
+          {processCatalogResult.error || processMatrixResult.error || processOperationTypeResult.error || processDraftsResult.error ? (
             <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-medium text-[#86510d]">
-              {processCatalogResult.error?.message ?? processMatrixResult.error?.message ?? processOperationTypeResult.error?.message}
+              {processCatalogResult.error?.message ?? processMatrixResult.error?.message ?? processOperationTypeResult.error?.message ?? processDraftsResult.error?.message}
             </div>
           ) : (
-            <ProcessCatalogClient
-              activeProcesses={newProcesses}
-              catalogMode="new-only"
-              companyOptions={processCompanyOptions}
-              matrixRows={processMatrixResult.data}
-              ownerRoleOptions={processOwnerRoleOptions}
-              personOptions={processPersonOptions}
-              roleDictionary={roleDictionaryResult.data}
-              stageOwnerRoles={processStageOwnerRolesResult.data}
-              supportRoleOptions={processSupportRoleOptions}
-              typeOptions={processOperationTypeResult.data}
-            />
+            <>
+              <ProcessCatalogClient
+                activeProcesses={newProcesses}
+                catalogMode="new-only"
+                companyOptions={processCompanyOptions}
+                matrixRows={processMatrixResult.data}
+                ownerRoleOptions={processOwnerRoleOptions}
+                personOptions={processPersonOptions}
+                roleDictionary={roleDictionaryResult.data}
+                stageOwnerRoles={processStageOwnerRolesResult.data}
+                supportRoleOptions={processSupportRoleOptions}
+                typeOptions={processOperationTypeResult.data}
+              />
+              {processDraftsResult.data.length > 0 ? (
+                <details className="group/drafts mt-7 border-t border-line pt-5">
+                  <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-md px-1 py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-navy">Borradores ({processDraftsResult.data.length})</h3>
+                      <p className="mt-1 text-sm text-slate-600">Procesos pendientes de completar.</p>
+                    </div>
+                    <span className="text-sm font-semibold text-sea">
+                      <span className="group-open/drafts:hidden">Ver borradores</span>
+                      <span className="hidden group-open/drafts:inline">Ocultar</span>
+                    </span>
+                  </summary>
+                  <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white">
+                    {processDraftsResult.data.map((draft) => (
+                      <div className="grid gap-3 border-b border-line px-4 py-3 last:border-b-0 md:grid-cols-[minmax(220px,1.5fr)_minmax(130px,0.8fr)_minmax(120px,0.8fr)_minmax(150px,1fr)_120px_auto] md:items-center" key={draft.id}>
+                        <div><p className="font-semibold text-navy">{draft.name}</p><p className="mt-1 text-xs text-slate-500">{draft.processCode}</p></div>
+                        <div><p className="text-xs text-slate-500">Empresa</p><p className="text-sm text-navy">{draft.companyName}</p></div>
+                        <div><p className="text-xs text-slate-500">Tipo</p><p className="text-sm text-navy">{draft.processType === "strategic" ? "Estrategico" : draft.processType === "support" ? "Soporte" : "Operativo / Clave"}</p></div>
+                        <div><p className="text-xs text-slate-500">Dueno</p><p className="text-sm text-navy">{draft.ownerRoleName ?? "Sin rol dueno"}</p></div>
+                        <div><p className="text-xs text-slate-500">Ultima edicion</p><p className="text-sm text-navy">{draft.lastEditedAt ? new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago" }).format(new Date(draft.lastEditedAt)) : "Sin fecha"}</p></div>
+                        <div className="flex items-center gap-2 md:justify-end"><span className="rounded-full border border-[#ffd6b0] bg-[#fff4e8] px-2 py-1 text-xs font-semibold text-[#86510d]">Borrador</span><Link className="inline-flex h-9 items-center rounded-md border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef7fb]" href={`/procesos/${draft.id}/editar`}>Continuar</Link></div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+            </>
           )}
         </Panel>
       </section>
