@@ -202,7 +202,7 @@ export default async function EditProcessPage({ params, searchParams }: { params
       {messages.ok ? <div className="mt-5 rounded-lg border border-[#c8e6d0] bg-[#e4f4ea] p-4 text-sm font-semibold text-[#24613d]">{messages.ok}</div> : null}
       {messages.error ? <div className="mt-5 rounded-lg border border-[#ffd6b0] bg-[#ffe6ca] p-4 text-sm font-semibold text-[#86510d]">{messages.error}</div> : null}
 
-      <ProcessMasterSaveCoordinator initialActivationSnapshot={createProcessActivationSnapshot(masterProcess)}>
+      <ProcessMasterSaveCoordinator canOfferActivation={process.status === "inactive"} initialActivationSnapshot={createProcessActivationSnapshot(masterProcess)}>
         {process.status === "inactive" ? (
           <ProcessActivationPanel
             action={activateProcess}

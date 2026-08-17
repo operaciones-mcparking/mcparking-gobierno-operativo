@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { CheckCircle2, ChevronDown, ChevronUp, ShieldAlert, X } from "lucide-react";
 
-import { useProcessMasterReadiness } from "@/app/procesos/process-master/process-master-save-coordinator";
+import { useProcessMasterActivationPrompt, useProcessMasterReadiness } from "@/app/procesos/process-master/process-master-save-coordinator";
 
 type ProcessActivationPanelProps = {
   action: (formData: FormData) => void | Promise<void>;
@@ -32,12 +32,14 @@ export function ProcessActivationPanel({
   processName,
 }: ProcessActivationPanelProps) {
   const { completeness, hasChanges, isSaving, validation } = useProcessMasterReadiness();
+  const registerActivationPrompt = useProcessMasterActivationPrompt();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const isReady = validation.isValid;
   const hasDetails = validation.missingFields.length > 0 || validation.warnings.length > 0;
   const title = `Borrador - ${completeness.completionPercent}% completo`;
 
+  useEffect(() => registerActivationPrompt(() => setConfirmOpen(true)), [registerActivationPrompt]);
   useEffect(() => {
     if (!confirmOpen) return;
     function closeOnEscape(event: KeyboardEvent) {

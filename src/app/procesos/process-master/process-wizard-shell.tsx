@@ -83,7 +83,7 @@ export function ProcessWizardShell({
   }
 
   const activeIndex = activeStep - 1;
-  const waiting = pending || isNavigating;
+  const waiting = pending || isNavigating || Boolean(saveState?.isSaving);
 
   return (
     <div className="mt-5 grid gap-4 lg:grid-cols-[15rem_minmax(0,1fr)] lg:items-start">
