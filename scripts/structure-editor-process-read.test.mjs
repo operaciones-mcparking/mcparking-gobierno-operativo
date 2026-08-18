@@ -8,6 +8,7 @@ const catalog = readFileSync("src/app/procesos/process-catalog-client.tsx", "utf
 const detailModal = readFileSync("src/app/procesos/process-detail-modal.tsx", "utf8");
 const detailRoute = readFileSync("src/app/api/estructura/procesos/[processId]/ficha/route.ts", "utf8");
 const pdfRoute = readFileSync("src/app/api/procesos/[processId]/pdf/route.ts", "utf8");
+const masterSheet = readFileSync("src/app/procesos/process-master/process-master-sheet.tsx", "utf8");
 
 assert.ok(structurePage.includes("canViewProcessDetails={structureAccess.canAccessStructure}"));
 assert.ok(catalog.includes("canViewProcessDetails ? <ProcessDetailModal"));
@@ -16,6 +17,8 @@ assert.ok(detailModal.includes("Ver ficha"));
 assert.ok(detailModal.includes('role="dialog"'));
 assert.ok(detailModal.includes('aria-modal="true"'));
 assert.ok(detailModal.includes('<ProcessMasterSheet mode="readonly" process={detail} />'));
+assert.ok(masterSheet.includes('risk.risk_type === "opportunity" ? "Oportunidad:" : "Riesgo:"'));
+assert.ok(!masterSheet.includes('<ValueBadge tone={risk.risk_type'));
 assert.ok(detailModal.includes("/api/estructura/procesos/"));
 assert.ok(detailModal.includes("process.process_id"));
 assert.ok(detailModal.includes("/ficha"));

@@ -41,6 +41,9 @@ assert.doesNotMatch(editor, /<form|action=\{action\}/, "section 5 must not submi
 assert.match(editPage, /getProcessRisksForMaster[\s\S]*ProcessRisksControlsEditor[\s\S]*action=\{saveProcessRisksAndControls\}/, "edit must connect section 5 CRUD");
 assert.match(detailPage + readModel, /getProcessMasterReadModel[\s\S]*getProcessRisksForMaster[\s\S]*process\.risks = risksResult\.data/, "readonly must load real risks and controls through the shared read model");
 assert.match(sheet, /5\. RIESGOS, CONTROLES Y OPORTUNIDADES/, "readonly must expose section 5");
+assert.match(sheet, /risk\.risk_type === "opportunity" \? "Oportunidad:" : "Riesgo:"/, "readonly must render the risk type as an inline label");
+assert.match(sheet, /min-w-0 break-words leading-5/, "readonly risk names must wrap without mobile overflow");
+assert.doesNotMatch(sheet, /<ValueBadge tone=\{risk\.risk_type/, "readonly must not render a risk or opportunity badge");
 assert.match(sheet, /control\?\.responsible_roles\.map/, "readonly controls must resolve responsible role names");
 assert.match(sheet, /join\(" \\u00b7 "\)/, "readonly controls must join role names with a middle dot");
 assert.match(createForm, /5\. RIESGOS, CONTROLES Y OPORTUNIDADES[\s\S]*Disponible en el borrador del proceso/, "create wizard must reserve section 5 without fake persistence");
