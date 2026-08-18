@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Check, Filter, Search, X } from "lucide-react";
+import { Check, Filter, Lock, Search, Unlock, X } from "lucide-react";
 
 import { toggleRoleGovernanceProcessInline } from "@/app/admin/actions";
 import { ValueBadge } from "@/components/dashboard/badge";
@@ -34,6 +34,7 @@ export function StructureExplorer({
   const [area, setArea] = useState(allOption);
   const [role, setRole] = useState(allOption);
   const [query, setQuery] = useState("");
+  const [matrixEditingEnabled, setMatrixEditingEnabled] = useState(false);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
   const [matrixError, setMatrixError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
@@ -70,7 +71,7 @@ export function StructureExplorer({
   };
 
   function toggleAssignment(process: GovernanceProcess, item: OrgRole, active: boolean) {
-    if (!item.id) return;
+    if (!matrixEditingEnabled || !item.id) return;
 
     const key = `${item.id}:${process.name}`;
     setPendingKey(key);
@@ -126,6 +127,25 @@ export function StructureExplorer({
 
   return (
     <div className="mt-5 space-y-4">
+      <div className="flex justify-end">
+        <button
+          aria-checked={matrixEditingEnabled}
+          aria-label={matrixEditingEnabled ? "Desactivar modo edición de la matriz" : "Activar modo edición de la matriz"}
+          className="inline-flex min-h-10 items-center gap-3 rounded-lg border border-[#cbd8e3] bg-white px-3 py-2 text-sm font-semibold text-navy transition hover:border-sea focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
+          onClick={() => setMatrixEditingEnabled((enabled) => !enabled)}
+          role="switch"
+          type="button"
+        >
+          {matrixEditingEnabled ? <Unlock className="h-4 w-4 text-sea" /> : <Lock className="h-4 w-4 text-slate-500" />}
+          <span>{matrixEditingEnabled ? "Modo edición activado" : "Edición bloqueada"}</span>
+          <span
+            aria-hidden="true"
+            className={`relative h-5 w-9 rounded-full transition ${matrixEditingEnabled ? "bg-sea" : "bg-slate-300"}`}
+          >
+            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition ${matrixEditingEnabled ? "left-[18px]" : "left-0.5"}`} />
+          </span>
+        </button>
+      </div>
       <div className="grid gap-3 rounded-xl border border-[#cbd8e3] bg-[#f8fafb] p-4 lg:grid-cols-[1.2fr_220px_220px_auto] lg:items-end">
         <div>
           <div className="flex items-center gap-2 text-sm font-medium text-navy">
@@ -238,12 +258,13 @@ export function StructureExplorer({
                         title={`${process.name} - ${item.title}`}
                       >
                         <button
+                          aria-label={`${active ? "Quitar" : "Agregar"} relación entre ${process.name} y ${item.title}`}
                           className={`flex h-7 w-7 items-center justify-center rounded-full border text-sm transition ${
                             active
-                              ? "border-[#9fd9b9] bg-[#eefaf2] text-[#22613b] hover:bg-[#dff4e7]"
-                              : "border-[#e3ebf1] bg-[#f8fbfd] text-transparent hover:border-sea hover:bg-[#eef7fb]"
+                              ? `border-[#9fd9b9] bg-[#eefaf2] text-[#22613b] ${matrixEditingEnabled ? "hover:bg-[#dff4e7]" : "cursor-not-allowed opacity-80"}`
+                              : `border-[#e3ebf1] bg-[#f8fbfd] text-transparent ${matrixEditingEnabled ? "hover:border-sea hover:bg-[#eef7fb]" : "cursor-not-allowed opacity-80"}`
                           } ${pending ? "animate-pulse ring-2 ring-[#dceaf2]" : ""}`}
-                          disabled={!item.id || pending}
+                          disabled={!matrixEditingEnabled || !item.id || pending}
                           onClick={() => toggleAssignment(process, item, active)}
                           type="button"
                         >
