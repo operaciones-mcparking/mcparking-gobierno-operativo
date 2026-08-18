@@ -97,6 +97,44 @@ export function shouldAddPdfPage(currentY: number, requiredHeight: number) {
   return currentY - requiredHeight < MARGIN + 16;
 }
 
+export type PdfTablePagePlan = {
+  continuation: boolean;
+  rowIndexes: number[];
+};
+
+export function planPdfTablePages(
+  currentY: number,
+  rowHeights: number[],
+  sectionHeight = 28,
+  headerHeight = 19,
+) {
+  const pageTop = PAGE_HEIGHT - MARGIN;
+  const pageBottom = MARGIN + 16;
+  const maximumRowHeight = pageTop - pageBottom - sectionHeight - headerHeight;
+  const startsOnNewPage = shouldAddPdfPage(
+    currentY,
+    sectionHeight + headerHeight + (rowHeights[0] ?? 0),
+  );
+  const pages: PdfTablePagePlan[] = [{ continuation: false, rowIndexes: [] }];
+  let page = pages[0];
+  let availableY = (startsOnNewPage ? pageTop : currentY) - sectionHeight - headerHeight;
+
+  rowHeights.forEach((rowHeight, rowIndex) => {
+    if (rowHeight > maximumRowHeight) {
+      throw new Error("A PDF table row is taller than the printable page area.");
+    }
+    if (availableY - rowHeight < pageBottom) {
+      page = { continuation: true, rowIndexes: [] };
+      pages.push(page);
+      availableY = pageTop - sectionHeight - headerHeight;
+    }
+    page.rowIndexes.push(rowIndex);
+    availableY -= rowHeight;
+  });
+
+  return { pages, startsOnNewPage };
+}
+
 class ProcessPdfLayout {
   private page!: PDFPage;
   private y = PAGE_HEIGHT - MARGIN;
@@ -156,17 +194,57 @@ class ProcessPdfLayout {
     const lineHeight = 9.2;
     const padding = 4;
     const headerHeight = 19;
-    const firstRow = rows[0] ?? ["No documentado", ...headers.slice(1).map(() => "")];
-    const firstRowLines = Math.max(
-      ...firstRow.map((cell, index) => wrap(text(cell), this.regular, fontSize, widths[index] - padding * 2).length),
-    );
-    const firstRowHeight = firstRowLines * lineHeight + padding * 2;
+    const normalizedRows = rows.length
+      ? rows
+      : [["No documentado", ...headers.slice(1).map(() => "")]];
+    const measuredRows = normalizedRows.map((row) => {
+      const cellLines = row.map((cell, index) =>
+        wrap(text(cell), this.regular, fontSize, widths[index] - padding * 2),
+      );
+      return {
+        cellLines,
+        height: Math.max(...cellLines.map((lines) => lines.length)) * lineHeight + padding * 2,
+      };
+    });
+    const plan = planPdfTablePages(this.y, measuredRows.map((row) => row.height));
 
-    this.ensureSpace(28 + headerHeight + firstRowHeight);
-    this.section(title);
-    this.table(headers, rows, widths);
+    const drawSectionTitle = (continuation: boolean) => {
+      const label = continuation ? title + " - continuación" : title;
+      this.page.drawRectangle({ x: MARGIN, y: this.y - 22, width: CONTENT_WIDTH, height: 22, color: NAVY });
+      this.page.drawRectangle({ x: MARGIN, y: this.y - 22, width: 5, height: 22, color: YELLOW });
+      this.page.drawText(pdfText(label), { x: MARGIN + 11, y: this.y - 15, size: 9, font: this.bold, color: WHITE });
+      this.y -= 28;
+    };
+    const drawHeader = () => {
+      let x = MARGIN;
+      headers.forEach((header, index) => {
+        this.page.drawRectangle({ x, y: this.y - headerHeight, width: widths[index], height: headerHeight, color: LIGHT, borderColor: LINE, borderWidth: 0.6 });
+        this.page.drawText(pdfText(header), { x: x + padding, y: this.y - 12.5, size: 6.5, font: this.bold, color: SLATE });
+        x += widths[index];
+      });
+      this.y -= headerHeight;
+    };
+
+    if (plan.startsOnNewPage) this.addPage();
+    plan.pages.forEach((plannedPage, pageIndex) => {
+      if (pageIndex > 0) this.addPage();
+      drawSectionTitle(plannedPage.continuation);
+      drawHeader();
+      plannedPage.rowIndexes.forEach((rowIndex) => {
+        const measuredRow = measuredRows[rowIndex];
+        let x = MARGIN;
+        measuredRow.cellLines.forEach((lines, index) => {
+          this.page.drawRectangle({ x, y: this.y - measuredRow.height, width: widths[index], height: measuredRow.height, color: WHITE, borderColor: LINE, borderWidth: 0.6 });
+          lines.forEach((line, lineIndex) => {
+            this.page.drawText(line, { x: x + padding, y: this.y - padding - fontSize - lineIndex * lineHeight, size: fontSize, font: this.regular, color: SLATE });
+          });
+          x += widths[index];
+        });
+        this.y -= measuredRow.height;
+      });
+    });
+    this.y -= 9;
   }
-
   table(headers: string[], rows: string[][], widths: number[]) {
     const fontSize = 7.4;
     const lineHeight = 9.2;
@@ -267,19 +345,18 @@ export async function generateProcessPdf(process: ProcessMasterDto) {
     [92, 164, 92, CONTENT_WIDTH - 348],
   );
 
-  layout.section("1. PROPOSITO Y ALCANCE");
-  layout.table(["CAMPO", "CONTENIDO"], [
+  layout.tableSection("1. PROPOSITO Y ALCANCE", ["CAMPO", "CONTENIDO"], [
     ["Propósito", text(process.process.objective)],
     ["Inicio", text(process.process.processStart)],
     ["Fin", text(process.process.processEnd)],
     ["Alcance", text(process.process.scope)],
   ], [105, CONTENT_WIDTH - 105]);
 
-  layout.section("2. ENTRADAS, ACTIVIDADES Y SALIDAS");
   const activities = process.stages
     .map((stage, index) => String(stage.sort_order ?? index + 1) + ". " + stage.name)
     .join("\n");
-  layout.table(
+  layout.tableSection(
+    "2. ENTRADAS, ACTIVIDADES Y SALIDAS",
     ["PROVEEDOR / ORIGEN", "ENTRADAS", "ACTIVIDADES CLAVE", "SALIDAS", "CLIENTE / DESTINO"],
     [[
       text(process.process.supplier_origin),

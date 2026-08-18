@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import { signIn, signInWithGoogle } from "@/app/login/actions";
+import { PasswordInput } from "@/app/login/password-input";
 
 export default async function LoginPage({
   searchParams,
@@ -45,17 +46,17 @@ export default async function LoginPage({
 
         <div className="relative max-w-md">
           <p className="text-xs font-medium uppercase tracking-[0.18em] text-[#8ed8e5]">
-            Gobierno operativo
+            PORTAL INTERNO
           </p>
           <h2 className="mt-4 text-3xl font-medium leading-tight">
-            Pais, sede, empresa y roles en una sola linea operacional.
+            Bienvenido.
           </h2>
           <p className="mt-4 text-sm leading-6 text-[#c8d9e8]">
-            Acceso privado para trabajar con la estructura autorizada de McParking.
+            Acceso privado para usuarios autorizados.
           </p>
         </div>
 
-        <p className="relative text-xs text-[#c8d9e8]">McParking interno</p>
+        <span aria-hidden="true" className="relative text-xs">&nbsp;</span>
       </section>
 
       <section className="relative flex flex-1 items-center justify-center overflow-hidden px-5 py-10">
@@ -84,13 +85,13 @@ export default async function LoginPage({
             />
           </div>
           <p className="mt-5 text-[11px] font-medium uppercase tracking-[0.18em] text-sea">
-            Acceso interno
+            PORTAL INTERNO
           </p>
           <h1 className="mt-2 text-[2rem] font-medium leading-tight text-navy">
-            Iniciar sesion
+            Bienvenido.
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            Entra para trabajar sobre la linea operacional asignada.
+            Acceso privado para usuarios autorizados.
           </p>
         </div>
 
@@ -155,16 +156,7 @@ export default async function LoginPage({
             />
           </label>
 
-          <label className="block text-sm font-medium text-navy">
-            Clave
-            <input
-              autoComplete="current-password"
-              className="mt-2 h-11 w-full rounded-lg border border-[#ccd9e5] bg-white px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-sea focus:ring-2 focus:ring-[#dceff5]"
-              name="password"
-              placeholder="Ingresa tu clave"
-              type="password"
-            />
-          </label>
+          <PasswordInput />
 
           <button
             className="mt-2 h-11 w-full rounded-lg bg-navy px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[#034982]"
@@ -175,7 +167,7 @@ export default async function LoginPage({
         </form>
 
         <p className="mt-6 text-center text-xs leading-5 text-slate-500">
-          Acceso privado. Las cuentas y permisos los administra McParking.
+          Acceso restringido.
         </p>
       </div>
       </section>
