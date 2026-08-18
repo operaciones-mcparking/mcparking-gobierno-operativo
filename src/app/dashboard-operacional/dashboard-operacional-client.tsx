@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 
 import {
   calculateOperationalDashboardTotals,
+  getOperationalDashboardTodayDate,
   type OperationalDashboardRow,
   type OperationalDashboardTotals,
   type OperationalDashboardViewModel,
@@ -76,12 +77,7 @@ const emptyTotals: OperationalDashboardTotals = {
 };
 
 function getTodayLocalDate() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return getOperationalDashboardTodayDate();
 }
 
 function toLocalDateKey(date: Date) {
@@ -162,6 +158,10 @@ function getCustomRangeMode(range: Pick<DateRange, "from" | "to">): CustomRangeM
 
 function buildDashboardRangeQuery(range: DateRange) {
   return `?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`;
+}
+
+function dashboardMatchesRange(dashboard: OperationalDashboardViewModel | null, range: DateRange) {
+  return dashboard?.filters?.from === range.from && dashboard.filters.to === range.to;
 }
 
 function updateStatusLabel(status: string | null | undefined) {
@@ -1158,10 +1158,13 @@ function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: Date
 
 export function DashboardOperacionalClient({ initialDashboard, initialError }: DashboardOperacionalClientProps) {
   const initialDateRangeRef = useRef(getPresetDateRange("today"));
+  const initialDashboardRef = useRef(
+    dashboardMatchesRange(initialDashboard, initialDateRangeRef.current) ? initialDashboard : null,
+  );
   const activeRequestRef = useRef(0);
-  const [dashboard, setDashboard] = useState(initialDashboard);
+  const [dashboard, setDashboard] = useState(initialDashboardRef.current);
   const [dateRange, setDateRange] = useState<DateRange>(initialDateRangeRef.current);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(initialDashboardRef.current === null);
   const [error, setError] = useState(initialError);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
 
@@ -1192,6 +1195,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
     const requestId = activeRequestRef.current + 1;
     activeRequestRef.current = requestId;
     setDateRange(range);
+    setDashboard(null);
     setIsLoading(true);
     setError(null);
 
@@ -1213,6 +1217,11 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
         return false;
       }
 
+      if (!dashboardMatchesRange(body.dashboard, range)) {
+        setError("La respuesta no corresponde al periodo seleccionado.");
+        return false;
+      }
+
       setDashboard(body.dashboard);
       return true;
     } catch {
@@ -1230,6 +1239,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   }, []);
 
   useEffect(() => {
+    if (initialDashboardRef.current) return;
     void loadByRange(initialDateRangeRef.current);
   }, [loadByRange]);
 
@@ -1245,7 +1255,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sea">Dashboard operacional</p>
             <div className="hidden lg:block">
             <h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP</h2>
-            <LastUpdateSummary dashboard={dashboard} />
+            {isLoading ? <p className="mt-2 text-sm text-slate-600">Cargando datos...</p> : <LastUpdateSummary dashboard={dashboard} />}
             </div>
           </div>
           <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
@@ -1270,11 +1280,11 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
 
       {isLoading ? <div className="mt-5"><LoadingOverlay /></div> : null}
 
-      {!dashboard?.lastUpdate && !error ? (
+      {!isLoading && !dashboard?.lastUpdate && !error ? (
         <div className="mt-5 rounded-lg border border-[#d6e1ea] bg-white p-5 text-sm text-slate-600">No hay una corrida operacional disponible todavia.</div>
       ) : null}
 
-      <section className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.86fr)_minmax(0,1fr)]">
+      {!isLoading && dashboard ? <><section className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.86fr)_minmax(0,1fr)]">
         <div className="order-2 xl:order-1">
           <SystemColumn label="OKP" totals={groupTotals(dashboard, "OKP")} />
         </div>
@@ -1306,6 +1316,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       </section>
 
       <ParkingDetailDrawer onClose={closeParkingDetail} row={selectedParkingDetail} />
+      </> : null}
     </>
   );
 }

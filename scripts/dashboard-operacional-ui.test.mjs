@@ -82,16 +82,15 @@ test("D1. selector de periodo contiene presets, custom e icono real", () => {
   assert.match(client, /Aplicar/);
 });
 
-test("D2. presets calculan rangos con fecha local", () => {
+test("D2. presets calculan rangos con fecha operacional canonica", () => {
   assert.match(client, /getPresetDateRange\("today"\)/);
   assert.match(client, /addLocalDays\(todayKey, -1\)/);
   assert.match(client, /addLocalDays\(todayKey, -6\)/);
   assert.match(client, /addLocalDays\(todayKey, -13\)/);
   assert.match(client, /firstDayOfMonth\(todayKey\)/);
   assert.match(client, /previousMonthRange\(todayKey\)/);
-  assert.match(client, /today\.getFullYear\(\)/);
-  assert.match(client, /today\.getMonth\(\) \+ 1/);
-  assert.match(client, /today\.getDate\(\)/);
+  assert.match(client, /return getOperationalDashboardTodayDate\(\)/);
+  assert.match(dataHelper, /timeZone: "America\/Santiago"/);
   assert.doesNotMatch(client, /toISOString\(\)\.slice\(0, 10\)/);
 });
 
@@ -811,11 +810,10 @@ test("X. no duplica rutas ni contratos del composite run en Dashboard", () => {
   assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/advance/);
   assert.match(compositeHook, /orquestador:actualizar-datos:last-month:run-id:v1/);
 });
-test("Y. fecha inicial usa hoy local sin toISOString", () => {
+test("Y. fecha inicial usa hoy operacional sin toISOString", () => {
   assert.match(client, /function getTodayLocalDate\(\)/);
-  assert.match(client, /today\.getFullYear\(\)/);
-  assert.match(client, /today\.getMonth\(\) \+ 1/);
-  assert.match(client, /today\.getDate\(\)/);
+  assert.match(client, /return getOperationalDashboardTodayDate\(\)/);
+  assert.match(dataHelper, /timeZone: "America\/Santiago"/);
   assert.match(client, /padStart\(2, "0"\)/);
   assert.match(client, /return `\$\{year\}-\$\{month\}-\$\{day\}`/);
   assert.match(client, /initialDateRangeRef = useRef\(getPresetDateRange\("today"\)\)/);
@@ -859,7 +857,7 @@ test("Z3. seccion intermedia no aparece en Dashboard y el control queda en cabec
 
 test("Z3b. cabecera movil conserva solo titulo fecha y accion principal", () => {
   assert.match(client, /<p className="text-xs font-semibold uppercase tracking-\[0\.14em\] text-sea">Dashboard operacional<\/p>/);
-  assert.match(client, /<div className="hidden lg:block">\s*<h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP<\/h2>\s*<LastUpdateSummary dashboard=\{dashboard\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="hidden lg:block">\s*<h2 className="mt-2 text-xl font-semibold text-navy">Comparativa operacional MCP vs OKP<\/h2>\s*\{isLoading \? <p[\s\S]*Cargando datos\.\.\.<\/p> : <LastUpdateSummary dashboard=\{dashboard\} \/>\}\s*<\/div>/);
   assert.match(client, /Periodo/);
   assert.match(client, /<ActualizarDatosOperacionalesControl/);
   assert.match(client, /presentation="overlay"/);

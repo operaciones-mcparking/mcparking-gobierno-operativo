@@ -1,15 +1,16 @@
-import { normalizeOperationalDashboardRpcResult, type OperationalDashboardQuery } from "@/lib/dashboard/operacional";
+import { getOperationalDashboardTodayDate, normalizeOperationalDashboardRpcResult, type OperationalDashboardQuery } from "@/lib/dashboard/operacional";
 import { getOperationalDashboardRpcData } from "@/lib/orquestador/supabase-admin";
 import { DashboardOperacionalClient } from "../dashboard-operacional/dashboard-operacional-client";
 
 async function loadDashboard() {
+  const today = getOperationalDashboardTodayDate();
   const query: OperationalDashboardQuery = {
     date: null,
-    from: null,
+    from: today,
     parking_codigo: null,
     sistema_grupo: null,
     source_run_id: null,
-    to: null,
+    to: today,
   };
 
   const result = await getOperationalDashboardRpcData(query);
