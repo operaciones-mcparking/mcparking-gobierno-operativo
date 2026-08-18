@@ -97,9 +97,9 @@ test("K. inicio envia solo confirm true", () => {
   assert.match(hook, /body: JSON\.stringify\(\{ confirm: true \}\)/);
 });
 
-test("L. advance envia solo run_id", () => {
-  assert.match(hook, /fetch\("\/api\/orquestador\/operaciones\/actualizar-datos\/advance"/);
-  assert.match(hook, /body: JSON\.stringify\(\{ run_id: runId \}\)/);
+test("L. cliente no avanza el composite", () => {
+  assert.doesNotMatch(hook, /fetch\("\/api\/orquestador\/operaciones\/actualizar-datos\/advance"/);
+  assert.doesNotMatch(hook, /advanceRun|isAdvancingRef|advanceControllerRef/);
 });
 
 test("M. cliente consulta estado por run_id", () => {
@@ -107,7 +107,7 @@ test("M. cliente consulta estado por run_id", () => {
   assert.match(hook, /cache: "no-store"/);
 });
 
-test("N. valida UUID antes de consultar o avanzar", () => {
+test("N. valida UUID antes de consultar", () => {
   assert.match(hook, /uuidPattern/);
   assert.match(hook, /function isValidUuid\(value: string\)/);
   assert.match(hook, /!isValidUuid\(runId\)/);
@@ -162,14 +162,14 @@ test("P2. montaje con UUID real inicia GET antes de cualquier clearStoredRun", (
   assert.ok(hook.indexOf("loadRun(normalizedStoredRunId, { allowNotFoundReset: true })") < hook.indexOf('clearStoredRun("invalid_stored_run_id")', hook.indexOf("} else if (storedRunId) {")));
 });
 
-test("P3. GET 200 waiting conserva storage asigna run y permite advance", () => {
+test("P3. GET 200 waiting conserva storage y continua polling de lectura", () => {
   assert.match(hook, /runStatuses = new Set\(\["ready", "running", "waiting", "succeeded", "failed", "cancelled"\]\)/);
   assert.match(hook, /isCompositeRunViewModel\(responseBody\.run\)/);
   assert.ok(hook.indexOf("persistRunId(responseBody.run.run_id)") < hook.indexOf("setRun(responseBody.run)"));
   assert.match(hook, /setRun\(responseBody\.run\)/);
   assert.match(control, /run \? <CompositeRunViewer/);
   assert.match(control, /compact=\{useOverlay\}/);
-  assert.match(hook, /if \(isTerminalRun\(nextRun\)\) \{\s*return;\s*\}\s*await advanceRun\(nextRun\.run_id\)/s);
+  assert.match(hook, /if \(isTerminalRun\(nextRun\)\) \{\s*return;\s*\}\s*scheduleNext\(nextRun\.run_id, retryDelayRef\.current\)/s);
 });
 test("P4. cleanup de Strict Mode solo aborta y conserva storage", () => {
   const cleanupMatch = hook.match(/return \(\) => \{\s*isMountedRef\.current = false;\s*stopRequests\("effect_cleanup"\);\s*recoveryStartedRef\.current = false;\s*\};/);
@@ -184,10 +184,11 @@ test("P5. GET abortado no borra localStorage", () => {
   assert.doesNotMatch(abortBlock, /clearStoredRun|localStorage\.removeItem|setRun\(null\)|setStatus\("idle"\)/);
 });
 
-test("P6. recuperacion GET 200 waiting conserva run_id y habilita avance", () => {
+test("P6. recuperacion GET 200 waiting conserva run_id y observa cambios", () => {
   assert.ok(hook.indexOf("persistRunId(responseBody.run.run_id)") < hook.indexOf("setRun(responseBody.run)"));
   assert.ok(hook.indexOf("setRun(responseBody.run)") < hook.indexOf("return responseBody.run"));
-  assert.match(hook, /await advanceRun\(nextRun\.run_id\)/);
+  assert.match(hook, /const nextRun = await loadRun\(runId\)/);
+  assert.doesNotMatch(hook, /advanceRun/);
 });
 
 test("P7. GET 404 confirmado es la unica limpieza automatica de recuperacion", () => {
@@ -222,9 +223,9 @@ test("S. polling inicial rapido tras crear o recuperar", () => {
   assert.match(hook, /scheduleNext\(loadedRun\.run_id, 1000\)/);
 });
 
-test("T. evita requests superpuestos", () => {
+test("T. evita requests GET superpuestos", () => {
   assert.match(hook, /isRefreshingRef\.current/);
-  assert.match(hook, /isAdvancingRef\.current/);
+  assert.doesNotMatch(hook, /isAdvancingRef\.current/);
 });
 
 test("U. usa AbortController", () => {

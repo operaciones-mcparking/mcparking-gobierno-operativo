@@ -112,9 +112,7 @@ export function useCompositeOperationsRun() {
   const [isStarting, setIsStarting] = useState(false);
   const isMountedRef = useRef(true);
   const getControllerRef = useRef<AbortController | null>(null);
-  const advanceControllerRef = useRef<AbortController | null>(null);
   const isRefreshingRef = useRef(false);
-  const isAdvancingRef = useRef(false);
   const isDiscoveringActiveRef = useRef(false);
   const recoveryStartedRef = useRef(false);
   const shouldRetryRef = useRef(false);
@@ -147,11 +145,8 @@ export function useCompositeOperationsRun() {
   const stopRequests = useCallback(
     (_reason: string) => {
       getControllerRef.current?.abort();
-      advanceControllerRef.current?.abort();
       getControllerRef.current = null;
-      advanceControllerRef.current = null;
       isRefreshingRef.current = false;
-      isAdvancingRef.current = false;
       isDiscoveringActiveRef.current = false;
       shouldRetryRef.current = false;
       clearDiscoveryTimer();
@@ -339,63 +334,6 @@ export function useCompositeOperationsRun() {
     }
   }, [clearStoredRun, persistRunId]);
 
-  const advanceRun = useCallback(async (runId: string) => {
-    if (!isValidUuid(runId) || isAdvancingRef.current) {
-      return null;
-    }
-
-    isAdvancingRef.current = true;
-    advanceControllerRef.current?.abort();
-    const controller = new AbortController();
-    advanceControllerRef.current = controller;
-
-    try {
-      const response = await fetch("/api/orquestador/operaciones/actualizar-datos/advance", {
-        body: JSON.stringify({ run_id: runId }),
-        headers: { "content-type": "application/json" },
-        method: "POST",
-        signal: controller.signal,
-      });
-
-
-      if (!response.ok) {
-        const safeMessage = await readSafeError(response);
-        if (isMountedRef.current) {
-          setMessage(safeMessage);
-          setStatus(response.status === 401 || response.status === 403 ? "unauthorized" : "readiness_unavailable");
-        }
-        return null;
-      }
-
-      const responseBody = (await response.json()) as RunResponse;
-      if (!responseBody.ok || !isCompositeRunViewModel(responseBody.run)) {
-        if (isMountedRef.current) {
-          setMessage("No fue posible avanzar la ejecucion.");
-          setStatus("network_error");
-        }
-        return null;
-      }
-
-      if (isMountedRef.current) {
-        setRun(responseBody.run);
-        setStatus(statusFromRun(responseBody.run));
-        setMessage(null);
-      }
-      return responseBody.run;
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError") && isMountedRef.current) {
-        setMessage("No fue posible avanzar la ejecucion.");
-        setStatus("network_error");
-      }
-      return null;
-    } finally {
-      if (advanceControllerRef.current === controller) {
-        advanceControllerRef.current = null;
-      }
-      isAdvancingRef.current = false;
-    }
-  }, []);
-
   const scheduleNext = useCallback(
     (runId: string, delayMs: number) => {
       clearTimer();
@@ -418,11 +356,10 @@ export function useCompositeOperationsRun() {
           return;
         }
 
-        await advanceRun(nextRun.run_id);
         scheduleNext(nextRun.run_id, retryDelayRef.current);
       }, delayMs);
     },
-    [advanceRun, clearTimer, loadRun],
+    [clearTimer, loadRun],
   );
   const scheduleActiveDiscovery = useCallback(
     (delayMs: number = discoveryPollDelayMs) => {

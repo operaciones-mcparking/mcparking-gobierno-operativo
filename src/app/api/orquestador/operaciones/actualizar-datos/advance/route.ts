@@ -1,5 +1,7 @@
 export const dynamic = "force-dynamic";
 
+// Legacy compatibility: autonomous SQL advancement is authoritative.
+
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
