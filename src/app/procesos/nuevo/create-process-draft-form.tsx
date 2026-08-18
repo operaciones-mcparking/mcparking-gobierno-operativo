@@ -189,7 +189,9 @@ export function CreateProcessDraftForm({
                 <p className="font-semibold">
                   {existingProcess.action === "continue"
                     ? `Ya existe un borrador con este nombre para ${existingProcess.companyName}.`
-                    : `Ya existe un proceso activo con este nombre para ${existingProcess.companyName}.`}
+                    : existingProcess.processCode
+                      ? `Ya existe un proceso activo con este nombre para ${existingProcess.companyName}.`
+                      : `Ya existe un proceso anterior con este nombre para ${existingProcess.companyName}.`}
                 </p>
                 <p className="mt-1 text-xs">
                   {existingProcess.processCode ?? "Sin codigo"}
@@ -201,7 +203,7 @@ export function CreateProcessDraftForm({
                     className="mt-3 inline-flex h-9 items-center justify-center rounded-md border border-[#d6a65c] bg-white px-3 text-sm font-bold text-navy transition hover:bg-[#fffaf2] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea"
                     href={existingProcess.action === "continue" ? `/procesos/${existingProcess.id}/editar` : `/procesos/${existingProcess.id}`}
                   >
-                    {existingProcess.action === "continue" ? "Continuar borrador" : "Ver proceso"}
+                    {existingProcess.action === "continue" ? "Continuar borrador" : existingProcess.processCode ? "Ver proceso" : "Ver proceso existente"}
                   </Link>
                 ) : null}
               </div>

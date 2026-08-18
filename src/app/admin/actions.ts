@@ -813,6 +813,7 @@ async function persistProcessDraft(formData: FormData) {
     ]);
     const editable = existingResult.data.status === "inactive" && existingResult.data.documentation_status === "draft";
     const active = existingResult.data.status === "active";
+    const previousActive = active && !existingResult.data.process_code?.trim();
     const existingProcess: ExistingProcessConflict = {
       action: editable ? "continue" : active ? "view" : "none",
       companyName: companyResult.data?.name ?? "la empresa seleccionada",
@@ -821,14 +822,16 @@ async function persistProcessDraft(formData: FormData) {
       name: existingResult.data.name,
       ownerRoleName: ownerResult.data?.role_name ?? null,
       processCode: existingResult.data.process_code ?? null,
-      status: editable ? "Borrador" : active ? "Vigente" : "No disponible",
+      status: editable ? "Borrador" : previousActive ? "Sin documentar" : active ? "Vigente" : "No disponible",
     };
 
     if (inlineDraft) return { error: null, existingProcess, processId: null };
     return rejectDraft(
       editable
         ? `Ya existe un borrador con este nombre para ${existingProcess.companyName}.`
-        : `Ya existe un proceso con este nombre para ${existingProcess.companyName}.`,
+        : previousActive
+          ? `Ya existe un proceso anterior con este nombre para ${existingProcess.companyName}.`
+          : `Ya existe un proceso con este nombre para ${existingProcess.companyName}.`,
     );
   }
 

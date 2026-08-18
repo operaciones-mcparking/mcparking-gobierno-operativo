@@ -127,7 +127,7 @@ assert.doesNotMatch(createAction, /from\("subprocesses"\)/, "draft creation must
 assert.doesNotMatch(createAction, /from\("process_roles"\)/, "draft creation must not assign owners or roles");
 
 assert.match(data, /processMasterProcessFieldsSelect/, "detail read model must request direct process master fields without inflating list views");
-assert.match(data, /process_code,version,owner_role_id,master_updated_at,created_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination/, "detail read model must include all 1:1 process fields");
+assert.match(data, /process_code,version,owner_role_id,master_updated_at,created_at,updated_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination/, "detail read model must include all 1:1 process fields");
 assert.match(data, /export async function getEditableProcessCatalogItem/, "editable process helper must exist");
 assert.match(data, /from\("processes"\)[\s\S]*maybeSingle\(\)/, "editable helper must load from processes table directly");
 assert.doesNotMatch(

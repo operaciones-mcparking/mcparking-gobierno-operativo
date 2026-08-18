@@ -24,6 +24,7 @@ import { ProcessCatalogClient } from "@/app/procesos/process-catalog-client";
 import { getActiveProcessOperationTypeOptions } from "@/lib/procesos/process-company-options";
 import { getProcessDrafts } from "@/lib/procesos/process-drafts";
 import { ProcessExcelDownloadButton } from "./process-excel-download-button";
+import { UndocumentedProcesses } from "./undocumented-processes";
 
 type SearchParams = Promise<{
   country_id?: string;
@@ -758,6 +759,7 @@ export default async function EstructuraPage({
     getProcessDrafts(context),
   ]);
   const newProcesses = processCatalogResult.data.filter((process) => Boolean(process.process_code?.trim()));
+  const undocumentedProcesses = processCatalogResult.data.filter((process) => !process.process_code?.trim());
   const processCompanyOptions = Array.from(new Set(newProcesses.map((process) => process.owner_company_name ?? process.company_name).filter(Boolean))).sort((a, b) => a.localeCompare(b, "es"));
   const processOwnerRoleOptions = uniqueIdNameOptions(newProcesses.flatMap((process) => process.owner_role_ids.map((id, index) => ({ id, name: process.owner_role_names[index] ?? id }))));
   const processPersonOptions = uniqueIdNameOptions(newProcesses.flatMap((process) => process.current_person_ids.map((id, index) => ({ id, name: process.current_person_names[index] ?? id }))));
@@ -881,7 +883,7 @@ export default async function EstructuraPage({
               </Link>
             </>
           }
-          count={`${newProcesses.length + processDraftsResult.data.length} ${newProcesses.length + processDraftsResult.data.length === 1 ? "proceso" : "procesos"}`}
+          count={`${newProcesses.length + processDraftsResult.data.length + undocumentedProcesses.length} ${newProcesses.length + processDraftsResult.data.length + undocumentedProcesses.length === 1 ? "proceso" : "procesos"}`}
           description="Procesos documentados mediante la ficha de proceso."
           title="Procesos"
         >
@@ -929,6 +931,7 @@ export default async function EstructuraPage({
                   </div>
                 </details>
               ) : null}
+              <UndocumentedProcesses processes={undocumentedProcesses} />
             </>
           )}
         </Panel>

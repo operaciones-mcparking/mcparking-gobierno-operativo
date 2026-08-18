@@ -9,7 +9,7 @@ const catalogStart = data.indexOf("export async function getProcessCatalogV2");
 const catalogEnd = data.indexOf("export async function getProcessCatalogV2Item", catalogStart);
 const catalog = data.slice(catalogStart, catalogEnd);
 
-assert.match(catalog, /\.from\("processes"\)[\s\S]*\.select\("id,process_code,owner_role_id"\)/);
+assert.match(catalog, /\.from\("processes"\)[\s\S]*\.select\("id,process_code,owner_role_id,master_updated_at,updated_at,created_at"\)/);
 assert.match(catalog, /\.from\("v_role_dictionary"\)[\s\S]*role_id,role_name,current_person_id,current_person_name/);
 assert.match(catalog, /canonicalOwnerRoleId[\s\S]*owner_role_ids: canonicalOwnerRoleId[\s\S]*: row\.owner_role_ids/);
 assert.match(catalog, /current_person_names: canonicalOwnerRoleId[\s\S]*canonicalOwner\.current_person_name[\s\S]*: row\.current_person_names/);

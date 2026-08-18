@@ -124,6 +124,7 @@ export type ProcessCatalogV2Item = Omit<
   basic_kpi: string | null;
   process_code: string | null;
   master_updated_at: string | null;
+  updated_at: string | null;
   created_at: string | null;
   owner_role_id: string | null;
   owner_role_name: string | null;
@@ -682,7 +683,7 @@ function optionalText(value: unknown) {
 }
 
 const processMasterProcessFieldsSelect =
-  "process_code,version,owner_role_id,master_updated_at,created_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination,pdca_plan,pdca_do,pdca_check,pdca_act";
+  "process_code,version,owner_role_id,master_updated_at,created_at,updated_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination,pdca_plan,pdca_do,pdca_check,pdca_act";
 
 function normalizeProcessCatalogV2Row(row: Record<string, unknown>) {
   return {
@@ -690,6 +691,7 @@ function normalizeProcessCatalogV2Row(row: Record<string, unknown>) {
     active_stage_count: Number(row.active_stage_count ?? 0),
     process_code: optionalText(row.process_code),
     master_updated_at: optionalText(row.master_updated_at),
+    updated_at: optionalText(row.updated_at),
     created_at: optionalText(row.created_at),
     owner_role_id: optionalText(row.owner_role_id),
     owner_role_name: optionalText(row.owner_role_name),
@@ -739,7 +741,7 @@ export async function getProcessCatalogV2(context: DashboardContext = {}) {
     query,
     supabase
       .from("processes")
-      .select("id,process_code,owner_role_id")
+      .select("id,process_code,owner_role_id,master_updated_at,updated_at,created_at")
       .eq("status", "active"),
     supabase
       .from("v_role_dictionary")
@@ -763,6 +765,9 @@ export async function getProcessCatalogV2(context: DashboardContext = {}) {
       return normalizeProcessCatalogV2Row({
         ...row,
         process_code: optionalText(metadata?.process_code),
+        master_updated_at: optionalText(metadata?.master_updated_at),
+        updated_at: optionalText(metadata?.updated_at),
+        created_at: optionalText(metadata?.created_at),
         owner_role_id: canonicalOwnerRoleId,
         owner_role_name: canonicalOwner?.role_name ?? null,
         owner_person_id: canonicalOwner?.current_person_id ?? null,
@@ -877,7 +882,7 @@ export async function getEditableProcessCatalogItem(processId: string) {
   const { data, error } = await supabase
     .from("processes")
     .select(
-      "id,name,description,objective,expected_result,inputs_providers,outputs_clients,basic_kpi,process_code,version,owner_role_id,master_updated_at,created_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination,pdca_plan,pdca_do,pdca_check,pdca_act,process_type,criticality,status,documentation_status,is_replicable,is_global,company_id,area_id,owner_company_id,operating_company_id,country_id,owner_site_id,operating_site_id",
+      "id,name,description,objective,expected_result,inputs_providers,outputs_clients,basic_kpi,process_code,version,owner_role_id,master_updated_at,created_at,updated_at,effective_date,process_start,process_end,scope,supplier_origin,process_inputs,process_outputs,client_destination,pdca_plan,pdca_do,pdca_check,pdca_act,process_type,criticality,status,documentation_status,is_replicable,is_global,company_id,area_id,owner_company_id,operating_company_id,country_id,owner_site_id,operating_site_id",
     )
     .eq("id", processId)
     .maybeSingle();
@@ -959,6 +964,7 @@ export async function getEditableProcessCatalogItem(processId: string) {
       process_code: rowText(process, "process_code"),
       master_updated_at: rowText(process, "master_updated_at"),
       created_at: rowText(process, "created_at"),
+      updated_at: rowText(process, "updated_at"),
       owner_role_id: ownerRoleId,
       owner_role_name: ownerRoleResult.data?.role_name ?? null,
       owner_person_id: ownerRoleResult.data?.current_person_id ?? null,
