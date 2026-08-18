@@ -10,7 +10,7 @@ function processDate(process: ProcessCatalogV2Item) {
   return new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago" }).format(date);
 }
 
-export function UndocumentedProcesses({ processes }: { processes: ProcessCatalogV2Item[] }) {
+export function UndocumentedProcesses({ canNavigateProcesses, processes }: { canNavigateProcesses: boolean; processes: ProcessCatalogV2Item[] }) {
   if (processes.length === 0) return null;
 
   return (
@@ -33,7 +33,7 @@ export function UndocumentedProcesses({ processes }: { processes: ProcessCatalog
             <div><p className="text-xs text-slate-500">Rol dueño</p><p className="text-sm text-navy">{process.owner_role_name ?? process.owner_role_names[0] ?? "Sin rol dueño"}</p></div>
             <div><p className="text-xs text-slate-500">Etapas</p><p className="text-sm font-semibold text-navy">{process.active_stage_count}</p></div>
             <div><p className="text-xs text-slate-500">Última edición</p><p className="text-sm text-navy">{processDate(process)}</p></div>
-            <div className="md:justify-self-end"><Link className="inline-flex h-9 items-center rounded-md border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef7fb]" href={`/procesos/${process.process_id}`}>Ver</Link></div>
+            {canNavigateProcesses ? <div className="md:justify-self-end"><Link className="inline-flex h-9 items-center rounded-md border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef7fb]" href={`/procesos/${process.process_id}`}>Ver</Link></div> : null}
           </div>
         ))}
       </div>

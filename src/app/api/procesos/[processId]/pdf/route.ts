@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { canUseStructurePermission, structurePermissions } from "@/lib/auth/access";
 import { generateProcessPdf, processPdfFilename } from "@/lib/procesos/process-pdf";
 import { getProcessMasterReadModel } from "@/lib/procesos/process-master-read-model";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
@@ -28,6 +29,9 @@ export async function GET(_request: Request, context: RouteContext) {
     .eq("user_id", user.id)
     .maybeSingle();
   if (profileError || !profile || profile.status !== "active") return jsonError("No autorizado.", 403);
+  if (!(await canUseStructurePermission(structurePermissions.exportPdf))) {
+    return jsonError("No autorizado.", 403);
+  }
 
   const result = await getProcessMasterReadModel(processId);
   if (!result.data) return jsonError("Proceso no encontrado.", 404);

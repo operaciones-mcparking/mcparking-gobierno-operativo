@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireAdminAccess } from "@/lib/auth/admin";
+import { getStructurePermissionClient, structurePermissions } from "@/lib/auth/access";
 import { getEditableProcessCatalogItem, getRoleDictionary } from "@/lib/dashboard/data";
 import type { ProcessMasterDto, ProcessMasterStage, ProcessMetricSaveRow, ProcessRiskControlSaveRow } from "@/app/procesos/process-master/process-master-types";
 import { validateProcessForActivation } from "@/app/procesos/process-master/process-master-validation";
@@ -1626,7 +1627,10 @@ export async function toggleRoleGovernanceProcess(formData: FormData) {
   const processKey = value(formData, "process_key");
   const active = checkbox(formData, "active");
   const returnTo = value(formData, "return_to") || "/estructura";
-  const { supabase } = await requireAdminAccess();
+  const supabase = await getStructurePermissionClient(structurePermissions.editMatrix);
+  if (!supabase) {
+    fail("No tienes permisos para editar la matriz.", returnTo);
+  }
 
   const { error } = await supabase
     .from("role_governance_processes")
@@ -1652,7 +1656,10 @@ export async function toggleRoleGovernanceProcessInline(
   processKey: string,
   currentlyActive: boolean,
 ) {
-  const { supabase } = await requireAdminAccess();
+  const supabase = await getStructurePermissionClient(structurePermissions.editMatrix);
+  if (!supabase) {
+    return { error: "No tienes permisos para editar la matriz." };
+  }
 
   if (!roleId || !processKey) {
     return { error: "Falta el rol o el proceso para guardar el cambio." };

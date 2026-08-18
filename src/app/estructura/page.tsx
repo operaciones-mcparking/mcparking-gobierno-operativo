@@ -19,6 +19,7 @@ import { RoleDictionaryModal } from "./role-dictionary-modal";
 import { RoleDetailButton } from "./role-detail-modal";
 import { StructureExplorer } from "./structure-explorer";
 import { getRolePersonUiCapabilities } from "@/lib/auth/ui-permissions";
+import { requireStructureAccess } from "@/lib/auth/access";
 import { AlertTriangle, PlusCircle } from "lucide-react";
 import { ProcessCatalogClient } from "@/app/procesos/process-catalog-client";
 import { getActiveProcessOperationTypeOptions } from "@/lib/procesos/process-company-options";
@@ -723,6 +724,7 @@ export default async function EstructuraPage({
 }: {
   searchParams: SearchParams;
 }) {
+  const structureAccess = await requireStructureAccess();
   const params = await searchParams;
   const context = {
     countryId: params.country_id ?? null,
@@ -756,7 +758,9 @@ export default async function EstructuraPage({
     getProcessMatrixV2(),
     getProcessStageOwnerRoles(),
     getActiveProcessOperationTypeOptions(),
-    getProcessDrafts(context),
+    structureAccess.canNavigateProcesses
+      ? getProcessDrafts(context)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   const newProcesses = processCatalogResult.data.filter((process) => Boolean(process.process_code?.trim()));
   const undocumentedProcesses = processCatalogResult.data.filter((process) => !process.process_code?.trim());
@@ -864,6 +868,7 @@ export default async function EstructuraPage({
         ) : null}
         <StructureExplorer
           assignments={roleGovernanceResult.data}
+          canEdit={structureAccess.canEditMatrix}
           processes={governanceProcesses}
           roles={dynamicRoles}
         />
@@ -873,14 +878,16 @@ export default async function EstructuraPage({
         <Panel
           action={
             <>
-              <ProcessExcelDownloadButton />
-              <Link
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white transition hover:bg-[#075077]"
-                href="/procesos/nuevo"
-              >
-                <PlusCircle className="h-4 w-4 text-clay" />
-                Nuevo proceso
-              </Link>
+              {structureAccess.canExportExcel ? <ProcessExcelDownloadButton /> : null}
+              {structureAccess.canNavigateProcesses ? (
+                <Link
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-bold text-white transition hover:bg-[#075077]"
+                  href="/procesos/nuevo"
+                >
+                  <PlusCircle className="h-4 w-4 text-clay" />
+                  Nuevo proceso
+                </Link>
+              ) : null}
             </>
           }
           count={`${newProcesses.length + processDraftsResult.data.length + undocumentedProcesses.length} ${newProcesses.length + processDraftsResult.data.length + undocumentedProcesses.length === 1 ? "proceso" : "procesos"}`}
@@ -895,6 +902,8 @@ export default async function EstructuraPage({
             <>
               <ProcessCatalogClient
                 activeProcesses={newProcesses}
+                canExportPdf={structureAccess.canExportPdf}
+                canViewProcessDetails={structureAccess.canNavigateProcesses}
                 catalogMode="new-only"
                 companyOptions={processCompanyOptions}
                 matrixRows={processMatrixResult.data}
@@ -925,13 +934,13 @@ export default async function EstructuraPage({
                         <div><p className="text-xs text-slate-500">Tipo</p><p className="text-sm text-navy">{draft.processType === "strategic" ? "Estrategico" : draft.processType === "support" ? "Soporte" : "Operativo / Clave"}</p></div>
                         <div><p className="text-xs text-slate-500">Dueno</p><p className="text-sm text-navy">{draft.ownerRoleName ?? "Sin rol dueno"}</p></div>
                         <div><p className="text-xs text-slate-500">Ultima edicion</p><p className="text-sm text-navy">{draft.lastEditedAt ? new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago" }).format(new Date(draft.lastEditedAt)) : "Sin fecha"}</p></div>
-                        <div className="flex items-center gap-2 md:justify-end"><span className="rounded-full border border-[#ffd6b0] bg-[#fff4e8] px-2 py-1 text-xs font-semibold text-[#86510d]">Borrador</span><Link className="inline-flex h-9 items-center rounded-md border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef7fb]" href={`/procesos/${draft.id}/editar`}>Continuar</Link></div>
+                        <div className="flex items-center gap-2 md:justify-end"><span className="rounded-full border border-[#ffd6b0] bg-[#fff4e8] px-2 py-1 text-xs font-semibold text-[#86510d]">Borrador</span>{structureAccess.canNavigateProcesses ? <Link className="inline-flex h-9 items-center rounded-md border border-line bg-white px-3 text-sm font-bold text-navy transition hover:border-sea hover:bg-[#eef7fb]" href={`/procesos/${draft.id}/editar`}>Continuar</Link> : null}</div>
                       </div>
                     ))}
                   </div>
                 </details>
               ) : null}
-              <UndocumentedProcesses processes={undocumentedProcesses} />
+              <UndocumentedProcesses canNavigateProcesses={structureAccess.canNavigateProcesses} processes={undocumentedProcesses} />
             </>
           )}
         </Panel>

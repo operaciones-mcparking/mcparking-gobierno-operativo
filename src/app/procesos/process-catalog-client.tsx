@@ -149,6 +149,8 @@ type FilterOption = {
 
 type ProcessCatalogClientProps = {
   activeProcesses: ProcessCatalogV2Item[];
+  canExportPdf?: boolean;
+  canViewProcessDetails?: boolean;
   catalogMode?: "all" | "new-only";
   companyOptions: string[];
   matrixRows: ProcessStageV2Row[];
@@ -162,6 +164,8 @@ type ProcessCatalogClientProps = {
 
 export function ProcessCatalogClient({
   activeProcesses,
+  canExportPdf = true,
+  canViewProcessDetails = true,
   catalogMode = "all",
   companyOptions,
   matrixRows,
@@ -257,6 +261,7 @@ export function ProcessCatalogClient({
   ) {
     const gridColumns = newModel ? newProcessListGridColumns : legacyProcessListGridColumns;
     const hideGroupHeader = catalogMode === "new-only" && newModel;
+    const compactMobile = catalogMode === "new-only" && newModel;
 
     return (
       <section className={hideGroupHeader ? "mt-3" : secondary ? "mt-7 border-t border-line pt-6" : "mt-5"}>
@@ -299,33 +304,33 @@ export function ProcessCatalogClient({
               <summary
                 aria-disabled={newModel && rows.length === 0}
                 aria-label={`Expandir o contraer ${process.process_name}`}
-                className="cursor-pointer list-none px-4 py-3 transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe] aria-disabled:cursor-default"
+                className={`cursor-pointer list-none transition hover:bg-[#fbfdfe] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 group-open/process:border-b group-open/process:border-line group-open/process:bg-[#fbfdfe] aria-disabled:cursor-default ${compactMobile ? "px-3 py-2.5 sm:px-4 sm:py-3" : "px-4 py-3"}`}
                 onClick={newModel && rows.length === 0 ? (event) => event.preventDefault() : undefined}
               >
-                <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-3 xl:items-center ${gridColumns}`}>
-                  <div className="col-start-1 xl:col-auto">
+                <div className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-center xl:gap-3 ${compactMobile ? "gap-x-3 gap-y-2" : "gap-3"} ${gridColumns}`}>
+                  <div className={compactMobile ? "col-start-1 row-start-1 xl:col-auto xl:row-auto" : "col-start-1 xl:col-auto"}>
                     <ValueBadge tone={typeMeta.tone}>{typeMeta.label}</ValueBadge>
                   </div>
 
-                  <div className="min-w-0">
-                    <h3 className="text-base font-medium text-navy">
+                  <div className={compactMobile ? "col-span-2 row-start-2 min-w-0 xl:col-auto xl:row-auto" : "min-w-0"}>
+                    <h3 className="text-base font-medium leading-snug text-navy">
                       {process.process_name}
                     </h3>
                   </div>
 
-                  <div className="col-start-1 xl:col-auto">
-                    <p className="text-xs text-slate-500 xl:hidden">Rol dueno</p>
-                    <p className="text-sm font-medium text-navy">{ownerText}</p>
+                  <div className={compactMobile ? "col-start-1 row-start-3 min-w-0 xl:col-auto xl:row-auto" : "col-start-1 xl:col-auto"}>
+                    <p className="mb-0.5 text-[11px] leading-tight text-slate-500 xl:hidden">Rol dueno</p>
+                    <p className="text-sm font-medium leading-snug text-navy">{ownerText}</p>
                   </div>
 
-                  <div className="col-start-1 xl:col-auto">
-                    <p className="text-xs text-slate-500 xl:hidden">Persona actual</p>
-                    <p className={`text-sm font-medium ${process.current_person_names.length === 0 ? "text-[#86510d]" : "text-navy"}`}>
+                  <div className={compactMobile ? "col-start-2 row-start-3 min-w-0 xl:col-auto xl:row-auto" : "col-start-1 xl:col-auto"}>
+                    <p className="mb-0.5 text-[11px] leading-tight text-slate-500 xl:hidden">Persona actual</p>
+                    <p className={`text-sm font-medium leading-snug ${process.current_person_names.length === 0 ? "text-[#86510d]" : "text-navy"}`}>
                       {personText}
                     </p>
                   </div>
 
-                  <div className="col-start-1 flex flex-wrap gap-2 xl:col-auto xl:justify-center">
+                  <div className={compactMobile ? "col-start-2 row-start-1 flex justify-self-end xl:col-auto xl:row-auto xl:justify-self-auto xl:justify-center" : "col-start-1 flex flex-wrap gap-2 xl:col-auto xl:justify-center"}>
                     <ValueBadge tone="info">Etapas {process.active_stage_count}</ValueBadge>
                   </div>
 
@@ -337,13 +342,13 @@ export function ProcessCatalogClient({
                   )}
 
                   <div className="hidden items-center justify-end gap-2 xl:col-auto xl:flex">
-                    <ProcessDetailModal
+                    {canViewProcessDetails ? <ProcessDetailModal
                       ownerRoleBySubprocess={ownerRoleBySubprocess}
                       process={process}
                       roleDictionary={roleDictionary}
                       stages={rows}
-                    />
-                    <a
+                    /> : null}
+                    {canExportPdf ? <a
                       aria-label={`Descargar ficha PDF de ${process.process_name}`}
                       className="hidden h-9 w-9 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2 xl:inline-flex"
                       download
@@ -352,7 +357,7 @@ export function ProcessCatalogClient({
                       title="Descargar PDF"
                     >
                       <FileDown className="h-4 w-4" />
-                    </a>
+                    </a> : null}
 
                   </div>
                 </div>
@@ -360,13 +365,13 @@ export function ProcessCatalogClient({
 
               <div className="bg-[#f8fafb] px-4 py-4">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row xl:hidden">
-                  <ProcessDetailModal
+                  {canViewProcessDetails ? <ProcessDetailModal
                     ownerRoleBySubprocess={ownerRoleBySubprocess}
                     process={process}
                     roleDictionary={roleDictionary}
                     stages={rows}
-                  />
-                  <a
+                  /> : null}
+                  {canExportPdf ? <a
                     aria-label={`Descargar ficha PDF de ${process.process_name}`}
                     className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d6e1ea] bg-white text-sea transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
                     download
@@ -375,7 +380,7 @@ export function ProcessCatalogClient({
                     title="Descargar PDF"
                   >
                     <FileDown className="h-4 w-4" />
-                  </a>
+                  </a> : null}
                 </div>
                 {rows.length === 0 ? (
                   <p className="text-sm text-slate-600">Este proceso aun no tiene etapas activas.</p>

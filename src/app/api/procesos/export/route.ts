@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { canUseStructurePermission, structurePermissions } from "@/lib/auth/access";
 import { getProcessCatalogV2 } from "@/lib/dashboard/data";
 import { generateProcessMasterExcel, processMasterExcelFilename } from "@/lib/procesos/process-excel";
 import { getProcessMasterReadModel } from "@/lib/procesos/process-master-read-model";
@@ -20,6 +21,9 @@ export async function GET() {
     .eq("user_id", user.id)
     .maybeSingle();
   if (profileError || !profile || profile.status !== "active") return jsonError("No autorizado.", 403);
+  if (!(await canUseStructurePermission(structurePermissions.exportExcel))) {
+    return jsonError("No autorizado.", 403);
+  }
 
   const catalogResult = await getProcessCatalogV2();
   if (catalogResult.error) return jsonError("No se pudo cargar el catálogo de procesos.", 500);

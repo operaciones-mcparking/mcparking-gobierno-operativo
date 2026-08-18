@@ -24,10 +24,12 @@ function normalize(value: string) {
 
 export function StructureExplorer({
   assignments,
+  canEdit,
   processes,
   roles,
 }: {
   assignments: RoleGovernanceAssignment[];
+  canEdit: boolean;
   processes: GovernanceProcess[];
   roles: OrgRole[];
 }) {
@@ -71,7 +73,7 @@ export function StructureExplorer({
   };
 
   function toggleAssignment(process: GovernanceProcess, item: OrgRole, active: boolean) {
-    if (!matrixEditingEnabled || !item.id) return;
+    if (!canEdit || !matrixEditingEnabled || !item.id) return;
 
     const key = `${item.id}:${process.name}`;
     setPendingKey(key);
@@ -127,7 +129,7 @@ export function StructureExplorer({
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="flex justify-end">
+      {canEdit ? <div className="flex justify-end">
         <button
           aria-checked={matrixEditingEnabled}
           aria-label={matrixEditingEnabled ? "Desactivar modo edición de la matriz" : "Activar modo edición de la matriz"}
@@ -145,7 +147,7 @@ export function StructureExplorer({
             <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition ${matrixEditingEnabled ? "left-[18px]" : "left-0.5"}`} />
           </span>
         </button>
-      </div>
+      </div> : null}
       <div className="grid gap-3 rounded-xl border border-[#cbd8e3] bg-[#f8fafb] p-4 lg:grid-cols-[1.2fr_220px_220px_auto] lg:items-end">
         <div>
           <div className="flex items-center gap-2 text-sm font-medium text-navy">
@@ -264,7 +266,7 @@ export function StructureExplorer({
                               ? `border-[#9fd9b9] bg-[#eefaf2] text-[#22613b] ${matrixEditingEnabled ? "hover:bg-[#dff4e7]" : "cursor-not-allowed opacity-80"}`
                               : `border-[#e3ebf1] bg-[#f8fbfd] text-transparent ${matrixEditingEnabled ? "hover:border-sea hover:bg-[#eef7fb]" : "cursor-not-allowed opacity-80"}`
                           } ${pending ? "animate-pulse ring-2 ring-[#dceaf2]" : ""}`}
-                          disabled={!matrixEditingEnabled || !item.id || pending}
+                          disabled={!canEdit || !matrixEditingEnabled || !item.id || pending}
                           onClick={() => toggleAssignment(process, item, active)}
                           type="button"
                         >

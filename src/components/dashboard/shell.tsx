@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { signOut } from "@/app/auth/actions";
+import { getCurrentAccessContext } from "@/lib/auth/access";
 import { MobileDashboardNavigation, type MobileNavigationGroup, type MobileNavigationIcon } from "@/components/dashboard/mobile-navigation";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
@@ -91,12 +92,15 @@ export async function DashboardShell({
     redirect("/login?error=not_allowed");
   }
 
+  const access = await getCurrentAccessContext();
   const userLabel = user?.email ?? "Usuario interno";
-  const isAdmin = profile?.app_role === "admin" && profile.status === "active";
+  const isAdmin = access?.isAdmin ?? false;
   const visibleModules = modules
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.adminOnly || isAdmin),
+      items: group.items.filter((item) =>
+        access?.isStructureRestricted ? item.href === "/estructura" : !item.adminOnly || isAdmin,
+      ),
     }))
     .filter((group) => group.items.length > 0);
   const mobileModules: MobileNavigationGroup[] = visibleModules.map((group) => ({
