@@ -565,6 +565,7 @@ test("46. current task diff is scoped", () => {
     .filter(Boolean)
     .map((line) => line.slice(3).replaceAll("\\", "/"));
   const allowed = new Set([
+    "scripts/recovery-chart-presentation.test.mjs",
     "scripts/recovery-snapshot-comparison-api.test.mjs",
     "scripts/recovery-whatsapp-freeform-window.test.mjs",
     "src/app/api/recuperacion/snapshots/compare/route.ts",

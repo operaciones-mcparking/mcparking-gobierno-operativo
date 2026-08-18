@@ -725,24 +725,6 @@ function roundedMoneyMax(value: number) {
   return rounded * magnitude;
 }
 
-function trendValues(values: number[]) {
-  if (values.length < 2) return values;
-
-  const n = values.length;
-  const sumX = values.reduce((total, _value, index) => total + index, 0);
-  const sumY = values.reduce((total, value) => total + value, 0);
-  const sumXY = values.reduce((total, value, index) => total + index * value, 0);
-  const sumXX = values.reduce((total, _value, index) => total + index * index, 0);
-  const denominator = n * sumXX - sumX * sumX;
-
-  if (denominator === 0) return values;
-
-  const slope = (n * sumXY - sumX * sumY) / denominator;
-  const intercept = (sumY - slope * sumX) / n;
-
-  return values.map((_value, index) => intercept + slope * index);
-}
-
 function pathFromPoints(points: Array<{ x: number; y: number }>) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
 }
@@ -871,11 +853,6 @@ function PerformanceLineChart({
   const toY = (value: number) => padding.top + (1 - Math.min(Math.max(value, 0), safeMax) / safeMax) * innerHeight;
   const chartPoints = points.map((point, index) => ({ ...point, x: toX(index), y: toY(point.value) }));
   const previousChartPoints = (previousPoints ?? []).map((point, index) => ({ ...point, x: toX(index), y: toY(point.value) }));
-  const trendPoints = trendValues(points.map((point) => point.value)).map((value, index) => ({
-    x: toX(index),
-    y: toY(value),
-  }));
-  const shouldShowTrend = points.length >= 2;
   const shouldShowPrevious = previousChartPoints.length > 0;
   const [hoveredPoint, setHoveredPoint] = useState<null | {
     left: number;
@@ -903,9 +880,6 @@ function PerformanceLineChart({
         <line stroke="#cbd5e1" x1={padding.left} x2={width - padding.right} y1={height - padding.bottom} y2={height - padding.bottom} />
         {shouldShowPrevious ? (
           <path d={pathFromPoints(previousChartPoints)} fill="none" stroke="#94a3b8" strokeDasharray="4 5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
-        ) : null}
-        {shouldShowTrend ? (
-          <path d={pathFromPoints(trendPoints)} fill="none" stroke="#D66A6A" strokeDasharray="5 5" strokeLinecap="round" strokeWidth="1.8" opacity="0.85" />
         ) : null}
         <path d={pathFromPoints(chartPoints)} fill="none" stroke="#0f766e" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
         {previousChartPoints.map((point) => (
@@ -978,11 +952,6 @@ function PerformanceLineChart({
         {shouldShowPrevious ? (
           <span className="inline-flex items-center gap-1.5">
             <span className="h-0.5 w-5 rounded-full border-t border-dashed border-slate-400" /> Semana anterior
-          </span>
-        ) : null}
-        {shouldShowTrend ? (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-0.5 w-5 rounded-full border-t border-dashed border-[#D66A6A]" /> Tendencia
           </span>
         ) : null}
       </div>
@@ -1809,7 +1778,7 @@ function WeeklyBreakdownBlock({
                     <p className="min-w-0 break-words">
                       <span className="font-medium text-navy">{row.parking_code ?? "Sin parking"}</span> · {formatDate(row.cart_form_datetime)}
                     </p>
-                    <p>Entrada {formatDateOnly(row.intended_arrival_date)}</p>
+                    <p>Check-in: {formatDateOnly(row.intended_arrival_date)}</p>
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -1949,7 +1918,7 @@ function WeeklyBreakdownBlock({
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     <div>{formatDate(row.cart_form_datetime)}</div>
                     <div className="mt-1 text-[11px] text-slate-500">
-                      Entrada: {formatDateOnly(row.intended_arrival_date)}
+                      Check-in: {formatDateOnly(row.intended_arrival_date)}
                     </div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">

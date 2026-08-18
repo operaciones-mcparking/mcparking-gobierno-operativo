@@ -457,6 +457,7 @@ test("no unrelated modules are part of this task diff", () => {
     .map((line) => line.slice(3).replaceAll("\\", "/"));
 
   const allowedRecoveryChatFiles = new Set([
+    "scripts/recovery-chart-presentation.test.mjs",
     "scripts/recovery-chat-extended-window.test.mjs",
     "scripts/recovery-snapshot-comparison-api.test.mjs",
     "scripts/recovery-attribution-canonical.test.mjs",
