@@ -10,6 +10,8 @@ const catalog = readFileSync("src/app/procesos/process-catalog-client.tsx", "utf
 const actions = readFileSync("src/app/admin/actions.ts", "utf8");
 const excelRoute = readFileSync("src/app/api/procesos/export/route.ts", "utf8");
 const pdfRoute = readFileSync("src/app/api/procesos/[processId]/pdf/route.ts", "utf8");
+const structureDetailRoute = readFileSync("src/app/api/estructura/procesos/[processId]/ficha/route.ts", "utf8");
+const detailModal = readFileSync("src/app/procesos/process-detail-modal.tsx", "utf8");
 const shell = readFileSync("src/components/dashboard/shell.tsx", "utf8");
 
 const permissionCodes = [
@@ -52,6 +54,7 @@ assert.match(access, /canNavigateProcesses: !isStructureRestricted/);
 
 assert.match(middleware, /pathname === "\/api\/procesos\/export"[\s\S]*"structure\.export\.excel"/);
 assert.match(middleware, /pdfPath\.test\(pathname\)[\s\S]*"structure\.export\.pdf"/);
+assert.match(middleware, /structureProcessDetailPath\.test\(pathname\)[\s\S]*"structure\.view"/);
 assert.match(middleware, /if \(!requiredPermission\) return denied\(request\)/);
 assert.match(middleware, /requiredPermission === "structure\.view" \? loginDenied\(request\) : denied\(request\)/);
 assert.doesNotMatch(middleware, /requiredPermission.*processes/i);
@@ -68,10 +71,16 @@ assert.match(explorer, /if \(!canEdit \|\| !matrixEditingEnabled \|\| !item\.id\
 assert.match(structurePage, /canEdit=\{structureAccess\.canEditMatrix\}/);
 assert.match(structurePage, /structureAccess\.canExportExcel \? <ProcessExcelDownloadButton \/>/);
 assert.match(structurePage, /canExportPdf=\{structureAccess\.canExportPdf\}/);
-assert.match(structurePage, /canViewProcessDetails=\{structureAccess\.canNavigateProcesses\}/);
+assert.match(structurePage, /canViewProcessDetails=\{structureAccess\.canAccessStructure\}/);
 assert.match(structurePage, /structureAccess\.canNavigateProcesses[\s\S]*\? getProcessDrafts\(context\)/);
 assert.match(catalog, /canViewProcessDetails \? <ProcessDetailModal/);
+assert.match(structureDetailRoute, /canUseStructurePermission\(structurePermissions\.view\)/);
+assert.match(structureDetailRoute, /getProcessMasterReadModel\(processId\)/);
+assert.match(structureDetailRoute, /return jsonError\("No autorizado\.", 403\)/);
+assert.match(detailModal, /ProcessMasterSheet mode="readonly"/);
+assert.match(detailModal, /api\/estructura\/procesos\/[\s\S]*process\.process_id[\s\S]*\/ficha/);
+assert.doesNotMatch(detailModal, /href=[\s\S]*\/procesos\/|\/editar|Activar proceso|Zona administrativa/);
 assert.match(catalog, /canExportPdf \? <a/);
-assert.doesNotMatch(access + middleware + structurePage + migration, /[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i);
+assert.doesNotMatch(access + middleware + structurePage + structureDetailRoute + detailModal + migration, /[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i);
 
-console.log("structure-editor-access: 48/48 OK");
+console.log("structure-editor-access: 56/56 OK");

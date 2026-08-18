@@ -105,8 +105,8 @@ assert.doesNotMatch(processUi, /href=\{`\/procesos\/\$\{process\.process_id\}\/e
 assert.match(processUi, /<ProcessDetailModal/, "Ver ficha action must remain available");
 assert.doesNotMatch(processUi, /group-open\/process:hidden[\s\S]*group-open\/process:inline/, "desktop action column must not render the visual +/- control");
 assert.match(processUi, /aria-label={`Expandir o contraer/, "native summary must keep the row expandable after removing +/-");
-assert.match(detailModal, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/, "Ver ficha navigation must not toggle the summary");
-assert.match(detailModal, /href=\{`\/procesos\/\$\{process\.process_id\}`\}/, "Ver ficha must navigate to the canonical readonly route");
+assert.match(detailModal, /event\.stopPropagation\(\)/, "Ver ficha modal must not toggle the summary");
+assert.match(detailModal, /fetch\([\s\S]*api\/estructura\/procesos\/[\s\S]*process\.process_id[\s\S]*\/ficha/, "Ver ficha must load the authorized structure readonly endpoint");
 assert.doesNotMatch(processUi, /<ProcessEditModal/, "process list must not open the quick edit modal");
 assert.doesNotMatch(detailModal, /<ProcessEditModal/, "Ver ficha action must not open a parallel quick edit modal");
 assert.doesNotMatch(detailModal, /\/editar/, "Ver ficha action must remain distinct from Editar");
@@ -137,10 +137,10 @@ assert.doesNotMatch(filters, />\s*Proceso\s*<input/i, "process and stage must no
 assert.doesNotMatch(filters, />\s*Etapa\s*<input/i, "stage must not remain as a separate primary input");
 assert.match(filters, /sm:grid-cols-2 \$\{newOnly \? "lg:grid-cols-3" : "xl:grid-cols-4"\}/, "advanced filters must use responsive mode-specific columns");
 
-assert.match(detailModal, /href=\{`\/procesos\/\$\{process\.process_id\}`\}/, "Ver ficha must navigate to the shared V1 readonly route");
+assert.match(detailModal, /ProcessMasterSheet mode="readonly"/, "Ver ficha must reuse the shared V1 readonly sheet");
 assert.match(detailModal, /aria-label=\{`Ver ficha del proceso/, "Ver ficha link must remain accessible");
 assert.doesNotMatch(detailModal, /Objetivo|Resultado esperado|Entradas y proveedores|Salidas y clientes|KPI basico|TypedBadge/, "quick action must not render a parallel legacy sheet");
-assert.doesNotMatch(detailModal, /useState|roleText|StageRoles/, "quick action must not retain a duplicate modal read model");
+assert.doesNotMatch(detailModal, /roleText|StageRoles|Objetivo|Resultado esperado/, "quick action must not duplicate the readonly read model");
 assert.doesNotMatch(editModal, /ProcessMasterSheet/, "legacy quick edit component must not become a parallel master editor");
 for (const field of ["purpose", "supplier_origin", "process_inputs", "process_outputs", "client_destination"]) {
   assert.match(editPage, new RegExp(`name="${field}"`), `advanced edit page must expose V1 field ${field}`);
@@ -203,7 +203,8 @@ assert.match(masterMapper, /export function mapProcessMasterDto/, "process maste
 assert.match(masterValidation, /export function validateProcessForActivation/, "process activation validator must exist");
 assert.match(detailPage, /getProcessMasterReadModel\(processId\)/, "process detail page must use the canonical process master read model");
 assert.match(detailPage, /getProcessMatrixV2/, "process detail page must use V2 stage helper");
-assert.doesNotMatch(processUi + filters + detailModal, /fetch\(/, "catalog controls must not introduce a client fetch mutation flow");
-assert.match(processUi, /\/api\/procesos\/\$\{process\.process_id\}\/pdf/, "catalog may expose only the authenticated PDF endpoint as a direct API link");
+assert.doesNotMatch(processUi + filters, /fetch\(/, "catalog controls must not introduce a client fetch mutation flow");
+assert.equal((detailModal.match(/fetch\(/g) ?? []).length, 1, "Ver ficha may perform one authorized readonly fetch");
+assert.match(processUi, /\/api\/procesos\/\$\{process\.process_id\}\/pdf/, "catalog must preserve the separately authorized PDF endpoint");
 
 console.log("processes-v2-ui: 151/151 OK");

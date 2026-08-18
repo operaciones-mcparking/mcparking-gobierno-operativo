@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const publicPaths = ["/login", "/auth/callback"];
 const pdfPath = /^\/api\/procesos\/[0-9a-f-]+\/pdf$/i;
+const structureProcessDetailPath = /^\/api\/estructura\/procesos\/[0-9a-f-]+\/ficha$/i;
 
 function denied(request: NextRequest, status = 403) {
   if (request.nextUrl.pathname.startsWith("/api/")) {
@@ -60,6 +61,7 @@ export async function middleware(request: NextRequest) {
   let requiredPermission: string | null = null;
   if (pathname === "/" || pathname === "/estructura") requiredPermission = "structure.view";
   if (pathname === "/api/procesos/export") requiredPermission = "structure.export.excel";
+  if (structureProcessDetailPath.test(pathname)) requiredPermission = "structure.view";
   if (pdfPath.test(pathname)) requiredPermission = "structure.export.pdf";
   if (!requiredPermission) return denied(request);
 

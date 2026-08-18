@@ -120,7 +120,8 @@ assert.match(data, /from\("v_role_dictionary"\)/, "official roles must originate
 assert.match(actions, /from\("v_role_dictionary"\)[\s\S]*role_status[\s\S]*active/, "server-side owner validation must reject non-official or inactive roles");
 assert.doesNotMatch(createForm + editPage + sheet + detailLink, /SUPABASE_SERVICE_ROLE_KEY|createClient\(|\.from\(/, "browser-facing components must not use privileged database clients");
 assert.doesNotMatch(createForm + editPage, /fetch\(|api\/procesos/, "V1 writes must remain Server Actions without a new browser endpoint");
-assert.match(detailLink, /href=\{`\/procesos\/\$\{process\.process_id\}`\}/, "Ver ficha must use the shared clean readonly route");
+assert.match(detailLink, /fetch\([\s\S]*api\/estructura\/procesos\/[\s\S]*process\.process_id[\s\S]*\/ficha/, "Ver ficha must use the authorized structure readonly endpoint");
+assert.match(detailLink, /ProcessMasterSheet mode="readonly"/, "Ver ficha must reuse the shared clean readonly sheet");
 assert.doesNotMatch(detailLink, /Objetivo|Resultado esperado|Entradas y proveedores|KPI basico/, "Ver ficha action must not preserve a parallel legacy reader");
 
 for (const field of ["supplier_origin", "process_inputs", "process_outputs", "client_destination"]) assert.match(validation, new RegExp(`key: "${field}"`), `${field} must participate in activation readiness`);

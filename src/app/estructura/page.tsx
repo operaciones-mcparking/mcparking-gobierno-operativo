@@ -903,7 +903,7 @@ export default async function EstructuraPage({
               <ProcessCatalogClient
                 activeProcesses={newProcesses}
                 canExportPdf={structureAccess.canExportPdf}
-                canViewProcessDetails={structureAccess.canNavigateProcesses}
+                canViewProcessDetails={structureAccess.canAccessStructure}
                 catalogMode="new-only"
                 companyOptions={processCompanyOptions}
                 matrixRows={processMatrixResult.data}
