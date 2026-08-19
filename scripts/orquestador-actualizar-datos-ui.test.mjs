@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { test } from "node:test";
+import vm from "node:vm";
+import ts from "typescript";
 import assert from "node:assert/strict";
 
 const pagePath = "src/app/orquestador/page.tsx";
@@ -8,15 +10,60 @@ const controlCenterPath = "src/app/orquestador/orchestrator-control-center.tsx";
 const controlPath = "src/app/orquestador/actualizar-datos-operacionales-control.tsx";
 const hookPath = "src/app/orquestador/use-composite-operations-run.ts";
 const viewerPath = "src/app/orquestador/composite-run-viewer.tsx";
+const readinessPath = "src/lib/orquestador/actualizar-datos-operacionales.ts";
+const startRoutePath = "src/app/api/orquestador/operaciones/actualizar-datos/route.ts";
+const typesPath = "src/lib/orquestador/types.ts";
 
 const page = readFileSync(pagePath, "utf8");
 const controlCenter = readFileSync(controlCenterPath, "utf8");
 const control = readFileSync(controlPath, "utf8");
 const hook = readFileSync(hookPath, "utf8");
 const viewer = readFileSync(viewerPath, "utf8");
+const readiness = readFileSync(readinessPath, "utf8");
+const startRoute = readFileSync(startRoutePath, "utf8");
+const types = readFileSync(typesPath, "utf8");
 const clientSources = [control, hook].join("\n");
 const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
 const realCompositeRunId = "498a3a70-dbb0-4999-bab6-d85bc9eb07c4";
+function executeTypescriptModule(source, importedModules = {}) {
+  const output = ts.transpileModule(source, { compilerOptions: { esModuleInterop: true, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const module = { exports: {} };
+  const requireModule = (specifier) => {
+    if (Object.hasOwn(importedModules, specifier)) return importedModules[specifier];
+    throw new Error(`Unexpected test import: ${specifier}`);
+  };
+  const execute = vm.runInNewContext(`(function (exports, require, module) { ${output}
+})`);
+  execute(module.exports, requireModule, module);
+  return module.exports;
+}
+
+const compositeModuleStub = {
+  ACTUALIZAR_DATOS_OPERACIONALES_KIND: "actualizar_datos_operacionales_last_month",
+  ACTUALIZAR_DATOS_OPERACIONALES_LABELS: { 1: "Reservas", 2: "Packs", 3: "Dashboard" },
+  mapCompositeRunJobs: () => null,
+};
+const readinessModule = executeTypescriptModule(readiness, {
+  "@/lib/orquestador/composite-runs": compositeModuleStub,
+  "@/lib/orquestador/types": {},
+});
+const typesModule = executeTypescriptModule(types);
+const { getActualizarDatosReadiness, isActualizarDatosRelevantActiveJob } = readinessModule;
+const { safeJobRow } = typesModule;
+
+const enabledJobTypes = [
+  { enabled: true, job_type: "banco_reservas_actualizar" },
+  { enabled: true, job_type: "banco_packs_actualizar_sin_consumos" },
+  { enabled: true, job_type: "dashboard_actualizar_metricas" },
+];
+const idleWorker = { last_seen_at: "2026-08-19T12:00:00.000Z", locked_job_id: null, status: "idle", worker_id: "pc_operaciones_01" };
+function actualReadiness(overrides = {}) {
+  return getActualizarDatosReadiness({ jobTypes: enabledJobTypes, jobs: [], nowMs: Date.parse("2026-08-19T12:00:00.000Z"), worker: idleWorker, ...overrides });
+}
+function rawJob(overrides = {}) {
+  return { created_at: "2026-08-19T11:59:00.000Z", id: "job-test", job_type: "worker_health_check", status: "queued", ...overrides };
+}
+
 
 function getUuidPatternFromHook() {
   const match = hook.match(/const uuidPattern = (\/.+\/[a-z]*);/);
@@ -502,4 +549,71 @@ test("AP. boton indica actualizacion en curso con run activo", () => {
   assert.match(control, /aria-label=\{triggerLabel\}/);
   assert.match(control, /title=\{triggerLabel\}/);
   assert.match(control, /disabled=\{!canStart\}/);
+});
+test("AQ. helper real ignora un job activo ajeno", () => {
+  const job = safeJobRow(rawJob({ composite_kind: "otro_composite", locked_by_worker_id: "pc_otro", status: "running", target_worker_id: "pc_otro" }));
+  assert.equal(isActualizarDatosRelevantActiveJob(job), false);
+  assert.equal(actualReadiness({ jobs: [job] }).code, "ready");
+});
+
+test("AR. helper real bloquea jobs target o locked del worker objetivo", () => {
+  const targeted = safeJobRow(rawJob({ status: "queued", target_worker_id: "pc_operaciones_01" }));
+  const locked = safeJobRow(rawJob({ id: "job-locked", locked_by_worker_id: "pc_operaciones_01", status: "running", target_worker_id: "pc_otro" }));
+  assert.equal(targeted.worker_id, "pc_operaciones_01");
+  assert.equal(locked.worker_id, "pc_operaciones_01");
+  assert.equal(isActualizarDatosRelevantActiveJob(targeted), true);
+  assert.equal(isActualizarDatosRelevantActiveJob(locked), true);
+  assert.equal(actualReadiness({ jobs: [targeted] }).code, "active_queue");
+  assert.equal(actualReadiness({ jobs: [locked] }).code, "active_queue");
+});
+
+test("AS. helper real bloquea el composite operacional en otro worker", () => {
+  const job = safeJobRow(rawJob({ composite_kind: "actualizar_datos_operacionales_last_month", status: "claimed", target_worker_id: "pc_otro" }));
+  assert.equal(isActualizarDatosRelevantActiveJob(job), true);
+  assert.equal(actualReadiness({ jobs: [job] }).code, "active_queue");
+});
+
+test("AT. helper real ignora estados terminales relevantes", () => {
+  for (const status of ["succeeded", "failed", "cancelled"]) {
+    const job = safeJobRow(rawJob({ status, target_worker_id: "pc_operaciones_01" }));
+    assert.equal(isActualizarDatosRelevantActiveJob(job), false);
+    assert.equal(actualReadiness({ jobs: [job] }).code, "ready");
+  }
+});
+
+test("AT2. helper real distingue worker offline y busy", () => {
+  assert.equal(actualReadiness({ worker: { ...idleWorker, last_seen_at: "2026-08-19T11:57:59.000Z" } }).code, "worker_offline");
+  assert.equal(actualReadiness({ worker: { ...idleWorker, locked_job_id: "job-activo", status: "busy" } }).code, "worker_busy");
+});
+
+test("AT3. helper real distingue job type disabled y missing", () => {
+  const disabled = enabledJobTypes.map((jobType) => jobType.job_type === "dashboard_actualizar_metricas" ? { ...jobType, enabled: false } : jobType);
+  assert.equal(actualReadiness({ jobTypes: disabled }).code, "job_type_disabled");
+  assert.equal(actualReadiness({ jobTypes: enabledJobTypes.slice(0, 2) }).code, "job_type_missing");
+});
+
+test("AT4. helper real devuelve ready con el contrato completo valido", () => {
+  const result = actualReadiness();
+  assert.equal(result.ok, true);
+  assert.equal(result.code, "ready");
+});
+
+test("AU. backend entrega readiness code seguro al cliente", () => {
+  assert.match(startRoute, /jsonError\(actualizarDatosReadinessMessage\(code\), code === "job_type_missing" \? 404 : 409, code\)/);
+  assert.match(startRoute, /\.\.\.\(code \? \{ code \} : \{\}\)/);
+  assert.match(hook, /safeError\.code !== null/);
+  assert.match(hook, /readinessCodes\.has\(safeError\.code\)/);
+});
+
+test("AV. mensajes distinguen causas de readiness", () => {
+  assert.match(hook, /El worker esta ejecutando otra tarea/);
+  assert.match(hook, /El worker no esta disponible en este momento/);
+  assert.match(hook, /Uno de los procesos requeridos esta deshabilitado/);
+  assert.match(hook, /Hay una actualizacion operacional en curso/);
+});
+
+test("AW. error 500 no se clasifica como readiness_unavailable", () => {
+  assert.match(startRoute, /No fue posible validar la disponibilidad del orquestador\.", 500/);
+  assert.match(hook, /\(response\.status === 404 \|\| response\.status === 409\)/);
+  assert.match(hook, /isReadinessError\s*\? "readiness_unavailable"\s*:\s*"network_error"/s);
 });

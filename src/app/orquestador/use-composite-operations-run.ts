@@ -105,6 +105,37 @@ async function readSafeError(response: Response) {
   }
 }
 
+const readinessCodes = new Set([
+  "active_queue",
+  "job_type_disabled",
+  "job_type_missing",
+  "worker_busy",
+  "worker_missing",
+  "worker_offline",
+]);
+
+function readinessMessage(code: string | null, fallback: string) {
+  if (code === "worker_busy") return "El worker esta ejecutando otra tarea.";
+  if (code === "worker_missing" || code === "worker_offline") return "El worker no esta disponible en este momento.";
+  if (code === "job_type_disabled") return "Uno de los procesos requeridos esta deshabilitado.";
+  if (code === "active_queue") return "Hay una actualizacion operacional en curso.";
+  return fallback;
+}
+
+async function readSafeStartError(response: Response) {
+  const fallback = publicErrorMessage(response.status);
+
+  try {
+    const responseBody = (await response.json()) as { code?: unknown; error?: unknown };
+    return {
+      code: typeof responseBody.code === "string" ? responseBody.code : null,
+      message: typeof responseBody.error === "string" && responseBody.error.trim() ? responseBody.error : fallback,
+    };
+  } catch {
+    return { code: null, message: fallback };
+  }
+}
+
 export function useCompositeOperationsRun() {
   const [run, setRun] = useState<CompositeRunViewModel | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -500,10 +531,21 @@ export function useCompositeOperationsRun() {
         }
       }
       if (!response.ok) {
-        const safeMessage = await readSafeError(response);
+        const safeError = await readSafeStartError(response);
+        const isReadinessError =
+          (response.status === 404 || response.status === 409) &&
+          safeError.code !== null &&
+          readinessCodes.has(safeError.code);
+
         if (isMountedRef.current) {
-          setMessage(safeMessage);
-          setStatus(response.status === 401 || response.status === 403 ? "unauthorized" : "readiness_unavailable");
+          setMessage(isReadinessError ? readinessMessage(safeError.code, safeError.message) : safeError.message);
+          setStatus(
+            response.status === 401 || response.status === 403
+              ? "unauthorized"
+              : isReadinessError
+                ? "readiness_unavailable"
+                : "network_error",
+          );
         }
         return false;
       }

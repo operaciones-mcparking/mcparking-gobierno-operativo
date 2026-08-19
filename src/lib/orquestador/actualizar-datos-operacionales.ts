@@ -90,13 +90,18 @@ export function isActualizarDatosHeartbeatRecent(lastSeenAt: string | null | und
   return Number.isFinite(lastSeenMs) && nowMs - lastSeenMs <= OPERACIONES_HEARTBEAT_MAX_AGE_MS;
 }
 
-export function isActualizarDatosActiveJob(job: Pick<OrchestratorJob, "status">) {
-  return OPERACIONES_ACTIVE_JOB_STATUSES.has(job.status);
+export function isActualizarDatosRelevantActiveJob(
+  job: Pick<OrchestratorJob, "compositeKind" | "status" | "worker_id">,
+) {
+  return (
+    OPERACIONES_ACTIVE_JOB_STATUSES.has(job.status) &&
+    (job.worker_id === OPERACIONES_TARGET_WORKER_ID || job.compositeKind === ACTUALIZAR_DATOS_OPERACIONALES_KIND)
+  );
 }
 
 export function getActualizarDatosReadiness(input: {
   jobTypes: OrchestratorJobType[];
-  jobs: Pick<OrchestratorJob, "status">[];
+  jobs: Pick<OrchestratorJob, "compositeKind" | "status" | "worker_id">[];
   nowMs?: number;
   worker: Pick<OrchestratorWorker, "last_seen_at" | "locked_job_id" | "status" | "worker_id"> | null | undefined;
 }): ActualizarDatosReadiness {
@@ -125,7 +130,7 @@ export function getActualizarDatosReadiness(input: {
     return { code: "worker_busy", ok: false };
   }
 
-  if (input.jobs.some(isActualizarDatosActiveJob)) {
+  if (input.jobs.some(isActualizarDatosRelevantActiveJob)) {
     return { code: "active_queue", ok: false };
   }
 
@@ -189,11 +194,11 @@ export function getNextStepToCreate(rows: RawCompositeRunJobRow[]) {
 }
 
 export function actualizarDatosReadinessMessage(code: ActualizarDatosReadinessCode) {
-  if (code === "job_type_disabled") return "La actualizacion de datos operacionales esta deshabilitada.";
+  if (code === "job_type_disabled") return "Uno de los procesos requeridos esta deshabilitado.";
   if (code === "job_type_missing") return "No fue posible encontrar todos los tipos de job requeridos.";
-  if (code === "worker_missing" || code === "worker_offline") return "El worker no esta disponible.";
-  if (code === "worker_busy") return "El worker esta ocupado.";
-  if (code === "active_queue") return "Existe otra operacion activa en el orquestador.";
+  if (code === "worker_missing" || code === "worker_offline") return "El worker no esta disponible en este momento.";
+  if (code === "worker_busy") return "El worker esta ejecutando otra tarea.";
+  if (code === "active_queue") return "Hay una actualizacion operacional en curso.";
   return "No fue posible iniciar la actualizacion de datos operacionales.";
 }
 

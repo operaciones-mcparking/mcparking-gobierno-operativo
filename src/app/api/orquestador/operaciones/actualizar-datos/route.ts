@@ -17,12 +17,12 @@ import {
   startOperationalUpdateRun,
 } from "@/lib/orquestador/supabase-admin";
 
-function jsonError(message: string, status: number) {
-  return NextResponse.json({ error: message, ok: false }, { status });
+function jsonError(message: string, status: number, code?: string) {
+  return NextResponse.json({ ...(code ? { code } : {}), error: message, ok: false }, { status });
 }
 
 function publicReadinessError(code: ActualizarDatosReadinessCode) {
-  return jsonError(actualizarDatosReadinessMessage(code), code === "job_type_missing" ? 404 : 409);
+  return jsonError(actualizarDatosReadinessMessage(code), code === "job_type_missing" ? 404 : 409, code);
 }
 
 function hasExactConfirmation(value: unknown) {
@@ -42,7 +42,7 @@ async function loadReadiness() {
   ]);
 
   if (jobTypes.error || workers.error || jobs.error) {
-    return { code: "job_type_missing" as const, ok: false };
+    return null;
   }
 
   return getActualizarDatosReadiness({
@@ -80,11 +80,17 @@ export async function POST(request: NextRequest) {
   }
 
   const firstCheck = await loadReadiness();
+  if (!firstCheck) {
+    return jsonError("No fue posible validar la disponibilidad del orquestador.", 500);
+  }
   if (!firstCheck.ok) {
     return publicReadinessError(firstCheck.code);
   }
 
   const secondCheck = await loadReadiness();
+  if (!secondCheck) {
+    return jsonError("No fue posible validar la disponibilidad del orquestador.", 500);
+  }
   if (!secondCheck.ok) {
     return publicReadinessError(secondCheck.code);
   }

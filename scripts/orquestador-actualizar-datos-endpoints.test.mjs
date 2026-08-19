@@ -78,7 +78,7 @@ test("I. Readiness inicial", () => {
   assert.match(helper, /worker\.status !== "idle"/);
   assert.match(helper, /input\.worker\.locked_job_id/);
   assert.match(helper, /OPERACIONES_HEARTBEAT_MAX_AGE_MS = 120_000/);
-  assert.match(helper, /input\.jobs\.some\(isActualizarDatosActiveJob\)/);
+  assert.match(helper, /input\.jobs\.some\(isActualizarDatosRelevantActiveJob\)/);
 });
 
 test("J. Start delega run_id a RPC atomica server-side", () => {
