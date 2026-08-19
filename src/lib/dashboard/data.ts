@@ -419,6 +419,7 @@ export type RecoveryCartAuditRow = {
   phone: string | null;
   purchase_amount: number | null;
   purchase_created_at: string | null;
+  quoted_amount: number | null;
   recovery_review_note: string | null;
   recovered: boolean;
   whatsappStatus: RecoveryCartWhatsappStatus;
@@ -1981,6 +1982,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     intended_arrival_date: string | null;
     intended_departure_date: string | null;
     message_id: string | null;
+    quoted_amount: number | null;
   };
 
   type TrackingByMessageRow = {
@@ -2063,7 +2065,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     supabase
       .from("recovery_incomplete_bookings_import")
       .select(
-        "id,batch_id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_arrival_at,intended_arrival_date,intended_departure_date,row_hash",
+        "id,batch_id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_arrival_at,intended_arrival_date,intended_departure_date,quoted_amount,row_hash",
       )
       .gte("form_datetime", auditDayStart)
       .lt("form_datetime", auditDayEnd)
@@ -2137,6 +2139,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
       phone: cart.phone_normalized,
       purchase_amount: attributionResult?.attributedAmount ?? null,
       purchase_created_at: attributionResult?.attributedPurchaseAt ?? null,
+      quoted_amount: cart.quoted_amount === null ? null : Number(cart.quoted_amount),
       recovery_review_note: attributionResult?.status === "payment_review" ? "BookingStatus 9" : null,
       recovered: attributionResult?.status === "recovered_with_amount" || attributionResult?.status === "recovered_pack",
       whatsappStatus: tracking?.tracking_status ?? "sin_seguimiento",

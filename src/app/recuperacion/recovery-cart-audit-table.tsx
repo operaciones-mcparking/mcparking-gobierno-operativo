@@ -70,6 +70,19 @@ function formatCurrency(value: number | null) {
   return `$${new Intl.NumberFormat("es-CL").format(Math.round(value))}`;
 }
 
+function quotedAmountLabel(row: RecoveryCartAuditRow) {
+  const label = row.audit_status === "recovered_pack" ? "Valor reserva" : "Cotizado";
+
+  return `${label}: ${row.quoted_amount === null ? "Sin dato" : formatCurrency(row.quoted_amount)}`;
+}
+
+function primaryAmountLabel(row: RecoveryCartAuditRow) {
+  if (row.audit_status === "recovered_pack") return "Pack";
+  if (row.recovered || row.audit_status === "payment_review") return formatCurrency(row.purchase_amount);
+
+  return "—";
+}
+
 function formatDate(value: string | null) {
   if (!value) return "-";
 
@@ -1795,12 +1808,13 @@ function WeeklyBreakdownBlock({
                         <span className="font-medium text-navy">Compra</span>
                         <span>{formatDate(row.purchase_created_at)}</span>
                         <span>{formatHours(row.hours_to_purchase)}</span>
-                        <span className="font-medium text-navy">{row.recovered || row.audit_status === "payment_review" ? formatCurrency(row.purchase_amount) : "-"}</span>
+                        <span className="font-medium text-navy">{primaryAmountLabel(row)}</span>
                       </div>
                     ) : (
                       <p className="text-slate-500">Sin compra atribuida</p>
                     )}
                   </div>
+                  <p className="mt-1 break-words text-[11px] text-slate-500">{quotedAmountLabel(row)}</p>
 
                   <button
                     aria-expanded={isExpanded}
@@ -1935,8 +1949,9 @@ function WeeklyBreakdownBlock({
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
                     {formatHours(row.hours_to_purchase)}
                   </td>
-                  <td className="border-b border-[#edf2f6] px-2 py-3 font-medium text-navy">
-                    {row.recovered || row.audit_status === "payment_review" ? formatCurrency(row.purchase_amount) : "-"}
+                  <td className="border-b border-[#edf2f6] px-2 py-3">
+                    <div className="font-medium text-navy">{primaryAmountLabel(row)}</div>
+                    <div className="mt-1 break-words text-[11px] font-normal text-slate-500">{quotedAmountLabel(row)}</div>
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
                     {row.confidence ? (

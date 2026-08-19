@@ -458,6 +458,12 @@ test("no unrelated modules are part of this task diff", () => {
 
   const allowedRecoveryChatFiles = new Set([
     "scripts/recovery-chart-presentation.test.mjs",
+    "scripts/recovery/incomplete-bookings-csv-validator.js",
+    "src/app/api/recuperacion/carritos/importar/route.ts",
+    "src/lib/dashboard/data.ts",
+    "scripts/recovery-quoted-amount.test.mjs",
+    "scripts/recovery/backfill-incomplete-booking-quoted-amount.js",
+    "supabase/migrations/20260819120000_add_recovery_cart_quoted_amount.sql",
     "scripts/recovery-chat-extended-window.test.mjs",
     "scripts/recovery-snapshot-comparison-api.test.mjs",
     "scripts/recovery-attribution-canonical.test.mjs",

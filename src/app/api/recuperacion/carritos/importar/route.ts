@@ -58,6 +58,7 @@ type RecoveryIncompleteBookingImportRow = {
   message_sent: boolean | null;
   parking_code: string | null;
   phone_normalized: string | null;
+  quoted_amount: number | null;
   row_hash: string;
   source_id: string;
   type: string;

@@ -166,6 +166,24 @@ function parseBform(raw) {
   }
 }
 
+function normalizeQuotedAmount(raw) {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw < 0 || Math.round(raw * 100) !== raw * 100) return null;
+
+    return raw;
+  }
+
+  if (typeof raw !== "string") return null;
+
+  const value = raw.trim();
+
+  if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null;
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function normalizeHour(raw) {
   const value = cleanText(raw);
 
@@ -279,6 +297,7 @@ function hashNormalizedRow(row) {
 }
 
 function normalizeIncompleteBookingRow(row) {
+  const bform = parseBform(row.bform);
   const intendedFields = intendedFieldsFromBform(row.bform);
   const normalizedForHash = {
     booking_id: cleanText(row.booking_id),
@@ -290,6 +309,7 @@ function normalizeIncompleteBookingRow(row) {
     message_sent: parseBoolean(row.Message_Sent),
     parking_code: normalizeParkingCode(row.parking_code),
     phone_normalized: normalizePhone(row.phone),
+    quoted_amount: normalizeQuotedAmount(bform?.price),
     source_id: cleanText(row.id),
     type: normalizeType(row.type),
     updated_at_source: dateTimeValue(row.updatedAt),
@@ -387,5 +407,6 @@ function validateIncompleteBookingsCsv(csvContent) {
 
 module.exports = {
   buildRecoveryIncompleteBookingImportRows,
+  normalizeQuotedAmount,
   validateIncompleteBookingsCsv,
 };
