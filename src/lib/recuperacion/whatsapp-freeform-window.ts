@@ -26,6 +26,10 @@ const RECOVERY_WHATSAPP_BUSINESS_PHONES: Record<RecoveryWhatsappBusinessKey, str
   MPV: "56926817602",
 };
 
+export function recoveryWhatsappBusinessPhoneForKey(key: RecoveryWhatsappBusinessKey) {
+  return RECOVERY_WHATSAPP_BUSINESS_PHONES[key];
+}
+
 type CartContactRow = {
   parking_code: string | null;
   phone_normalized: string | null;

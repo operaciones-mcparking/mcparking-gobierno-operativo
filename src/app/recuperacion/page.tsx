@@ -14,7 +14,21 @@ import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
 import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
 import { RecoveryLoadingCard } from "./recovery-loading-card";
+import { RecoveryConversationSessions } from "./recovery-conversation-sessions";
+import { RecoveryViewTabs, type RecoveryView } from "./recovery-view-tabs";
 import { TrackingUploadCard } from "./tracking-upload-card";
+
+type RecuperacionPageProps = {
+  searchParams?: Promise<{
+    view?: string | string[];
+  }>;
+};
+
+function resolveView(value?: string | string[]): RecoveryView {
+  const requestedView = Array.isArray(value) ? value[0] : value;
+
+  return requestedView === "conversaciones" ? "conversaciones" : "carritos";
+}
 
 function logRecoveryTiming(label: string, startedAt: number) {
   console.info(`[recuperacion] ${label}: ${Date.now() - startedAt}ms`);
@@ -55,10 +69,12 @@ async function RecoveryImportHistoryBlock() {
   return <RecoveryImportHistory error={importHistoryError?.message ?? null} imports={importHistory} />;
 }
 
-export default async function RecuperacionPage() {
+export default async function RecuperacionPage({ searchParams }: RecuperacionPageProps) {
   const authStartedAt = Date.now();
   await requireAdminAccess();
   logRecoveryTiming("requireAdminAccess", authStartedAt);
+  const resolvedSearchParams = await searchParams;
+  const activeView = resolveView(resolvedSearchParams?.view);
 
   return (
     <DashboardShell
@@ -67,24 +83,32 @@ export default async function RecuperacionPage() {
       eyebrow="Recuperacion"
       title="Recuperacion de carritos"
     >
-      <Suspense fallback={<RecoveryLoadingCard label="Cargando seguimiento y auditoria..." />}>
-        <RecoveryCartAuditBlock />
-      </Suspense>
+      <RecoveryViewTabs activeView={activeView} />
 
-      <RecoveryAdminDataAccordion>
-        <Suspense fallback={<RecoveryCompactLoading label="Cargando ultima carga..." />}>
-          <RecoveryLatestImportsBlock />
-        </Suspense>
+      {activeView === "conversaciones" ? (
+        <RecoveryConversationSessions />
+      ) : (
+        <>
+          <Suspense fallback={<RecoveryLoadingCard label="Cargando seguimiento y auditoria..." />}>
+            <RecoveryCartAuditBlock />
+          </Suspense>
 
-        <PurchasesUploadMock />
-        <IncompleteBookingsUploadMock />
-        <TrackingUploadCard />
-        <MessageMemoryUploadCard />
+          <RecoveryAdminDataAccordion>
+            <Suspense fallback={<RecoveryCompactLoading label="Cargando ultima carga..." />}>
+              <RecoveryLatestImportsBlock />
+            </Suspense>
 
-        <Suspense fallback={<RecoveryCompactLoading label="Cargando historial de importaciones..." />}>
-          <RecoveryImportHistoryBlock />
-        </Suspense>
-      </RecoveryAdminDataAccordion>
+            <PurchasesUploadMock />
+            <IncompleteBookingsUploadMock />
+            <TrackingUploadCard />
+            <MessageMemoryUploadCard />
+
+            <Suspense fallback={<RecoveryCompactLoading label="Cargando historial de importaciones..." />}>
+              <RecoveryImportHistoryBlock />
+            </Suspense>
+          </RecoveryAdminDataAccordion>
+        </>
+      )}
     </DashboardShell>
   );
 }

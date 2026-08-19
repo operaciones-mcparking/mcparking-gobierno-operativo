@@ -607,6 +607,14 @@ test("46. current task diff is scoped", () => {
     "src/lib/recuperacion/whatsapp-template-send-payload.ts",
     "src/lib/recuperacion/whatsapp-template-n8n-payload.ts",
     "src/lib/recuperacion/whatsapp-template-n8n-transport.ts",
+    "scripts/recovery-conversation-sessions-ui.test.mjs",
+    "scripts/recovery-conversation-sessions.test.mjs",
+    "src/app/api/recuperacion/conversaciones/sesiones/route.ts",
+    "src/app/recuperacion/page.tsx",
+    "src/app/recuperacion/recovery-conversation-sessions.tsx",
+    "src/app/recuperacion/recovery-view-tabs.tsx",
+    "src/lib/recuperacion/recovery-conversation-sessions.ts",
+    "supabase/migrations/20260819130000_add_recovery_conversation_sessions_read_contract.sql",
   ]);
 
   assert.equal(changedFiles.every((file) => allowed.has(file)), true, `Unexpected changed files: ${changedFiles.join(", ")}`);

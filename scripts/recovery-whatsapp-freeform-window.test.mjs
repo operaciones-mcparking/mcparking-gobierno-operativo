@@ -509,6 +509,14 @@ test("no unrelated modules are part of this task diff", () => {
     "scripts/recovery-whatsapp-business-window.test.mjs",
     "scripts/recovery-whatsapp-window-indicator.test.mjs",
     "src/app/api/recuperacion/carritos/chat-indicators/route.ts",
+    "scripts/recovery-conversation-sessions.test.mjs",
+    "src/app/api/recuperacion/conversaciones/sesiones/route.ts",
+    "src/lib/recuperacion/recovery-conversation-sessions.ts",
+    "supabase/migrations/20260819130000_add_recovery_conversation_sessions_read_contract.sql",
+    "scripts/recovery-conversation-sessions-ui.test.mjs",
+    "src/app/recuperacion/page.tsx",
+    "src/app/recuperacion/recovery-conversation-sessions.tsx",
+    "src/app/recuperacion/recovery-view-tabs.tsx",
   ]);
 
   assert.equal(
