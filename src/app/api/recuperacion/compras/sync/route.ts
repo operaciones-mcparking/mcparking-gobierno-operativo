@@ -81,19 +81,6 @@ export async function POST(request: NextRequest) {
   const secretValid = isValidPurchaseSyncSecret(incomingSecret, expectedSecret);
 
   if (!secretValid) {
-    const envByteLength = expectedSecret ? Buffer.byteLength(expectedSecret, "utf8") : null;
-    const headerByteLength = incomingSecret ? Buffer.byteLength(incomingSecret, "utf8") : null;
-    const authDebug = {
-      env_present: Boolean(expectedSecret),
-      env_byte_length: envByteLength,
-      header_present: Boolean(incomingSecret),
-      header_byte_length: headerByteLength,
-      lengths_match: envByteLength !== null && headerByteLength !== null && envByteLength === headerByteLength,
-      expected_length_match: envByteLength === 64,
-      secret_valid: false,
-    };
-
-    process.stderr.write(`purchase_sync_auth_debug ${JSON.stringify(authDebug)}\n`);
     return jsonError("No autorizado.", 401);
   }
 

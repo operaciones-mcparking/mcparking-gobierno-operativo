@@ -131,6 +131,7 @@ assert.ok(middleware.indexOf("pathname === recoveryPurchasesSyncPath") < middlew
 assert.doesNotMatch(middleware, /pathname\.startsWith\(recoveryPurchasesSyncPath\)/);
 assert.equal(existsSync("middleware.ts"), false, "only src/middleware.ts may define the project middleware");
 assert.doesNotMatch(route, /createSupabaseAuthServerClient|cookies\(|console\.|JSON\.stringify\(payload\)|raw payload/i);
+assert.doesNotMatch(route, /purchase_sync_auth_debug|process\.stderr|env_byte_length|header_byte_length/);
 const responseBlock = route.slice(route.lastIndexOf("return NextResponse.json({"));
 assert.doesNotMatch(responseBlock, /email_normalized|phone_normalized|prepared\.rows(?!\?\.length)|p_rows/);
 
