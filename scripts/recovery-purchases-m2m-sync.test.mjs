@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -13,7 +13,7 @@ const {
 
 const route = readFileSync("src/app/api/recuperacion/compras/sync/route.ts", "utf8");
 const migration = readFileSync("supabase/migrations/20260820130000_add_recovery_purchases_m2m_import.sql", "utf8");
-const middleware = readFileSync("middleware.ts", "utf8");
+const middleware = readFileSync("src/middleware.ts", "utf8");
 
 const sourceRow = {
   Id: 795167,
@@ -126,9 +126,10 @@ assert.equal("/api/recuperacion/compras/sync" === middlewarePath, true);
 assert.equal("/api/recuperacion/compras/sync/otro" === middlewarePath, false);
 assert.equal("/api/recuperacion/compras/importar" === middlewarePath, false);
 assert.equal("/recuperacion" === middlewarePath, false);
-assert.match(middleware, /request\.nextUrl\.pathname === recoveryPurchasesSyncPath/);
-assert.ok(middleware.indexOf("request.nextUrl.pathname === recoveryPurchasesSyncPath") < middleware.indexOf("if (!supabaseUrl || !supabaseAnonKey)"));
-assert.doesNotMatch(middleware, /nextUrl\.pathname\.startsWith\(recoveryPurchasesSyncPath\)/);
+assert.match(middleware, /pathname === recoveryPurchasesSyncPath/);
+assert.ok(middleware.indexOf("pathname === recoveryPurchasesSyncPath") < middleware.indexOf("createServerClient("));
+assert.doesNotMatch(middleware, /pathname\.startsWith\(recoveryPurchasesSyncPath\)/);
+assert.equal(existsSync("middleware.ts"), false, "only src/middleware.ts may define the project middleware");
 assert.doesNotMatch(route, /createSupabaseAuthServerClient|cookies\(|console\.|JSON\.stringify\(payload\)|raw payload/i);
 const responseBlock = route.slice(route.lastIndexOf("return NextResponse.json({"));
 assert.doesNotMatch(responseBlock, /email_normalized|phone_normalized|prepared\.rows(?!\?\.length)|p_rows/);
