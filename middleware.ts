@@ -3,8 +3,13 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const recoveryPurchasesSyncPath = "/api/recuperacion/compras/sync";
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === recoveryPurchasesSyncPath) {
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({ request });
   const isLoginPage = request.nextUrl.pathname === "/login";
   const isAuthCallback = request.nextUrl.pathname === "/auth/callback";

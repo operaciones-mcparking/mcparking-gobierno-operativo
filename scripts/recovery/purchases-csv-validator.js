@@ -155,9 +155,24 @@ function dateTimeValue(raw) {
 }
 
 function dateOnlyValue(raw) {
-  const date = parseDateSafe(raw);
+  if (raw === null || raw === undefined) return null;
 
-  return date ? date.toISOString().slice(0, 10) : null;
+  const value = String(raw).trim();
+  if (!value) return null;
+
+  const dayFirstMatch = value.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  const isoMatch = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!dayFirstMatch && !isoMatch) return null;
+
+  const year = Number.parseInt(isoMatch ? isoMatch[1] : dayFirstMatch[3], 10);
+  const month = Number.parseInt(isoMatch ? isoMatch[2] : dayFirstMatch[2], 10);
+  const day = Number.parseInt(isoMatch ? isoMatch[3] : dayFirstMatch[1], 10);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) return null;
+
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function hashNormalizedRow(row) {
@@ -193,7 +208,11 @@ function normalizePurchaseRow(row) {
 function buildRecoveryBookingImportRows(csvContent) {
   const { rows } = parseCsv(csvContent);
 
-  return rows.map(normalizePurchaseRow).filter((row) => row.source_booking_id);
+  return buildRecoveryBookingImportRowsFromRows(rows).filter((row) => row.source_booking_id);
+}
+
+function buildRecoveryBookingImportRowsFromRows(rows) {
+  return rows.map(normalizePurchaseRow);
 }
 
 function validatePurchasesCsv(csvContent) {
@@ -234,6 +253,11 @@ function validatePurchasesCsv(csvContent) {
 
 module.exports = {
   buildRecoveryBookingImportRows,
+  buildRecoveryBookingImportRowsFromRows,
+  EXPECTED_COLUMNS,
+  MANDATORY_COLUMNS,
+  dateOnlyValue,
+  normalizePurchaseRow,
   detectDelimiter,
   parseCsv,
   parseCsvRecords,

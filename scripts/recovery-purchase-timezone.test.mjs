@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { buildRecoveryBookingImportRows } = require("./recovery/purchases-csv-validator.js");
+const { buildRecoveryBookingImportRows, dateOnlyValue } = require("./recovery/purchases-csv-validator.js");
 const { parseDateSafe } = require("./recovery/recovery-normalizers.js");
 
 function purchaseCsv({ bookingTime = "27/07/2026 14:33:39" } = {}) {
@@ -144,4 +144,33 @@ test("15. el parser de compras no escribe snapshots ni llama RPC", () => {
   assert.doesNotMatch(parserSource, /create_recovery_weekly_snapshot/i);
   assert.doesNotMatch(parserSource, new RegExp("\\.rpc\\(", "i"));
   assert.doesNotMatch(parserSource, new RegExp("fetch\\(", "i"));
+});
+test("16. date-only conserva las fechas civiles durante el cambio DST Chile 2026", () => {
+  assert.equal(dateOnlyValue("2026-09-05"), "2026-09-05");
+  assert.equal(dateOnlyValue("2026-09-06"), "2026-09-06");
+  assert.equal(dateOnlyValue("2026-09-07"), "2026-09-07");
+});
+
+test("17. date-only valida calendario y anos bisiestos", () => {
+  assert.equal(dateOnlyValue("2024-02-29"), "2024-02-29");
+  assert.equal(dateOnlyValue("2026-02-29"), null);
+  assert.equal(dateOnlyValue("2026-02-30"), null);
+  assert.equal(dateOnlyValue("2026-04-31"), null);
+  assert.equal(dateOnlyValue("2026-13-01"), null);
+  assert.equal(dateOnlyValue("texto"), null);
+});
+
+test("18. date-only conserva formatos civiles existentes y contrato de vacios", () => {
+  assert.equal(dateOnlyValue("06/09/2026"), "2026-09-06");
+  assert.equal(dateOnlyValue("06-09-2026"), "2026-09-06");
+  assert.equal(dateOnlyValue("06.09.2026"), "2026-09-06");
+  assert.equal(dateOnlyValue(""), null);
+  assert.equal(dateOnlyValue("   "), null);
+  assert.equal(dateOnlyValue(null), null);
+});
+
+test("19. date-only DST no altera la conversion zonificada de Buchungszeit", () => {
+  const purchase = onlyPurchase(purchaseCsv({ bookingTime: "2026-08-20 11:24:47" }));
+  assert.equal(purchase.booking_created_at, "2026-08-20T15:24:47.000Z");
+  assert.equal(dateOnlyValue("2026-09-06"), "2026-09-06");
 });

@@ -565,6 +565,14 @@ test("46. current task diff is scoped", () => {
     .filter(Boolean)
     .map((line) => line.slice(3).replaceAll("\\", "/"));
   const allowed = new Set([
+    "scripts/recovery/purchases-csv-validator.js",
+    "middleware.ts",
+    "src/middleware.ts",
+    "scripts/recovery-purchases-m2m-sync.test.mjs",
+    "scripts/recovery-purchase-timezone.test.mjs",
+    "scripts/recovery/purchases-json-adapter.js",
+    "src/app/api/recuperacion/compras/sync/route.ts",
+    "supabase/migrations/20260820130000_add_recovery_purchases_m2m_import.sql",
     "scripts/recovery-purchase-mutable-convergence.test.mjs",
     "supabase/migrations/20260820120000_fix_recovery_purchase_mutable_convergence.sql",
     "scripts/recovery-chart-presentation.test.mjs",
