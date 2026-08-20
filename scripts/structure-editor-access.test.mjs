@@ -79,8 +79,11 @@ assert.match(structureDetailRoute, /getProcessMasterReadModel\(processId\)/);
 assert.match(structureDetailRoute, /return jsonError\("No autorizado\.", 403\)/);
 assert.match(detailModal, /ProcessMasterSheet mode="readonly"/);
 assert.match(detailModal, /api\/estructura\/procesos\/[\s\S]*process\.process_id[\s\S]*\/ficha/);
-assert.doesNotMatch(detailModal, /href=[\s\S]*\/procesos\/|\/editar|Activar proceso|Zona administrativa/);
+assert.match(structurePage, /canEditProcesses=\{structureAccess\.isAdmin\}/);
+assert.match(catalog, /canEdit=\{canEditProcesses\}/);
+assert.match(detailModal, /\{canEdit \? \([\s\S]*href=\{`\/procesos\/\$\{process\.process_id\}\/editar`\}/);
+assert.doesNotMatch(detailModal, /Activar proceso|Zona administrativa|Eliminar definitivamente/);
 assert.match(catalog, /canExportPdf \? <a/);
 assert.doesNotMatch(access + middleware + structurePage + structureDetailRoute + detailModal + migration, /[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}/i);
 
-console.log("structure-editor-access: 56/56 OK");
+console.log("structure-editor-access: 59/59 OK");

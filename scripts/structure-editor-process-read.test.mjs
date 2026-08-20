@@ -11,7 +11,9 @@ const pdfRoute = readFileSync("src/app/api/procesos/[processId]/pdf/route.ts", "
 const masterSheet = readFileSync("src/app/procesos/process-master/process-master-sheet.tsx", "utf8");
 
 assert.ok(structurePage.includes("canViewProcessDetails={structureAccess.canAccessStructure}"));
+assert.ok(structurePage.includes("canEditProcesses={structureAccess.isAdmin}"));
 assert.ok(catalog.includes("canViewProcessDetails ? <ProcessDetailModal"));
+assert.ok(catalog.includes("canEdit={canEditProcesses}"));
 assert.ok(detailModal.includes('type="button"'));
 assert.ok(detailModal.includes("Ver ficha"));
 assert.ok(detailModal.includes('role="dialog"'));
@@ -22,7 +24,10 @@ assert.ok(!masterSheet.includes('<ValueBadge tone={risk.risk_type'));
 assert.ok(detailModal.includes("/api/estructura/procesos/"));
 assert.ok(detailModal.includes("process.process_id"));
 assert.ok(detailModal.includes("/ficha"));
-for (const forbidden of ["href=", "/editar", "Activar proceso", "Zona administrativa", "Eliminar definitivamente"]) {
+assert.ok(detailModal.includes("{canEdit ? ("));
+assert.ok(detailModal.includes('href={`/procesos/${process.process_id}/editar`}'));
+assert.ok(detailModal.includes("Editar"));
+for (const forbidden of ["Activar proceso", "Zona administrativa", "Eliminar definitivamente"]) {
   assert.ok(!detailModal.includes(forbidden));
 }
 assert.ok(detailModal.includes("fixed inset-0"));
@@ -52,4 +57,4 @@ assert.ok(pdfRoute.includes("canUseStructurePermission(structurePermissions.expo
 assert.ok(!detailRoute.includes("structurePermissions.exportPdf"));
 assert.ok(!/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+[.][A-Za-z]{2,}/i.test(detailModal + detailRoute + middleware));
 
-console.log("structure-editor-process-read: 41/41 OK");
+console.log("structure-editor-process-read: 46/46 OK");

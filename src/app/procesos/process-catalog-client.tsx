@@ -149,6 +149,7 @@ type FilterOption = {
 
 type ProcessCatalogClientProps = {
   activeProcesses: ProcessCatalogV2Item[];
+  canEditProcesses?: boolean;
   canExportPdf?: boolean;
   canViewProcessDetails?: boolean;
   catalogMode?: "all" | "new-only";
@@ -164,6 +165,7 @@ type ProcessCatalogClientProps = {
 
 export function ProcessCatalogClient({
   activeProcesses,
+  canEditProcesses = false,
   canExportPdf = true,
   canViewProcessDetails = true,
   catalogMode = "all",
@@ -343,6 +345,7 @@ export function ProcessCatalogClient({
 
                   <div className="hidden items-center justify-end gap-2 xl:col-auto xl:flex">
                     {canViewProcessDetails ? <ProcessDetailModal
+                      canEdit={canEditProcesses}
                       ownerRoleBySubprocess={ownerRoleBySubprocess}
                       process={process}
                       roleDictionary={roleDictionary}
@@ -366,6 +369,7 @@ export function ProcessCatalogClient({
               <div className="bg-[#f8fafb] px-4 py-4">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row xl:hidden">
                   {canViewProcessDetails ? <ProcessDetailModal
+                    canEdit={canEditProcesses}
                     ownerRoleBySubprocess={ownerRoleBySubprocess}
                     process={process}
                     roleDictionary={roleDictionary}

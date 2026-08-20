@@ -902,6 +902,7 @@ export default async function EstructuraPage({
             <>
               <ProcessCatalogClient
                 activeProcesses={newProcesses}
+                canEditProcesses={structureAccess.isAdmin}
                 canExportPdf={structureAccess.canExportPdf}
                 canViewProcessDetails={structureAccess.canAccessStructure}
                 catalogMode="new-only"

@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { FileText, LoaderCircle, X } from "lucide-react";
+import { FileText, LoaderCircle, Pencil, X } from "lucide-react";
 
 import { ProcessMasterSheet } from "@/app/procesos/process-master/process-master-sheet";
 import type { ProcessMasterDto } from "@/app/procesos/process-master/process-master-types";
@@ -12,6 +13,7 @@ import type {
 } from "@/lib/dashboard/data";
 
 type ProcessDetailLinkProps = {
+  canEdit?: boolean;
   ownerRoleBySubprocess: Record<string, string>;
   process: ProcessCatalogV2Item;
   roleDictionary: RoleDictionaryItem[];
@@ -23,7 +25,7 @@ type ProcessDetailResponse = {
   error?: string;
 };
 
-export function ProcessDetailModal({ process }: ProcessDetailLinkProps) {
+export function ProcessDetailModal({ canEdit = false, process }: ProcessDetailLinkProps) {
   const [detail, setDetail] = useState<ProcessMasterDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -99,14 +101,25 @@ export function ProcessDetailModal({ process }: ProcessDetailLinkProps) {
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-sea">Ficha de proceso</p>
                 <h2 className="truncate text-base font-bold text-navy sm:text-lg">{process.process_name}</h2>
               </div>
-              <button
-                aria-label="Cerrar ficha"
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-white text-navy transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea"
-                onClick={() => setOpen(false)}
-                type="button"
-              >
-                <X aria-hidden="true" className="h-5 w-5" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                {canEdit ? (
+                  <Link
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-navy transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea"
+                    href={`/procesos/${process.process_id}/editar`}
+                  >
+                    <Pencil aria-hidden="true" className="h-4 w-4 text-sea" />
+                    Editar
+                  </Link>
+                ) : null}
+                <button
+                  aria-label="Cerrar ficha"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-white text-navy transition hover:border-sea hover:bg-[#eef7fb] focus:outline-none focus-visible:ring-2 focus-visible:ring-sea"
+                  onClick={() => setOpen(false)}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-6 sm:px-5">
