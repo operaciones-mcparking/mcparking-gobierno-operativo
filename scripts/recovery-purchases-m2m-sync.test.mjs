@@ -13,6 +13,10 @@ const {
 
 const route = readFileSync("src/app/api/recuperacion/compras/sync/route.ts", "utf8");
 const migration = readFileSync("supabase/migrations/20260820130000_add_recovery_purchases_m2m_import.sql", "utf8");
+const duplicateCountsMigration = readFileSync(
+  "supabase/migrations/20260821130000_expose_recovery_purchase_duplicate_counts.sql",
+  "utf8",
+);
 const middleware = readFileSync("src/middleware.ts", "utf8");
 
 const sourceRow = {
@@ -145,5 +149,46 @@ assert.match(migration, /revoke execute on function public\.import_recovery_purc
 assert.match(migration, /grant execute on function public\.import_recovery_purchases[\s\S]*to authenticated/);
 assert.match(migration, /perform pg_advisory_xact_lock\(20260715123000\)/);
 assert.match(migration, /commit;\s*$/);
+assert.equal(existsSync("supabase/migrations/20260821130000_expose_recovery_purchase_duplicate_counts.sql"), true);
+assert.match(duplicateCountsMigration, /to_regprocedure\('public\.import_recovery_purchases_m2m\(text,bigint,text,jsonb,jsonb\)'\)/);
+assert.match(duplicateCountsMigration, /column_name = 'source_duplicate_rows'/);
+assert.match(duplicateCountsMigration, /column_name = 'booking_duplicate_rows'/);
+assert.match(duplicateCountsMigration, /where existing_source_id is not null\s+and not has_mutable_changes/);
+assert.match(duplicateCountsMigration, /from ranked_input where source_row_number > 1/);
+assert.match(duplicateCountsMigration, /where existing_source_id is null\s+and existing_booking_id is not null/);
+assert.match(duplicateCountsMigration, /where existing_source_id is not null\s+and has_mutable_changes\s+and existing_booking_id is not null\s+and existing_booking_id <> existing_source_id/);
+assert.match(duplicateCountsMigration, /'skippedDuplicateRows', v_internal_duplicate_rows \+ v_source_duplicate_rows \+ v_booking_duplicate_rows/);
+assert.match(duplicateCountsMigration, /source_duplicate_rows = v_source_duplicate_rows/);
+assert.match(duplicateCountsMigration, /booking_duplicate_rows = v_booking_duplicate_rows/);
+assert.match(duplicateCountsMigration, /'internalDuplicateRows', v_internal_duplicate_rows/);
+assert.match(duplicateCountsMigration, /'sourceDuplicateRows', v_source_duplicate_rows/);
+assert.match(duplicateCountsMigration, /'bookingDuplicateRows', v_booking_duplicate_rows/);
+assert.match(
+  duplicateCountsMigration,
+  /if v_existing_batch_id is not null then[\s\S]*'internalDuplicateRows', 0,[\s\S]*'sourceDuplicateRows', v_rows_received,[\s\S]*'bookingDuplicateRows', 0,[\s\S]*'skippedDuplicateRows', v_rows_received/,
+  "an identical batch replay remains an explicitly safe source duplicate",
+);
+assert.match(route, /bookingDuplicateRows\?: number/);
+assert.match(route, /internalDuplicateRows\?: number/);
+assert.match(route, /sourceDuplicateRows\?: number/);
+assert.match(responseBlock, /bookingDuplicateRows: result\.bookingDuplicateRows \?\? 0/);
+assert.match(responseBlock, /internalDuplicateRows: result\.internalDuplicateRows \?\? 0/);
+assert.match(responseBlock, /sourceDuplicateRows: result\.sourceDuplicateRows \?\? 0/);
+assert.doesNotMatch(responseBlock, /email|phone|customer|booking_number|source_booking_id/i);
 
-console.log("recovery-purchases-m2m-sync: 70/70 OK");
+function effectiveM2mDefinition(sql) {
+  const start = sql.indexOf("create or replace function public.import_recovery_purchases_m2m(");
+  const end = sql.indexOf("comment on function public.import_recovery_purchases_m2m", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  return sql.slice(start, end);
+}
+
+const approvedContractLines = /\n\s*(?:'internalDuplicateRows',[^\n]+|'sourceDuplicateRows',[^\n]+|'bookingDuplicateRows',[^\n]+|source_duplicate_rows =[^\n]+|booking_duplicate_rows =[^\n]+)/g;
+assert.equal(
+  effectiveM2mDefinition(duplicateCountsMigration).replace(approvedContractLines, ""),
+  effectiveM2mDefinition(migration),
+  "the replacement RPC may only add the approved counters and existing batch assignments",
+);
+
+console.log("recovery-purchases-m2m-sync: 94/94 OK");

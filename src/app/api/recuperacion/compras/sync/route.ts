@@ -49,12 +49,15 @@ type SyncValidationError = {
 
 type ImportRpcResult = {
   batchId?: string;
+  bookingDuplicateRows?: number;
   conflictRows?: number;
   fileAlreadyImported?: boolean;
   insertedRows?: number;
+  internalDuplicateRows?: number;
   invalidRows?: number;
   rowsReceived?: number;
   skippedDuplicateRows?: number;
+  sourceDuplicateRows?: number;
   updatedRows?: number;
 };
 
@@ -64,13 +67,16 @@ function jsonError(message: string, status: number, invalidRows?: number) {
 
 function emptyResult() {
   return {
+    bookingDuplicateRows: 0,
     conflictRows: 0,
     fileAlreadyImported: false,
     insertedRows: 0,
+    internalDuplicateRows: 0,
     invalidRows: 0,
     ok: true,
     rowsReceived: 0,
     skippedDuplicateRows: 0,
+    sourceDuplicateRows: 0,
     updatedRows: 0,
   };
 }
@@ -118,13 +124,16 @@ export async function POST(request: NextRequest) {
   const result = data as ImportRpcResult;
   return NextResponse.json({
     batchId: result.batchId ?? null,
+    bookingDuplicateRows: result.bookingDuplicateRows ?? 0,
     conflictRows: result.conflictRows ?? 0,
     fileAlreadyImported: result.fileAlreadyImported === true,
     insertedRows: result.insertedRows ?? 0,
+    internalDuplicateRows: result.internalDuplicateRows ?? 0,
     invalidRows: result.invalidRows ?? 0,
     ok: true,
     rowsReceived: result.rowsReceived ?? prepared.rows?.length ?? 0,
     skippedDuplicateRows: result.skippedDuplicateRows ?? 0,
+    sourceDuplicateRows: result.sourceDuplicateRows ?? 0,
     updatedRows: result.updatedRows ?? 0,
   });
 }
