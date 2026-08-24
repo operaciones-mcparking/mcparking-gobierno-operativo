@@ -628,6 +628,8 @@ test("46. current task diff is scoped", () => {
     "src/app/api/recuperacion/compras/importar/route.ts",
     "scripts/recovery-purchase-analytics-fields.test.mjs",
     "supabase/migrations/20260824120000_add_recovery_purchase_analytics_fields.sql",
+    "src/lib/dashboard/data.ts",
+    "scripts/recovery-cart-expiration.test.mjs",
   ]);
 
   assert.equal(changedFiles.every((file) => allowed.has(file)), true, `Unexpected changed files: ${changedFiles.join(", ")}`);

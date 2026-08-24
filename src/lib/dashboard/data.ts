@@ -457,6 +457,49 @@ function timeZoneParts(timeZone: string, date: Date) {
   };
 }
 
+function santiagoCalendarDateValue(date: Date) {
+  const parts = timeZoneParts(RECOVERY_TIME_ZONE, date);
+  const month = String(parts.month).padStart(2, "0");
+  const day = String(parts.day).padStart(2, "0");
+
+  return `${parts.year}-${month}-${day}`;
+}
+
+export function hasRecoveryCartArrivalExpired(
+  intendedArrivalAt: string | null,
+  intendedArrivalDate: string | null,
+  now = new Date(),
+) {
+  const today = santiagoCalendarDateValue(now);
+
+  if (intendedArrivalDate) {
+    return intendedArrivalDate < today;
+  }
+
+  if (intendedArrivalAt) {
+    const arrivalAt = new Date(intendedArrivalAt);
+
+    if (!Number.isNaN(arrivalAt.getTime())) {
+      return santiagoCalendarDateValue(arrivalAt) < today;
+    }
+  }
+
+  return false;
+}
+
+export function resolveRecoveryCartAuditStatus(
+  attributionStatus: "payment_review" | "recovered_pack" | "recovered_with_amount" | "unrecovered" | null | undefined,
+  intendedArrivalAt: string | null,
+  intendedArrivalDate: string | null,
+  now = new Date(),
+): RecoveryCartAuditStatus {
+  if (attributionStatus === "recovered_with_amount") return "recovered_with_amount";
+  if (attributionStatus === "recovered_pack") return "recovered_pack";
+  if (attributionStatus === "payment_review") return "payment_review";
+  if (hasRecoveryCartArrivalExpired(intendedArrivalAt, intendedArrivalDate, now)) return "expired";
+
+  return "not_recovered";
+}
 function timeZoneOffsetMs(timeZone: string, date: Date) {
   const parts = timeZoneParts(timeZone, date);
   const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
@@ -1991,44 +2034,6 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     tracking_status: RecoveryCartWhatsappStatus | null;
   };
 
-  function todayDateValue() {
-    const today = timeZoneParts(RECOVERY_TIME_ZONE, new Date());
-    const year = today.year;
-    const month = String(today.month).padStart(2, "0");
-    const day = String(today.day).padStart(2, "0");
-
-    return `${year}-${month}-${day}`;
-  }
-
-  function hasArrivalExpired(intendedArrivalAt: string | null, intendedArrivalDate: string | null) {
-    if (intendedArrivalAt) {
-      const arrivalAt = new Date(intendedArrivalAt);
-
-      if (!Number.isNaN(arrivalAt.getTime())) {
-        return arrivalAt.getTime() < Date.now();
-      }
-    }
-
-    if (intendedArrivalDate) {
-      return intendedArrivalDate < todayDateValue();
-    }
-
-    return false;
-  }
-
-  function resolveAuditStatus(
-    attribution: ReturnType<typeof resolveRecoveryAttributions>[number] | undefined,
-    intendedArrivalAt: string | null,
-    intendedArrivalDate: string | null,
-  ): RecoveryCartAuditStatus {
-    if (attribution?.status === "recovered_with_amount") return "recovered_with_amount";
-    if (attribution?.status === "recovered_pack") return "recovered_pack";
-    if (attribution?.status === "payment_review") return "payment_review";
-    if (hasArrivalExpired(intendedArrivalAt, intendedArrivalDate)) return "expired";
-
-    return "not_recovered";
-  }
-
   async function fetchTrackingRowsByMessageIds(messageIds: string[]) {
     const chunkSize = 250;
     const rows: TrackingByMessageRow[] = [];
@@ -2116,7 +2121,11 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     const tracking = cart.message_id ? trackingByMessageId.get(cart.message_id) : undefined;
 
     return {
-      audit_status: resolveAuditStatus(attributionResult, cart.intended_arrival_at, cart.intended_arrival_date),
+      audit_status: resolveRecoveryCartAuditStatus(
+        attributionResult?.status,
+        cart.intended_arrival_at,
+        cart.intended_arrival_date,
+      ),
       cart_form_datetime: cart.form_datetime,
       cart_type: cart.type ?? null,
       chatMessageCount: null,
