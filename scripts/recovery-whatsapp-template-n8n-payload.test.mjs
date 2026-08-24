@@ -120,10 +120,11 @@ test("16. public preview includes only safe transport fields", () => {
   assert.doesNotMatch(n8nPayload.slice(n8nPayload.indexOf("type RecoveryWhatsappTemplateN8nPayloadPreview"), n8nPayload.indexOf("export type BuildRecovery")), /cartId|operatorEmail|sentAt|cartType/);
 });
 
-test("17. response does not expose full internal transport payload", () => {
-  const block = responseBlock();
-  assert.match(block, /n8nTransportPreview/);
-  assert.doesNotMatch(block, /n8nTransportPayload,|operatorEmail|sentAt/);
+test("17. responses do not expose the full internal transport payload", () => {
+  const dryRunBlock = responseBlock();
+  const sendBlock = route.slice(route.lastIndexOf("return NextResponse.json({"));
+  assert.match(dryRunBlock, /n8nTransportPreview/);
+  assert.doesNotMatch(sendBlock, /n8nTransportPayload,|operatorEmail|sentAt|metaPayload|components/);
 });
 
 test("18. response keeps backwards-compatible previews", () => {
@@ -187,8 +188,10 @@ test("25. helper and route do not call Graph messages", () => {
   assert.doesNotMatch(n8nPayload + route, /\/messages|whatsappMessageId|messaging_product[\s\S]*fetch\(/);
 });
 
-test("26. helper and route do not write Supabase", () => {
-  assert.doesNotMatch(n8nPayload + route, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
+test("26. payload helper stays write-free and route persists only after dry-run returns", () => {
+  assert.doesNotMatch(n8nPayload, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
+  assert.ok(route.indexOf("if (payload.dryRun)") < route.indexOf('.from("recovery_whatsapp_live_messages")'));
+  assert.match(route, /whatsapp_status: "pending"/);
 });
 
 test("27. route requires an explicit dryRun boolean", () => {

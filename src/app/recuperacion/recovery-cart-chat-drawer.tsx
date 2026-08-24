@@ -98,6 +98,7 @@ type TemplateSendResponse = {
   dryRun?: boolean;
   error?: string;
   ok: boolean;
+  message?: CartChatMessage;
   send?: {
     businessKey: "MPV" | "EAP";
     messageId?: string | null;
@@ -437,6 +438,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (isTemplateLibraryOpen) return;
         onClose();
       }
     }
@@ -444,7 +446,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cartId, onClose]);
+  }, [cartId, isTemplateLibraryOpen, onClose]);
 
   useEffect(() => {
     if (isLoading || !data) {
@@ -482,25 +484,6 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     return () => window.cancelAnimationFrame(animationFrame);
   }, [data, isLoading, data?.messages?.length]);
 
-  useEffect(() => {
-    const currentWindow = whatsappWindowOverride ?? data?.whatsappWindow ?? null;
-
-    if (!currentWindow?.canSendFreeform) return;
-
-    setIsTemplateLibraryOpen(false);
-    setSelectedTemplate(null);
-    setTemplateVariableValues({});
-    templateSendControllerRef.current?.abort();
-    templateSendControllerRef.current = null;
-    setTemplateValidationError(null);
-    setTemplateValidationResult(null);
-    setTemplatePreparedSnapshot(null);
-    setTemplateSendError(null);
-    setTemplateSendResult(null);
-    setTemplateSendStatus("idle");
-  }, [data?.whatsappWindow, whatsappWindowOverride]);
-
-
   if (!cartId) {
     return null;
   }
@@ -524,8 +507,9 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const freeformWindow = getWhatsappFreeformWindowView(serverWhatsappWindow, nowMs, isLoading || shouldVerifyCurrentCart, Boolean(error));
   const isFreeformBlocked = !freeformWindow.canSendFreeform;
   const canSendMessage = !isSending && !isFreeformBlocked && Boolean(cart?.phone) && messageDraft.trim().length > 0;
+  const canUseTemplates = Boolean(cart?.phone) && freeformWindow.kind !== "unverifiable";
   const shouldShowTemplateButton = isFreeformBlocked && (freeformWindow.kind === "closed" || freeformWindow.kind === "missing");
-  const shouldShowSelectedTemplatePanel = shouldShowTemplateButton && selectedTemplate;
+  const shouldShowSelectedTemplatePanel = selectedTemplate;
   const selectedTemplatePreparationVariables = selectedTemplate ? selectedTemplate.variables : [];
   const selectedTemplateVariableErrors = selectedTemplatePreparationVariables.filter((variable) => !templateVariableValues[variable.position]?.trim());
   const currentTemplateSnapshot = cartId && selectedTemplate
@@ -618,33 +602,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       const payload = (await response.json()) as SendChatResponse;
 
       if (payload.message) {
-        shouldScrollToBottomRef.current = true;
-        setData((current) => {
-          if (!current) return current;
-
-          const nextMessages = [...(current.messages ?? []), payload.message as CartChatMessage].sort(
-            (left, right) => new Date(left.messageAt).getTime() - new Date(right.messageAt).getTime(),
-          );
-          const nextSummary = current.summary
-            ? {
-                ...current.summary,
-                hasConversation: true,
-                liveMessages: (current.summary.liveMessages ?? 0) + 1,
-                outboundMessages: current.summary.outboundMessages + 1,
-                source: current.summary.source === "metadata" ? "live" : current.summary.source,
-                totalMessages: current.summary.totalMessages + 1,
-              }
-            : {
-                hasConversation: true,
-                inboundMessages: 0,
-                liveMessages: 1,
-                outboundMessages: 1,
-                source: "live" as const,
-                totalMessages: 1,
-              };
-
-          return { ...current, messages: nextMessages, summary: nextSummary };
-        });
+        appendOutboundMessage(payload.message);
       }
 
       if (!response.ok || !payload.ok) {
@@ -670,6 +628,36 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
       setIsSending(false);
     }
   }
+  function appendOutboundMessage(message: CartChatMessage) {
+    shouldScrollToBottomRef.current = true;
+    setData((current) => {
+      if (!current) return current;
+
+      const nextMessages = [...(current.messages ?? []), message].sort(
+        (left, right) => new Date(left.messageAt).getTime() - new Date(right.messageAt).getTime(),
+      );
+      const nextSummary = current.summary
+        ? {
+            ...current.summary,
+            hasConversation: true,
+            liveMessages: (current.summary.liveMessages ?? 0) + 1,
+            outboundMessages: current.summary.outboundMessages + 1,
+            source: current.summary.source === "metadata" ? "live" : current.summary.source,
+            totalMessages: current.summary.totalMessages + 1,
+          }
+        : {
+            hasConversation: true,
+            inboundMessages: 0,
+            liveMessages: 1,
+            outboundMessages: 1,
+            source: "live" as const,
+            totalMessages: 1,
+          };
+
+      return { ...current, messages: nextMessages, summary: nextSummary };
+    });
+  }
+
   function resetTemplateSendState() {
     setTemplatePreparedSnapshot(null);
     setTemplateSendError(null);
@@ -842,6 +830,10 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
         return;
       }
 
+      if (payload.message) {
+        appendOutboundMessage(payload.message);
+      }
+
       setTemplateSendResult(payload);
       setTemplateSendStatus("sent");
     } catch (fetchError) {
@@ -891,6 +883,19 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           </button>
           {isContactActionsOpen ? (
             <div className="absolute right-3 top-full z-30 mt-2 w-52 rounded-xl border border-[#d8e7e1] bg-white p-2 text-xs font-semibold text-slate-700 shadow-[0_14px_34px_rgba(15,23,42,0.18)] sm:right-5 sm:w-56">
+              {canUseTemplates ? (
+                <button
+                  className="flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-teal-50"
+                  onClick={() => {
+                    setIsContactActionsOpen(false);
+                    setIsTemplateLibraryOpen(true);
+                  }}
+                  type="button"
+                >
+                  <MessageCircle className="h-3.5 w-3.5 text-teal-700" />
+                  Enviar plantilla
+                </button>
+              ) : null}
               {chatUrl ? (
                 <a
                   className="flex min-h-9 items-center gap-2 rounded-lg px-3 py-2 hover:bg-teal-50"

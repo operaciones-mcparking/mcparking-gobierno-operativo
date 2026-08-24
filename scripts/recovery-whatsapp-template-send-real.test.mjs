@@ -279,8 +279,12 @@ test("22. transport uses AbortController and timeout", () => {
   assert.match(transport, /n8nStatus/);
 });
 
-test("23. transport does not write Supabase or Google Sheets", () => {
-  assert.doesNotMatch(transport + route, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|spreadsheets|googleapis|Google Sheets/i);
+test("23. transport stays write-free while the authenticated route records the outbound", () => {
+  assert.doesNotMatch(transport, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|spreadsheets|googleapis|Google Sheets/i);
+  assert.match(route, /from\("recovery_whatsapp_live_messages"\)/);
+  assert.match(route, /message_text: messageText/);
+  assert.match(route, /whatsapp_status: "pending"/);
+  assert.match(route, /whatsapp_message_id: n8nResult\.messageId/);
 });
 
 test("24. transport does not call Graph messages directly", () => {
@@ -296,4 +300,20 @@ test("26. payload helper still defines the internal web to n8n contract", () => 
   for (const field of ["mode", "senderKey", "metaPayload", "previewText", "cartId", "cartType", "operatorEmail", "sentAt", "source"]) {
     assert.match(payloadHelper, new RegExp(`${field}:`));
   }
+});
+
+test("27. route returns only the safe rendered outbound message", () => {
+  assert.match(route, /function safeMessagePayload/);
+  assert.match(route, /messageText: message\.message_text/);
+  assert.match(route, /messageType: "template"/);
+  assert.match(route, /message: safeMessage/);
+  const safeBlock = route.slice(route.indexOf("function safeMessagePayload"), route.indexOf("function isSupportedBusinessKey"));
+  assert.doesNotMatch(safeBlock, /token|secret|metaPayload|components|phone_number_id|operatorEmail/i);
+});
+
+test("28. failed template sends are marked failed and are not returned as successful messages", () => {
+  const failureStart = route.indexOf("if (!n8nResult.ok)");
+  const failureBlock = route.slice(failureStart, route.indexOf("const finalStatus", failureStart));
+  assert.match(failureBlock, /whatsapp_status: "failed"/);
+  assert.doesNotMatch(failureBlock, /message: safeMessage/);
 });

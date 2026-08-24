@@ -219,3 +219,13 @@ test("no unrelated /orquestador files are touched", () => {
 
   assert.equal(orquestadorFiles.every((path) => path === "src/app/orquestador/page.tsx"), true);
 });
+
+test("open recovery chat exposes approved templates through the existing plus menu", () => {
+  assert.match(drawerSource, /const canUseTemplates = Boolean\(cart\?\.phone\) && freeformWindow\.kind !== "unverifiable"/);
+  assert.match(drawerSource, /Abrir acciones del contacto/);
+  assert.match(drawerSource, /Enviar plantilla/);
+  assert.match(drawerSource, /setIsContactActionsOpen\(false\);[\s\S]*setIsTemplateLibraryOpen\(true\)/);
+  for (const action of ["Abrir WhatsApp", "Copiar correo", "Copiar teléfono", "Copiar reserva", "Abrir reserva"]) {
+    assert.match(drawerSource, new RegExp(action));
+  }
+});

@@ -208,3 +208,35 @@ test("25. freeform sending remains separate from template confirmation", () => {
   assert.match(freeformBlock, /messageText/);
   assert.doesNotMatch(freeformBlock, /send-template|templateKey|dryRun: false/);
 });
+
+test("26. successful template send appends the safe outbound and scrolls", () => {
+  assert.match(sendBlock, /if \(payload\.message\)/);
+  assert.match(sendBlock, /appendOutboundMessage\(payload\.message\)/);
+  const appendBlock = functionBlock("appendOutboundMessage");
+  assert.match(appendBlock, /shouldScrollToBottomRef\.current = true/);
+  assert.match(appendBlock, /setData\(\(current\)/);
+});
+
+test("27. template error never appends a false successful outbound", () => {
+  const errorBranch = sendBlock.slice(sendBlock.indexOf("if (!response.ok || !payload.ok)"), sendBlock.indexOf("if (payload.message)"));
+  assert.doesNotMatch(errorBranch, /appendOutboundMessage/);
+});
+
+test("28. open window template access is independent from freeform sending", () => {
+  assert.match(drawer, /const canUseTemplates = Boolean\(cart\?\.phone\) && freeformWindow\.kind !== "unverifiable"/);
+  assert.match(drawer, /Enviar plantilla/);
+  assert.match(drawer, /setIsTemplateLibraryOpen\(true\)/);
+  assert.match(drawer, /const shouldShowSelectedTemplatePanel = selectedTemplate/);
+  assert.doesNotMatch(drawer, /currentWindow\?\.canSendFreeform/);
+});
+
+test("29. Escape lets the open template library close before the drawer", () => {
+  assert.match(drawer, /if \(isTemplateLibraryOpen\) return;/);
+});
+
+
+test("30. cancelling template preparation preserves the freeform draft", () => {
+  const closeBlock = functionBlock("closeSelectedTemplate");
+  assert.doesNotMatch(closeBlock, /setMessageDraft/);
+  assert.doesNotMatch(closeBlock, /messageDraft/);
+});

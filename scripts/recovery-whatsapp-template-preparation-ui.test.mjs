@@ -47,11 +47,13 @@ test("5. closing selected template does not close the drawer or call APIs", () =
   assert.doesNotMatch(closeFunction, /onClose\(|fetch\(|POST|send-template|callN8nWebhook|supabase/i);
 });
 
-test("6. cart changes and freeform reopening reset template preparation", () => {
-  assert.match(drawer, /setMessageDraft\(""\)/);
-  assert.match(drawer, /setSelectedTemplate\(null\)/);
-  assert.match(drawer, /setTemplateVariableValues\(\{\}\)/);
-  assert.match(drawer, /currentWindow\?\.canSendFreeform/);
+test("6. cart changes reset template preparation but freeform reopening does not", () => {
+  const loadChatBlock = drawer.slice(drawer.indexOf("async function loadChat"), drawer.indexOf("void loadChat()"));
+
+  assert.match(loadChatBlock, /setMessageDraft\(""\)/);
+  assert.match(loadChatBlock, /setSelectedTemplate\(null\)/);
+  assert.match(loadChatBlock, /setTemplateVariableValues\(\{\}\)/);
+  assert.doesNotMatch(drawer, /currentWindow\?\.canSendFreeform/);
 });
 
 test("7. all template variables are considered required", () => {
@@ -122,7 +124,7 @@ test("18. choosing the same template preserves values", () => {
 test("19. Preparar envio replaces send copy", () => {
   assert.match(drawer, /Preparar envío/);
   assert.match(drawer, /Preparando envío.../);
-  assert.doesNotMatch(drawer, /Validar plantilla|Validando plantilla|Enviar plantilla/);
+  assert.doesNotMatch(validateTemplateButtonBlock, /Validar plantilla|Validando plantilla|Enviar plantilla/);
 });
 
 test("20. validation button calls the dry-run endpoint", () => {

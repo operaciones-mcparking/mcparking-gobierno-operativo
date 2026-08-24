@@ -159,12 +159,17 @@ test("24. dry-run route path does not expose n8n configuration", () => {
   assert.match(route, /"webhookUrl"/);
 });
 
-test("25. route does not insert messages", () => {
-  assert.doesNotMatch(route, /recovery_whatsapp_live_messages|\.insert\(/);
+test("25. dry-run returns before outbound persistence", () => {
+  assert.match(route, /recovery_whatsapp_live_messages/);
+  assert.ok(route.indexOf("if (payload.dryRun)") < route.indexOf('.from("recovery_whatsapp_live_messages")'));
 });
 
-test("26. route does not write Supabase", () => {
-  assert.doesNotMatch(route, /\.insert\(|\.update\(|\.upsert\(|\.delete\(/);
+test("26. real send persists and updates only the live outbound", () => {
+  assert.match(route, /\.from\("recovery_whatsapp_live_messages"\)/);
+  assert.match(route, /\.insert\(\{/);
+  assert.match(route, /whatsapp_status: "pending"/);
+  assert.match(route, /whatsapp_message_id: n8nResult\.messageId/);
+  assert.doesNotMatch(route, /\.upsert\(|\.delete\(/);
 });
 
 test("27. route does not send Meta messages", () => {

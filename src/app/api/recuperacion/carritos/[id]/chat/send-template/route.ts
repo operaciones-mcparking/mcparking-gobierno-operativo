@@ -1,3 +1,4 @@
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fetchMetaWhatsappTemplatesForBusiness, type SafeMetaWhatsappTemplate } from "@/lib/recuperacion/meta-whatsapp-templates";
@@ -17,10 +18,28 @@ type RouteContext = {
 };
 
 type CartTemplateSendDryRunRow = {
+  email_normalized: string | null;
   id: string;
   parking_code: string | null;
   phone_normalized: string | null;
   type: string | null;
+};
+
+type SafeSentTemplateMessage = {
+  chatState: string | null;
+  dayOfWeek: string | null;
+  direction: "outbound";
+  intentCategory: string | null;
+  label: string;
+  messageAt: string;
+  messageBoundType: string;
+  messageSentiment: string | null;
+  messageSource: string;
+  messageText: string;
+  messageType: string;
+  source: "live";
+  timeOfDay: string | null;
+  whatsappStatus: string | null;
 };
 
 type SendTemplateDryRunRequest = {
@@ -102,6 +121,42 @@ function safeString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function createServiceRoleClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Missing Supabase service role environment variables.");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+}
+
+function safeMessagePayload(message: {
+  message_at: string;
+  message_text: string;
+  whatsapp_status: string | null;
+}): SafeSentTemplateMessage {
+  return {
+    chatState: null,
+    dayOfWeek: null,
+    direction: "outbound",
+    intentCategory: null,
+    label: "Nosotros / sistema",
+    messageAt: message.message_at,
+    messageBoundType: "outbound",
+    messageSentiment: null,
+    messageSource: "recovery_web_template",
+    messageText: message.message_text,
+    messageType: "template",
+    source: "live",
+    timeOfDay: null,
+    whatsappStatus: message.whatsapp_status,
+  };
+}
+
 function isSupportedBusinessKey(value: unknown): value is RecoveryWhatsappBusinessKey {
   return value === "MPV" || value === "EAP";
 }
@@ -117,7 +172,7 @@ function maskPhone(value: string | null) {
 async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>, cartId: string) {
   const { data, error } = await supabase
     .from("recovery_incomplete_bookings_import")
-    .select("id,phone_normalized,type,parking_code")
+    .select("id,phone_normalized,email_normalized,type,parking_code")
     .eq("id", cartId)
     .maybeSingle();
 
@@ -360,14 +415,75 @@ export async function POST(request: NextRequest, context: RouteContext) {
     });
   }
 
+  let serviceSupabase: ReturnType<typeof createServiceRoleClient>;
+
+  try {
+    serviceSupabase = createServiceRoleClient();
+  } catch {
+    return jsonError("No se pudo inicializar el servicio de envio.", 500, "service_role_unavailable");
+  }
+
+  const sentAt = n8nTransportPayload.sentAt;
+  const messageText = previewBody ?? template.label;
+  const { data: insertedMessage, error: insertError } = await serviceSupabase
+    .from("recovery_whatsapp_live_messages")
+    .insert({
+      cart_id: cartResult.cart.id,
+      direction: "outbound",
+      email_normalized: cartResult.cart.email_normalized,
+      message_at: sentAt,
+      message_text: messageText,
+      phone_normalized: cartResult.cart.phone_normalized,
+      sent_by: admin.user.id,
+      sent_by_email: admin.user.email ?? null,
+      source: "web_operator",
+      whatsapp_status: "pending",
+    })
+    .select("id,message_at,message_text,whatsapp_status")
+    .single();
+
+  if (insertError || !insertedMessage) {
+    return jsonError("No se pudo registrar la plantilla para envio.", 500, "message_insert_failed");
+  }
+
   const n8nResult = await sendRecoveryWhatsappTemplateViaN8n(n8nTransportPayload);
 
   if (!n8nResult.ok) {
+    await serviceSupabase
+      .from("recovery_whatsapp_live_messages")
+      .update({
+        error_message: n8nResult.message.slice(0, 1000),
+        updated_at: new Date().toISOString(),
+        whatsapp_status: "failed",
+      })
+      .eq("id", insertedMessage.id);
+
     return jsonError("No se pudo enviar la plantilla de WhatsApp.", n8nResult.status, n8nResult.code);
   }
 
+  const finalStatus = n8nResult.messageStatus ?? "sent";
+  const { data: updatedMessage, error: updateError } = await serviceSupabase
+    .from("recovery_whatsapp_live_messages")
+    .update({
+      updated_at: new Date().toISOString(),
+      whatsapp_message_id: n8nResult.messageId,
+      whatsapp_status: finalStatus,
+    })
+    .eq("id", insertedMessage.id)
+    .select("message_at,message_text,whatsapp_status")
+    .single();
+
+  const safeMessage = safeMessagePayload(
+    (updateError || !updatedMessage ? { ...insertedMessage, whatsapp_status: finalStatus } : updatedMessage) as {
+      message_at: string;
+      message_text: string;
+      whatsapp_status: string | null;
+    },
+  );
+
   return NextResponse.json({
     dryRun: false,
+    message: safeMessage,
     ok: true,
     send: {
       businessKey: n8nResult.senderKey,
