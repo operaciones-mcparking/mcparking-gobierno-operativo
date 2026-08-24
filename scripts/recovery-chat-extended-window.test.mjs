@@ -191,7 +191,7 @@ test("template library modal loads from the safe GET endpoint only", () => {
 test("template library modal covers states, search, filters, preview, and selection", () => {
   assert.match(templateModalSource, /role="dialog"/);
   assert.match(templateModalSource, /aria-modal="true"/);
-  assert.match(templateModalSource, /event\.key === "Escape"/);
+  assert.match(templateModalSource, /event\.key !== "Escape"/);
   assert.match(templateModalSource, /Cargando plantillas desde Meta/);
   assert.match(templateModalSource, /No se pudieron cargar las plantillas/);
   assert.match(templateModalSource, /No hay plantillas aprobadas disponibles para este número/);

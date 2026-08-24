@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, X } from "lucide-react";
+import { Search, Star, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ValueBadge } from "@/components/dashboard/badge";
@@ -17,6 +17,7 @@ export type RecoveryTemplatePreview = {
 
 export type RecoveryTemplateOption = {
   category: string | null;
+  isFavorite: boolean;
   key: string;
   label: string;
   language: string;
@@ -47,6 +48,7 @@ type RecoveryWhatsappTemplateLibraryModalProps = {
   selectedTemplateKey: string | null;
 };
 
+const FAVORITE_CATEGORY = "Favoritas";
 const ALL_CATEGORIES = "Todas";
 const ALL_LANGUAGES = "Todos";
 
@@ -84,70 +86,92 @@ function previewText(template: RecoveryTemplateOption) {
 }
 
 function TemplatePreviewCard({
+  isFavoritePending,
   isSelected,
+  onFavoriteClick,
   onSelect,
   template,
 }: {
+  isFavoritePending: boolean;
   isSelected: boolean;
+  onFavoriteClick: () => void;
   onSelect: () => void;
   template: RecoveryTemplateOption;
 }) {
   const hasPreview = Boolean(template.preview.header || template.preview.body || template.preview.footer || template.preview.buttons.length > 0);
+  const favoriteLabel = template.isFavorite ? "Quitar de favoritas" : "Agregar a favoritas";
 
   return (
-    <button
-      aria-pressed={isSelected}
-      className={`group grid w-full min-w-0 max-w-full gap-3 overflow-hidden rounded-2xl border bg-white p-3 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+    <article
+      className={"relative min-w-0 max-w-full overflow-hidden rounded-2xl border bg-white shadow-sm transition " + (
         isSelected ? "border-teal-600 ring-2 ring-teal-100" : "border-[#d8e7e1] hover:border-teal-300 hover:shadow-md"
-      }`}
-      onClick={onSelect}
-      type="button"
+      )}
     >
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-navy">{template.label}</p>
-          <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{template.name}</p>
+      <button
+        aria-pressed={isSelected}
+        className="group grid w-full min-w-0 max-w-full gap-3 p-3 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-teal-500"
+        onClick={onSelect}
+        type="button"
+      >
+        <div className="flex min-w-0 items-start justify-between gap-2 pr-10">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-navy">{template.label}</p>
+            <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{template.name}</p>
+          </div>
+          <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-1">
+            <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]"><ValueBadge tone="success">{categoryLabel(template.category)}</ValueBadge></span>
+            <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]"><ValueBadge tone="neutral">{template.language}</ValueBadge></span>
+          </div>
         </div>
-        <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-1">
-          <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]"><ValueBadge tone="success">{categoryLabel(template.category)}</ValueBadge></span>
-          <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]"><ValueBadge tone="neutral">{template.language}</ValueBadge></span>
-        </div>
-      </div>
 
-      <div className="min-w-0 max-w-full overflow-hidden rounded-2xl bg-[#eef7f4] p-3">
-        <div className="grid min-w-0 max-w-full gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
-          {hasPreview ? (
-            <>
-              {template.preview.header ? <p className="min-w-0 max-w-full break-words font-semibold text-navy [overflow-wrap:anywhere]">{template.preview.header}</p> : null}
-              {template.preview.body ? <p className="min-w-0 max-w-full whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">{template.preview.body}</p> : null}
-              {template.preview.footer ? <p className="min-w-0 max-w-full break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{template.preview.footer}</p> : null}
-              {template.preview.buttons.length > 0 ? (
-                <div className="grid min-w-0 max-w-full gap-1 overflow-hidden border-t border-slate-100 pt-2">
-                  {template.preview.buttons.map((button, index) => (
-                    <span key={`${button.type}-${button.text}-${index}`} className="min-w-0 max-w-full break-words rounded-lg bg-slate-50 px-2 py-1 text-center text-xs font-semibold text-teal-700 [overflow-wrap:anywhere]">
-                      {button.text}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <p className="text-sm font-medium text-slate-500">Vista previa no disponible</p>
-          )}
+        <div className="min-w-0 max-w-full overflow-hidden rounded-2xl bg-[#eef7f4] p-3">
+          <div className="grid min-w-0 max-w-full gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
+            {hasPreview ? (
+              <>
+                {template.preview.header ? <p className="min-w-0 max-w-full break-words font-semibold text-navy [overflow-wrap:anywhere]">{template.preview.header}</p> : null}
+                {template.preview.body ? <p className="min-w-0 max-w-full whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">{template.preview.body}</p> : null}
+                {template.preview.footer ? <p className="min-w-0 max-w-full break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{template.preview.footer}</p> : null}
+                {template.preview.buttons.length > 0 ? (
+                  <div className="grid min-w-0 max-w-full gap-1 overflow-hidden border-t border-slate-100 pt-2">
+                    {template.preview.buttons.map((button, index) => (
+                      <span key={button.type + "-" + button.text + "-" + index} className="min-w-0 max-w-full break-words rounded-lg bg-slate-50 px-2 py-1 text-center text-xs font-semibold text-teal-700 [overflow-wrap:anywhere]">
+                        {button.text}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm font-medium text-slate-500">Vista previa no disponible</p>
+            )}
+          </div>
         </div>
-      </div>
 
-      {template.variables.length > 0 ? (
-        <div className="flex min-w-0 max-w-full flex-wrap gap-1 overflow-hidden text-xs text-slate-500">
-          <span className="font-semibold text-slate-600">Variables:</span>
-          {template.variables.map((variable) => (
-            <span key={variable.position} className="min-w-0 max-w-full break-words rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 [overflow-wrap:anywhere]">
-              {variable.placeholder}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </button>
+        {template.variables.length > 0 ? (
+          <div className="flex min-w-0 max-w-full flex-wrap gap-1 overflow-hidden text-xs text-slate-500">
+            <span className="font-semibold text-slate-600">Variables:</span>
+            {template.variables.map((variable) => (
+              <span key={variable.position} className="min-w-0 max-w-full break-words rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 [overflow-wrap:anywhere]">
+                {variable.placeholder}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </button>
+
+      <button
+        aria-label={favoriteLabel + ": " + template.label}
+        className={"absolute right-3 top-3 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full border bg-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:cursor-wait disabled:opacity-60 " + (
+          template.isFavorite ? "border-amber-300 text-amber-500" : "border-slate-200 text-slate-400 hover:border-amber-300 hover:text-amber-500"
+        )}
+        disabled={isFavoritePending}
+        onClick={onFavoriteClick}
+        title={favoriteLabel}
+        type="button"
+      >
+        <Star className="h-4 w-4" fill={template.isFavorite ? "currentColor" : "none"} />
+      </button>
+    </article>
   );
 }
 
@@ -159,10 +183,13 @@ export function RecoveryWhatsappTemplateLibraryModal({
   selectedTemplateKey,
 }: RecoveryWhatsappTemplateLibraryModalProps) {
   const [businessLabel, setBusinessLabel] = useState<string | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
+  const [categoryFilter, setCategoryFilter] = useState(FAVORITE_CATEGORY);
   const [error, setError] = useState<string | null>(null);
+  const [favoriteError, setFavoriteError] = useState<string | null>(null);
+  const [favoriteToRemove, setFavoriteToRemove] = useState<RecoveryTemplateOption | null>(null);
   const [languageFilter, setLanguageFilter] = useState(ALL_LANGUAGES);
   const [query, setQuery] = useState("");
+  const [pendingFavoriteKey, setPendingFavoriteKey] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(selectedTemplateKey);
   const [status, setStatus] = useState<"idle" | "loading" | "loaded" | "error">("idle");
@@ -177,7 +204,12 @@ export function RecoveryWhatsappTemplateLibraryModal({
     closeButtonRef.current?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      if (favoriteToRemove) {
+        if (!pendingFavoriteKey) setFavoriteToRemove(null);
+        return;
+      }
+      onClose();
     }
 
     window.addEventListener("keydown", handleKeyDown);
@@ -186,7 +218,7 @@ export function RecoveryWhatsappTemplateLibraryModal({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [favoriteToRemove, isOpen, onClose, pendingFavoriteKey]);
 
   useEffect(() => {
     if (!isOpen || !cartId) return;
@@ -197,10 +229,13 @@ export function RecoveryWhatsappTemplateLibraryModal({
 
     async function loadTemplates() {
       setBusinessLabel(null);
-      setCategoryFilter(ALL_CATEGORIES);
+      setCategoryFilter(FAVORITE_CATEGORY);
       setError(null);
+      setFavoriteError(null);
+      setFavoriteToRemove(null);
       setLanguageFilter(ALL_LANGUAGES);
       setQuery("");
+      setPendingFavoriteKey(null);
       setSelectedKey(selectedTemplateKey);
       setStatus("loading");
       setTemplates([]);
@@ -246,6 +281,59 @@ export function RecoveryWhatsappTemplateLibraryModal({
     };
   }, [cartId, isOpen, reloadToken, selectedTemplateKey]);
 
+  async function addFavorite(template: RecoveryTemplateOption) {
+    if (!cartId || pendingFavoriteKey) return;
+
+    setFavoriteError(null);
+    setPendingFavoriteKey(template.key);
+    setTemplates((current) => current.map((item) => item.key === template.key ? { ...item, isFavorite: true } : item));
+
+    try {
+      const response = await fetch("/api/recuperacion/carritos/" + encodeURIComponent(cartId) + "/chat/templates/favorites", {
+        body: JSON.stringify({ language: template.language, template_name: template.name }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as { error?: string; isFavorite?: boolean; ok: boolean };
+
+      if (!response.ok || !payload.ok || payload.isFavorite !== true) {
+        throw new Error("favorite_create_failed");
+      }
+    } catch {
+      setTemplates((current) => current.map((item) => item.key === template.key ? { ...item, isFavorite: false } : item));
+      setFavoriteError("No se pudo agregar la plantilla a Favoritas.");
+    } finally {
+      setPendingFavoriteKey(null);
+    }
+  }
+
+  async function removeFavorite(template: RecoveryTemplateOption) {
+    if (!cartId || pendingFavoriteKey) return;
+
+    setFavoriteError(null);
+    setFavoriteToRemove(null);
+    setPendingFavoriteKey(template.key);
+    setTemplates((current) => current.map((item) => item.key === template.key ? { ...item, isFavorite: false } : item));
+
+    try {
+      const response = await fetch("/api/recuperacion/carritos/" + encodeURIComponent(cartId) + "/chat/templates/favorites", {
+        body: JSON.stringify({ language: template.language, template_name: template.name }),
+        headers: { "Content-Type": "application/json" },
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as { error?: string; isFavorite?: boolean; ok: boolean };
+
+      if (!response.ok || !payload.ok || payload.isFavorite !== false) {
+        throw new Error("favorite_delete_failed");
+      }
+    } catch {
+      setTemplates((current) => current.map((item) => item.key === template.key ? { ...item, isFavorite: true } : item));
+      setFavoriteError("No se pudo quitar la plantilla de Favoritas.");
+    } finally {
+      setPendingFavoriteKey(null);
+    }
+  }
+
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
 
@@ -255,6 +343,7 @@ export function RecoveryWhatsappTemplateLibraryModal({
     }
 
     return [
+      { count: templates.filter((template) => template.isFavorite).length, label: FAVORITE_CATEGORY },
       { count: templates.length, label: ALL_CATEGORIES },
       ...[...counts.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
@@ -271,7 +360,9 @@ export function RecoveryWhatsappTemplateLibraryModal({
     const normalizedQuery = query.trim().toLowerCase();
 
     return templates.filter((template) => {
-      const matchesCategory = categoryFilter === ALL_CATEGORIES || categoryLabel(template.category) === categoryFilter;
+      const matchesCategory = categoryFilter === FAVORITE_CATEGORY
+        ? template.isFavorite
+        : categoryFilter === ALL_CATEGORIES || categoryLabel(template.category) === categoryFilter;
       const matchesLanguage = languageFilter === ALL_LANGUAGES || template.language === languageFilter;
       const matchesSearch = !normalizedQuery || previewText(template).toLowerCase().includes(normalizedQuery);
 
@@ -371,6 +462,11 @@ export function RecoveryWhatsappTemplateLibraryModal({
             </div>
 
             <div className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6">
+              {favoriteError ? (
+                <p className="mb-3 rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-sm font-medium text-[#92400e]" role="alert">
+                  {favoriteError}
+                </p>
+              ) : null}
               {status === "loading" ? (
                 <div className="rounded-2xl border border-[#d8e7e1] bg-slate-50 px-4 py-5 text-sm font-medium text-slate-600">
                   Cargando plantillas desde Meta...
@@ -386,6 +482,18 @@ export function RecoveryWhatsappTemplateLibraryModal({
                 <div className="rounded-2xl border border-[#d8e7e1] bg-slate-50 px-4 py-5 text-sm font-medium text-slate-600">
                   No hay plantillas aprobadas disponibles para este número.
                 </div>
+              ) : categoryFilter === FAVORITE_CATEGORY && templates.every((template) => !template.isFavorite) ? (
+                <div className="rounded-2xl border border-[#d8e7e1] bg-slate-50 px-4 py-5 text-sm font-medium text-slate-600">
+                  <p>Aún no tienes plantillas favoritas.</p>
+                  <p className="mt-1">Ve a Todas y marca una plantilla con ★.</p>
+                  <button
+                    className="mt-3 rounded-xl border border-teal-200 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                    onClick={() => setCategoryFilter(ALL_CATEGORIES)}
+                    type="button"
+                  >
+                    Ver todas las plantillas
+                  </button>
+                </div>
               ) : filteredTemplates.length === 0 ? (
                 <div className="rounded-2xl border border-[#d8e7e1] bg-slate-50 px-4 py-5 text-sm font-medium text-slate-600">
                   No hay plantillas que coincidan con la búsqueda.
@@ -394,8 +502,16 @@ export function RecoveryWhatsappTemplateLibraryModal({
                 <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
                   {filteredTemplates.map((template) => (
                     <TemplatePreviewCard
+                      isFavoritePending={pendingFavoriteKey === template.key}
                       isSelected={selectedKey === template.key}
                       key={template.key}
+                      onFavoriteClick={() => {
+                        if (template.isFavorite) {
+                          setFavoriteToRemove(template);
+                        } else {
+                          void addFavorite(template);
+                        }
+                      }}
                       onSelect={() => setSelectedKey(template.key)}
                       template={template}
                     />
@@ -429,6 +545,37 @@ export function RecoveryWhatsappTemplateLibraryModal({
           </main>
         </div>
       </section>
+
+      {favoriteToRemove ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/35 p-4" onClick={() => setFavoriteToRemove(null)}>
+          <section
+            aria-labelledby="remove-favorite-title"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <h3 className="text-base font-semibold text-navy" id="remove-favorite-title">¿Quitar esta plantilla de Favoritas?</h3>
+            <p className="mt-2 text-sm text-slate-600">{favoriteToRemove.label}</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:border-teal-300 hover:text-teal-700"
+                onClick={() => setFavoriteToRemove(null)}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-xl bg-[#92400e] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7c2d12]"
+                onClick={() => void removeFavorite(favoriteToRemove)}
+                type="button"
+              >
+                Quitar de favoritas
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

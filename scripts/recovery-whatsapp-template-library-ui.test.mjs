@@ -35,7 +35,7 @@ test("3. modal is accessible and keyboard closable", () => {
   assert.match(modal, /aria-modal="true"/);
   assert.match(modal, /aria-labelledby="recovery-template-library-title"/);
   assert.match(modal, /aria-label="Cerrar biblioteca de plantillas"/);
-  assert.match(modal, /event\.key === "Escape"/);
+  assert.match(modal, /event\.key !== "Escape"/);
   assert.match(modal, /focus:outline-none focus:ring-2 focus:ring-teal-500/);
 });
 
@@ -44,7 +44,7 @@ test("4. modal fetches templates only on open with GET and AbortController", () 
   assert.match(modal, /AbortController/);
   assert.match(modal, /method: "GET"/);
   assert.match(modal, /reloadToken/);
-  assert.doesNotMatch(modal, /method: "POST"|send-template|callN8nWebhook|N8N_RECOVERY/);
+  assert.doesNotMatch(modal, /send-template|callN8nWebhook|N8N_RECOVERY/);
 });
 
 test("5. search is client-side and covers name label preview category", () => {
@@ -80,7 +80,7 @@ test("8. selection is visual only and does not send", () => {
   assert.match(modal, /Usar plantilla/);
   assert.match(modal, /onSelectTemplate\(selectedTemplate\)/);
   assert.match(drawer, /Plantilla seleccionada/);
-  assert.doesNotMatch(modal + route, /sendTemplate|\/chat\/send-template|method:\s*"POST"|callN8nWebhook/);
+  assert.doesNotMatch(modal + route, /sendTemplate|\/chat\/send-template|callN8nWebhook/);
   assert.match(drawer, /Preparar envío/);
   assert.match(drawer, /dryRun: true/);
   assert.match(drawer, /\/chat\/send-template/);
@@ -101,7 +101,8 @@ test("10. template cards contain long content without forcing grid width", () =>
   assert.equal(longTemplateFixtures.every((template) => template.body.includes("https://") && template.variable.length > 50), true);
   assert.match(modal, /<main className="grid min-h-0 min-w-0/);
   assert.match(modal, /min-h-0 min-w-0 overflow-x-hidden overflow-y-auto/);
-  assert.match(modal, /group grid w-full min-w-0 max-w-full[^"]*overflow-hidden/);
+  assert.match(modal, /relative min-w-0 max-w-full overflow-hidden/);
+  assert.match(modal, /group grid w-full min-w-0 max-w-full/);
   assert.match(modal, /whitespace-pre-wrap break-words[^"]*\[overflow-wrap:anywhere\]/);
   assert.match(modal, /preview\.header[\s\S]*break-words[\s\S]*preview\.footer/);
   assert.match(modal, /preview\.buttons\.map[\s\S]*max-w-full break-words/);

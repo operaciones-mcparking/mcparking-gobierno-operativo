@@ -45,7 +45,7 @@ async function requireAdminForApi() {
     return { error: jsonError("No autorizado.", 403, "forbidden"), ok: false as const };
   }
 
-  return { ok: true as const, supabase };
+  return { ok: true as const, supabase, userId: user.id };
 }
 
 function businessLabel(businessKey: RecoveryWhatsappBusinessKey) {
@@ -102,10 +102,25 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const businessKey = windowState.businessKey;
 
   try {
-    const templates = (await fetchMetaWhatsappTemplatesForBusiness(businessKey))
+    const metaTemplates = await fetchMetaWhatsappTemplatesForBusiness(businessKey);
+    const { data: favoriteRows, error: favoritesError } = await admin.supabase
+      .from("recovery_whatsapp_template_favorites")
+      .select("template_name,language")
+      .eq("user_id", admin.userId)
+      .eq("business_key", businessKey);
+
+    if (favoritesError) {
+      return jsonError("No se pudieron cargar las plantillas favoritas.", 500, "template_favorites_load_failed");
+    }
+
+    const favoriteKeys = new Set(
+      (favoriteRows ?? []).map((favorite) => favorite.template_name + ":" + favorite.language),
+    );
+    const templates = metaTemplates
       .map((template) => decorateRecoveryTemplateForBusiness(businessKey, template))
       .map((template) => ({
         category: template.category,
+        isFavorite: favoriteKeys.has(template.key),
         key: template.key,
         label: template.label,
         language: template.language,
