@@ -203,13 +203,14 @@ test("31. drawer calls send-template only in dry-run mode", () => {
   assert.doesNotMatch(validateFunction, /businessKey|phone_number_id|components|previewText|templateName|token/);
 });
 
-test("32. Prepare template button is gated by complete variables", () => {
-  const validateTemplateBlock = drawer.slice(drawer.indexOf("Preparar envío") - 500, drawer.indexOf("Preparar envío") + 300);
+test("32. template action is gated by complete variables and current preparation", () => {
+  const templatePopup = drawer.slice(drawer.indexOf("{selectedTemplate && displayedTemplatePreview"), drawer.indexOf("<RecoveryWhatsappTemplateLibraryModal"));
 
   assert.ok(drawer.includes("canValidateTemplate = Boolean(cartId)"));
   assert.ok(drawer.includes("selectedTemplateVariableErrors.length === 0"));
-  assert.ok(validateTemplateBlock.includes("disabled={!canValidateTemplate}"));
-  assert.ok(validateTemplateBlock.includes("onClick={() => void validateSelectedTemplate()}"));
+  assert.ok(drawer.includes("canRunTemplateAction = isTemplatePrepared ? canConfirmTemplateSend : canValidateTemplate"));
+  assert.ok(templatePopup.includes("disabled={!canRunTemplateAction}"));
+  assert.ok(templatePopup.includes("isTemplatePrepared ? sendPreparedTemplate() : validateSelectedTemplate()"));
 });
 
 test("33. request DTO is intentionally narrow", () => {

@@ -29,21 +29,19 @@ function functionBlock(name) {
 }
 const validateBlock = functionBlock("validateSelectedTemplate");
 const sendBlock = functionBlock("sendPreparedTemplate");
-const selectedPanel = drawer.slice(drawer.indexOf("Plantilla seleccionada"), drawer.indexOf("<div className=\"flex items-end gap-2", drawer.indexOf("Plantilla seleccionada")));
-const preparedBlock = drawer.slice(drawer.indexOf("Plantilla preparada"), drawer.indexOf("templateValidationError", drawer.indexOf("Plantilla preparada")));
-const sentBlock = drawer.slice(drawer.indexOf("Plantilla enviada"), drawer.indexOf("templateSendError", drawer.indexOf("Plantilla enviada")));
+const selectedPanel = drawer.slice(drawer.indexOf("{selectedTemplate && displayedTemplatePreview"), drawer.indexOf("<RecoveryWhatsappTemplateLibraryModal"));
 
 test("1. keep the first step as explicit dry-run preparation", () => {
   assert.match(drawer, /Preparar env/);
-  assert.match(drawer, /Preparando env/);
+  assert.match(drawer, /Preparando\.\.\./);
   assert.match(validateBlock, /dryRun: true/);
   assert.doesNotMatch(validateBlock, /dryRun: false/);
 });
 
-test("2. confirmation button exists only for the second step", () => {
+test("2. the same CTA becomes confirmation only for a current preparation", () => {
   assert.match(drawer, /Confirmar y enviar/);
-  assert.match(drawer, /canConfirmTemplateSend/);
-  assert.match(selectedPanel, /disabled=\{!canConfirmTemplateSend\}/);
+  assert.match(drawer, /const canRunTemplateAction = isTemplatePrepared \? canConfirmTemplateSend : canValidateTemplate/);
+  assert.match(selectedPanel, /isTemplatePrepared \? sendPreparedTemplate\(\) : validateSelectedTemplate\(\)/);
 });
 
 test("3. confirmation calls the same send-template endpoint", () => {
@@ -97,10 +95,10 @@ test("9. sending state guards against double click", () => {
   assert.match(drawer, /const isTemplateSending = templateSendStatus === "sending"/);
 });
 
-test("10. sending disables preparation and confirmation controls", () => {
+test("10. sending disables the single template action", () => {
   assert.match(drawer, /!isTemplateSending && !error/);
-  assert.match(selectedPanel, /disabled=\{!canValidateTemplate\}/);
-  assert.match(selectedPanel, /disabled=\{!canConfirmTemplateSend\}/);
+  assert.match(selectedPanel, /disabled={!canRunTemplateAction}/);
+  assert.match(drawer, /const canRunTemplateAction = isTemplatePrepared \? canConfirmTemplateSend : canValidateTemplate/);
 });
 
 test("11. sending disables the upper close control and lower template switch", () => {
@@ -119,9 +117,9 @@ test("12. sending disables variable inputs", () => {
   assert.match(selectedPanel, /onChange=\{\(event\) => updateTemplateVariable/);
 });
 
-test("13. sending state shows a visible loading message", () => {
-  assert.match(drawer, /Enviando plantilla/);
-  assert.match(drawer, /aria-live="polite"/);
+test("13. sending state is visible in the single CTA", () => {
+  assert.match(selectedPanel, /Enviando\.\.\./);
+  assert.match(selectedPanel, /aria-live="polite"/);
 });
 
 test("14. changing variable clears preparation and send state", () => {
@@ -150,7 +148,6 @@ test("16. closing selected template clears selection, variables, dry-run, and se
 test("17. cart changes reset template preparation and send status", () => {
   assert.match(drawer, /setTemplatePreparedSnapshot\(null\)/);
   assert.match(drawer, /setTemplateSendError\(null\)/);
-  assert.match(drawer, /setTemplateSendResult\(null\)/);
   assert.match(drawer, /setTemplateSendStatus\("idle"\)/);
 });
 
@@ -161,16 +158,15 @@ test("18. abort controller is used for in-flight confirmation", () => {
   assert.match(sendBlock, /AbortError/);
 });
 
-test("19. success block is friendly and compact", () => {
-  assert.match(sentBlock, /Plantilla enviada/);
-  assert.match(sentBlock, /Negocio/);
-  assert.match(sentBlock, /Plantilla/);
-  assert.match(sentBlock, /Idioma/);
-  assert.match(sentBlock, /templateValidationBusinessLabel/);
+test("19. successful sending closes and clears the template popup", () => {
+  assert.match(sendBlock, /setTemplateSendStatus\("sent"\)/);
+  assert.match(sendBlock, /setSelectedTemplate\(null\)/);
+  assert.match(sendBlock, /setTemplateVariableValues\(\{\}\)/);
+  assert.match(sendBlock, /resetTemplatePreparationState\(\)/);
 });
 
-test("20. success block hides technical identifiers and payloads", () => {
-  assert.doesNotMatch(sentBlock, /messageId|messageStatus|maskedPhone|variableCount|payload|components|token|phone_number_id|WABA|wamid/i);
+test("20. popup has no duplicate success detail block or technical identifiers", () => {
+  assert.doesNotMatch(selectedPanel, /Plantilla enviada|messageId|messageStatus|maskedPhone|variableCount|payload|components|token|phone_number_id|WABA|wamid/i);
 });
 
 test("21. safe error mapping covers n8n and WhatsApp acceptance failures", () => {
@@ -226,13 +222,17 @@ test("28. open window template access is independent from freeform sending", () 
   assert.match(drawer, /const canUseTemplates = Boolean\(cart\?\.phone\) && freeformWindow\.kind !== "unverifiable"/);
   assert.match(drawer, /Enviar plantilla/);
   assert.match(drawer, /setIsTemplateLibraryOpen\(true\)/);
-  assert.match(drawer, /const shouldShowSelectedTemplatePanel = selectedTemplate/);
+  assert.match(drawer, /selectedTemplate && displayedTemplatePreview/);
   assert.doesNotMatch(drawer, /currentWindow\?\.canSendFreeform/);
 });
 
-test("29. Escape lets the open template library close before the drawer", () => {
+test("29. Escape closes the library first, then the template popup, before the drawer", () => {
   assert.match(drawer, /if \(isTemplateLibraryOpen\) return;/);
+  assert.match(drawer, /if \(selectedTemplate\)/);
+  assert.match(drawer, /setSelectedTemplate\(null\)/);
+  assert.match(drawer, /return;\s*}\s*onClose\(\)/);
 });
+
 
 
 test("30. cancelling template preparation preserves the freeform draft", () => {

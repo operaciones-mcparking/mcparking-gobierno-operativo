@@ -124,10 +124,11 @@ test("21. UI preparation continues using dryRun true", () => {
   assert.doesNotMatch(validateFunctionBlock(), /dryRun: false/);
 });
 
-test("22. buttons expose preparation and explicit confirmation", () => {
+test("22. one template action exposes preparation and explicit confirmation states", () => {
   assert.match(drawer, /Preparar envío/);
-  assert.match(drawer, /Preparando envío/);
+  assert.match(drawer, /Preparando\.\.\./);
   assert.match(drawer, /Confirmar y enviar/);
+  assert.match(drawer, /isTemplatePrepared \? sendPreparedTemplate\(\) : validateSelectedTemplate\(\)/);
 });
 
 test("23. confirmation does not call Graph messages or n8n directly from the UI", () => {

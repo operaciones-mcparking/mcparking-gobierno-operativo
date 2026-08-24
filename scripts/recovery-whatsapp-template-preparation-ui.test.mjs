@@ -12,7 +12,7 @@ const modal = readFileSync(modalPath, "utf8");
 const meta = readFileSync(metaPath, "utf8");
 const route = readFileSync(routePath, "utf8");
 const changedSources = [drawer, modal, meta, route].join("\n");
-const validateTemplateButtonBlock = drawer.slice(drawer.indexOf("Preparar envío") - 900, drawer.indexOf("Preparar envío") + 600);
+const templatePopup = drawer.slice(drawer.indexOf("{selectedTemplate && displayedTemplatePreview"), drawer.indexOf("<RecoveryWhatsappTemplateLibraryModal"));
 
 test("1. without selection the compact button says Plantillas", () => {
   assert.match(drawer, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
@@ -26,7 +26,7 @@ test("2. with selection the compact button says Cambiar plantilla", () => {
 });
 
 test("3. selected template header exposes only the accessible close control", () => {
-  const headerBlock = drawer.slice(drawer.indexOf("Plantilla seleccionada"), drawer.indexOf("<div className=\"rounded-2xl bg-[#eef7f4] p-2\">"));
+  const headerBlock = templatePopup.slice(templatePopup.indexOf("Plantilla seleccionada"), templatePopup.indexOf('className="mt-3 min-w-0 rounded-2xl'));
 
   assert.match(headerBlock, /Plantilla seleccionada/);
   assert.match(headerBlock, /aria-label="Cerrar plantilla"/);
@@ -89,8 +89,8 @@ test("12. pending alert is inline and accessible", () => {
   assert.match(drawer, /Completa todas las variables antes de continuar\./);
 });
 
-test("13. complete variables show ready helper text", () => {
-  assert.match(drawer, /Variables listas para preparar en modo prueba./);
+test("13. complete variables show the dry-run helper text", () => {
+  assert.match(templatePopup, /La preparación valida la plantilla sin enviarla\./);
 });
 
 test("14. individual visible labels and input errors are removed", () => {
@@ -121,16 +121,18 @@ test("18. choosing the same template preserves values", () => {
   assert.doesNotMatch(selectFunction, /elses*{s*setTemplateVariableValues/);
 });
 
-test("19. Preparar envio replaces send copy", () => {
-  assert.match(drawer, /Preparar envío/);
-  assert.match(drawer, /Preparando envío.../);
-  assert.doesNotMatch(validateTemplateButtonBlock, /Validar plantilla|Validando plantilla|Enviar plantilla/);
+test("19. the single CTA exposes prepare, preparing, confirm, and sending states", () => {
+  assert.match(templatePopup, /Preparar envío/);
+  assert.match(templatePopup, /Preparando\.\.\./);
+  assert.match(templatePopup, /Confirmar y enviar/);
+  assert.match(templatePopup, /Enviando\.\.\./);
+  assert.doesNotMatch(templatePopup, /Validar plantilla|Validando plantilla/);
 });
 
-test("20. validation button calls the dry-run endpoint", () => {
-  assert.match(validateTemplateButtonBlock, /disabled={!canValidateTemplate}/);
-  assert.ok(validateTemplateButtonBlock.includes("onClick={() => void validateSelectedTemplate()}"));
-  assert.ok(drawer.includes('/api/recuperacion/carritos/${encodeURIComponent(cartId)}/chat/send-template'));
+test("20. the single CTA chooses dry-run preparation before confirmed sending", () => {
+  assert.match(templatePopup, /disabled={!canRunTemplateAction}/);
+  assert.match(templatePopup, /isTemplatePrepared \? sendPreparedTemplate\(\) : validateSelectedTemplate\(\)/);
+  assert.match(drawer, /chat\/send-template/);
 });
 
 test("21. template validation request is dry-run and narrow", () => {
@@ -143,18 +145,11 @@ test("21. template validation request is dry-run and narrow", () => {
   assert.doesNotMatch(validateFunction, /businessKey|phone_number_id|phone:|components|previewText|templateName|token/);
 });
 
-test("21b. prepared result is operator-friendly and hides technical details", () => {
-  const resultBlock = drawer.slice(drawer.indexOf("Plantilla preparada") - 300, drawer.indexOf("Plantilla preparada") + 1600);
-
-  assert.match(resultBlock, /Plantilla preparada/);
-  assert.match(resultBlock, /Vista previa final/);
-  assert.match(resultBlock, /templateValidationBusinessLabel/);
-  assert.match(drawer, /MPV" \| "EAP"/);
-  assert.match(drawer, /McParking/);
-  assert.match(drawer, /Estacionamiento Aeropuerto/);
-  assert.match(resultBlock, /selectedTemplate.label/);
-  assert.match(resultBlock, /Idioma/);
-  assert.doesNotMatch(resultBlock, /variableCount|maskedPhone|templateName|Payload|phone_number_id|token|components/);
+test("21b. prepared result replaces the same preview without a duplicate status block", () => {
+  assert.match(drawer, /displayedTemplatePreview = isPreparedTemplateCurrent && templateValidationResult\?\.preview/);
+  assert.match(drawer, /\{ \.\.\.selectedTemplatePreview, \.\.\.templateValidationResult\.preview \}/);
+  assert.doesNotMatch(templatePopup, /Plantilla preparada|Vista previa final/);
+  assert.doesNotMatch(templatePopup, /variableCount|maskedPhone|templateName|Payload|phone_number_id|token|components/);
 });
 
 test("21c. redundant closed and missing footer hints are hidden when templates are available", () => {
@@ -170,9 +165,11 @@ test("22. template dry-run UI still has no n8n, Supabase write, or message histo
   assert.doesNotMatch(validateFunction, /callN8nWebhook|N8N_RECOVERY|supabase|setData\(|messageDraft|\/messages/i);
 });
 
-test("23. mobile layout avoids horizontal overflow", () => {
-  assert.match(drawer, /flex flex-col gap-2 sm:flex-row sm:items-center/);
-  assert.match(drawer, /grid min-w-0 gap-2 sm:grid-cols-2/);
-  assert.match(drawer, /w-full min-w-0/);
-  assert.match(drawer, /focus:ring-2/);
+test("23. popup is responsive, scrollable, and outside the freeform form", () => {
+  assert.match(templatePopup, /role="dialog"/);
+  assert.match(templatePopup, /aria-modal="true"/);
+  assert.match(templatePopup, /max-h-\[calc\(100dvh-1\.5rem\)\]/);
+  assert.match(templatePopup, /overflow-y-auto/);
+  assert.match(templatePopup, /w-full max-w-xl min-w-0/);
+  assert.ok(drawer.indexOf("</form>") < drawer.indexOf("{selectedTemplate && displayedTemplatePreview"));
 });

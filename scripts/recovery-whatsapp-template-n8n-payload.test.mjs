@@ -201,10 +201,11 @@ test("27. route requires an explicit dryRun boolean", () => {
   assert.match(route, /dryRun: false/);
 });
 
-test("28. UI keeps preparation as the first step and adds explicit confirmation", () => {
+test("28. UI keeps preparation first and transitions one action to confirmation", () => {
   assert.match(drawer, /Preparar env/);
-  assert.match(drawer, /Preparando env/);
+  assert.match(drawer, /Preparando\.\.\./);
   assert.match(drawer, /Confirmar y enviar/);
+  assert.match(drawer, /isTemplatePrepared \? sendPreparedTemplate\(\) : validateSelectedTemplate\(\)/);
   assert.match(sendFunctionBlock(), /dryRun: false/);
 });
 
