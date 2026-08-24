@@ -11,6 +11,11 @@ const modal = readFileSync(modalPath, "utf8");
 const drawer = readFileSync(drawerPath, "utf8");
 const route = readFileSync(routePath, "utf8");
 const meta = readFileSync(metaPath, "utf8");
+const longTemplateFixtures = Array.from({ length: 10 }, (_, index) => ({
+  body: `https://example.com/${"segment-without-spaces".repeat(12)}-${index}`,
+  name: `template_${index}`,
+  variable: `{{${"1234567890".repeat(8)}}}`,
+}));
 
 test("1. drawer shows compact Plantillas button only when freeform is blocked by closed or missing", () => {
   assert.match(drawer, /shouldShowTemplateButton = isFreeformBlocked && \(freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"\)/);
@@ -86,11 +91,27 @@ test("9. responsive desktop and mobile layouts are present", () => {
   assert.match(modal, /h-\[100dvh\] w-full/);
   assert.match(modal, /sm:max-h-\[calc\(100dvh-2rem\)\] sm:max-w-6xl sm:rounded-3xl/);
   assert.match(modal, /lg:grid-cols-\[13rem_minmax\(0,1fr\)\]/);
-  assert.match(modal, /md:grid-cols-2 xl:grid-cols-3/);
+  assert.match(modal, /\[grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,16rem\),1fr\)\)\]/);
+  assert.doesNotMatch(modal, /md:grid-cols-2 xl:grid-cols-3/);
   assert.match(modal, /overflow-x-auto/);
 });
 
-test("10. endpoint and Meta helper expose safe approved previews", () => {
+test("10. template cards contain long content without forcing grid width", () => {
+  assert.equal(longTemplateFixtures.length, 10);
+  assert.equal(longTemplateFixtures.every((template) => template.body.includes("https://") && template.variable.length > 50), true);
+  assert.match(modal, /<main className="grid min-h-0 min-w-0/);
+  assert.match(modal, /min-h-0 min-w-0 overflow-x-hidden overflow-y-auto/);
+  assert.match(modal, /group grid w-full min-w-0 max-w-full[^"]*overflow-hidden/);
+  assert.match(modal, /whitespace-pre-wrap break-words[^"]*\[overflow-wrap:anywhere\]/);
+  assert.match(modal, /preview\.header[\s\S]*break-words[\s\S]*preview\.footer/);
+  assert.match(modal, /preview\.buttons\.map[\s\S]*max-w-full break-words/);
+  assert.match(modal, /template\.variables\.map[\s\S]*max-w-full break-words/);
+  assert.match(modal, /flex min-w-0 max-w-full flex-wrap justify-end gap-1/);
+  assert.doesNotMatch(modal, /flex shrink-0 flex-wrap justify-end gap-1/);
+  assert.doesNotMatch(modal, /filteredTemplates\.length\s*[<=>]+\s*\d+[\s\S]*grid-cols/);
+});
+
+test("11. endpoint and Meta helper expose safe approved previews", () => {
   assert.match(meta, /fields", "name,language,status,category,components"/);
   assert.match(meta, /status !== "APPROVED"/);
   assert.match(route, /preview: template\.preview/);

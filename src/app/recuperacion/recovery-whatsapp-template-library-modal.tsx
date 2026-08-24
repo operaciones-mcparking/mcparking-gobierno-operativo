@@ -97,7 +97,7 @@ function TemplatePreviewCard({
   return (
     <button
       aria-pressed={isSelected}
-      className={`group grid min-w-0 gap-3 rounded-2xl border bg-white p-3 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+      className={`group grid w-full min-w-0 max-w-full gap-3 overflow-hidden rounded-2xl border bg-white p-3 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-teal-500 ${
         isSelected ? "border-teal-600 ring-2 ring-teal-100" : "border-[#d8e7e1] hover:border-teal-300 hover:shadow-md"
       }`}
       onClick={onSelect}
@@ -108,23 +108,23 @@ function TemplatePreviewCard({
           <p className="truncate text-sm font-semibold text-navy">{template.label}</p>
           <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">{template.name}</p>
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <ValueBadge tone="success">{categoryLabel(template.category)}</ValueBadge>
-          <ValueBadge tone="neutral">{template.language}</ValueBadge>
+        <div className="flex min-w-0 max-w-full flex-wrap justify-end gap-1">
+          <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]"><ValueBadge tone="success">{categoryLabel(template.category)}</ValueBadge></span>
+          <span className="min-w-0 max-w-full break-words [overflow-wrap:anywhere]"><ValueBadge tone="neutral">{template.language}</ValueBadge></span>
         </div>
       </div>
 
-      <div className="rounded-2xl bg-[#eef7f4] p-3">
-        <div className="grid gap-2 rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
+      <div className="min-w-0 max-w-full overflow-hidden rounded-2xl bg-[#eef7f4] p-3">
+        <div className="grid min-w-0 max-w-full gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
           {hasPreview ? (
             <>
-              {template.preview.header ? <p className="font-semibold text-navy">{template.preview.header}</p> : null}
-              {template.preview.body ? <p className="whitespace-pre-wrap leading-5">{template.preview.body}</p> : null}
-              {template.preview.footer ? <p className="text-xs text-slate-500">{template.preview.footer}</p> : null}
+              {template.preview.header ? <p className="min-w-0 max-w-full break-words font-semibold text-navy [overflow-wrap:anywhere]">{template.preview.header}</p> : null}
+              {template.preview.body ? <p className="min-w-0 max-w-full whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">{template.preview.body}</p> : null}
+              {template.preview.footer ? <p className="min-w-0 max-w-full break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{template.preview.footer}</p> : null}
               {template.preview.buttons.length > 0 ? (
-                <div className="grid gap-1 border-t border-slate-100 pt-2">
+                <div className="grid min-w-0 max-w-full gap-1 overflow-hidden border-t border-slate-100 pt-2">
                   {template.preview.buttons.map((button, index) => (
-                    <span key={`${button.type}-${button.text}-${index}`} className="rounded-lg bg-slate-50 px-2 py-1 text-center text-xs font-semibold text-teal-700">
+                    <span key={`${button.type}-${button.text}-${index}`} className="min-w-0 max-w-full break-words rounded-lg bg-slate-50 px-2 py-1 text-center text-xs font-semibold text-teal-700 [overflow-wrap:anywhere]">
                       {button.text}
                     </span>
                   ))}
@@ -138,10 +138,10 @@ function TemplatePreviewCard({
       </div>
 
       {template.variables.length > 0 ? (
-        <div className="flex flex-wrap gap-1 text-xs text-slate-500">
+        <div className="flex min-w-0 max-w-full flex-wrap gap-1 overflow-hidden text-xs text-slate-500">
           <span className="font-semibold text-slate-600">Variables:</span>
           {template.variables.map((variable) => (
-            <span key={variable.position} className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700">
+            <span key={variable.position} className="min-w-0 max-w-full break-words rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-700 [overflow-wrap:anywhere]">
               {variable.placeholder}
             </span>
           ))}
@@ -332,7 +332,7 @@ export function RecoveryWhatsappTemplateLibraryModal({
             </div>
           </aside>
 
-          <main className="grid min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
+          <main className="grid min-h-0 min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden">
             <div className="grid gap-3 border-b border-slate-200 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:px-6">
               <label className="grid min-w-0 gap-1 text-xs font-semibold text-slate-600" htmlFor="recovery-template-search">
                 Buscar plantilla
@@ -370,7 +370,7 @@ export function RecoveryWhatsappTemplateLibraryModal({
               </label>
             </div>
 
-            <div className="min-h-0 overflow-y-auto px-4 py-4 sm:px-6">
+            <div className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-6">
               {status === "loading" ? (
                 <div className="rounded-2xl border border-[#d8e7e1] bg-slate-50 px-4 py-5 text-sm font-medium text-slate-600">
                   Cargando plantillas desde Meta...
@@ -391,7 +391,7 @@ export function RecoveryWhatsappTemplateLibraryModal({
                   No hay plantillas que coincidan con la búsqueda.
                 </div>
               ) : (
-                <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid min-w-0 gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
                   {filteredTemplates.map((template) => (
                     <TemplatePreviewCard
                       isSelected={selectedKey === template.key}
