@@ -14,17 +14,17 @@ const route = readFileSync(routePath, "utf8");
 const changedSources = [drawer, modal, meta, route].join("\n");
 const templatePopup = drawer.slice(drawer.indexOf("{selectedTemplate && displayedTemplatePreview"), drawer.indexOf("<RecoveryWhatsappTemplateLibraryModal"));
 
-test("1. without selection the compact button says Plantillas", () => {
-  assert.match(drawer, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
-  assert.match(drawer, /Abrir biblioteca de plantillas aprobadas/);
+test("1. composer exposes a stable icon-only template action", () => {
+  assert.match(drawer, /aria-label="Enviar plantilla"/);
+  assert.match(drawer, /title="Enviar plantilla"/);
+  assert.match(drawer, /<FileText className="h-4 w-4"/);
 });
 
-test("2. with selection the compact button says Cambiar plantilla", () => {
-  assert.match(drawer, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
-  assert.match(drawer, /Cambiar plantilla aprobada/);
-  assert.match(drawer, /onClick=\{\(\) => setIsTemplateLibraryOpen\(true\)\}/);
+test("2. composer and plus menu reuse the same library handler", () => {
+  assert.equal((drawer.match(/onClick=\{openTemplateLibrary\}/g) ?? []).length, 2);
+  assert.match(drawer, /function openTemplateLibrary\(\)/);
+  assert.match(drawer, /setIsTemplateLibraryOpen\(true\)/);
 });
-
 test("3. selected template header exposes only the accessible close control", () => {
   const headerBlock = templatePopup.slice(templatePopup.indexOf("Plantilla seleccionada"), templatePopup.indexOf('className="mt-3 min-w-0 rounded-2xl'));
 
@@ -153,9 +153,9 @@ test("21b. prepared result replaces the same preview without a duplicate status 
 });
 
 test("21c. redundant closed and missing footer hints are hidden when templates are available", () => {
-  assert.match(drawer, /freeformWindow.kind === "closed" && !shouldShowTemplateButton/);
-  assert.match(drawer, /freeformWindow.kind === "missing" && !shouldShowTemplateButton/);
-  assert.match(drawer, /freeformWindow.kind === "unverifiable"/);
+  assert.match(drawer, /freeformWindow\.kind === "closed" && !canUseTemplates/);
+  assert.match(drawer, /freeformWindow\.kind === "missing" && !canUseTemplates/);
+  assert.match(drawer, /freeformWindow\.kind === "unverifiable"/);
 });
 
 test("22. template dry-run UI still has no n8n, Supabase write, or message history update", () => {

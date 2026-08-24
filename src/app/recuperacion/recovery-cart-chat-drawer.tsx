@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, ExternalLink, MessageCircle, Plus, Send, X } from "lucide-react";
+import { Copy, ExternalLink, FileText, MessageCircle, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
@@ -516,7 +516,6 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const isFreeformBlocked = !freeformWindow.canSendFreeform;
   const canSendMessage = !isSending && !isFreeformBlocked && Boolean(cart?.phone) && messageDraft.trim().length > 0;
   const canUseTemplates = Boolean(cart?.phone) && freeformWindow.kind !== "unverifiable";
-  const shouldShowTemplateButton = isFreeformBlocked && (freeformWindow.kind === "closed" || freeformWindow.kind === "missing");
   const selectedTemplatePreparationVariables = selectedTemplate ? selectedTemplate.variables : [];
   const selectedTemplateVariableErrors = selectedTemplatePreparationVariables.filter((variable) => !templateVariableValues[variable.position]?.trim());
   const currentTemplateSnapshot = cartId && selectedTemplate
@@ -862,6 +861,11 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     }
   }
 
+  function openTemplateLibrary() {
+    setIsContactActionsOpen(false);
+    setIsTemplateLibraryOpen(true);
+  }
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-[#0f172a]/35" onClick={onClose}>
       <div
@@ -898,10 +902,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
               {canUseTemplates ? (
                 <button
                   className="flex min-h-9 w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-teal-50"
-                  onClick={() => {
-                    setIsContactActionsOpen(false);
-                    setIsTemplateLibraryOpen(true);
-                  }}
+                  onClick={openTemplateLibrary}
                   type="button"
                 >
                   <MessageCircle className="h-3.5 w-3.5 text-teal-700" />
@@ -1107,19 +1108,6 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
           style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
         >
           <div className="flex items-end gap-2 rounded-2xl border border-slate-300 bg-white px-3 py-1.5 shadow-inner focus-within:border-teal-600 focus-within:ring-2 focus-within:ring-teal-100">
-            {shouldShowTemplateButton ? (
-              <button
-                aria-disabled={isTemplateSending}
-                aria-label={selectedTemplate ? "Cambiar plantilla aprobada" : "Abrir biblioteca de plantillas aprobadas"}
-                className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-teal-700 px-3 text-xs font-semibold text-white transition hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
-                disabled={isTemplateSending}
-                onClick={() => setIsTemplateLibraryOpen(true)}
-                type="button"
-              >
-                <MessageCircle className="h-4 w-4" />
-                <span>{selectedTemplate ? "Cambiar plantilla" : "Plantillas"}</span>
-              </button>
-            ) : null}
             <textarea
               className="max-h-24 min-h-8 flex-1 resize-none border-0 bg-transparent py-1 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-500 disabled:text-slate-500"
               disabled={isSending || !cart?.phone || isFreeformBlocked}
@@ -1135,6 +1123,18 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
               rows={1}
               value={messageDraft}
             />
+            {canUseTemplates ? (
+              <button
+                aria-label="Enviar plantilla"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-white text-teal-700 transition hover:border-teal-300 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                disabled={isTemplateSending || isTemplateLibraryOpen}
+                onClick={openTemplateLibrary}
+                title="Enviar plantilla"
+                type="button"
+              >
+                <FileText className="h-4 w-4" />
+              </button>
+            ) : null}
             <button
               aria-label="Enviar mensaje"
               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-700 text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
@@ -1148,12 +1148,12 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
             <span>Via n8n server-side</span>
             <span>{messageDraft.length}/4096</span>
           </div>
-          {freeformWindow.kind === "closed" && !shouldShowTemplateButton ? (
+          {freeformWindow.kind === "closed" && !canUseTemplates ? (
             <p className="mt-1 rounded-lg border border-[#f2d6a2] bg-[#fff8e8] px-2 py-1 text-[11px] font-medium text-[#92400e] sm:text-xs">
               Han pasado más de 24 horas desde el último mensaje del cliente. Para volver a contactarlo se requiere una plantilla aprobada.
             </p>
           ) : null}
-          {freeformWindow.kind === "missing" && !shouldShowTemplateButton ? (
+          {freeformWindow.kind === "missing" && !canUseTemplates ? (
             <p className="mt-1 rounded-lg border border-[#d6e1ea] bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600 sm:text-xs">
               No hay respuestas válidas del cliente para iniciar la ventana de atención. Para contactar se requiere una plantilla aprobada.
             </p>

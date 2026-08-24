@@ -169,14 +169,34 @@ test("open recovery chat keeps the freeform composer behavior", () => {
   assert.match(drawerSource, /\/api\/recuperacion\/carritos\/" \+ encodeURIComponent\(cartId\) \+ "\/chat\/send/);
 });
 
-test("closed or missing recovery chat shows compact templates button", () => {
-  assert.match(drawerSource, /const shouldShowTemplateButton = isFreeformBlocked && \(freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"\)/);
-  assert.match(drawerSource, /Abrir biblioteca de plantillas aprobadas/);
-  assert.match(drawerSource, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
-  assert.match(drawerSource, /<RecoveryWhatsappTemplateLibraryModal/);
-  assert.doesNotMatch(drawerSource, /Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|templatesError|setTemplates\(/);
+test("composer template action is available for open closed and missing windows", () => {
+  const canUseTemplates = (phone, kind) => Boolean(phone) && kind !== "unverifiable";
+
+  assert.equal(canUseTemplates("+56900000000", "open"), true);
+  assert.equal(canUseTemplates("+56900000000", "closed"), true);
+  assert.equal(canUseTemplates("+56900000000", "missing"), true);
+  assert.equal(canUseTemplates(null, "open"), false);
+  assert.equal(canUseTemplates("+56900000000", "unverifiable"), false);
+  assert.match(drawerSource, /const canUseTemplates = Boolean\(cart\?\.phone\) && freeformWindow\.kind !== "unverifiable"/);
+  assert.doesNotMatch(drawerSource, /shouldShowTemplateButton/);
 });
 
+test("composer template action reuses the plus-menu library handler", () => {
+  const handlerBlock = drawerSource.slice(drawerSource.indexOf("function openTemplateLibrary"), drawerSource.indexOf("return (", drawerSource.indexOf("function openTemplateLibrary")));
+  const composerBlock = drawerSource.slice(drawerSource.indexOf("<form"), drawerSource.indexOf("</form>"));
+
+  assert.match(handlerBlock, /setIsContactActionsOpen\(false\)/);
+  assert.match(handlerBlock, /setIsTemplateLibraryOpen\(true\)/);
+  assert.equal((drawerSource.match(/onClick=\{openTemplateLibrary\}/g) ?? []).length, 2);
+  assert.match(drawerSource, /Enviar plantilla/);
+  assert.match(drawerSource, /<RecoveryWhatsappTemplateLibraryModal/);
+  assert.match(composerBlock, /aria-label="Enviar plantilla"/);
+  assert.match(composerBlock, /title="Enviar plantilla"/);
+  assert.match(composerBlock, /<FileText className="h-4 w-4"/);
+  assert.match(composerBlock, /disabled=\{isTemplateSending \|\| isTemplateLibraryOpen\}/);
+  assert.ok(composerBlock.indexOf('aria-label="Enviar plantilla"') < composerBlock.indexOf('aria-label="Enviar mensaje"'));
+  assert.doesNotMatch(drawerSource, /Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|templatesError|setTemplates\(/);
+});
 test("template library modal loads from the safe GET endpoint only", () => {
   const templatesFetch = templateModalSource.match(/fetch\(`\/api\/recuperacion\/carritos\/\$\{encodeURIComponent\(activeCartId\)\}\/chat\/templates`, \{[\s\S]*?\}\);/);
 

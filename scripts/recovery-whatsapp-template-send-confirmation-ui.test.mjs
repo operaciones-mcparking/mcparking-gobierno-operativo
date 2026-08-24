@@ -101,17 +101,16 @@ test("10. sending disables the single template action", () => {
   assert.match(drawer, /const canRunTemplateAction = isTemplatePrepared \? canConfirmTemplateSend : canValidateTemplate/);
 });
 
-test("11. sending disables the upper close control and lower template switch", () => {
-  const lowerTemplateButton = drawer.slice(drawer.lastIndexOf("Cambiar plantilla aprobada") - 250, drawer.lastIndexOf("Cambiar plantilla aprobada") + 550);
+test("11. sending disables the upper close control and composer template action", () => {
+  const composerTemplateButton = drawer.slice(drawer.indexOf('aria-label="Enviar plantilla"') - 250, drawer.indexOf('aria-label="Enviar plantilla"') + 700);
 
   assert.match(selectedPanel, /aria-label="Cerrar plantilla"/);
   assert.match(selectedPanel, /disabled=\{isTemplateSending\}/);
   assert.doesNotMatch(selectedPanel, />\s*Cambiar plantilla\s*</);
   assert.doesNotMatch(selectedPanel, />\s*Cerrar plantilla\s*</);
-  assert.match(lowerTemplateButton, /Cambiar plantilla aprobada/);
-  assert.match(lowerTemplateButton, /disabled=\{isTemplateSending\}/);
+  assert.match(composerTemplateButton, /title="Enviar plantilla"/);
+  assert.match(composerTemplateButton, /disabled=\{isTemplateSending \|\| isTemplateLibraryOpen\}/);
 });
-
 test("12. sending disables variable inputs", () => {
   assert.match(selectedPanel, /disabled=\{isTemplateSending\}/);
   assert.match(selectedPanel, /onChange=\{\(event\) => updateTemplateVariable/);
@@ -189,7 +188,7 @@ test("22. error messages are displayed accessibly without auto retry", () => {
 });
 
 test("23. closed and missing states still expose template flow", () => {
-  assert.match(drawer, /freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"/);
+  assert.match(drawer, /const canUseTemplates = Boolean\(cart\?\.phone\) && freeformWindow\.kind !== "unverifiable"/);
   assert.doesNotMatch(sendBlock, /freeformWindow\.kind|canSendFreeform|isFreeformBlocked/);
 });
 

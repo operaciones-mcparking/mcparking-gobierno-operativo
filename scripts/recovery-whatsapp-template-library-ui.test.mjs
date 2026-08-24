@@ -17,13 +17,13 @@ const longTemplateFixtures = Array.from({ length: 10 }, (_, index) => ({
   variable: `{{${"1234567890".repeat(8)}}}`,
 }));
 
-test("1. drawer shows compact Plantillas button only when freeform is blocked by closed or missing", () => {
-  assert.match(drawer, /shouldShowTemplateButton = isFreeformBlocked && \(freeformWindow\.kind === "closed" \|\| freeformWindow\.kind === "missing"\)/);
-  assert.match(drawer, /Abrir biblioteca de plantillas aprobadas/);
-  assert.match(drawer, /selectedTemplate \? "Cambiar plantilla" : "Plantillas"/);
-  assert.doesNotMatch(drawer, /Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|setTemplates\(/);
+test("1. drawer exposes the compact template icon whenever templates are available", () => {
+  assert.match(drawer, /const canUseTemplates = Boolean\(cart\?\.phone\) && freeformWindow\.kind !== "unverifiable"/);
+  assert.match(drawer, /aria-label="Enviar plantilla"/);
+  assert.match(drawer, /title="Enviar plantilla"/);
+  assert.match(drawer, /onClick=\{openTemplateLibrary\}/);
+  assert.doesNotMatch(drawer, /shouldShowTemplateButton|Enviar plantilla aprobada|id="recovery-chat-template"|templatesStatus|setTemplates\(/);
 });
-
 test("2. drawer keeps open and closing_soon freeform composer", () => {
   assert.match(drawer, /const canSendMessage = !isSending && !isFreeformBlocked/);
   assert.match(drawer, /disabled=\{isSending \|\| !cart\?\.phone \|\| isFreeformBlocked\}/);
