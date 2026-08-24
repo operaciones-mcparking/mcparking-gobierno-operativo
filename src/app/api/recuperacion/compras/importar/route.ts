@@ -42,6 +42,7 @@ type PurchaseCsvReport = {
 type RecoveryBookingImportRow = {
   arrival_date: string | null;
   booking_created_at: string | null;
+  booking_paid: number | null;
   booking_number: string | null;
   booking_status: number | null;
   customer_id: string | null;
@@ -52,10 +53,15 @@ type RecoveryBookingImportRow = {
   location_code: string | null;
   parking_code: string | null;
   paying_status: string | null;
+  person_count: number | null;
   phone_normalized: string | null;
   price: number | null;
+  promotion_code: string | null;
+  promotion_discount_amount: number | null;
   row_hash: string;
   source_booking_id: string;
+  sub_days_used: number | null;
+  website_source: number | null;
 };
 
 type ImportRpcResult = {

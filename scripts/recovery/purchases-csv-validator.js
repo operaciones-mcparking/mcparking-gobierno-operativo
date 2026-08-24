@@ -25,6 +25,12 @@ const EXPECTED_COLUMNS = [
   "BookingStatus",
   "PayingStatus",
   "Preis",
+  "Personenzahl",
+  "PromotionCode",
+  "PromotionCodeCalculatedValue",
+  "BookingPaid",
+  "Website",
+  "SubDaysUsed",
 ];
 
 const MANDATORY_COLUMNS = ["Id", "Email", "Telefon", "Buchungszeit", "BookingStatus", "Preis"];
@@ -148,6 +154,12 @@ function integerValue(raw) {
   return Number.isInteger(value) ? value : null;
 }
 
+function nullableIntegerValue(raw) {
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+
+  return integerValue(raw);
+}
+
 function dateTimeValue(raw) {
   const date = parseDateSafe(raw);
 
@@ -184,6 +196,7 @@ function normalizePurchaseRow(row) {
   const normalized = {
     arrival_date: dateOnlyValue(row.Anreisedatum),
     booking_created_at: dateTimeValue(row.Buchungszeit),
+    booking_paid: normalizePrice(row.BookingPaid),
     booking_number: cleanText(row.Buchungsnummer),
     booking_status: bookingStatus,
     customer_id: cleanText(row.CustomerId),
@@ -194,9 +207,14 @@ function normalizePurchaseRow(row) {
     location_code: cleanText(row.LocationCode),
     parking_code: cleanText(row.ParkingCode),
     paying_status: cleanText(row.PayingStatus),
+    person_count: nullableIntegerValue(row.Personenzahl),
     phone_normalized: normalizePhone(row.Telefon),
     price: normalizePrice(row.Preis),
+    promotion_code: cleanText(row.PromotionCode),
+    promotion_discount_amount: normalizePrice(row.PromotionCodeCalculatedValue),
     source_booking_id: cleanText(row.Id),
+    sub_days_used: nullableIntegerValue(row.SubDaysUsed),
+    website_source: nullableIntegerValue(row.Website),
   };
 
   return {
