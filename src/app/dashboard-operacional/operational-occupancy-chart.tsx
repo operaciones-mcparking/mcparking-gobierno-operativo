@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { CommercialOccupancyRow, OperationalOccupancyReadModel, PhysicalOccupancyRow } from "@/lib/dashboard/ocupacion";
+import { buildPhysicalOccupancyDisplayRows, physicalOccupancyDisplayLabel, type CommercialOccupancyRow, type OperationalOccupancyReadModel, type PhysicalOccupancyRow } from "@/lib/dashboard/ocupacion";
 import { occupancySeriesColor, splitOccupancyDailySegments } from "@/lib/dashboard/ocupacion-chart";
 import { formatCurrency, formatInteger } from "./dashboard-operacional-formatters";
 
@@ -76,8 +76,10 @@ export function OperationalOccupancyChart({
   const [tooltip, setTooltip] = useState<TooltipPoint | null>(null);
   const model = useMemo(() => {
     if (!data) return null;
-    const rows = (mode === "physical" ? data.physical : data.commercial)
-      .filter((row) => selected.has(seriesName(row, mode)));
+    const displayRows: ChartRow[] = mode === "physical"
+      ? buildPhysicalOccupancyDisplayRows(data.physical)
+      : data.commercial;
+    const rows = displayRows.filter((row) => selected.has(seriesName(row, mode)));
     const grouped = new Map<string, ChartRow[]>();
     for (const row of rows) {
       const name = seriesName(row, mode);
@@ -120,13 +122,13 @@ export function OperationalOccupancyChart({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-sm font-semibold text-navy">Tendencia de ocupados</h3>
-          <p className="mt-1 text-xs text-slate-500">Últimos 6 meses y próximos 2 meses. Los espacios sin datos se muestran como cortes.</p>
+          <p className="mt-1 text-xs text-slate-500">Últimos 5 meses y próximos 2 meses. Los espacios sin datos se muestran como cortes.</p>
         </div>
         <div aria-label="Leyenda del gráfico" className="flex max-w-full flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
           {[...model.grouped.keys()].sort().map((name) => (
             <span className="inline-flex min-w-0 items-center gap-1.5" key={name}>
               <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: occupancySeriesColor(name) }} />
-              <span className="break-words [overflow-wrap:anywhere]">{name}</span>
+              <span className="break-words [overflow-wrap:anywhere]">{mode === "physical" ? physicalOccupancyDisplayLabel(name) : name}</span>
             </span>
           ))}
         </div>
@@ -193,7 +195,7 @@ export function OperationalOccupancyChart({
                 };
                 return (
                   <circle
-                    aria-label={`${name}, ${displayDate(row.fecha)}, ${formatInteger(row.occupied)} ocupados`}
+                    aria-label={`${mode === "physical" ? physicalOccupancyDisplayLabel(name) : name}, ${displayDate(row.fecha)}, ${formatInteger(row.occupied)} ocupados`}
                     className="cursor-pointer opacity-0 transition hover:opacity-100 focus:opacity-100 focus:outline-none"
                     cx={x}
                     cy={y}
@@ -216,16 +218,16 @@ export function OperationalOccupancyChart({
           {tooltip ? (
             <g pointerEvents="none">
               <rect fill="#102f43" height={mode === "physical" ? 78 : 64} rx="4" width="236" x={Math.min(chartWidth - 244, Math.max(8, tooltip.x + 8))} y={Math.max(8, tooltip.y - (mode === "physical" ? 86 : 72))} />
-              <text fill="#fff" fontSize="11" x={Math.min(chartWidth - 236, Math.max(16, tooltip.x + 16))} y={Math.max(24, tooltip.y - (mode === "physical" ? 68 : 54))}>{tooltip.name}</text>
+              <text fill="#fff" fontSize="11" x={Math.min(chartWidth - 236, Math.max(16, tooltip.x + 16))} y={Math.max(24, tooltip.y - (mode === "physical" ? 68 : 54))}>{mode === "physical" ? physicalOccupancyDisplayLabel(tooltip.name) : tooltip.name}</text>
               <text fill="#dbeafe" fontSize="10" x={Math.min(chartWidth - 236, Math.max(16, tooltip.x + 16))} y={Math.max(39, tooltip.y - (mode === "physical" ? 53 : 39))}>{displayDate(tooltip.fecha)} · {formatInteger(tooltip.occupied)} ocupados</text>
               <text fill="#dbeafe" fontSize="10" x={Math.min(chartWidth - 236, Math.max(16, tooltip.x + 16))} y={Math.max(54, tooltip.y - (mode === "physical" ? 38 : 24))}>
                 {mode === "physical"
                   ? `Capacidad ${formatInteger(tooltip.capacity)} · Ocupación ${formatTooltipPercentage(tooltip.occupancyPercentage)}`
-                  : `Ingreso atribuible: ${formatCurrency(tooltip.revenue)}`}
+                  : `Revenue de ocupación: ${formatCurrency(tooltip.revenue)}`}
               </text>
               {mode === "physical" ? (
                 <text fill="#dbeafe" fontSize="10" x={Math.min(chartWidth - 236, Math.max(16, tooltip.x + 16))} y={Math.max(69, tooltip.y - 23)}>
-                  Ingreso atribuible: {formatCurrency(tooltip.revenue)}
+                  Revenue de ocupación: {formatCurrency(tooltip.revenue)}
                 </text>
               ) : null}
             </g>

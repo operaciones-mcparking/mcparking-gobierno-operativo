@@ -30,9 +30,11 @@ test("1. grafico aparece despues de chips y antes de tabla sin cards de resumen"
   assert.doesNotMatch(section, /latestRows|Última fecha disponible/);
 });
 
-test("2. ventana fija incluye seis meses hasta actual y dos siguientes", () => {
-  assert.deepEqual(getOccupancyTrendRange("2026-08-31"), { from: "2026-03-01", to: "2026-10-31" });
-  assert.deepEqual(getOccupancyTrendRange("2026-01-15"), { from: "2025-08-01", to: "2026-03-31" });
+test("2. ventana fija incluye cinco meses hasta actual y dos siguientes", () => {
+  assert.deepEqual(getOccupancyTrendRange("2026-08-31"), { from: "2026-04-01", to: "2026-10-31" });
+  assert.deepEqual(getOccupancyTrendRange("2026-01-15"), { from: "2025-09-01", to: "2026-03-31" });
+  assert.match(chart, /Últimos 5 meses y próximos 2 meses\./);
+  assert.doesNotMatch(chart, /Últimos 6 meses/);
 });
 
 test("3. hoy usa fecha canonica existente y linea vertical roja", () => {
@@ -50,7 +52,7 @@ test("4. vista fisica crea series por parking fisico canonico", () => {
 test("5. vista comercial crea series por parking comercial", () => {
   assert.match(chart, /\(row as CommercialOccupancyRow\)\.parking_comercial/);
   assert.match(chart, /mode === "physical"[\s\S]*occupancy_percentage/);
-  assert.match(chart, /Ingreso atribuible: \$\{formatCurrency\(tooltip\.revenue\)\}/);
+  assert.match(chart, /Revenue de ocupación: \$\{formatCurrency\(tooltip\.revenue\)\}/);
 });
 
 test("6. los chips existentes controlan exactamente las series", () => {
@@ -58,6 +60,11 @@ test("6. los chips existentes controlan exactamente las series", () => {
   assert.match(chart, /filter\(\(row\) => selected\.has\(seriesName\(row, mode\)\)\)/);
 });
 
+test("6a. grafico fisico usa OKP TOTAL y comercial conserva filas fuente", () => {
+  assert.match(chart, /mode === "physical"[\s\S]*buildPhysicalOccupancyDisplayRows\(data\.physical\)[\s\S]*data\.commercial/);
+  assert.match(section, /buildPhysicalOccupancyDisplayRows\(data\?\.physical \?\? \[\]\)/);
+  assert.doesNotMatch(section, /Sistema de ocupación|system=\{system\}/);
+});
 test("7. EAP y MCP comerciales no se fusionan", () => {
   const rows = [
     { fecha: "2026-08-01", parking_comercial: "ESTACIONAMIENTO AEROPUERTO" },
@@ -67,11 +74,19 @@ test("7. EAP y MCP comerciales no se fusionan", () => {
   assert.doesNotMatch(chart, /parking_fisico[^\n]*grouped\.set/);
 });
 
-test("8. OK RC y Express conservan nombres y colores independientes", () => {
-  assert.notEqual(occupancySeriesColor("OK PARKING RC"), occupancySeriesColor("OK PARKING EXPRESS"));
+test("8. grafico fisico agrupa una sola serie OKP TOTAL", () => {
+  assert.match(chart, /buildPhysicalOccupancyDisplayRows\(data\.physical\)/);
   assert.match(chart, /grouped\.set\(name/);
+  assert.doesNotMatch(chart, /OK PARKING RC|OK PARKING EXPRESS/);
 });
 
+test("8a. leyenda tooltip y foco usan labels fisicos sin cambiar agrupacion", () => {
+  assert.match(chart, /mode === "physical" \? physicalOccupancyDisplayLabel\(name\) : name/);
+  assert.match(chart, /mode === "physical" \? physicalOccupancyDisplayLabel\(tooltip\.name\) : tooltip\.name/);
+  assert.match(chart, /grouped\.set\(name/);
+  assert.match(chart, /occupancySeriesColor\(name\)/);
+  assert.doesNotMatch(chart, /physicalOccupancyDisplayLabel\(\(row as CommercialOccupancyRow\)\.parking_comercial\)/);
+});
 test("9. ausencia diaria crea gap y nunca una fila cero", () => {
   const segments = splitOccupancyDailySegments([
     { fecha: "2026-08-01", occupied: 10 },
@@ -83,17 +98,24 @@ test("9. ausencia diaria crea gap y nunca una fila cero", () => {
 });
 
 test("10. futuro y NP solo usan filas realmente retornadas", () => {
-  assert.match(chart, /const rows = \(mode === "physical" \? data\.physical : data\.commercial\)/);
+  assert.match(chart, /mode === "physical"[\s\S]*buildPhysicalOccupancyDisplayRows\(data\.physical\)[\s\S]*data\.commercial/);
   assert.doesNotMatch(chart, /NP[^\n]*(project|future)|completeDays|calendarRange/i);
 });
 
-test("11. color es estable y no depende del orden de respuesta", () => {
-  const color = occupancySeriesColor("MC PARKING VESPUCIO");
-  assert.equal(color, occupancySeriesColor("MC PARKING VESPUCIO"));
-  assert.equal(color, occupancySeriesColor(["OTRO", "MC PARKING VESPUCIO"].reverse()[0]));
+test("11. colores fisicos principales son fijos y el resto conserva fallback estable", () => {
+  assert.equal(occupancySeriesColor("MC PARKING VESPUCIO"), "#023574");
+  assert.equal(occupancySeriesColor("OKP TOTAL"), "#00d084");
+  const fallback = occupancySeriesColor("NP EXPRESO 1");
+  assert.equal(fallback, occupancySeriesColor("NP EXPRESO 1"));
+  assert.notEqual(fallback, "#023574");
+  assert.notEqual(fallback, "#00d084");
+  assert.match(helper, /fixedSeriesColors\[parking\]/);
   assert.match(helper, /character\.charCodeAt/);
+  assert.match(chart, /backgroundColor: occupancySeriesColor\(name\)/);
+  assert.match(chart, /const color = occupancySeriesColor\(name\)/);
+  assert.match(chart, /stroke=\{color\}/);
+  assert.match(chart, /fill=\{color\}/);
 });
-
 test("12. porcentaje superior a cien no limita occupied ni escala", () => {
   const scaleStart = chart.indexOf("const maxOccupied");
   const scaleEnd = chart.indexOf("return {", scaleStart);
@@ -112,11 +134,11 @@ test("13. SVG es accesible, responsive y tiene tooltip interactivo", () => {
   assert.match(chart, /ocupados`\}/);
   assert.match(chart, /Capacidad \$\{formatInteger\(tooltip\.capacity\)\}/);
   assert.match(chart, /Ocupación \$\{formatTooltipPercentage\(tooltip\.occupancyPercentage\)\}/);
-  assert.match(chart, /Ingreso atribuible: \{formatCurrency\(tooltip\.revenue\)\}/);
-  assert.match(chart, /mode === "physical" \? \([\s\S]*Ingreso atribuible:/);
+  assert.match(chart, /Revenue de ocupación: \{formatCurrency\(tooltip\.revenue\)\}/);
+  assert.match(chart, /mode === "physical" \? \([\s\S]*Revenue de ocupación:/);
 });
 
-test("13a. ingreso del tooltip conserva null cero y CLP positivo", () => {
+test("13a. revenue del tooltip conserva null cero y CLP positivo", () => {
   assert.equal(formatCurrency(null), "No disponible");
   assert.equal(formatCurrency(0), "$0");
   assert.equal(formatCurrency(1234567), "$1.234.567");

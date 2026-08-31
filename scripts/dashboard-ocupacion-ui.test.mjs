@@ -31,7 +31,10 @@ test("1. bloque Ocupacion queda despues de Resumen y antes del drawer", () => {
 test("2. selector segmentado conserva niveles fisico y comercial", () => {
   assert.match(component, /aria-label="Nivel de ocupación"/);
   assert.match(component, /"physical", "commercial"/);
-  assert.match(component, /"Físico" : "Comercial"/);
+  assert.match(component, /"Agregado" : "Por canal"/);
+  assert.match(component, /aria-label=\{value === "physical" \? "Agregado" : "Por canal"\}/);
+  assert.doesNotMatch(component, />Físico<|>Comercial</);
+  assert.match(component, /mode === "physical" \? displayRows\.physical : displayRows\.commercial/);
 });
 
 test("3. primera visita selecciona todos los parkings disponibles", () => {
@@ -48,11 +51,12 @@ test("4. selecciones fisica y comercial son independientes y persistibles", () =
   assert.deepEqual(result.physical.selected, ["F1"]);
   assert.deepEqual(result.commercial.selected, ["C2"]);
   assert.equal(occupancySelectionStorageKey, "orquestador:ocupacion:parking-selection:v1");
+
 });
 
 test("5. parking nuevo queda activo y parking ausente se conserva", () => {
   const saved = { version: 1, physical: { known: ["ANTIGUO", "ACTUAL"], selected: ["ANTIGUO", "ACTUAL"] }, commercial: { known: [], selected: [] } };
-  const result = mergeOccupancyParkingSelection({ physical: ["ACTUAL", "NUEVO"], commercial: [] }, saved);
+  const result = mergeOccupancyParkingSelection({ physical: ["ACTUAL", "NUEVO"], commercial: [] }, parseOccupancyParkingSelection(JSON.stringify(saved)));
   assert.deepEqual(result.physical.selected, ["ACTUAL", "ANTIGUO", "NUEVO"]);
   assert.deepEqual(result.physical.known, ["ACTUAL", "ANTIGUO", "NUEVO"]);
 });
@@ -75,8 +79,8 @@ test("5a. chips visibles usan solo el dataset activo y no storage o tendencia co
   assert.equal(reconciled.physical.selected.includes("ESTACIONAMIENTO AEROPUERTO"), true);
   assert.deepEqual(selectedAvailableOccupancyParkings(visible.physical, reconciled.physical.selected), ["MC PARKING VESPUCIO", "OK PARKING RC"]);
   assert.match(component, /selectedAvailableOccupancyParkings\(available\[mode\], selection\[mode\]\.selected\)/);
-  assert.match(availableBlock, /data\?\.physical/);
-  assert.match(availableBlock, /data\?\.commercial/);
+  assert.match(availableBlock, /displayRows\.physical/);
+  assert.match(availableBlock, /displayRows\.commercial/);
   assert.doesNotMatch(availableBlock, /trendData/);
 });
 
@@ -100,8 +104,56 @@ test("8. chips accesibles filtran estacionamientos seleccionados", () => {
   assert.match(component, /toggleParking\(parking\)/);
 });
 
+test("8a. no existe filtro superior de sistema", () => {
+  assert.doesNotMatch(component, /Sistema de ocupación|\["ALL", "MCP", "OKP", "NP"\]|selectSystem/);
+});
+
+test("8b. storage v1 y v2 migran chips fisicos OKP sin tocar comercial", () => {
+  for (const version of [1, 2]) {
+    const migrated = parseOccupancyParkingSelection(JSON.stringify({
+      version,
+      system: "OKP",
+      physical: { known: ["MC PARKING VESPUCIO", "OK PARKING RC", "OK PARKING EXPRESS"], selected: ["MC PARKING VESPUCIO", "OK PARKING RC"] },
+      commercial: { known: ["OK PARKING RC", "OK PARKING EXPRESS"], selected: ["OK PARKING EXPRESS"] },
+    }));
+    assert.equal(migrated.version, 1);
+    assert.deepEqual(migrated.physical.known, ["MC PARKING VESPUCIO", "OKP TOTAL"]);
+    assert.deepEqual(migrated.physical.selected, ["MC PARKING VESPUCIO", "OKP TOTAL"]);
+    assert.deepEqual(migrated.commercial.selected, ["OK PARKING EXPRESS"]);
+  }
+});
+
+test("8c. ambos OKP fisicos deseleccionados mantienen OKP TOTAL deseleccionado", () => {
+  const migrated = parseOccupancyParkingSelection(JSON.stringify({
+    version: 2,
+    system: "ALL",
+    physical: { known: ["OK PARKING RC", "OK PARKING EXPRESS"], selected: [] },
+    commercial: { known: ["OK PARKING RC", "OK PARKING EXPRESS"], selected: ["OK PARKING RC"] },
+  }));
+  const merged = mergeOccupancyParkingSelection({ physical: ["OKP TOTAL"], commercial: ["OK PARKING RC", "OK PARKING EXPRESS"] }, migrated);
+  assert.deepEqual(merged.physical.selected, []);
+  assert.deepEqual(merged.commercial.selected, ["OK PARKING RC"]);
+});
+
+test("8d. chips fisicos usan display rows y orden canonico", () => {
+  const names = availableOccupancyParkingNames({
+    physical: ["NP PEHUEN", "OKP TOTAL", "MC PARKING VESPUCIO", "NP EXPRESO 1"],
+    commercial: ["OK PARKING RC", "OK PARKING EXPRESS"],
+  });
+  assert.deepEqual(names.physical, ["MC PARKING VESPUCIO", "OKP TOTAL", "NP EXPRESO 1", "NP PEHUEN"]);
+  assert.deepEqual(names.commercial, ["OK PARKING EXPRESS", "OK PARKING RC"]);
+  assert.match(component, /physical: displayRows\.physical\.map/);
+  assert.match(component, /commercial: displayRows\.commercial\.map/);
+});
+test("8e. chips y tabla usan labels solo en vista fisica", () => {
+  assert.match(component, /parkingLabel\(parking, mode\)/);
+  assert.match(component, /parkingLabel\(parkingName\(row, mode\), mode\)/);
+  assert.match(component, /mode === "physical" \? physicalOccupancyDisplayLabel\(parking\) : parking/);
+  assert.match(component, /key=\{`\$\{row\.fecha\}-\$\{parkingName\(row, mode\)\}`\}/);
+  assert.doesNotMatch(component, /parking_comercial[^\n]*physicalOccupancyDisplayLabel/);
+});
 test("9. fisico usa directamente RPC fisica sin sumar comercial", () => {
-  assert.match(component, /mode === "physical" \? \(data\?\.physical/);
+  assert.match(component, /mode === "physical" \? displayRows\.physical/);
   assert.doesNotMatch(component, /reduce[^;]*(parking_fisico|aporta_ocupacion_fisica)|EAP\s*\+\s*MCP/i);
 });
 
@@ -138,6 +190,16 @@ test("14. no hay cards de resumen y tabla conserva los datos operacionales", () 
   assert.match(component, /formatInteger\(row\.occupied\)/);
   assert.match(component, /formatPhysicalPercentage\(row as PhysicalOccupancyRow\)/);
   assert.match(component, /formatCurrency\(row\.revenue_ocupacion\)/);
+  assert.match(component, />Revenue de ocupación<|label="Revenue de ocupación"/);
+  assert.doesNotMatch(component, /Ingreso atribuible|>Ingreso<\/th>/);
+  assert.match(component, /w-16 px-3 py-2 font-semibold">Fecha/);
+  assert.match(component, /w-48 px-3 py-2 font-semibold">Estacionamiento/);
+  assert.match(component, /w-32 px-3 py-2 font-semibold">Ocupados/);
+  assert.match(component, /w-24 px-3 py-2 font-semibold">Capacidad/);
+  assert.match(component, /w-24 px-3 py-2 font-semibold">Ocupación/);
+  assert.match(component, /w-44 whitespace-nowrap px-3 py-2 font-semibold">Revenue de ocupación/);
+  assert.match(component, /hidden max-h-\[32rem\] overflow-y-auto md:block/);
+  assert.match(component, /grid max-h-\[32rem\] gap-3 overflow-y-auto md:hidden/);
 });
 
 test("15. refresh usa un rango y Promise.all para ambos endpoints", () => {

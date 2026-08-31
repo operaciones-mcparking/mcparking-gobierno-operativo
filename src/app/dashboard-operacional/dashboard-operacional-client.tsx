@@ -10,7 +10,7 @@ import {
   type OperationalDashboardTotals,
   type OperationalDashboardViewModel,
 } from "@/lib/dashboard/operacional";
-import type { OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
+import { buildPhysicalOccupancyDisplayRows, getOccupancyRevenueReferenceDate, getPhysicalOccupancyRevenue, mcpPhysicalParkingName, okpTotalParkingName, type OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
 import { getOccupancyTrendRange } from "@/lib/dashboard/ocupacion-chart";
 import { ActualizarDatosOperacionalesControl } from "../orquestador/actualizar-datos-operacionales-control";
 import {
@@ -348,7 +348,7 @@ function MobileGroupedMetricBlock({
   );
 }
 
-function SystemColumnMobile({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+function SystemColumnMobile({ label, occupancyRevenue, totals }: { label: "MCP" | "OKP"; occupancyRevenue: number | null; totals: OperationalDashboardTotals }) {
   return (
     <div className="xl:hidden">
       <div className="flex items-center justify-between gap-3">
@@ -365,6 +365,7 @@ function SystemColumnMobile({ label, totals }: { label: "MCP" | "OKP"; totals: O
           rightValue={formatCurrency(totals.pack_vendido_venta)}
           title="Venta total"
         />
+        <CompactMetricLine label="Revenue de ocupación" value={formatCurrency(occupancyRevenue)} />
         <MobileGroupedMetricBlock
           leftLabel="DBI boleta"
           leftValue={formatInteger(totals.reserva_boleta_dbi)}
@@ -397,7 +398,7 @@ function SystemColumnMobile({ label, totals }: { label: "MCP" | "OKP"; totals: O
   );
 }
 
-function SystemColumnDesktop({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+function SystemColumnDesktop({ label, occupancyRevenue, totals }: { label: "MCP" | "OKP"; occupancyRevenue: number | null; totals: OperationalDashboardTotals }) {
   const layout: MetricLayout = label === "MCP" ? "mirror" : "normal";
   const averageAlignment: TextAlignment = label === "OKP" ? "right" : "left";
 
@@ -418,6 +419,7 @@ function SystemColumnDesktop({ label, totals }: { label: "MCP" | "OKP"; totals: 
           rightValue={formatCurrency(totals.pack_vendido_venta)}
           title="Venta total"
         />
+        <KpiLine label="Revenue de ocupación" layout={layout} value={formatCurrency(occupancyRevenue)} />
         <GroupedMetricBlock
           leftLabel="DBI boleta"
           leftValue={formatInteger(totals.reserva_boleta_dbi)}
@@ -455,11 +457,11 @@ function SystemColumnDesktop({ label, totals }: { label: "MCP" | "OKP"; totals: 
   );
 }
 
-function SystemColumn({ label, totals }: { label: "MCP" | "OKP"; totals: OperationalDashboardTotals }) {
+function SystemColumn({ label, occupancyRevenue, totals }: { label: "MCP" | "OKP"; occupancyRevenue: number | null; totals: OperationalDashboardTotals }) {
   return (
     <section className="rounded-xl border border-[#d6e1ea] bg-white p-4 shadow-sm">
-      <SystemColumnMobile label={label} totals={totals} />
-      <SystemColumnDesktop label={label} totals={totals} />
+      <SystemColumnMobile label={label} occupancyRevenue={occupancyRevenue} totals={totals} />
+      <SystemColumnDesktop label={label} occupancyRevenue={occupancyRevenue} totals={totals} />
     </section>
   );
 }
@@ -1203,6 +1205,11 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [isOccupancyTrendLoading, setIsOccupancyTrendLoading] = useState(true);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
 
+  const occupancyReferenceDate = getOccupancyRevenueReferenceDate(dateRange, occupancyTodayRef.current);
+  const physicalOccupancyRows = useMemo(() => buildPhysicalOccupancyDisplayRows(occupancy?.physical ?? []), [occupancy]);
+  const mcpOccupancyRevenue = getPhysicalOccupancyRevenue(physicalOccupancyRows, mcpPhysicalParkingName, occupancyReferenceDate);
+  const okpOccupancyRevenue = getPhysicalOccupancyRevenue(physicalOccupancyRows, okpTotalParkingName, occupancyReferenceDate);
+
   const rawRows = useMemo(() => {
     return [...(dashboard?.rows ?? [])].sort((left, right) => {
       const dateCompare = right.fecha.localeCompare(left.fecha);
@@ -1377,13 +1384,13 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
 
       {!isLoading && dashboard ? <><section className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.86fr)_minmax(0,1fr)]">
         <div className="order-2 xl:order-1">
-          <SystemColumn label="OKP" totals={groupTotals(dashboard, "OKP")} />
+          <SystemColumn label="OKP" occupancyRevenue={okpOccupancyRevenue} totals={groupTotals(dashboard, "OKP")} />
         </div>
         <div className="order-1 xl:order-2">
           <MarketColumn dashboard={dashboard} />
         </div>
         <div className="order-3 xl:order-3">
-          <SystemColumn label="MCP" totals={groupTotals(dashboard, "MCP")} />
+          <SystemColumn label="MCP" occupancyRevenue={mcpOccupancyRevenue} totals={groupTotals(dashboard, "MCP")} />
         </div>
       </section>
 

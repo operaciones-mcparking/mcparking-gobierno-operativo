@@ -11,14 +11,14 @@ const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8
 const compiled = ts.transpileModule(helper, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 new Function("exports", "module", compiled)(module.exports, module);
-const { buildOperationalOccupancyReadModel, collectOccupancyRpcPages, isValidOccupancyDate, nullableOccupancyNumber } = module.exports;
+const { buildOperationalOccupancyReadModel, buildPhysicalOccupancyDisplayRows, collectOccupancyRpcPages, getOccupancyRevenueReferenceDate, getPhysicalOccupancyRevenue, mcpPhysicalParkingName, okpTotalParkingName, physicalOccupancyDisplayLabel, isValidOccupancyDate, nullableOccupancyNumber } = module.exports;
 
 function physical(overrides = {}) {
-  return { fecha: "2026-08-31", parking_fisico: "MC PARKING VESPUCIO", occupied: "1232", capacity: "2200", occupancy_percentage: "56.0000", revenue_ocupacion: "3522833.00", fuente_capacidad: "catalogo", estado_capacidad: "available", tipo_operacion_fisica: "MCP_EAP", source_run_id: "not-exposed", calculated_at: "2026-08-31T12:00:00Z", ...overrides };
+  return { fecha: "2026-08-31", sistema_grupo: "MCP", parking_fisico: "MC PARKING VESPUCIO", occupied: "1232", capacity: "2200", occupancy_percentage: "56.0000", revenue_ocupacion: "3522833.00", fuente_capacidad: "catalogo", estado_capacidad: "available", tipo_operacion_fisica: "MCP_EAP", source_run_id: "not-exposed", calculated_at: "2026-08-31T12:00:00Z", ...overrides };
 }
 
 function commercial(overrides = {}) {
-  return { fecha: "2026-08-31", parking_comercial: "ESTACIONAMIENTO AEROPUERTO", parking_fisico: "MC PARKING VESPUCIO", occupied: "573", revenue_ocupacion: "1000.00", tipo_operacion_fisica: "MCP_EAP", aporta_ocupacion_fisica: true, source_run_id: "not-exposed", calculated_at: "2026-08-31T12:00:00Z", ...overrides };
+  return { fecha: "2026-08-31", sistema_grupo: "MCP", parking_comercial: "ESTACIONAMIENTO AEROPUERTO", parking_fisico: "MC PARKING VESPUCIO", occupied: "573", revenue_ocupacion: "1000.00", tipo_operacion_fisica: "MCP_EAP", aporta_ocupacion_fisica: true, source_run_id: "not-exposed", calculated_at: "2026-08-31T12:00:00Z", ...overrides };
 }
 
 function model({ physicalRows = [physical()], commercialRows = [commercial()] } = {}) {
@@ -101,7 +101,7 @@ test("7. helper no fabrica fisico sumando comercial", () => {
 });
 
 test("8. OK Parking RC y Express permanecen separados fisicamente", () => {
-  const result = model({ physicalRows: [physical({ parking_fisico: "OK PARKING RC" }), physical({ parking_fisico: "OK PARKING EXPRESS" })] });
+  const result = model({ physicalRows: [physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC" }), physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS" })] });
   assert.deepEqual(result.physical.map((row) => row.parking_fisico), ["OK PARKING RC", "OK PARKING EXPRESS"]);
 });
 
@@ -120,6 +120,98 @@ test("10. duplicados logicos remotos se rechazan sin deduplicar ni sumar", () =>
   assert.equal(model({ commercialRows: [commercial(), commercial()] }), null);
 });
 
+test("10a. sistema_grupo acepta exclusivamente el dominio canonico en ambas vistas", () => {
+  for (const sistema_grupo of ["MCP", "OKP", "NP"]) {
+    const result = model({
+      physicalRows: [physical({ sistema_grupo })],
+      commercialRows: [commercial({ sistema_grupo })],
+    });
+    assert.equal(result.physical[0].sistema_grupo, sistema_grupo);
+    assert.equal(result.commercial[0].sistema_grupo, sistema_grupo);
+  }
+  assert.equal(model({ physicalRows: [physical({ sistema_grupo: "OTRO" })] }), null);
+  assert.equal(model({ commercialRows: [commercial({ sistema_grupo: "OTRO" })] }), null);
+});
+
+test("10b. sistema no se infiere desde nombres de parking", () => {
+  assert.equal(model({ physicalRows: [physical({ sistema_grupo: undefined, parking_fisico: "OK PARKING RC" })] }), null);
+  const result = model({ physicalRows: [physical({ sistema_grupo: "NP", parking_fisico: "PARKING DESCONOCIDO" })] });
+  assert.equal(result.physical[0].sistema_grupo, "NP");
+});
+test("10c. OKP TOTAL suma occupied capacity y revenue por fecha", () => {
+  const source = model({ physicalRows: [
+    physical({ sistema_grupo: "MCP", parking_fisico: "MC PARKING VESPUCIO", occupied: "50" }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", occupied: "30", capacity: "100", occupancy_percentage: "30", revenue_ocupacion: "1000" }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", occupied: "20", capacity: "50", occupancy_percentage: "40", revenue_ocupacion: "500" }),
+    physical({ sistema_grupo: "NP", parking_fisico: "NP PEHUEN", occupied: "10" }),
+  ] }).physical;
+  const rows = buildPhysicalOccupancyDisplayRows(source);
+  const total = rows.find((row) => row.parking_fisico === "OKP TOTAL");
+  assert.equal(total.occupied, 50);
+  assert.equal(total.capacity, 150);
+  assert.equal(total.occupancy_percentage, 50 / 150 * 100);
+  assert.notEqual(total.occupancy_percentage, 35);
+  assert.equal(total.revenue_ocupacion, 1500);
+  assert.deepEqual(rows.map((row) => row.parking_fisico), ["MC PARKING VESPUCIO", "OKP TOTAL", "NP PEHUEN"]);
+});
+
+test("10d. OKP TOTAL conserva semantica null y no fabrica fechas", () => {
+  const noRevenue = model({ physicalRows: [
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", capacity: null, revenue_ocupacion: null }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", capacity: null, revenue_ocupacion: null }),
+  ] }).physical;
+  const total = buildPhysicalOccupancyDisplayRows(noRevenue)[0];
+  assert.equal(total.capacity, null);
+  assert.equal(total.occupancy_percentage, null);
+  assert.equal(total.revenue_ocupacion, null);
+  assert.deepEqual(buildPhysicalOccupancyDisplayRows(model({ physicalRows: [] }).physical), []);
+});
+
+test("10e. revenue OKP suma numericos y conserva cero sin completar ausencias", () => {
+  const source = model({ physicalRows: [
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: null }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: "0" }),
+  ] }).physical;
+  assert.equal(buildPhysicalOccupancyDisplayRows(source)[0].revenue_ocupacion, 0);
+});
+test("10f. labels fisicos no modifican valores canonicos", () => {
+  assert.equal(physicalOccupancyDisplayLabel("MC PARKING VESPUCIO"), "MCP + EAP");
+  assert.equal(physicalOccupancyDisplayLabel("OKP TOTAL"), "RCL + EXP");
+  assert.equal(physicalOccupancyDisplayLabel("NP PEHUEN"), "NP PEHUEN");
+  const rows = buildPhysicalOccupancyDisplayRows(model({ physicalRows: [
+    physical({ sistema_grupo: "MCP", parking_fisico: "MC PARKING VESPUCIO" }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC" }),
+  ] }).physical);
+  assert.deepEqual(rows.map((row) => row.parking_fisico), ["MC PARKING VESPUCIO", "OKP TOTAL"]);
+});
+test("10g. revenue de tarjetas usa fecha de referencia o ultima disponible sin sumar periodo", () => {
+  assert.equal(getOccupancyRevenueReferenceDate({ from: "2026-08-01", to: "2026-08-31" }, "2026-08-31"), "2026-08-31");
+  assert.equal(getOccupancyRevenueReferenceDate({ from: "2026-07-01", to: "2026-07-31" }, "2026-08-31"), "2026-07-31");
+
+  const rows = model({ physicalRows: [
+    physical({ fecha: "2026-08-28", revenue_ocupacion: "100" }),
+    physical({ fecha: "2026-08-30", revenue_ocupacion: "200" }),
+    physical({ fecha: "2026-08-31", revenue_ocupacion: "300" }),
+  ] }).physical;
+  assert.equal(getPhysicalOccupancyRevenue(rows, mcpPhysicalParkingName, "2026-08-30"), 200);
+  assert.equal(getPhysicalOccupancyRevenue(rows, mcpPhysicalParkingName, "2026-08-29"), 100);
+  assert.notEqual(getPhysicalOccupancyRevenue(rows, mcpPhysicalParkingName, "2026-08-30"), 300);
+});
+
+test("10h. revenue OKP reutiliza agregado fisico y conserva null cero y positivo", () => {
+  const zeroRows = buildPhysicalOccupancyDisplayRows(model({ physicalRows: [
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: "0" }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: null }),
+  ], commercialRows: [] }).physical);
+  assert.equal(getPhysicalOccupancyRevenue(zeroRows, okpTotalParkingName, "2026-08-31"), 0);
+
+  const positiveRows = buildPhysicalOccupancyDisplayRows(model({ physicalRows: [
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: "1000" }),
+    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: "2500" }),
+  ], commercialRows: [] }).physical);
+  assert.equal(getPhysicalOccupancyRevenue(positiveRows, okpTotalParkingName, "2026-08-31"), 3500);
+  assert.equal(getPhysicalOccupancyRevenue([], okpTotalParkingName, "2026-08-31"), null);
+});
 test("11. endpoint no ejecuta jobs ni toca areas excluidas", () => {
   assert.doesNotMatch(route, /export async function POST|orchestrator_create_job|ocupaciones_actualizar/);
   assert.doesNotMatch(diffNames, /src\/app\/recuperacion|src\/app\/api\/recuperacion|supabase\/migrations|n8n/i);

@@ -1,5 +1,4 @@
 export const occupancySelectionStorageKey = "orquestador:ocupacion:parking-selection:v1";
-
 export type OccupancyParkingSelection = {
   version: 1;
   physical: { known: string[]; selected: string[] };
@@ -11,12 +10,20 @@ function uniqueText(values: unknown) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
 }
 
+function physicalParkingOrder(parking: string) {
+  if (parking === "MC PARKING VESPUCIO") return 0;
+  if (parking === "OKP TOTAL") return 1;
+  if (parking.startsWith("NP ")) return 2;
+  return 3;
+}
+
 export function availableOccupancyParkingNames(available: { physical: string[]; commercial: string[] }) {
   return {
-    physical: uniqueText(available.physical) ?? [],
+    physical: (uniqueText(available.physical) ?? []).sort((left, right) => physicalParkingOrder(left) - physicalParkingOrder(right) || left.localeCompare(right)),
     commercial: uniqueText(available.commercial) ?? [],
   };
 }
+
 
 export function selectedAvailableOccupancyParkings(available: string[], selected: string[]) {
   const selectedSet = new Set(selected);
@@ -34,16 +41,23 @@ export function emptyOccupancyParkingSelection(): OccupancyParkingSelection {
 export function parseOccupancyParkingSelection(raw: string | null): OccupancyParkingSelection | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Partial<OccupancyParkingSelection>;
-    if (value.version !== 1 || !value.physical || !value.commercial) return null;
-    const physicalKnown = uniqueText(value.physical.known);
-    const physicalSelected = uniqueText(value.physical.selected);
+    const value = JSON.parse(raw) as { version?: number; physical?: { known?: unknown; selected?: unknown }; commercial?: { known?: unknown; selected?: unknown } };
+    if ((value.version !== 1 && value.version !== 2) || !value.physical || !value.commercial) return null;
+    const legacyPhysicalKnown = uniqueText(value.physical.known);
+    const legacyPhysicalSelected = uniqueText(value.physical.selected);
     const commercialKnown = uniqueText(value.commercial.known);
     const commercialSelected = uniqueText(value.commercial.selected);
-    if (!physicalKnown || !physicalSelected || !commercialKnown || !commercialSelected) return null;
+    if (!legacyPhysicalKnown || !legacyPhysicalSelected || !commercialKnown || !commercialSelected) return null;
+    const legacyOkpParkings = new Set(["OK PARKING EXPRESS", "OK PARKING RC"]);
+    const hadKnownOkp = legacyPhysicalKnown.some((parking) => legacyOkpParkings.has(parking));
+    const hadSelectedOkp = legacyPhysicalSelected.some((parking) => legacyOkpParkings.has(parking));
+    const physicalKnown = legacyPhysicalKnown.filter((parking) => !legacyOkpParkings.has(parking));
+    const physicalSelected = legacyPhysicalSelected.filter((parking) => !legacyOkpParkings.has(parking));
+    if (hadKnownOkp) physicalKnown.push("OKP TOTAL");
+    if (hadSelectedOkp) physicalSelected.push("OKP TOTAL");
     return {
       version: 1,
-      physical: { known: physicalKnown, selected: physicalSelected },
+      physical: { known: [...new Set(physicalKnown)].sort(), selected: [...new Set(physicalSelected)].sort() },
       commercial: { known: commercialKnown, selected: commercialSelected },
     };
   } catch {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { CommercialOccupancyRow, OperationalOccupancyReadModel, PhysicalOccupancyRow } from "@/lib/dashboard/ocupacion";
+import { buildPhysicalOccupancyDisplayRows, physicalOccupancyDisplayLabel, type CommercialOccupancyRow, type OperationalOccupancyReadModel, type PhysicalOccupancyRow } from "@/lib/dashboard/ocupacion";
 import {
   availableOccupancyParkingNames,
   emptyOccupancyParkingSelection,
@@ -38,6 +38,10 @@ function parkingName(row: PhysicalOccupancyRow | CommercialOccupancyRow, mode: O
   return mode === "physical" ? (row as PhysicalOccupancyRow).parking_fisico : (row as CommercialOccupancyRow).parking_comercial;
 }
 
+function parkingLabel(parking: string, mode: OccupancyMode) {
+  return mode === "physical" ? physicalOccupancyDisplayLabel(parking) : parking;
+}
+
 function OccupancyMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0">
@@ -53,10 +57,15 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
   const [storageReady, setStorageReady] = useState(false);
   const storageLoadedRef = useRef(false);
 
-  const available = useMemo(() => availableOccupancyParkingNames({
-    physical: (data?.physical ?? []).map((row) => row.parking_fisico),
-    commercial: (data?.commercial ?? []).map((row) => row.parking_comercial),
+  const displayRows = useMemo(() => ({
+    physical: buildPhysicalOccupancyDisplayRows(data?.physical ?? []),
+    commercial: data?.commercial ?? [],
   }), [data]);
+
+  const available = useMemo(() => availableOccupancyParkingNames({
+    physical: displayRows.physical.map((row) => row.parking_fisico),
+    commercial: displayRows.commercial.map((row) => row.parking_comercial),
+  }), [displayRows]);
   useEffect(() => {
     setSelection((current) => {
       const saved = storageLoadedRef.current
@@ -75,11 +84,11 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
 
   const selected = useMemo(() => new Set(selectedAvailableOccupancyParkings(available[mode], selection[mode].selected)), [available, mode, selection]);
   const rows = useMemo(() => {
-    const source = mode === "physical" ? (data?.physical ?? []) : (data?.commercial ?? []);
+    const source = mode === "physical" ? displayRows.physical : displayRows.commercial;
     return source
       .filter((row) => selected.has(parkingName(row, mode)))
       .sort((left, right) => left.fecha.localeCompare(right.fecha) || parkingName(left, mode).localeCompare(parkingName(right, mode)));
-  }, [data, mode, selected]);
+  }, [displayRows, mode, selected]);
   const maxOccupied = rows.reduce((maximum, row) => Math.max(maximum, row.occupied), 0);
 
   const toggleParking = (parking: string) => {
@@ -91,6 +100,7 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
     });
   };
 
+
   return (
     <section className="mt-5 rounded-2xl border border-[#d6e1ea] bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -101,13 +111,14 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
         <div aria-label="Nivel de ocupación" className="inline-flex w-fit rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] p-1" role="group">
           {(["physical", "commercial"] as const).map((value) => (
             <button
+              aria-label={value === "physical" ? "Agregado" : "Por canal"}
               aria-pressed={mode === value}
               className={`rounded-md px-3 py-1.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${mode === value ? "bg-navy text-white" : "text-slate-600 hover:bg-white"}`}
               key={value}
               onClick={() => setMode(value)}
               type="button"
             >
-              {value === "physical" ? "Físico" : "Comercial"}
+              {value === "physical" ? "Agregado" : "Por canal"}
             </button>
           ))}
         </div>
@@ -117,6 +128,7 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
       {!isLoading && error ? <p className="mt-5 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-4 text-sm font-medium text-[#8a4a00]">{error}</p> : null}
       {!isLoading && !error && data ? (
         <>
+
           <div className="mt-5 flex flex-wrap gap-2" aria-label="Filtros de estacionamiento">
             {available[mode].map((parking) => (
               <button
@@ -124,10 +136,10 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
                 className={`max-w-full rounded-md border px-2.5 py-1.5 text-left text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${selected.has(parking) ? "border-navy bg-navy text-white" : "border-[#cbd8e3] bg-white text-slate-600 hover:bg-[#f8fbfd]"}`}
                 key={parking}
                 onClick={() => toggleParking(parking)}
-                title={parking}
+                title={parkingLabel(parking, mode)}
                 type="button"
               >
-                <span className="break-words [overflow-wrap:anywhere]">{parking}</span>
+                <span className="break-words [overflow-wrap:anywhere]">{parkingLabel(parking, mode)}</span>
               </button>
             ))}
           </div>
@@ -151,19 +163,19 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
                 <table className="w-full table-fixed text-left text-sm">
                   <thead className="sticky top-0 z-10 bg-[#f8fbfd] text-xs uppercase text-slate-500">
                     <tr>
-                      <th className="w-24 px-3 py-2 font-semibold">Fecha</th>
-                      <th className="px-3 py-2 font-semibold">Estacionamiento</th>
-                      <th className="w-44 px-3 py-2 font-semibold">Ocupados</th>
-                      {mode === "physical" ? <th className="w-28 px-3 py-2 font-semibold">Capacidad</th> : null}
-                      {mode === "physical" ? <th className="w-28 px-3 py-2 font-semibold">Ocupación</th> : null}
-                      <th className="w-36 px-3 py-2 font-semibold">Ingreso</th>
+                      <th className="w-16 px-3 py-2 font-semibold">Fecha</th>
+                      <th className="w-48 px-3 py-2 font-semibold">Estacionamiento</th>
+                      <th className="w-32 px-3 py-2 font-semibold">Ocupados</th>
+                      {mode === "physical" ? <th className="w-24 px-3 py-2 font-semibold">Capacidad</th> : null}
+                      {mode === "physical" ? <th className="w-24 px-3 py-2 font-semibold">Ocupación</th> : null}
+                      <th className="w-44 whitespace-nowrap px-3 py-2 font-semibold">Revenue de ocupación</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row) => (
                       <tr className="border-b border-[#e4edf4] last:border-b-0" key={`${row.fecha}-${parkingName(row, mode)}`}>
                         <td className="px-3 py-3">{formatDate(row.fecha)}</td>
-                        <td className="min-w-0 px-3 py-3"><span className="break-words font-medium text-navy [overflow-wrap:anywhere]">{parkingName(row, mode)}</span>{mode === "commercial" ? <span className="block break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{(row as CommercialOccupancyRow).parking_fisico}</span> : null}</td>
+                        <td className="min-w-0 px-3 py-3"><span className="break-words font-medium text-navy [overflow-wrap:anywhere]">{parkingLabel(parkingName(row, mode), mode)}</span>{mode === "commercial" ? <span className="block break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{(row as CommercialOccupancyRow).parking_fisico}</span> : null}</td>
                         <td className="px-3 py-3"><span className="font-semibold text-navy">{formatInteger(row.occupied)}</span><span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-[#dce8ef]"><span className="block h-full rounded-full bg-sea" style={{ width: `${maxOccupied > 0 ? Math.max(2, (row.occupied / maxOccupied) * 100) : 0}%` }} /></span></td>
                         {mode === "physical" ? <td className="px-3 py-3">{formatInteger((row as PhysicalOccupancyRow).capacity)}</td> : null}
                         {mode === "physical" ? <td className="px-3 py-3">{formatPhysicalPercentage(row as PhysicalOccupancyRow)}</td> : null}
@@ -177,13 +189,13 @@ export function OperationalOccupancySection({ data, error, isLoading, today, tre
                 {rows.map((row) => (
                   <article className="min-w-0 rounded-lg border border-[#e4edf4] p-4" key={`${row.fecha}-${parkingName(row, mode)}`}>
                     <p className="text-xs font-medium text-slate-500">{formatDate(row.fecha)}</p>
-                    <h4 className="mt-1 break-words text-sm font-semibold text-navy [overflow-wrap:anywhere]">{parkingName(row, mode)}</h4>
+                    <h4 className="mt-1 break-words text-sm font-semibold text-navy [overflow-wrap:anywhere]">{parkingLabel(parkingName(row, mode), mode)}</h4>
                     {mode === "commercial" ? <p className="mt-1 break-words text-xs text-slate-500 [overflow-wrap:anywhere]">Recinto físico: {(row as CommercialOccupancyRow).parking_fisico}</p> : null}
                     <dl className="mt-3 grid grid-cols-2 gap-3">
                       <OccupancyMetric label="Ocupados" value={formatInteger(row.occupied)} />
                       {mode === "physical" ? <OccupancyMetric label="Capacidad" value={formatInteger((row as PhysicalOccupancyRow).capacity)} /> : null}
                       {mode === "physical" ? <OccupancyMetric label="Ocupación" value={formatPhysicalPercentage(row as PhysicalOccupancyRow)} /> : null}
-                      <OccupancyMetric label="Ingreso atribuible" value={formatCurrency(row.revenue_ocupacion)} />
+                      <OccupancyMetric label="Revenue de ocupación" value={formatCurrency(row.revenue_ocupacion)} />
                     </dl>
                   </article>
                 ))}

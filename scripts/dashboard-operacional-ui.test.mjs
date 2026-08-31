@@ -478,8 +478,8 @@ test("I3. mobile usa tarjetas y conserva orden del dashboard", () => {
     assert.match(client, new RegExp(label));
   }
   assert.match(client, /<div className="order-1 xl:order-2">\s*<MarketColumn dashboard=\{dashboard\} \/>\s*<\/div>/);
-  assert.match(client, /<div className="order-2 xl:order-1">\s*<SystemColumn label="OKP" totals=\{groupTotals\(dashboard, "OKP"\)\} \/>\s*<\/div>/);
-  assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-2 xl:order-1">\s*<SystemColumn label="OKP" occupancyRevenue=\{okpOccupancyRevenue\} totals=\{groupTotals\(dashboard, "OKP"\)\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" occupancyRevenue=\{mcpOccupancyRevenue\} totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
 });
 
 test("I4. resumen consolida rangos por estacionamiento y sistema", () => {
@@ -612,9 +612,9 @@ test("Q1. columnas OKP MCP agrupan venta DBI y reservas", () => {
 });
 
 test("Q2. columnas usan orden movil y escritorio sin duplicar contenido", () => {
-  assert.match(client, /<div className="order-2 xl:order-1">\s*<SystemColumn label="OKP" totals=\{groupTotals\(dashboard, "OKP"\)\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-2 xl:order-1">\s*<SystemColumn label="OKP" occupancyRevenue=\{okpOccupancyRevenue\} totals=\{groupTotals\(dashboard, "OKP"\)\} \/>\s*<\/div>/);
   assert.match(client, /<div className="order-1 xl:order-2">\s*<MarketColumn dashboard=\{dashboard\} \/>\s*<\/div>/);
-  assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
+  assert.match(client, /<div className="order-3 xl:order-3">\s*<SystemColumn label="MCP" occupancyRevenue=\{mcpOccupancyRevenue\} totals=\{groupTotals\(dashboard, "MCP"\)\} \/>\s*<\/div>/);
   assert.equal([...client.matchAll(/<SystemColumn label="OKP"/g)].length, 1);
   assert.equal([...client.matchAll(/<MarketColumn dashboard=\{dashboard\}/g)].length, 1);
   assert.equal([...client.matchAll(/<SystemColumn label="MCP"/g)].length, 1);
@@ -665,11 +665,11 @@ test("Q5. promedios miran hacia la columna central y filas finales siguen en esp
 });
 
 test("Q6. mobile OKP y MCP usan estructura comun sin espejo", () => {
-  assert.match(client, /function SystemColumnMobile\(\{ label, totals \}/);
+  assert.match(client, /function SystemColumnMobile\(\{ label, occupancyRevenue, totals \}/);
   assert.match(client, /<div className="xl:hidden">/);
-  assert.match(client, /function SystemColumnDesktop\(\{ label, totals \}/);
+  assert.match(client, /function SystemColumnDesktop\(\{ label, occupancyRevenue, totals \}/);
   assert.match(client, /<div className="hidden xl:block">/);
-  assert.match(client, /<SystemColumnMobile label=\{label\} totals=\{totals\} \/>\s*<SystemColumnDesktop label=\{label\} totals=\{totals\} \/>/);
+  assert.match(client, /<SystemColumnMobile label=\{label\} occupancyRevenue=\{occupancyRevenue\} totals=\{totals\} \/>\s*<SystemColumnDesktop label=\{label\} occupancyRevenue=\{occupancyRevenue\} totals=\{totals\} \/>/);
 
   const mobileMatch = client.match(/function SystemColumnMobile[\s\S]*?function SystemColumnDesktop/);
   assert.ok(mobileMatch);
@@ -939,4 +939,18 @@ test("AD. cierre del overlay siempre esta disponible y no cancela una corrida ac
   assert.match(compositeControl, /La ejecucion continuara en segundo plano y puedes revisar su estado en Centro de Control\./);
   assert.match(compositeControl, /Cerrar resultado/);
   assert.match(compositeControl, /Cerrar/);
+});
+
+test("Q9. tarjetas muestran revenue fisico de referencia bajo Venta total sin alterar espejo", () => {
+  assert.match(client, /const occupancyReferenceDate = getOccupancyRevenueReferenceDate\(dateRange, occupancyTodayRef\.current\)/);
+  assert.match(client, /buildPhysicalOccupancyDisplayRows\(occupancy\?\.physical \?\? \[\]\)/);
+  assert.match(client, /getPhysicalOccupancyRevenue\(physicalOccupancyRows, mcpPhysicalParkingName, occupancyReferenceDate\)/);
+  assert.match(client, /getPhysicalOccupancyRevenue\(physicalOccupancyRows, okpTotalParkingName, occupancyReferenceDate\)/);
+  assert.doesNotMatch(client, /getPhysicalOccupancyRevenue\([^\n]*commercial/);
+  assert.match(client, /title="Venta total"[\s\S]{0,120}<KpiLine label="Revenue de ocupación" layout=\{layout\} value=\{formatCurrency\(occupancyRevenue\)\}/);
+  assert.match(client, /title="Venta total"[\s\S]{0,130}<CompactMetricLine label="Revenue de ocupación" value=\{formatCurrency\(occupancyRevenue\)\}/);
+  assert.match(client, /const layout: MetricLayout = label === "MCP" \? "mirror" : "normal"/);
+  assert.match(client, /<KpiLine label="Revenue de ocupación" layout=\{layout\}/);
+  assert.match(client, /mainValue=\{formatCurrency\(totals\.venta_total_operacional\)\}/);
+  assert.match(client, /occupancy\?\.physical \?\? \[\]/);
 });
