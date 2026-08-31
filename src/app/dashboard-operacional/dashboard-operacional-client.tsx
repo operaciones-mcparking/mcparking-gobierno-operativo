@@ -10,7 +10,7 @@ import {
   type OperationalDashboardTotals,
   type OperationalDashboardViewModel,
 } from "@/lib/dashboard/operacional";
-import { buildPhysicalOccupancyDisplayRows, getOccupancyRevenueReferenceDate, getPhysicalOccupancyRevenue, mcpPhysicalParkingName, okpTotalParkingName, type OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
+import { buildPhysicalOccupancyDisplayRows, mcpPhysicalParkingName, okpTotalParkingName, sumOccupancyRevenueForRange, type OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
 import { getOccupancyTrendRange } from "@/lib/dashboard/ocupacion-chart";
 import { ActualizarDatosOperacionalesControl } from "../orquestador/actualizar-datos-operacionales-control";
 import {
@@ -1205,10 +1205,9 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [isOccupancyTrendLoading, setIsOccupancyTrendLoading] = useState(true);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
 
-  const occupancyReferenceDate = getOccupancyRevenueReferenceDate(dateRange, occupancyTodayRef.current);
   const physicalOccupancyRows = useMemo(() => buildPhysicalOccupancyDisplayRows(occupancy?.physical ?? []), [occupancy]);
-  const mcpOccupancyRevenue = getPhysicalOccupancyRevenue(physicalOccupancyRows, mcpPhysicalParkingName, occupancyReferenceDate);
-  const okpOccupancyRevenue = getPhysicalOccupancyRevenue(physicalOccupancyRows, okpTotalParkingName, occupancyReferenceDate);
+  const mcpOccupancyRevenue = sumOccupancyRevenueForRange(physicalOccupancyRows, mcpPhysicalParkingName, dateRange.from, dateRange.to);
+  const okpOccupancyRevenue = sumOccupancyRevenueForRange(physicalOccupancyRows, okpTotalParkingName, dateRange.from, dateRange.to);
 
   const rawRows = useMemo(() => {
     return [...(dashboard?.rows ?? [])].sort((left, right) => {

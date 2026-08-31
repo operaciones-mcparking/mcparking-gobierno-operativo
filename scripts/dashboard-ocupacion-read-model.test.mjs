@@ -11,7 +11,7 @@ const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8
 const compiled = ts.transpileModule(helper, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 new Function("exports", "module", compiled)(module.exports, module);
-const { buildOperationalOccupancyReadModel, buildPhysicalOccupancyDisplayRows, collectOccupancyRpcPages, getOccupancyRevenueReferenceDate, getPhysicalOccupancyRevenue, mcpPhysicalParkingName, okpTotalParkingName, physicalOccupancyDisplayLabel, isValidOccupancyDate, nullableOccupancyNumber } = module.exports;
+const { buildOperationalOccupancyReadModel, buildPhysicalOccupancyDisplayRows, collectOccupancyRpcPages, mcpPhysicalParkingName, okpTotalParkingName, physicalOccupancyDisplayLabel, isValidOccupancyDate, nullableOccupancyNumber, sumOccupancyRevenueForRange } = module.exports;
 
 function physical(overrides = {}) {
   return { fecha: "2026-08-31", sistema_grupo: "MCP", parking_fisico: "MC PARKING VESPUCIO", occupied: "1232", capacity: "2200", occupancy_percentage: "56.0000", revenue_ocupacion: "3522833.00", fuente_capacidad: "catalogo", estado_capacidad: "available", tipo_operacion_fisica: "MCP_EAP", source_run_id: "not-exposed", calculated_at: "2026-08-31T12:00:00Z", ...overrides };
@@ -184,34 +184,54 @@ test("10f. labels fisicos no modifican valores canonicos", () => {
   ] }).physical);
   assert.deepEqual(rows.map((row) => row.parking_fisico), ["MC PARKING VESPUCIO", "OKP TOTAL"]);
 });
-test("10g. revenue de tarjetas usa fecha de referencia o ultima disponible sin sumar periodo", () => {
-  assert.equal(getOccupancyRevenueReferenceDate({ from: "2026-08-01", to: "2026-08-31" }, "2026-08-31"), "2026-08-31");
-  assert.equal(getOccupancyRevenueReferenceDate({ from: "2026-07-01", to: "2026-07-31" }, "2026-08-31"), "2026-07-31");
-
+test("10g. revenue MCP suma el rango fisico inclusivo para un dia siete y treinta dias", () => {
   const rows = model({ physicalRows: [
-    physical({ fecha: "2026-08-28", revenue_ocupacion: "100" }),
-    physical({ fecha: "2026-08-30", revenue_ocupacion: "200" }),
+    physical({ fecha: "2026-08-01", revenue_ocupacion: "100" }),
+    physical({ fecha: "2026-08-25", revenue_ocupacion: "200" }),
     physical({ fecha: "2026-08-31", revenue_ocupacion: "300" }),
-  ] }).physical;
-  assert.equal(getPhysicalOccupancyRevenue(rows, mcpPhysicalParkingName, "2026-08-30"), 200);
-  assert.equal(getPhysicalOccupancyRevenue(rows, mcpPhysicalParkingName, "2026-08-29"), 100);
-  assert.notEqual(getPhysicalOccupancyRevenue(rows, mcpPhysicalParkingName, "2026-08-30"), 300);
+  ], commercialRows: [commercial({ fecha: "2026-08-31", revenue_ocupacion: "999999" })] }).physical;
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-08-31", "2026-08-31"), 300);
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-08-25", "2026-08-31"), 500);
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-08-01", "2026-08-30"), 300);
 });
 
-test("10h. revenue OKP reutiliza agregado fisico y conserva null cero y positivo", () => {
-  const zeroRows = buildPhysicalOccupancyDisplayRows(model({ physicalRows: [
-    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: "0" }),
-    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: null }),
-  ], commercialRows: [] }).physical);
-  assert.equal(getPhysicalOccupancyRevenue(zeroRows, okpTotalParkingName, "2026-08-31"), 0);
-
-  const positiveRows = buildPhysicalOccupancyDisplayRows(model({ physicalRows: [
-    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: "1000" }),
-    physical({ sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: "2500" }),
-  ], commercialRows: [] }).physical);
-  assert.equal(getPhysicalOccupancyRevenue(positiveRows, okpTotalParkingName, "2026-08-31"), 3500);
-  assert.equal(getPhysicalOccupancyRevenue([], okpTotalParkingName, "2026-08-31"), null);
+test("10h. revenue OKP reutiliza OKP TOTAL por fecha sin sumar commercial ni duplicar RC EXP", () => {
+  const rows = buildPhysicalOccupancyDisplayRows(model({ physicalRows: [
+    physical({ fecha: "2026-08-30", sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: "1000" }),
+    physical({ fecha: "2026-08-30", sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: "2500" }),
+    physical({ fecha: "2026-08-31", sistema_grupo: "OKP", parking_fisico: "OK PARKING RC", revenue_ocupacion: "4000" }),
+    physical({ fecha: "2026-08-31", sistema_grupo: "OKP", parking_fisico: "OK PARKING EXPRESS", revenue_ocupacion: null }),
+  ], commercialRows: [commercial({ sistema_grupo: "OKP", revenue_ocupacion: "999999" })] }).physical);
+  assert.deepEqual(rows.map((row) => row.parking_fisico), [okpTotalParkingName, okpTotalParkingName]);
+  assert.equal(sumOccupancyRevenueForRange(rows, okpTotalParkingName, "2026-08-31", "2026-08-31"), 4000);
+  assert.equal(sumOccupancyRevenueForRange(rows, okpTotalParkingName, "2026-08-30", "2026-08-31"), 7500);
 });
+
+test("10i. revenue por rango conserva ausencia null mezcla numerica y ceros", () => {
+  const rows = model({ physicalRows: [
+    physical({ fecha: "2026-08-01", revenue_ocupacion: null }),
+    physical({ fecha: "2026-08-02", revenue_ocupacion: null }),
+    physical({ fecha: "2026-08-03", revenue_ocupacion: "0" }),
+    physical({ fecha: "2026-08-04", revenue_ocupacion: "1000" }),
+    physical({ fecha: "2026-08-05", revenue_ocupacion: null }),
+    physical({ fecha: "2026-08-06", revenue_ocupacion: "2000" }),
+  ], commercialRows: [] }).physical;
+  assert.equal(sumOccupancyRevenueForRange([], mcpPhysicalParkingName, "2026-08-01", "2026-08-31"), null);
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-08-01", "2026-08-02"), null);
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-08-03", "2026-08-03"), 0);
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-08-04", "2026-08-06"), 3000);
+});
+
+test("10j. revenue respeta extremos inclusivos y admite filas futuras reales dentro del rango", () => {
+  const rows = model({ physicalRows: [
+    physical({ fecha: "2026-08-31", revenue_ocupacion: "1" }),
+    physical({ fecha: "2026-09-01", revenue_ocupacion: "10" }),
+    physical({ fecha: "2026-09-02", revenue_ocupacion: "100" }),
+    physical({ fecha: "2026-09-03", revenue_ocupacion: "1000" }),
+  ], commercialRows: [] }).physical;
+  assert.equal(sumOccupancyRevenueForRange(rows, mcpPhysicalParkingName, "2026-09-01", "2026-09-02"), 110);
+});
+
 test("11. endpoint no ejecuta jobs ni toca areas excluidas", () => {
   assert.doesNotMatch(route, /export async function POST|orchestrator_create_job|ocupaciones_actualizar/);
   assert.doesNotMatch(diffNames, /src\/app\/recuperacion|src\/app\/api\/recuperacion|supabase\/migrations|n8n/i);

@@ -941,12 +941,12 @@ test("AD. cierre del overlay siempre esta disponible y no cancela una corrida ac
   assert.match(compositeControl, /Cerrar/);
 });
 
-test("Q9. tarjetas muestran revenue fisico de referencia bajo Venta total sin alterar espejo", () => {
-  assert.match(client, /const occupancyReferenceDate = getOccupancyRevenueReferenceDate\(dateRange, occupancyTodayRef\.current\)/);
+test("Q9. tarjetas suman revenue fisico del rango activo bajo Venta total sin alterar espejo", () => {
   assert.match(client, /buildPhysicalOccupancyDisplayRows\(occupancy\?\.physical \?\? \[\]\)/);
-  assert.match(client, /getPhysicalOccupancyRevenue\(physicalOccupancyRows, mcpPhysicalParkingName, occupancyReferenceDate\)/);
-  assert.match(client, /getPhysicalOccupancyRevenue\(physicalOccupancyRows, okpTotalParkingName, occupancyReferenceDate\)/);
-  assert.doesNotMatch(client, /getPhysicalOccupancyRevenue\([^\n]*commercial/);
+  assert.match(client, /sumOccupancyRevenueForRange\(physicalOccupancyRows, mcpPhysicalParkingName, dateRange\.from, dateRange\.to\)/);
+  assert.match(client, /sumOccupancyRevenueForRange\(physicalOccupancyRows, okpTotalParkingName, dateRange\.from, dateRange\.to\)/);
+  assert.doesNotMatch(client, /sumOccupancyRevenueForRange\([^\n]*commercial/);
+  assert.doesNotMatch(client, /occupancyReferenceDate|getOccupancyRevenueReferenceDate|getPhysicalOccupancyRevenue/);
   assert.match(client, /title="Venta total"[\s\S]{0,120}<KpiLine label="Revenue de ocupación" layout=\{layout\} value=\{formatCurrency\(occupancyRevenue\)\}/);
   assert.match(client, /title="Venta total"[\s\S]{0,130}<CompactMetricLine label="Revenue de ocupación" value=\{formatCurrency\(occupancyRevenue\)\}/);
   assert.match(client, /const layout: MetricLayout = label === "MCP" \? "mirror" : "normal"/);

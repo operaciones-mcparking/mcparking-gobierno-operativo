@@ -94,15 +94,20 @@ export function buildPhysicalOccupancyDisplayRows(rows: PhysicalOccupancyRow[]):
     || systemOrder[left.sistema_grupo] - systemOrder[right.sistema_grupo]
     || left.parking_fisico.localeCompare(right.parking_fisico));
 }
-export function getOccupancyRevenueReferenceDate(filters: { from: string; to: string }, today: string) {
-  return filters.from <= today && today <= filters.to ? today : filters.to;
-}
-
-export function getPhysicalOccupancyRevenue(rows: PhysicalOccupancyRow[], parking: string, referenceDate: string) {
-  const row = rows
-    .filter((candidate) => candidate.parking_fisico === parking && candidate.fecha <= referenceDate)
-    .sort((left, right) => right.fecha.localeCompare(left.fecha))[0];
-  return row?.revenue_ocupacion ?? null;
+export function sumOccupancyRevenueForRange(
+  rows: PhysicalOccupancyRow[],
+  parking: string,
+  from: string,
+  to: string,
+) {
+  const revenues = rows.flatMap((row) =>
+    row.parking_fisico === parking
+      && from <= row.fecha
+      && row.fecha <= to
+      && row.revenue_ocupacion !== null
+      ? [row.revenue_ocupacion]
+      : []);
+  return revenues.length > 0 ? revenues.reduce((total, revenue) => total + revenue, 0) : null;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
