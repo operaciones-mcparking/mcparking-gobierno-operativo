@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const publicPaths = ["/login", "/auth/callback"];
 const recoveryPurchasesSyncPath = "/api/recuperacion/compras/sync";
 const okpBookingsSyncPath = "/api/customer-window/okp/sync";
+const mcpEapBookingsSyncPath = "/api/customer-window/mcp-eap/sync";
 const pdfPath = /^\/api\/procesos\/[0-9a-f-]+\/pdf$/i;
 const structureProcessDetailPath = /^\/api\/estructura\/procesos\/[0-9a-f-]+\/ficha$/i;
 
@@ -20,7 +21,11 @@ function loginDenied(request: NextRequest) {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  if (pathname === recoveryPurchasesSyncPath || pathname === okpBookingsSyncPath) {
+  if (
+    pathname === recoveryPurchasesSyncPath
+    || pathname === okpBookingsSyncPath
+    || pathname === mcpEapBookingsSyncPath
+  ) {
     return NextResponse.next();
   }
 

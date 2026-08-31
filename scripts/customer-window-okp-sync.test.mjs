@@ -29,7 +29,8 @@ test("uses the existing M2M secret contract and an exact middleware bypass", () 
   assert.match(route, /x-mcparking-recovery-secret/);
   assert.match(route, /process\.env\.N8N_RECOVERY_PURCHASES_SECRET/);
   assert.match(middleware, /const okpBookingsSyncPath = "\/api\/customer-window\/okp\/sync"/);
-  assert.match(middleware, /pathname === recoveryPurchasesSyncPath \|\| pathname === okpBookingsSyncPath/);
+  assert.match(middleware, /pathname === recoveryPurchasesSyncPath/);
+  assert.match(middleware, /pathname === okpBookingsSyncPath/);
   assert.doesNotMatch(middleware, /pathname\.startsWith\(okpBookingsSyncPath/);
 });
 
