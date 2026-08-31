@@ -662,3 +662,29 @@ export async function getOperationalDashboardRpcData(query: OperationalDashboard
     return singleError();
   }
 }
+
+export async function getPhysicalOccupancyRpcData(from: string, to: string): Promise<OrquestadorResult<unknown>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_ocupacion_list_fisica", { p_desde: from, p_hasta: to })) as {
+      data: unknown[] | null;
+      error: { message: string } | null;
+    };
+    return error ? emptyResult() : { data: data ?? [], error: false };
+  } catch {
+    return emptyResult();
+  }
+}
+
+export async function getCommercialOccupancyRpcData(from: string, to: string): Promise<OrquestadorResult<unknown>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = (await supabase.rpc("orchestrator_ocupacion_list_comercial", { p_desde: from, p_hasta: to })) as {
+      data: unknown[] | null;
+      error: { message: string } | null;
+    };
+    return error ? emptyResult() : { data: data ?? [], error: false };
+  } catch {
+    return emptyResult();
+  }
+}
