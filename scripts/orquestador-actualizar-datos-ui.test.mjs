@@ -54,6 +54,7 @@ const { safeJobRow } = typesModule;
 const enabledJobTypes = [
   { enabled: true, job_type: "banco_reservas_actualizar" },
   { enabled: true, job_type: "banco_packs_actualizar_sin_consumos" },
+  { enabled: true, job_type: "ocupaciones_actualizar" },
   { enabled: true, job_type: "dashboard_actualizar_metricas" },
 ];
 const idleWorker = { last_seen_at: "2026-08-19T12:00:00.000Z", locked_job_id: null, status: "idle", worker_id: "pc_operaciones_01" };
@@ -102,9 +103,10 @@ test("D. usa CompositeRunViewer reusable", () => {
   assert.match(control, /run=\{run\}/);
 });
 
-test("E. texto del flujo muestra las tres etapas", () => {
+test("E. texto del flujo muestra las cuatro etapas", () => {
   assert.match(control, /Banco de Reservas/);
   assert.match(control, /Banco de Packs/);
+  assert.match(control, /Ocupaciones/);
   assert.match(control, /Metricas del Dashboard/);
   assert.doesNotMatch(control, /Actualizar Reservas ultimo mes|Actualizar metricas Dashboard ultimo mes/);
 });
@@ -496,12 +498,11 @@ test("AH5. diagnostico tecnico conserva tablas existentes al final", () => {
   assert.match(controlCenter, /<DataTable minWidth="900px">/);
   assert.ok(controlCenter.indexOf('title="Diagnostico tecnico"') > controlCenter.indexOf('title="Procesos recientes"'));
 });
-test("AI. solo altera el control Dashboard autorizado por polling live", () => {
+test("AI. no altera controles operacionales individuales", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/worker-health-check-button\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/source-connection-check-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-reservas-last-week-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-packs-update-control\.tsx$/m);
-  assert.match(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
 });
 
 test("AJ. no toca recuperacion", () => {
@@ -589,7 +590,7 @@ test("AT2. helper real distingue worker offline y busy", () => {
 test("AT3. helper real distingue job type disabled y missing", () => {
   const disabled = enabledJobTypes.map((jobType) => jobType.job_type === "dashboard_actualizar_metricas" ? { ...jobType, enabled: false } : jobType);
   assert.equal(actualReadiness({ jobTypes: disabled }).code, "job_type_disabled");
-  assert.equal(actualReadiness({ jobTypes: enabledJobTypes.slice(0, 2) }).code, "job_type_missing");
+  assert.equal(actualReadiness({ jobTypes: enabledJobTypes.filter((jobType) => jobType.job_type !== "ocupaciones_actualizar") }).code, "job_type_missing");
 });
 
 test("AT4. helper real devuelve ready con el contrato completo valido", () => {

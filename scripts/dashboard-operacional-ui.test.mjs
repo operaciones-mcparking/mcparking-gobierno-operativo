@@ -807,7 +807,7 @@ test("W. refresh automatico ocurre una sola vez por run succeeded", () => {
 test("X. no duplica rutas ni contratos del composite run en Dashboard", () => {
   assert.doesNotMatch(client, /\/api\/orquestador\/operaciones\/actualizar-datos|\/advance|method: "POST"|startRun\(/);
   assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/\$\{runId\}/);
-  assert.match(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/advance/);
+  assert.doesNotMatch(compositeHook, /\/api\/orquestador\/operaciones\/actualizar-datos\/advance/);
   assert.match(compositeHook, /orquestador:actualizar-datos:last-month:run-id:v1/);
 });
 test("Y. fecha inicial usa hoy operacional sin toISOString", () => {

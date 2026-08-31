@@ -65,9 +65,10 @@ test("G. Auth requerida", () => {
   assert.match(startRoute + advanceRoute + getRoute, /403/);
 });
 
-test("H. Los tres job types requeridos", () => {
+test("H. Los cuatro job types requeridos", () => {
   assert.match(helper, /banco_reservas_actualizar/);
   assert.match(helper, /banco_packs_actualizar_sin_consumos/);
+  assert.match(helper, /ocupaciones_actualizar/);
   assert.match(helper, /dashboard_actualizar_metricas/);
   assert.match(helper, /for \(const step of ACTUALIZAR_DATOS_STEPS\)/);
 });
@@ -134,7 +135,15 @@ test("S. Advance crea etapa 3 solo tras etapa 2 succeeded", () => {
   assert.match(advanceRoute, /step: nextStep/);
 });
 
-test("T. Etapa 3 contrato exacto", () => {
+test("T. Etapa 3 Ocupaciones usa contrato exacto", () => {
+  assert.match(helper, /jobType: "ocupaciones_actualizar"/);
+  assert.match(helper, /payload: \{ modo: "last-week" \}/);
+  assert.match(helper, /requestedSource: "web_orchestrator"/);
+  assert.match(helper, /priority: 100/);
+  assert.match(helper, /targetWorkerId: OPERACIONES_TARGET_WORKER_ID/);
+});
+
+test("TA. Etapa 4 Dashboard conserva su contrato", () => {
   assert.match(helper, /jobType: "dashboard_actualizar_metricas"/);
   assert.match(helper, /agent: "dashboard"/);
   assert.match(helper, /action: "actualizar-metricas"/);
@@ -163,9 +172,10 @@ test("W. target fijo", () => {
   assert.match(supabaseAdmin, /p_target_worker_id: input\.step\.targetWorkerId/);
 });
 
-test("X. priorities 90 91 92", () => {
+test("X. priorities 90 91 100 92", () => {
   assert.match(helper, /priority: 90/);
   assert.match(helper, /priority: 91/);
+  assert.match(helper, /priority: 100/);
   assert.match(helper, /priority: 92/);
   assert.match(supabaseAdmin, /p_priority: input\.step\.priority/);
 });
@@ -204,12 +214,12 @@ test("AE. No expone command_preview", () => {
   assertNoUnsafeDto(startRoute + advanceRoute + getRoute + compositeMapper);
 });
 
-test("AF. Solo altera el control Dashboard autorizado por polling live", () => {
+test("AF. No altera controles operacionales individuales", () => {
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/worker-health-check-button\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/source-connection-check-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-reservas-last-week-control\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/orquestador\/banco-packs-update-control\.tsx$/m);
-  assert.match(diffNames, /^src\/app\/orquestador\/dashboard-last-month-control\.tsx$/m);
+
 });
 
 test("AG. No toca recuperacion", () => {

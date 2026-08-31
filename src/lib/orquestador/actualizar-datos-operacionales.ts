@@ -8,20 +8,21 @@ import {
 import type { OrchestratorJob, OrchestratorJobType, OrchestratorWorker } from "@/lib/orquestador/types";
 
 export const OPERACIONES_TARGET_WORKER_ID = "pc_operaciones_01";
-export const OPERACIONES_SEQUENCE_TOTAL = 3;
+export const OPERACIONES_SEQUENCE_TOTAL = 4;
 export const OPERACIONES_HEARTBEAT_MAX_AGE_MS = 120_000;
 export const OPERACIONES_ACTIVE_JOB_STATUSES = new Set(["queued", "claimed", "running"]);
 
 export type ActualizarDatosStep = {
-  jobType: "banco_reservas_actualizar" | "banco_packs_actualizar_sin_consumos" | "dashboard_actualizar_metricas";
+  jobType: "banco_reservas_actualizar" | "banco_packs_actualizar_sin_consumos" | "ocupaciones_actualizar" | "dashboard_actualizar_metricas";
   label: string;
   payload: Record<string, string>;
-  priority: 90 | 91 | 92;
+  priority: 90 | 91 | 92 | 100;
   requestedSource:
     | "web_orchestrator_operaciones_last_month_reservas"
     | "web_orchestrator_operaciones_last_month_packs"
+    | "web_orchestrator"
     | "web_orchestrator_operaciones_last_month_dashboard";
-  sequenceIndex: 1 | 2 | 3;
+  sequenceIndex: 1 | 2 | 3 | 4;
   targetWorkerId: "pc_operaciones_01";
 };
 
@@ -45,8 +46,17 @@ export const ACTUALIZAR_DATOS_STEPS: readonly ActualizarDatosStep[] = [
     targetWorkerId: OPERACIONES_TARGET_WORKER_ID,
   },
   {
-    jobType: "dashboard_actualizar_metricas",
+    jobType: "ocupaciones_actualizar",
     label: ACTUALIZAR_DATOS_OPERACIONALES_LABELS[3],
+    payload: { modo: "last-week" },
+    priority: 100,
+    requestedSource: "web_orchestrator",
+    sequenceIndex: 3,
+    targetWorkerId: OPERACIONES_TARGET_WORKER_ID,
+  },
+  {
+    jobType: "dashboard_actualizar_metricas",
+    label: ACTUALIZAR_DATOS_OPERACIONALES_LABELS[4],
     payload: {
       action: "actualizar-metricas",
       agent: "dashboard",
@@ -54,7 +64,7 @@ export const ACTUALIZAR_DATOS_STEPS: readonly ActualizarDatosStep[] = [
     },
     priority: 92,
     requestedSource: "web_orchestrator_operaciones_last_month_dashboard",
-    sequenceIndex: 3,
+    sequenceIndex: 4,
     targetWorkerId: OPERACIONES_TARGET_WORKER_ID,
   },
 ] as const;

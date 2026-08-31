@@ -76,7 +76,8 @@ export const ACTUALIZAR_DATOS_OPERACIONALES_KIND = "actualizar_datos_operacional
 export const ACTUALIZAR_DATOS_OPERACIONALES_LABELS: Record<number, string> = {
   1: "Actualizar Reservas ultimo mes",
   2: "Actualizar Banco de Packs",
-  3: "Actualizar metricas Dashboard ultimo mes",
+  3: "Actualizar Ocupaciones ultima semana",
+  4: "Actualizar metricas Dashboard ultimo mes",
 };
 
 const activeStatuses = new Set(["queued", "claimed", "running"]);

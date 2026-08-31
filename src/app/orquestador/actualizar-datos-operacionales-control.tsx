@@ -11,6 +11,7 @@ import { useCompositeOperationsRun } from "./use-composite-operations-run";
 const steps = [
   "Banco de Reservas",
   "Banco de Packs",
+  "Ocupaciones",
   "Metricas del Dashboard",
 ];
 
@@ -291,9 +292,9 @@ export function ActualizarDatosOperacionalesControl({
             <span className="rounded-md border border-[#ffd4a3] bg-[#fff8ef] px-2.5 py-1 text-xs font-medium text-[#8a4a00]">Ejecucion real</span>
           </div>
           <p className="mt-2 leading-6">
-            Esta operacion ejecuta, en orden, Banco de Reservas, Banco de Packs y metricas del Dashboard.
+            Esta operacion ejecuta, en orden, Banco de Reservas, Banco de Packs, Ocupaciones y metricas del Dashboard.
           </p>
-          <ol className="mt-3 grid gap-2 text-xs leading-5 sm:grid-cols-3">
+          <ol className="mt-3 grid gap-2 text-xs leading-5 sm:grid-cols-2 xl:grid-cols-4">
             {steps.map((step, index) => (
               <li key={step} className="rounded-lg border border-[#d6e1ea] bg-[#f8fbfd] px-3 py-2">
                 <span className="font-medium text-navy">{index + 1}. </span>
@@ -346,7 +347,7 @@ export function ActualizarDatosOperacionalesControl({
                 Confirmacion requerida
               </span>
             </div>
-            <p className="mt-3 leading-6">Se actualizaran Banco de Reservas, Banco de Packs y las metricas del Dashboard.</p>
+            <p className="mt-3 leading-6">Se actualizaran Banco de Reservas, Banco de Packs, Ocupaciones y las metricas del Dashboard.</p>
             <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
               {steps.map((step) => (
                 <li key={step}>{step}</li>
@@ -398,7 +399,7 @@ export function ActualizarDatosOperacionalesControl({
                   </span>
                 </div>
                 <p className="mt-3 leading-6" id="actualizar-datos-overlay-description">
-                  Se actualizaran Banco de Reservas, Banco de Packs y las metricas del Dashboard.
+                  Se actualizaran Banco de Reservas, Banco de Packs, Ocupaciones y las metricas del Dashboard.
                 </p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 leading-6">
                   {steps.map((step) => (
