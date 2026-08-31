@@ -31,6 +31,21 @@ export type OperationalOccupancyReadModel = {
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const numericStringPattern = /^-?(?:\d+|\d*\.\d+)$/;
 
+export const occupancyRpcPageSize = 1000;
+
+export async function collectOccupancyRpcPages<T>(
+  loadPage: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }>,
+): Promise<T[] | null> {
+  const rows: T[] = [];
+
+  for (let from = 0; ; from += occupancyRpcPageSize) {
+    const page = await loadPage(from, from + occupancyRpcPageSize - 1);
+    if (page.error || !Array.isArray(page.data)) return null;
+    rows.push(...page.data);
+    if (page.data.length < occupancyRpcPageSize) return rows;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

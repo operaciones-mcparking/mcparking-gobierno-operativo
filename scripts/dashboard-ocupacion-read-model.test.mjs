@@ -11,7 +11,7 @@ const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8
 const compiled = ts.transpileModule(helper, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 new Function("exports", "module", compiled)(module.exports, module);
-const { buildOperationalOccupancyReadModel, isValidOccupancyDate, nullableOccupancyNumber } = module.exports;
+const { buildOperationalOccupancyReadModel, collectOccupancyRpcPages, isValidOccupancyDate, nullableOccupancyNumber } = module.exports;
 
 function physical(overrides = {}) {
   return { fecha: "2026-08-31", parking_fisico: "MC PARKING VESPUCIO", occupied: "1232", capacity: "2200", occupancy_percentage: "56.0000", revenue_ocupacion: "3522833.00", fuente_capacidad: "catalogo", estado_capacidad: "available", tipo_operacion_fisica: "MCP_EAP", source_run_id: "not-exposed", calculated_at: "2026-08-31T12:00:00Z", ...overrides };
@@ -33,11 +33,39 @@ test("1. endpoint replica acceso admin, parametros cerrados y no-store", () => {
   assert.match(route, /Cache-Control.*no-store/);
 });
 
-test("2. ambas RPC se consultan en paralelo con fechas exactas", () => {
+test("2. ambas RPC se consultan completas en paralelo con fechas exactas", () => {
   assert.match(route, /Promise\.all\(/);
-  assert.match(supabaseAdmin, /rpc\("orchestrator_ocupacion_list_fisica"/);
-  assert.match(supabaseAdmin, /rpc\("orchestrator_ocupacion_list_comercial"/);
+  assert.match(supabaseAdmin, /getOccupancyRpcData/);
+  assert.match(supabaseAdmin, /"orchestrator_ocupacion_list_fisica"/);
+  assert.match(supabaseAdmin, /"orchestrator_ocupacion_list_comercial"/);
   assert.match(supabaseAdmin, /p_desde: from, p_hasta: to/);
+  assert.match(supabaseAdmin, /\.range\(rangeFrom, rangeTo\)/);
+});
+
+test("2a. horizonte superior a mil filas recupera todas las paginas", async () => {
+  const source = Array.from({ length: 2086 }, (_, index) => ({ index }));
+  const ranges = [];
+  const rows = await collectOccupancyRpcPages(async (from, to) => {
+    ranges.push([from, to]);
+    return { data: source.slice(from, to + 1), error: null };
+  });
+
+  assert.equal(rows.length, 2086);
+  assert.equal(rows.at(-1).index, 2085);
+  assert.deepEqual(ranges, [[0, 999], [1000, 1999], [2000, 2999]]);
+});
+
+test("2b. error de una pagina invalida la lectura completa", async () => {
+  let calls = 0;
+  const rows = await collectOccupancyRpcPages(async () => {
+    calls += 1;
+    return calls === 1
+      ? { data: Array.from({ length: 1000 }, (_, index) => index), error: null }
+      : { data: null, error: new Error("page failed") };
+  });
+
+  assert.equal(rows, null);
+  assert.equal(calls, 2);
 });
 
 test("3. fechas validas, futuras y rango ordenado", () => {

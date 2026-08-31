@@ -78,7 +78,8 @@ test("G. menu lateral conserva solo item Orquestador hacia /orquestador", () => 
 test("H. dashboard embebido no navega a /dashboard-operacional ni duplica encabezado", () => {
   assert.doesNotMatch(dashboardClient, /href="\/dashboard-operacional"/);
   assert.doesNotMatch(dashboardClient, /McParking Orquestador|Centro de Control|<main/);
-  assert.match(dashboardClient, /fetch\(`\/api\/dashboard\/operacional\$\{query\}`/);
+  assert.match(dashboardClient, /requestDashboardRange\(range\)/);
+  assert.match(dashboardClient, /requestOccupancyRange\(range\)/);
   assert.match(dashboardClient, /method: "GET"/);
 });
 

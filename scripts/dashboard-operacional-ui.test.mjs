@@ -59,8 +59,10 @@ test("C. selector unificado contiene Dashboard y Centro de Control", () => {
   assert.doesNotMatch(client, /McParking Orquestador|Centro de Control|href="\/orquestador"/);
 });
 
-test("D. consume GET api dashboard operacional y filtra por from/to", () => {
-  assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{query\}`/);
+test("D. consume GET coordinados de Dashboard y Ocupacion con from/to", () => {
+  assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{buildDashboardRangeQuery\(range\)\}`/);
+  assert.match(client, /fetch\(`\/api\/dashboard\/ocupacion\$\{buildDashboardRangeQuery\(range\)\}`/);
+  assert.match(client, /Promise\.all\(\[[\s\S]*requestDashboardRange\(range\)[\s\S]*requestOccupancyRange\(range\)/);
   assert.match(client, /method: "GET"/);
   assert.match(client, /buildDashboardRangeQuery\(range\)/);
   assert.match(client, /from=\$\{encodeURIComponent\(range\.from\)\}&to=\$\{encodeURIComponent\(range\.to\)\}/);
@@ -831,7 +833,8 @@ test("Z. periodo seleccionado sigue siendo mutable y se usa en refresh final", (
 test("Z1. no existe boton visual Refrescar y el cambio de periodo solo consulta GET", () => {
   assert.doesNotMatch(client, /RefreshCw|Refrescar dashboard operacional|>\s*Refrescar\s*</);
   assert.match(client, /onApplyRange=\{loadByRange\}/);
-  assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{query\}`/);
+  assert.match(client, /fetch\(`\/api\/dashboard\/operacional\$\{buildDashboardRangeQuery\(range\)\}`/);
+  assert.match(client, /fetch\(`\/api\/dashboard\/ocupacion\$\{buildDashboardRangeQuery\(range\)\}`/);
   assert.match(client, /method: "GET"/);
   assert.doesNotMatch(client, /method: "POST"|startRun\(|\/api\/orquestador\/operaciones\/actualizar-datos/);
 });

@@ -10,6 +10,8 @@ import {
   type OperationalDashboardTotals,
   type OperationalDashboardViewModel,
 } from "@/lib/dashboard/operacional";
+import type { OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
+import { getOccupancyTrendRange } from "@/lib/dashboard/ocupacion-chart";
 import { ActualizarDatosOperacionalesControl } from "../orquestador/actualizar-datos-operacionales-control";
 import {
   formatAdrCurrency,
@@ -20,6 +22,7 @@ import {
   formatInteger,
   formatPercent,
 } from "./dashboard-operacional-formatters";
+import { OperationalOccupancySection } from "./operational-occupancy-section";
 
 type DashboardOperacionalClientProps = {
   initialDashboard: OperationalDashboardViewModel | null;
@@ -31,6 +34,8 @@ type EndpointResponse = {
   error?: string;
   ok: boolean;
 };
+
+type OccupancyEndpointResponse = Partial<OperationalOccupancyReadModel> & { error?: string; ok?: boolean };
 
 type DateRangePreset = "today" | "yesterday" | "last7" | "last14" | "thisMonth" | "previousMonth" | "custom";
 type CustomRangeMode = "single" | "range";
@@ -162,6 +167,28 @@ function buildDashboardRangeQuery(range: DateRange) {
 
 function dashboardMatchesRange(dashboard: OperationalDashboardViewModel | null, range: DateRange) {
   return dashboard?.filters?.from === range.from && dashboard.filters.to === range.to;
+}
+
+function occupancyMatchesRange(occupancy: OperationalOccupancyReadModel | null, range: DateRange) {
+  return occupancy?.filters.from === range.from && occupancy.filters.to === range.to;
+}
+
+async function requestDashboardRange(range: DateRange) {
+  try {
+    const response = await fetch(`/api/dashboard/operacional${buildDashboardRangeQuery(range)}`, { cache: "no-store", method: "GET" });
+    return { body: (await response.json()) as EndpointResponse, response };
+  } catch {
+    return null;
+  }
+}
+
+async function requestOccupancyRange(range: DateRange) {
+  try {
+    const response = await fetch(`/api/dashboard/ocupacion${buildDashboardRangeQuery(range)}`, { cache: "no-store", method: "GET" });
+    return { body: (await response.json()) as OccupancyEndpointResponse, response };
+  } catch {
+    return null;
+  }
 }
 
 function updateStatusLabel(status: string | null | undefined) {
@@ -1158,6 +1185,8 @@ function DateRangeSelector({ onApplyRange, range }: { onApplyRange: (range: Date
 
 export function DashboardOperacionalClient({ initialDashboard, initialError }: DashboardOperacionalClientProps) {
   const initialDateRangeRef = useRef(getPresetDateRange("today"));
+  const occupancyTodayRef = useRef(getTodayLocalDate());
+  const occupancyTrendRangeRef = useRef<DateRange>({ ...getOccupancyTrendRange(occupancyTodayRef.current), preset: "custom" });
   const initialDashboardRef = useRef(
     dashboardMatchesRange(initialDashboard, initialDateRangeRef.current) ? initialDashboard : null,
   );
@@ -1166,6 +1195,12 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [dateRange, setDateRange] = useState<DateRange>(initialDateRangeRef.current);
   const [isLoading, setIsLoading] = useState(initialDashboardRef.current === null);
   const [error, setError] = useState(initialError);
+  const [occupancy, setOccupancy] = useState<OperationalOccupancyReadModel | null>(null);
+  const [occupancyError, setOccupancyError] = useState<string | null>(null);
+  const [isOccupancyLoading, setIsOccupancyLoading] = useState(true);
+  const [occupancyTrend, setOccupancyTrend] = useState<OperationalOccupancyReadModel | null>(null);
+  const [occupancyTrendError, setOccupancyTrendError] = useState<string | null>(null);
+  const [isOccupancyTrendLoading, setIsOccupancyTrendLoading] = useState(true);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
 
   const rawRows = useMemo(() => {
@@ -1196,53 +1231,109 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
     activeRequestRef.current = requestId;
     setDateRange(range);
     setDashboard(null);
+    setOccupancy(null);
+    setOccupancyTrend(null);
     setIsLoading(true);
+    setIsOccupancyLoading(true);
+    setIsOccupancyTrendLoading(true);
     setError(null);
-
-    const query = buildDashboardRangeQuery(range);
+    setOccupancyError(null);
+    setOccupancyTrendError(null);
 
     try {
-      const response = await fetch(`/api/dashboard/operacional${query}`, {
-        cache: "no-store",
-        method: "GET",
-      });
-      const body = (await response.json()) as EndpointResponse;
+      const [dashboardResult, occupancyResult, trendResult] = await Promise.all([
+        requestDashboardRange(range),
+        requestOccupancyRange(range),
+        requestOccupancyRange(occupancyTrendRangeRef.current),
+      ]);
 
-      if (requestId !== activeRequestRef.current) {
-        return false;
-      }
+      if (requestId !== activeRequestRef.current) return false;
 
-      if (!response.ok || !body.ok || !body.dashboard) {
-        setError(body.error ?? "No fue posible consultar el dashboard operacional.");
-        return false;
-      }
-
-      if (!dashboardMatchesRange(body.dashboard, range)) {
+      let dashboardLoaded = false;
+      if (!dashboardResult?.response.ok || !dashboardResult.body.ok || !dashboardResult.body.dashboard) {
+        setError(dashboardResult?.body.error ?? "No fue posible consultar el dashboard operacional.");
+      } else if (!dashboardMatchesRange(dashboardResult.body.dashboard, range)) {
         setError("La respuesta no corresponde al periodo seleccionado.");
-        return false;
+      } else {
+        setDashboard(dashboardResult.body.dashboard);
+        dashboardLoaded = true;
       }
 
-      setDashboard(body.dashboard);
-      return true;
-    } catch {
-      if (requestId !== activeRequestRef.current) {
-        return false;
+      const occupancyBody = occupancyResult?.body;
+      const occupancyData = occupancyBody?.filters && occupancyBody.physical && occupancyBody.commercial
+        ? occupancyBody as OperationalOccupancyReadModel
+        : null;
+      if (!occupancyResult?.response.ok || !occupancyData || !occupancyMatchesRange(occupancyData, range)) {
+        setOccupancyError(occupancyBody?.error ?? "No fue posible consultar la ocupación operacional.");
+      } else {
+        setOccupancy(occupancyData);
       }
 
-      setError("No fue posible consultar el dashboard operacional.");
-      return false;
+      const trendBody = trendResult?.body;
+      const trendData = trendBody?.filters && trendBody.physical && trendBody.commercial
+        ? trendBody as OperationalOccupancyReadModel
+        : null;
+      if (!trendResult?.response.ok || !trendData || !occupancyMatchesRange(trendData, occupancyTrendRangeRef.current)) {
+        setOccupancyTrendError(trendBody?.error ?? "No fue posible consultar la tendencia de ocupación.");
+      } else {
+        setOccupancyTrend(trendData);
+      }
+
+      return dashboardLoaded;
     } finally {
       if (requestId === activeRequestRef.current) {
         setIsLoading(false);
+        setIsOccupancyLoading(false);
+        setIsOccupancyTrendLoading(false);
       }
     }
   }, []);
 
-  useEffect(() => {
-    if (initialDashboardRef.current) return;
-    void loadByRange(initialDateRangeRef.current);
-  }, [loadByRange]);
+  const loadInitialOccupancy = useCallback(async (range: DateRange) => {
+    const requestId = activeRequestRef.current;
+    setIsOccupancyLoading(true);
+    setIsOccupancyTrendLoading(true);
+    setOccupancyError(null);
+    setOccupancyTrendError(null);
+    const [result, trendResult] = await Promise.all([
+      requestOccupancyRange(range),
+      requestOccupancyRange(occupancyTrendRangeRef.current),
+    ]);
+    if (requestId !== activeRequestRef.current) return;
 
+    const body = result?.body;
+    const occupancyData = body?.filters && body.physical && body.commercial
+      ? body as OperationalOccupancyReadModel
+      : null;
+    if (!result?.response.ok || !occupancyData || !occupancyMatchesRange(occupancyData, range)) {
+      setOccupancyError(body?.error ?? "No fue posible consultar la ocupación operacional.");
+      setOccupancy(null);
+    } else {
+      setOccupancy(occupancyData);
+    }
+
+    const trendBody = trendResult?.body;
+    const trendData = trendBody?.filters && trendBody.physical && trendBody.commercial
+      ? trendBody as OperationalOccupancyReadModel
+      : null;
+    if (!trendResult?.response.ok || !trendData || !occupancyMatchesRange(trendData, occupancyTrendRangeRef.current)) {
+      setOccupancyTrendError(trendBody?.error ?? "No fue posible consultar la tendencia de ocupación.");
+      setOccupancyTrend(null);
+    } else {
+      setOccupancyTrend(trendData);
+    }
+
+    setIsOccupancyLoading(false);
+    setIsOccupancyTrendLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (initialDashboardRef.current) {
+      void loadInitialOccupancy(initialDateRangeRef.current);
+      return;
+    }
+    void loadByRange(initialDateRangeRef.current);
+  }, [loadByRange, loadInitialOccupancy]);
   useEffect(() => {
     setSelectedParkingDetail(null);
   }, [dateRange]);
@@ -1314,6 +1405,16 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
           </>
         )}
       </section>
+
+      <OperationalOccupancySection
+        data={occupancy}
+        error={occupancyError}
+        isLoading={isOccupancyLoading}
+        today={occupancyTodayRef.current}
+        trendData={occupancyTrend}
+        trendError={occupancyTrendError}
+        trendIsLoading={isOccupancyTrendLoading}
+      />
 
       <ParkingDetailDrawer onClose={closeParkingDetail} row={selectedParkingDetail} />
       </> : null}

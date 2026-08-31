@@ -49,6 +49,7 @@ import {
 } from "@/lib/orquestador/job-technical-detail";
 
 import type { OperationalDashboardQuery } from "@/lib/dashboard/operacional";
+import { collectOccupancyRpcPages } from "@/lib/dashboard/ocupacion";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -663,28 +664,27 @@ export async function getOperationalDashboardRpcData(query: OperationalDashboard
   }
 }
 
-export async function getPhysicalOccupancyRpcData(from: string, to: string): Promise<OrquestadorResult<unknown>> {
+async function getOccupancyRpcData(
+  rpcName: "orchestrator_ocupacion_list_fisica" | "orchestrator_ocupacion_list_comercial",
+  from: string,
+  to: string,
+): Promise<OrquestadorResult<unknown>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = (await supabase.rpc("orchestrator_ocupacion_list_fisica", { p_desde: from, p_hasta: to })) as {
-      data: unknown[] | null;
-      error: { message: string } | null;
-    };
-    return error ? emptyResult() : { data: data ?? [], error: false };
+    const data = await collectOccupancyRpcPages<unknown>(async (rangeFrom, rangeTo) => {
+      const result = await supabase.rpc(rpcName, { p_desde: from, p_hasta: to }).range(rangeFrom, rangeTo);
+      return { data: result.data as unknown[] | null, error: result.error };
+    });
+    return data === null ? emptyResult() : { data, error: false };
   } catch {
     return emptyResult();
   }
 }
 
+export async function getPhysicalOccupancyRpcData(from: string, to: string): Promise<OrquestadorResult<unknown>> {
+  return getOccupancyRpcData("orchestrator_ocupacion_list_fisica", from, to);
+}
+
 export async function getCommercialOccupancyRpcData(from: string, to: string): Promise<OrquestadorResult<unknown>> {
-  try {
-    const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = (await supabase.rpc("orchestrator_ocupacion_list_comercial", { p_desde: from, p_hasta: to })) as {
-      data: unknown[] | null;
-      error: { message: string } | null;
-    };
-    return error ? emptyResult() : { data: data ?? [], error: false };
-  } catch {
-    return emptyResult();
-  }
+  return getOccupancyRpcData("orchestrator_ocupacion_list_comercial", from, to);
 }
