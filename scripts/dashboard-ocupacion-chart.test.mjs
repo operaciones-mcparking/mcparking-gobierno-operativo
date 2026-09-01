@@ -21,12 +21,12 @@ const formattersModule = { exports: {} };
 new Function("exports", "module", compiledFormatters)(formattersModule.exports, formattersModule);
 const { formatCurrency } = formattersModule.exports;
 
-test("1. grafico aparece despues de chips y antes de tabla sin cards de resumen", () => {
+test("1. grafico aparece despues de chips y antes del heatmap sin cards de resumen", () => {
   const chips = section.indexOf('aria-label="Filtros de estacionamiento"');
   const graph = section.indexOf("<OperationalOccupancyChart");
-  const table = section.indexOf("<table");
-  assert.ok(chips >= 0 && graph > chips && table > graph);
-  assert.match(section, /Evolución diaria/);
+  const heatmap = section.indexOf("<OperationalOccupancyRevenueHeatmap");
+  assert.ok(chips >= 0 && graph > chips && heatmap > graph);
+  assert.doesNotMatch(section, /Evolución diaria|<table/);
   assert.doesNotMatch(section, /latestRows|Última fecha disponible/);
 });
 
@@ -151,7 +151,7 @@ test("14. leyenda contiene solo series agrupadas y activas", () => {
 
 test("15. refresh consulta horizonte junto al mismo ciclo operacional", () => {
   assert.match(client, /requestOccupancyRange\(occupancyTrendRangeRef\.current\)/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => Promise\.all\(\[loadByRange\(dateRange\), loadOccupancyHeatmap\(occupancyHeatmapYear\)\]\)/);
   assert.doesNotMatch(client, /setInterval[^\n]*occupancy|poll[^\n]*occupancy/i);
 });
 

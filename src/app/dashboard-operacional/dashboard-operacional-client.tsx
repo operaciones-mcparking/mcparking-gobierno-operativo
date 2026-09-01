@@ -12,6 +12,7 @@ import {
 } from "@/lib/dashboard/operacional";
 import { buildPhysicalOccupancyDisplayRows, mcpPhysicalParkingName, okpTotalParkingName, sumOccupancyRevenueForRange, type OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
 import { getOccupancyTrendRange } from "@/lib/dashboard/ocupacion-chart";
+import { occupancyHeatmapYears, occupancyYearRange } from "@/lib/dashboard/ocupacion-heatmap";
 import { ActualizarDatosOperacionalesControl } from "../orquestador/actualizar-datos-operacionales-control";
 import {
   formatAdrCurrency,
@@ -1189,10 +1190,12 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const initialDateRangeRef = useRef(getPresetDateRange("today"));
   const occupancyTodayRef = useRef(getTodayLocalDate());
   const occupancyTrendRangeRef = useRef<DateRange>({ ...getOccupancyTrendRange(occupancyTodayRef.current), preset: "custom" });
+  const initialHeatmapYearRef = useRef(Number(occupancyTodayRef.current.slice(0, 4)));
   const initialDashboardRef = useRef(
     dashboardMatchesRange(initialDashboard, initialDateRangeRef.current) ? initialDashboard : null,
   );
   const activeRequestRef = useRef(0);
+  const heatmapRequestRef = useRef(0);
   const [dashboard, setDashboard] = useState(initialDashboardRef.current);
   const [dateRange, setDateRange] = useState<DateRange>(initialDateRangeRef.current);
   const [isLoading, setIsLoading] = useState(initialDashboardRef.current === null);
@@ -1203,7 +1206,12 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   const [occupancyTrend, setOccupancyTrend] = useState<OperationalOccupancyReadModel | null>(null);
   const [occupancyTrendError, setOccupancyTrendError] = useState<string | null>(null);
   const [isOccupancyTrendLoading, setIsOccupancyTrendLoading] = useState(true);
+  const [occupancyHeatmap, setOccupancyHeatmap] = useState<OperationalOccupancyReadModel | null>(null);
+  const [occupancyHeatmapError, setOccupancyHeatmapError] = useState<string | null>(null);
+  const [isOccupancyHeatmapLoading, setIsOccupancyHeatmapLoading] = useState(true);
+  const [occupancyHeatmapYear, setOccupancyHeatmapYear] = useState(initialHeatmapYearRef.current);
   const [selectedParkingDetail, setSelectedParkingDetail] = useState<OperationalDashboardRow | null>(null);
+  const heatmapYears = useMemo(() => occupancyHeatmapYears(initialHeatmapYearRef.current), []);
 
   const physicalOccupancyRows = useMemo(() => buildPhysicalOccupancyDisplayRows(occupancy?.physical ?? []), [occupancy]);
   const mcpOccupancyRevenue = sumOccupancyRevenueForRange(physicalOccupancyRows, mcpPhysicalParkingName, dateRange.from, dateRange.to);
@@ -1225,6 +1233,29 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
   }, []);
   const closeParkingDetail = useCallback(() => {
     setSelectedParkingDetail(null);
+  }, []);
+
+  const loadOccupancyHeatmap = useCallback(async (year: number) => {
+    const requestId = heatmapRequestRef.current + 1;
+    heatmapRequestRef.current = requestId;
+    const range = { ...occupancyYearRange(year), preset: "custom" as const };
+    setIsOccupancyHeatmapLoading(true);
+    setOccupancyHeatmapError(null);
+    const result = await requestOccupancyRange(range);
+    if (requestId !== heatmapRequestRef.current) return false;
+    const body = result?.body;
+    const heatmapData = body?.filters && body.physical && body.commercial
+      ? body as OperationalOccupancyReadModel
+      : null;
+    if (!result?.response.ok || !heatmapData || !occupancyMatchesRange(heatmapData, range)) {
+      setOccupancyHeatmap(null);
+      setOccupancyHeatmapError(body?.error ?? "No fue posible consultar el revenue anual de ocupación.");
+      setIsOccupancyHeatmapLoading(false);
+      return false;
+    }
+    setOccupancyHeatmap(heatmapData);
+    setIsOccupancyHeatmapLoading(false);
+    return true;
   }, []);
 
   const loadByRange = useCallback(async (range: DateRange) => {
@@ -1341,6 +1372,9 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
     void loadByRange(initialDateRangeRef.current);
   }, [loadByRange, loadInitialOccupancy]);
   useEffect(() => {
+    void loadOccupancyHeatmap(occupancyHeatmapYear);
+  }, [loadOccupancyHeatmap, occupancyHeatmapYear]);
+  useEffect(() => {
     setSelectedParkingDetail(null);
   }, [dateRange]);
 
@@ -1361,7 +1395,7 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
             <ActualizarDatosOperacionalesControl
               controlHref="/orquestador?view=control"
               className="w-full sm:w-fit"
-              onSucceeded={() => loadByRange(dateRange)}
+              onSucceeded={() => Promise.all([loadByRange(dateRange), loadOccupancyHeatmap(occupancyHeatmapYear)]).then(([dashboardLoaded]) => dashboardLoaded)}
               presentation="overlay"
               triggerVariant="compact"
             />
@@ -1415,7 +1449,13 @@ export function DashboardOperacionalClient({ initialDashboard, initialError }: D
       <OperationalOccupancySection
         data={occupancy}
         error={occupancyError}
+        heatmapData={occupancyHeatmap}
+        heatmapError={occupancyHeatmapError}
+        heatmapIsLoading={isOccupancyHeatmapLoading}
+        heatmapYear={occupancyHeatmapYear}
+        heatmapYears={heatmapYears}
         isLoading={isOccupancyLoading}
+        onHeatmapYearChange={setOccupancyHeatmapYear}
         today={occupancyTodayRef.current}
         trendData={occupancyTrend}
         trendError={occupancyTrendError}

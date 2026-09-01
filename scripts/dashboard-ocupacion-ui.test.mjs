@@ -145,68 +145,47 @@ test("8d. chips fisicos usan display rows y orden canonico", () => {
   assert.match(component, /physical: displayRows\.physical\.map/);
   assert.match(component, /commercial: displayRows\.commercial\.map/);
 });
-test("8e. chips y tabla usan labels solo en vista fisica", () => {
+test("8e. chips y heatmap usan labels solo en vista fisica", () => {
   assert.match(component, /parkingLabel\(parking, mode\)/);
-  assert.match(component, /parkingLabel\(parkingName\(row, mode\), mode\)/);
   assert.match(component, /mode === "physical" \? physicalOccupancyDisplayLabel\(parking\) : parking/);
-  assert.match(component, /key=\{`\$\{row\.fecha\}-\$\{parkingName\(row, mode\)\}`\}/);
-  assert.doesNotMatch(component, /parking_comercial[^\n]*physicalOccupancyDisplayLabel/);
+  assert.match(component, /<OperationalOccupancyRevenueHeatmap/);
 });
+
 test("9. fisico usa directamente RPC fisica sin sumar comercial", () => {
   assert.match(component, /mode === "physical" \? displayRows\.physical/);
   assert.doesNotMatch(component, /reduce[^;]*(parking_fisico|aporta_ocupacion_fisica)|EAP\s*\+\s*MCP/i);
 });
 
-test("10. fisico muestra capacidad porcentaje e ingreso con reglas null", () => {
-  assert.match(component, /row\.capacity === null \|\| row\.capacity <= 0 \|\| row\.occupancy_percentage === null/);
-  assert.match(component, /label="Capacidad"/);
-  assert.match(component, /label="Ocupación"/);
+test("10. heatmap conserva reglas null sin alterar gráfico físico", () => {
   assert.equal(formatCurrency(null), "No disponible");
   assert.match(formatCurrency(0), /0/);
-  assert.doesNotMatch(component, /Math\.min\([^\n]*occupancy_percentage/);
+  assert.match(component, /heatmapData/);
 });
 
-test("11. comercial mantiene canal y recinto fisico sin campos fisicos", () => {
-  assert.match(component, /parking_comercial/);
-  assert.match(component, /Recinto físico:/);
-  assert.match(component, /mode === "physical" \? <OccupancyMetric label="Capacidad"/);
-  assert.match(component, /mode === "physical" \? <OccupancyMetric label="Ocupación"/);
+test("11. comercial mantiene dataset y selección independientes", () => {
+  assert.match(component, /displayRows\.commercial/);
+  assert.match(component, /selection\[mode\]\.selected/);
 });
 
-test("12. NP y cualquier revenue null quedan como No disponible", () => {
-  assert.match(component, /formatCurrency\(row\.revenue_ocupacion\)/);
+test("12. NP y cualquier revenue null conservan No disponible", () => {
   assert.equal(formatCurrency(null), "No disponible");
 });
 
-test("13. evolución diaria usa filas reales y filtros sin completar fechas", () => {
-  assert.match(component, /Evolución diaria/);
-  assert.match(component, /row\.occupied \/ maxOccupied/);
-  assert.doesNotMatch(component, /fillMissing|completeDays|addDays|calendarRange/);
+test("13. Evolución diaria se elimina y heatmap reutiliza filtros", () => {
+  assert.doesNotMatch(component, /Evolución diaria|<table|OccupancyMetric/);
+  assert.match(component, /selected=\{selected\}/);
 });
 
-test("14. no hay cards de resumen y tabla conserva los datos operacionales", () => {
-  assert.doesNotMatch(component, /Última fecha disponible|latestRows/);
-  assert.match(component, /<table/);
-  assert.match(component, /formatInteger\(row\.occupied\)/);
-  assert.match(component, /formatPhysicalPercentage\(row as PhysicalOccupancyRow\)/);
-  assert.match(component, /formatCurrency\(row\.revenue_ocupacion\)/);
-  assert.match(component, />Revenue de ocupación<|label="Revenue de ocupación"/);
-  assert.doesNotMatch(component, /Ingreso atribuible|>Ingreso<\/th>/);
-  assert.match(component, /w-16 px-3 py-2 font-semibold">Fecha/);
-  assert.match(component, /w-48 px-3 py-2 font-semibold">Estacionamiento/);
-  assert.match(component, /w-32 px-3 py-2 font-semibold">Ocupados/);
-  assert.match(component, /w-24 px-3 py-2 font-semibold">Capacidad/);
-  assert.match(component, /w-24 px-3 py-2 font-semibold">Ocupación/);
-  assert.match(component, /w-44 whitespace-nowrap px-3 py-2 font-semibold">Revenue de ocupación/);
-  assert.match(component, /hidden max-h-\[32rem\] overflow-y-auto md:block/);
-  assert.match(component, /grid max-h-\[32rem\] gap-3 overflow-y-auto md:hidden/);
+test("14. no hay cards ni tabla y aparece revenue diario anual", () => {
+  assert.doesNotMatch(component, /Última fecha disponible|latestRows|<table|<article/);
+  assert.match(component, /<OperationalOccupancyRevenueHeatmap/);
 });
 
 test("15. refresh usa un rango y Promise.all para ambos endpoints", () => {
   assert.match(client, /Promise\.all\(\[[\s\S]*requestDashboardRange\(range\)[\s\S]*requestOccupancyRange\(range\)/);
   assert.match(client, /\/api\/dashboard\/operacional\$\{buildDashboardRangeQuery\(range\)\}/);
   assert.match(client, /\/api\/dashboard\/ocupacion\$\{buildDashboardRangeQuery\(range\)\}/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => Promise\.all\(\[loadByRange\(dateRange\), loadOccupancyHeatmap\(occupancyHeatmapYear\)\]\)/);
 });
 
 test("16. respuesta stale no pisa rango y error de ocupacion queda aislado", () => {
@@ -219,8 +198,7 @@ test("16. respuesta stale no pisa rango y error de ocupacion queda aislado", () 
 test("17. estados loading error empty y responsive estan presentes", () => {
   assert.match(component, /Cargando ocupación/);
   assert.match(component, /No hay datos de ocupación/);
-  assert.match(component, /md:block/);
-  assert.match(component, /md:hidden/);
+  assert.match(component, /<OperationalOccupancyRevenueHeatmap/);
 });
 
 test("18. no agrega dependencias ni toca areas excluidas", () => {

@@ -151,7 +151,7 @@ test("D3f. abrir personalizado desde selector respeta rango actual", () => {
 test("D4. refresh operacional reutiliza rango activo", () => {
   assert.match(client, /const \[dateRange, setDateRange\] = useState<DateRange>/);
   assert.match(client, /const loadByRange = useCallback/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => Promise\.all\(\[loadByRange\(dateRange\), loadOccupancyHeatmap\(occupancyHeatmapYear\)\]\)/);
   assert.doesNotMatch(client, /selectedDate|loadByDate/);
 });
 
@@ -541,7 +541,7 @@ test("K. maneja estados loading empty error y rows vacias", () => {
 
 test("L. Dashboard reutiliza el control compuesto existente", () => {
   assert.match(client, /ActualizarDatosOperacionalesControl/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => Promise\.all\(\[loadByRange\(dateRange\), loadOccupancyHeatmap\(occupancyHeatmapYear\)\]\)/);
   assert.match(actualizarDatosHelper, /payload: \{ modo: "last-week" \}/);
   assert.match(actualizarDatosHelper, /periodo: "last-week"/);
   assert.doesNotMatch(actualizarDatosHelper, /payload: \{ modo: "last-month" \}|periodo: "last-month"/);
@@ -801,7 +801,7 @@ test("W. refresh automatico ocurre una sola vez por run succeeded", () => {
   assert.match(compositeControl, /Promise\.resolve\(onSucceededRef\.current\?\.\(\)\)/);
   assert.match(compositeControl, /completedRunRef\.current = run\.run_id/);
   assert.match(compositeControl, /refreshingRunRef\.current = null/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => Promise\.all\(\[loadByRange\(dateRange\), loadOccupancyHeatmap\(occupancyHeatmapYear\)\]\)/);
   assert.match(client, /cache: "no-store"/);
   assert.doesNotMatch(compositeControl, /run\?\.status === "failed"[\s\S]*onSucceeded|run\?\.status === "cancelled"[\s\S]*onSucceeded/);
 });
@@ -826,7 +826,7 @@ test("Y. fecha inicial usa hoy operacional sin toISOString", () => {
 
 test("Z. periodo seleccionado sigue siendo mutable y se usa en refresh final", () => {
   assert.match(client, /<DateRangeSelector onApplyRange=\{loadByRange\} range=\{dateRange\} \/>/);
-  assert.match(client, /onSucceeded=\{\(\) => loadByRange\(dateRange\)\}/);
+  assert.match(client, /onSucceeded=\{\(\) => Promise\.all\(\[loadByRange\(dateRange\), loadOccupancyHeatmap\(occupancyHeatmapYear\)\]\)/);
   assert.doesNotMatch(client, /initialDashboard\?\.filters\?\.date \?\?/);
 });
 
