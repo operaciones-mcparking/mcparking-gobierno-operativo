@@ -14,7 +14,7 @@ const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8
 const compiled = ts.transpileModule(helper, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const module = { exports: {} };
 new Function("exports", "module", compiled)(module.exports, module);
-const { buildOccupancyPercentageHeatmap, buildOccupancyRevenueHeatmap, buildYearCalendar, getOccupancyPercentageIntensity, getRevenueIntensity, occupancyHeatmapYears, occupancyYearRange } = module.exports;
+const { buildOccupancyPercentageHeatmap, buildOccupancyRevenueHeatmap, buildRevenueQuantileScale, buildYearCalendar, getOccupancyHeatmapLevel, getRevenueHeatmapLevel, occupancyHeatmapYears, occupancyYearRange } = module.exports;
 
 function row(overrides = {}) {
   return { fecha: "2026-08-31", parking_fisico: "MC PARKING VESPUCIO", parking_comercial: "MC PARKING VESPUCIO", revenue_ocupacion: 1000, ...overrides };
@@ -77,11 +77,17 @@ test("7. sin fila todos null y cero mantienen semanticas distintas", () => {
   assert.equal(value([row({ parking_fisico: "A", revenue_ocupacion: 0 })]).breakdown[0].revenue, 0);
 });
 
-test("8. escala anual es secuencial y cero disponible no es ausencia", () => {
-  assert.equal(getRevenueIntensity(null, 100), 0);
-  assert.equal(getRevenueIntensity(0, 100), 1);
-  assert.equal(getRevenueIntensity(50, 100), 3);
-  assert.equal(getRevenueIntensity(100, 100), 5);
+test("8. revenue usa nueve cuantiles incluye cero y excluye null", () => {
+  const scale = buildRevenueQuantileScale([null, 0, 10, 20, 30, 40, 50, 60, 70, 80, 10000]);
+  assert.equal(scale.thresholds.length, 8);
+  assert.equal(getRevenueHeatmapLevel(null, scale), 0);
+  assert.equal(getRevenueHeatmapLevel(0, scale), 1);
+  assert.ok(getRevenueHeatmapLevel(80, scale) > getRevenueHeatmapLevel(20, scale));
+  assert.ok(getRevenueHeatmapLevel(80, scale) >= 7, "un outlier no aplasta los valores altos normales");
+  const equalScale = buildRevenueQuantileScale([5, 5, 5]);
+  assert.equal(getRevenueHeatmapLevel(5, equalScale), 1);
+  const sparseScale = buildRevenueQuantileScale([0, 10]);
+  assert.ok(getRevenueHeatmapLevel(10, sparseScale) > getRevenueHeatmapLevel(0, sparseScale));
 });
 
 test("9. UI muestra doce meses responsive leyenda y tooltip accesible", () => {
@@ -147,12 +153,11 @@ test("15. capacidad invalida excluye tambien occupied y conserva null cero y sob
   assert.equal(mixed.percentage, 20);
 });
 
-test("16. intensidad porcentaje usa escala fija cero a cien sin perder valores mayores", () => {
-  assert.equal(getOccupancyPercentageIntensity(null), 0);
-  assert.equal(getOccupancyPercentageIntensity(0), 1);
-  assert.equal(getOccupancyPercentageIntensity(50), 3);
-  assert.equal(getOccupancyPercentageIntensity(100), 5);
-  assert.equal(getOccupancyPercentageIntensity(120), 5);
+test("16. porcentaje usa nueve rangos fijos con limites inclusivos", () => {
+  assert.equal(getOccupancyHeatmapLevel(null), 0);
+  for (const [value, level] of [[0, 1], [20, 1], [20.01, 2], [40, 2], [55, 3], [70, 4], [80, 5], [90, 6], [100, 7], [110, 8], [110.01, 9], [120, 9]]) {
+    assert.equal(getOccupancyHeatmapLevel(value), level);
+  }
 });
 
 test("17. selector limita porcentaje a Agregado y vuelve a Revenue", () => {
@@ -164,4 +169,7 @@ test("17. selector limita porcentaje a Agregado y vuelve a Revenue", () => {
   assert.match(component, /Ocupaci.*n agregada:/);
   assert.match(component, /Ocupados:/);
   assert.match(component, /Capacidad:/);
+  assert.equal((component.match(/intensityClasses\.slice\(1\)/g) ?? []).length, 1);
+  assert.match(component, /occupancyLegendLabels/);
+  assert.match(component, /Escala de revenue por cuantiles/);
 });

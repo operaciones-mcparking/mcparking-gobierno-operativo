@@ -6,9 +6,10 @@ import { buildPhysicalOccupancyDisplayRows, physicalOccupancyDisplayLabel, type 
 import {
   buildOccupancyPercentageHeatmap,
   buildOccupancyRevenueHeatmap,
+  buildRevenueQuantileScale,
   buildYearCalendar,
-  getOccupancyPercentageIntensity,
-  getRevenueIntensity,
+  getOccupancyHeatmapLevel,
+  getRevenueHeatmapLevel,
   type OccupancyHeatmapMetric,
   type OccupancyHeatmapMode,
 } from "@/lib/dashboard/ocupacion-heatmap";
@@ -19,12 +20,18 @@ const numberFormatter = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 
 const percentageFormatter = new Intl.NumberFormat("es-CL", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const intensityClasses = [
   "border-[#dce5eb] bg-[#f5f8fa] text-slate-500",
-  "border-[#cbe6e1] bg-[#e8f5f2] text-[#245c55]",
-  "border-[#9ed5ca] bg-[#ccebe5] text-[#174f48]",
-  "border-[#62bcae] bg-[#8fd8cc] text-[#103f3a]",
-  "border-[#269b89] bg-[#43b9a5] text-white",
+  "border-[#c9e8e1] bg-[#e5f5f2] text-[#245c55]",
+  "border-[#a9ddd3] bg-[#c7ebe4] text-[#174f48]",
+  "border-[#7bcbbd] bg-[#9ddbd1] text-[#103f3a]",
+  "border-[#45b7a5] bg-[#6bc8bb] text-[#0b3935]",
+  "border-[#199b88] bg-[#35b29f] text-[#083c36]",
+  "border-[#0d7f70] bg-[#168f7d] text-white",
   "border-[#087466] bg-[#087466] text-white",
+  "border-[#075b52] bg-[#075b52] text-white",
+  "border-[#06443f] bg-[#06443f] text-white",
 ] as const;
+
+const occupancyLegendLabels = ["0–20%", ">20–40%", ">40–55%", ">55–70%", ">70–80%", ">80–90%", ">90–100%", ">100–110%", ">110%"];
 
 function displayDate(value: string) {
   const [year, month, day] = value.split("-");
@@ -70,7 +77,7 @@ export function OperationalOccupancyRevenueHeatmap({
     () => buildOccupancyPercentageHeatmap(physicalRows, year, selected),
     [physicalRows, selected, year],
   );
-  const maximumRevenue = Math.max(0, ...revenueDays.flatMap((day) => day.total === null ? [] : [day.total]));
+  const revenueScale = useMemo(() => buildRevenueQuantileScale(revenueDays.map((day) => day.total)), [revenueDays]);
   const calendar = buildYearCalendar(year);
   const days = metric === "revenue" ? revenueDays : occupancyDays;
 
@@ -137,8 +144,8 @@ export function OperationalOccupancyRevenueHeatmap({
                       const revenueDay = metric === "revenue" ? day as (typeof revenueDays)[number] : null;
                       const occupancyDay = metric === "occupancy" ? day as (typeof occupancyDays)[number] : null;
                       const intensity = revenueDay
-                        ? getRevenueIntensity(revenueDay.total, maximumRevenue)
-                        : getOccupancyPercentageIntensity(occupancyDay?.percentage ?? null);
+                        ? getRevenueHeatmapLevel(revenueDay.total, revenueScale)
+                        : getOccupancyHeatmapLevel(occupancyDay?.percentage ?? null);
                       const revenueLabel = formatCurrency(revenueDay?.total ?? null);
                       const occupancyLabel = occupancyDay?.percentage === null || occupancyDay?.percentage === undefined
                         ? "No disponible"
@@ -185,9 +192,17 @@ export function OperationalOccupancyRevenueHeatmap({
               );
             })}
           </div>
-          <div aria-label={metric === "revenue" ? "Escala de revenue" : "Escala de porcentaje de ocupación"} className="mt-4 flex items-center justify-end gap-2 text-xs text-slate-500">
+          <div aria-label={metric === "revenue" ? "Escala de revenue por cuantiles" : "Escala de porcentaje de ocupación"} className="mt-4 flex flex-wrap items-center justify-end gap-2 text-xs text-slate-500">
             <span>Menor</span>
-            {intensityClasses.slice(1).map((className, index) => <span aria-hidden="true" className={`h-3 w-5 rounded-sm border ${className}`} key={index} />)}
+            {intensityClasses.slice(1).map((className, index) => {
+              const lower = index === 0 ? null : revenueScale.thresholds[index - 1];
+              const upper = revenueScale.thresholds[index];
+              const revenueTitle = index === 8
+                ? `${lower === undefined ? "" : `${formatCurrency(lower)} – `}Mayor nivel`
+                : `${lower === null || lower === undefined ? "Hasta" : `Más de ${formatCurrency(lower)} hasta`} ${formatCurrency(upper ?? lower ?? 0)}`;
+              const label = metric === "revenue" ? revenueTitle : occupancyLegendLabels[index];
+              return <span aria-label={label} className={`h-3 w-5 rounded-sm border ${className}`} key={index} role="img" title={label} />;
+            })}
             <span>Mayor</span>
           </div>
         </>

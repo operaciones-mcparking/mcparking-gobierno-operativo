@@ -82,10 +82,22 @@ export function buildOccupancyRevenueHeatmap(
   });
 }
 
-export function getRevenueIntensity(value: number | null, maximum: number) {
+export type RevenueQuantileScale = { thresholds: number[] };
+
+export function buildRevenueQuantileScale(values: Array<number | null>): RevenueQuantileScale {
+  const sorted = values.flatMap((value) => value === null ? [] : [value]).sort((left, right) => left - right);
+  if (sorted.length === 0) return { thresholds: [] };
+  return {
+    thresholds: Array.from({ length: 8 }, (_, index) => {
+      const position = Math.ceil(((index + 1) * sorted.length) / 9) - 1;
+      return sorted[Math.max(0, position)];
+    }),
+  };
+}
+
+export function getRevenueHeatmapLevel(value: number | null, scale: RevenueQuantileScale) {
   if (value === null) return 0;
-  if (maximum <= 0) return 1;
-  return Math.min(5, Math.max(1, Math.ceil((value / maximum) * 5)));
+  return 1 + scale.thresholds.filter((threshold) => value > threshold).length;
 }
 
 export function buildOccupancyPercentageHeatmap(
@@ -122,7 +134,7 @@ export function buildOccupancyPercentageHeatmap(
   });
 }
 
-export function getOccupancyPercentageIntensity(value: number | null) {
+export function getOccupancyHeatmapLevel(value: number | null) {
   if (value === null) return 0;
-  return Math.min(5, Math.max(1, Math.ceil((Math.min(100, Math.max(0, value)) / 100) * 5)));
+  return 1 + [20, 40, 55, 70, 80, 90, 100, 110].filter((threshold) => value > threshold).length;
 }
