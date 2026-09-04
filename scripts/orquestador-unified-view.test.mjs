@@ -11,6 +11,8 @@ const oldDashboardPagePath = "src/app/dashboard-operacional/page.tsx";
 const dashboardClientPath = "src/app/dashboard-operacional/dashboard-operacional-client.tsx";
 const dashboardEndpointPath = "src/app/api/dashboard/operacional/route.ts";
 const shellPath = "src/components/dashboard/shell.tsx";
+const panelPath = "src/components/dashboard/panel.tsx";
+const customerWindowViewPath = "src/app/orquestador/customer-window-view.tsx";
 
 const orquestadorPage = readFileSync(orquestadorPagePath, "utf8");
 const controlCenter = readFileSync(controlCenterPath, "utf8");
@@ -20,6 +22,8 @@ const oldDashboardPage = readFileSync(oldDashboardPagePath, "utf8");
 const dashboardClient = readFileSync(dashboardClientPath, "utf8");
 const dashboardEndpoint = readFileSync(dashboardEndpointPath, "utf8");
 const shell = readFileSync(shellPath, "utf8");
+const panel = readFileSync(panelPath, "utf8");
+const customerWindowView = readFileSync(customerWindowViewPath, "utf8");
 const diffNames = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
 const allNewSources = [orquestadorPage, controlCenter, dashboardView, tabs, oldDashboardPage, dashboardClient].join("\n");
 
@@ -90,8 +94,11 @@ test("I. no hay POST nuevo ni creacion de jobs en la unificacion", () => {
   assert.match(dashboardEndpoint, /export async function GET/);
 });
 
-test("J. no modifica navegacion global ni recuperacion desde esta tarea", () => {
-  assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/shell\.tsx$/m);
+test("J. separa Panel para clientes sin mover auth al browser ni cambiar navegacion", () => {
+  assert.match(shell, /getCurrentAccessContext/);
+  assert.match(shell, /export \{ Panel \} from "@\/components\/dashboard\/panel"/);
+  assert.match(customerWindowView, /Panel \} from "@\/components\/dashboard\/panel"/);
+  assert.doesNotMatch(customerWindowView + panel, /@\/lib\/auth\/access|server-only|createSupabaseAuthServerClient/);
   assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/mobile-navigation\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/api\/recuperacion|^scripts\/recovery/m);
 });

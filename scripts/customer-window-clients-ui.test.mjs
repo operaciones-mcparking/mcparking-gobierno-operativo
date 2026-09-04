@@ -8,6 +8,7 @@ const view = readFileSync("src/app/orquestador/customer-window-view.tsx", "utf8"
 const route = readFileSync("src/app/api/orquestador/customer-window/customers/route.ts", "utf8");
 const search = readFileSync("src/lib/customer-window/customer-search.ts", "utf8");
 const admin = readFileSync("src/lib/orquestador/supabase-admin.ts", "utf8");
+const panel = readFileSync("src/components/dashboard/panel.tsx", "utf8");
 
 test("navigation adds Customer Window without changing the default dashboard", () => {
   assert.match(tabs, /Dashboard[\s\S]*Customer Window[\s\S]*Centro de Control/);
@@ -61,4 +62,10 @@ test("service role remains in the server-only admin module", () => {
   assert.match(admin, /customer_window_get_customer_summary/);
   assert.match(admin, /customer_window_list_customer_bookings/);
   assert.doesNotMatch(view + route + search, /SUPABASE_SERVICE_ROLE_KEY|createClient\(|\.rpc\(/);
+});
+
+test("client imports only the presentation panel and never the server shell", () => {
+  assert.match(view, /Panel \} from "@\/components\/dashboard\/panel"/);
+  assert.doesNotMatch(view, /components\/dashboard\/shell|lib\/auth\/access|server-only/);
+  assert.doesNotMatch(panel, /lib\/auth\/access|auth-server|server-only/);
 });

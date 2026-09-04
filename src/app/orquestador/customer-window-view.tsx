@@ -12,7 +12,7 @@ import {
   DataTableRow,
   EmptyState,
 } from "@/components/dashboard/data-table";
-import { Panel } from "@/components/dashboard/shell";
+import { Panel } from "@/components/dashboard/panel";
 import {
   normalizeCustomerSearchValue,
   type CustomerSearchType,
