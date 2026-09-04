@@ -101,6 +101,22 @@ test("9. UI muestra doce meses responsive leyenda y tooltip accesible", () => {
   assert.match(component, /displayName\(item\.name, mode\).*formatCurrency\(item\.revenue\)/);
 });
 
+test("9b. sección parte cerrada y mantiene encabezado con control accesible", () => {
+  assert.match(component, /useState\(false\)/);
+  assert.match(component, /Revenue de ocupación por día/);
+  assert.match(component, /Suma diaria de las series seleccionadas\./);
+  assert.match(component, /aria-controls=\{heatmapContentId\}/);
+  assert.match(component, /aria-expanded=\{isExpanded\}/);
+  assert.match(component, /isExpanded \? "Ocultar" : "Mostrar"/);
+  assert.match(component, /ChevronUp[\s\S]*ChevronDown/);
+});
+
+test("9c. controles y calendarios se renderizan solo al expandir", () => {
+  assert.match(component, /\{isExpanded \? \(\s*<>[\s\S]*Métrica del mapa de calor[\s\S]*Año del mapa de calor[\s\S]*<\/\>[\s\S]*\) : null\}/);
+  assert.match(component, /\{isExpanded \? \(\s*<div id=\{heatmapContentId\}>[\s\S]*Array\.from\(\{ length: 12 \}/);
+  assert.doesNotMatch(component, /localStorage|searchParams|useSearchParams/);
+});
+
 test("10. sección reemplaza Evolución diaria debajo del gráfico", () => {
   const chart = section.indexOf("<OperationalOccupancyChart");
   const heatmap = section.indexOf("<OperationalOccupancyRevenueHeatmap");

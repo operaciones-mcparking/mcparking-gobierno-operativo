@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { buildPhysicalOccupancyDisplayRows, physicalOccupancyDisplayLabel, type OperationalOccupancyReadModel } from "@/lib/dashboard/ocupacion";
@@ -32,6 +33,7 @@ const intensityClasses = [
 ] as const;
 
 const occupancyLegendLabels = ["0–20%", ">20–40%", ">40–55%", ">55–70%", ">70–80%", ">80–90%", ">90–100%", ">100–110%", ">110%"];
+const heatmapContentId = "operational-occupancy-heatmap-content";
 
 function displayDate(value: string) {
   const [year, month, day] = value.split("-");
@@ -61,6 +63,7 @@ export function OperationalOccupancyRevenueHeatmap({
   year: number;
   years: number[];
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
   const [metric, setMetric] = useState<OccupancyHeatmapMetric>("revenue");
 
   useEffect(() => {
@@ -85,48 +88,64 @@ export function OperationalOccupancyRevenueHeatmap({
     <div className="mt-7 min-w-0 border-t border-[#e4edf4] pt-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-navy">{metric === "revenue" ? "Revenue de ocupación por día" : "% de ocupación por día"}</h3>
-          <p className="mt-1 text-xs text-slate-500">{metric === "revenue" ? "Suma diaria de las series seleccionadas." : "Porcentaje ponderado por la capacidad física seleccionada."}</p>
+          <h3 className="text-sm font-semibold text-navy">Revenue de ocupación por día</h3>
+          <p className="mt-1 text-xs text-slate-500">Suma diaria de las series seleccionadas.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div aria-label="Métrica del mapa de calor" className="inline-flex w-fit rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] p-1" role="group">
-            {(["revenue", "occupancy"] as const).map((value) => {
-              const disabled = value === "occupancy" && mode === "commercial";
-              return (
-                <button
-                  aria-pressed={metric === value}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${metric === value ? "bg-navy text-white" : "text-slate-600 hover:bg-white"} disabled:cursor-not-allowed disabled:opacity-40`}
-                  disabled={disabled}
-                  key={value}
-                  onClick={() => setMetric(value)}
-                  type="button"
-                >
-                  {value === "revenue" ? "Revenue" : "% de ocupación"}
-                </button>
-              );
-            })}
-          </div>
-          <div aria-label="Año del mapa de calor" className="inline-flex w-fit flex-wrap rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] p-1" role="group">
-            {years.map((value) => (
-              <button
-                aria-pressed={year === value}
-                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${year === value ? "bg-navy text-white" : "text-slate-600 hover:bg-white"}`}
-                key={value}
-                onClick={() => onYearChange(value)}
-                type="button"
-              >
-                {value}
-              </button>
-            ))}
-          </div>
+          {isExpanded ? (
+            <>
+              <div aria-label="Métrica del mapa de calor" className="inline-flex w-fit rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] p-1" role="group">
+                {(["revenue", "occupancy"] as const).map((value) => {
+                  const disabled = value === "occupancy" && mode === "commercial";
+                  return (
+                    <button
+                      aria-pressed={metric === value}
+                      className={`rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${metric === value ? "bg-navy text-white" : "text-slate-600 hover:bg-white"} disabled:cursor-not-allowed disabled:opacity-40`}
+                      disabled={disabled}
+                      key={value}
+                      onClick={() => setMetric(value)}
+                      type="button"
+                    >
+                      {value === "revenue" ? "Revenue" : "% de ocupación"}
+                    </button>
+                  );
+                })}
+              </div>
+              <div aria-label="Año del mapa de calor" className="inline-flex w-fit flex-wrap rounded-lg border border-[#cbd8e3] bg-[#f8fbfd] p-1" role="group">
+                {years.map((value) => (
+                  <button
+                    aria-pressed={year === value}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea ${year === value ? "bg-navy text-white" : "text-slate-600 hover:bg-white"}`}
+                    key={value}
+                    onClick={() => onYearChange(value)}
+                    type="button"
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+          <button
+            aria-controls={heatmapContentId}
+            aria-expanded={isExpanded}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-navy transition hover:bg-[#f1f6f9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea"
+            onClick={() => setIsExpanded((current) => !current)}
+            type="button"
+          >
+            {isExpanded ? "Ocultar" : "Mostrar"}
+            {isExpanded ? <ChevronUp aria-hidden="true" className="h-4 w-4" /> : <ChevronDown aria-hidden="true" className="h-4 w-4" />}
+          </button>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">El porcentaje de ocupación corresponde a la capacidad física y está disponible en Agregado.</p>
+      {isExpanded ? (
+        <div id={heatmapContentId}>
+          <p className="mt-2 text-xs text-slate-500">El porcentaje de ocupación corresponde a la capacidad física y está disponible en Agregado.</p>
 
-      {isLoading ? <p className="mt-4 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">Cargando datos anuales...</p> : null}
-      {!isLoading && error ? <p className="mt-4 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-4 text-sm font-medium text-[#8a4a00]">{error}</p> : null}
-      {!isLoading && !error && data ? (
-        <>
+          {isLoading ? <p className="mt-4 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 text-sm text-slate-600">Cargando datos anuales...</p> : null}
+          {!isLoading && error ? <p className="mt-4 rounded-lg border border-[#ffd4a3] bg-[#fff8ef] p-4 text-sm font-medium text-[#8a4a00]">{error}</p> : null}
+          {!isLoading && !error && data ? (
+            <>
           <div className="mt-4 grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 12 }, (_, month) => {
               const monthDays = days.filter((day) => day.month === month);
@@ -205,7 +224,9 @@ export function OperationalOccupancyRevenueHeatmap({
             })}
             <span>Mayor</span>
           </div>
-        </>
+            </>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );
