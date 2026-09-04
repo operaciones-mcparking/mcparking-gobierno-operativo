@@ -688,3 +688,42 @@ export async function getPhysicalOccupancyRpcData(from: string, to: string): Pro
 export async function getCommercialOccupancyRpcData(from: string, to: string): Promise<OrquestadorResult<unknown>> {
   return getOccupancyRpcData("orchestrator_ocupacion_list_comercial", from, to);
 }
+export async function searchCustomerWindowCustomers(identityType: string, identityValue: string, limit: number) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_search_customers", {
+      p_identity_type: identityType,
+      p_identity_value: identityValue,
+      p_limit: limit,
+    });
+    return error ? singleError<unknown>() : { data, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}
+
+export async function getCustomerWindowSummary(customerId: string) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_get_customer_summary", {
+      p_customer_id: customerId,
+    });
+    return error ? singleError<unknown>() : { data, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}
+
+export async function listCustomerWindowBookings(customerId: string, page: number, pageSize: number) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_list_customer_bookings", {
+      p_customer_id: customerId,
+      p_page: page,
+      p_page_size: pageSize,
+    });
+    return error ? singleError<unknown>() : { data, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}

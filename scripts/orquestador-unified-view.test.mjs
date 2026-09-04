@@ -33,15 +33,17 @@ test("A. /orquestador sigue admin-only y force-dynamic", () => {
 
 test("B. dashboard es la vista por defecto y valores invalidos caen en dashboard", () => {
   assert.match(orquestadorPage, /function resolveView/);
-  assert.match(orquestadorPage, /requestedView === "control" \? "control" : "dashboard"/);
-  assert.match(orquestadorPage, /searchParams\?\.view/);
+  assert.match(orquestadorPage, /requestedView === "control" \|\| requestedView === "customer-window"/);
+  assert.match(orquestadorPage, /return "dashboard"/);
+  assert.match(orquestadorPage, /resolvedSearchParams\?\.view/);
 });
 
-test("C. view control muestra Centro de Control actual", () => {
-  assert.match(orquestadorPage, /activeView === "control" \? <OrchestratorControlCenter \/> : <OrchestratorDashboardView \/>/);
+test("C. las tres vistas se renderizan sin duplicar sus implementaciones", () => {
+  assert.match(orquestadorPage, /activeView === "control" \? <OrchestratorControlCenter \/> : null/);
+  assert.match(orquestadorPage, /activeView === "customer-window" \? <CustomerWindowView \/> : null/);
+  assert.match(orquestadorPage, /activeView === "dashboard" \? <OrchestratorDashboardView \/> : null/);
   assert.match(controlCenter, /ActualizarDatosOperacionalesControl/);
   assert.match(controlCenter, /WorkerHealthCheckButton/);
-  assert.match(controlCenter, /JobTechnicalDetailButton/);
   assert.match(controlCenter, /listOrchestratorWorkers/);
   assert.match(controlCenter, /listOrchestratorJobs/);
   assert.doesNotMatch(controlCenter, /DashboardShell|requireAdminAccess/);
@@ -69,9 +71,9 @@ test("F. /dashboard-operacional redirige al dashboard dentro de /orquestador", (
   assert.doesNotMatch(oldDashboardPage, /DashboardOperacionalClient|getOperationalDashboardRpcData|requireAdminAccess/);
 });
 
-test("G. menu lateral conserva solo item Orquestador hacia /orquestador", () => {
+test("G. menu lateral conserva solo item Operaciones hacia /orquestador", () => {
   assert.match(shell, /href: "\/orquestador"/);
-  assert.match(shell, /label: "Orquestador"/);
+  assert.match(shell, /label: "Operaciones"/);
   assert.doesNotMatch(shell, /dashboard-operacional/);
 });
 

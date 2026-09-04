@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-export type OrchestratorView = "dashboard" | "control";
+export type OrchestratorView = "dashboard" | "customer-window" | "control";
 
 type OrchestratorViewTabsProps = {
   activeView: OrchestratorView;
@@ -10,6 +10,7 @@ type OrchestratorViewTabsProps = {
 
 const tabs: Array<{ label: string; value: OrchestratorView }> = [
   { label: "Dashboard", value: "dashboard" },
+  { label: "Customer Window", value: "customer-window" },
   { label: "Centro de Control", value: "control" },
 ];
 
