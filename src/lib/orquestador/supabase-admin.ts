@@ -727,3 +727,71 @@ export async function listCustomerWindowBookings(customerId: string, page: numbe
     return singleError<unknown>();
   }
 }
+
+type CustomerWindowPeriodListInput = {
+  brandBehavior: string | null;
+  family: "MCP_EAP" | "OKP";
+  from: string;
+  lifecycleStatus: string | null;
+  packStatus: string | null;
+  page: number;
+  pageSize: number;
+  tier: string | null;
+  to: string;
+};
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function listCustomerWindowCustomersByPurchasePeriod(input: CustomerWindowPeriodListInput) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_list_customers_by_purchase_period", {
+      p_brand_behavior: input.brandBehavior,
+      p_family: input.family,
+      p_from: input.from,
+      p_lifecycle_status: input.lifecycleStatus,
+      p_pack_status: input.packStatus,
+      p_page: input.page,
+      p_page_size: input.pageSize,
+      p_tier: input.tier,
+      p_to: input.to,
+    });
+    if (error || !isJsonRecord(data) || !Array.isArray(data.items)) return singleError<unknown>();
+
+    const customerIds = data.items
+      .map((item) => isJsonRecord(item) ? item.customerId : null)
+      .filter((customerId): customerId is string => typeof customerId === "string");
+    if (customerIds.length === 0) return { data, error: false };
+
+    const identitiesResult = await supabase.rpc("customer_window_get_page_identities", {
+      p_customer_ids: customerIds,
+    });
+    if (identitiesResult.error || !isJsonRecord(identitiesResult.data) || !Array.isArray(identitiesResult.data.items)) {
+      return singleError<unknown>();
+    }
+
+    const identitiesByCustomer = new Map(
+      identitiesResult.data.items.flatMap((identity) => {
+        if (!isJsonRecord(identity) || typeof identity.customerId !== "string") return [];
+        return [[identity.customerId, identity] as const];
+      }),
+    );
+    const items = data.items.map((item) => {
+      if (!isJsonRecord(item) || typeof item.customerId !== "string") return item;
+      const identity = identitiesByCustomer.get(item.customerId);
+      const phones = identity && Array.isArray(identity.phones) ? identity.phones : [];
+      const emails = identity && Array.isArray(identity.emails) ? identity.emails : [];
+      return {
+        ...item,
+        emails: emails.filter((email): email is string => typeof email === "string"),
+        phones: phones.filter((phone): phone is string => typeof phone === "string"),
+      };
+    });
+
+    return { data: { ...data, items }, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}
