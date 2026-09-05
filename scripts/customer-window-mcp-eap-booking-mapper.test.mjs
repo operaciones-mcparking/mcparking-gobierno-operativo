@@ -70,10 +70,11 @@ test("maps the exact Website and ParkingCode business catalog", () => {
   }
 });
 
-test("accepts only valid booking statuses 1 and 8", () => {
+test("preserves valid and commercially invalid integer booking statuses", () => {
   assert.equal(mapMcpEapBookingSourceRow(source({ BookingStatus: 1 })).booking_status, 1);
   assert.equal(mapMcpEapBookingSourceRow(source({ BookingStatus: 8 })).booking_status, 8);
-  for (const BookingStatus of [0, 2, null, "invalid"]) {
+  assert.equal(mapMcpEapBookingSourceRow(source({ BookingStatus: 2 })).booking_status, 2);
+  for (const BookingStatus of [null, "invalid", 1.5]) {
     assert.throws(() => mapMcpEapBookingSourceRow(source({ BookingStatus })));
   }
 });
@@ -155,6 +156,7 @@ test("row hash is stable and changes for every representative mutable family", (
     { Email: "other@example.com" },
     { Kennzeichen: "ZZZZ99" },
     { BookingStatus: 8 },
+    { BookingStatus: 2 },
     { PayingStatus: 3 },
     { Website: 2 },
     { ParkingCode: "OTHER" },

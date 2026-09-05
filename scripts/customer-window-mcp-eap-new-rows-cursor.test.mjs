@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -10,7 +9,7 @@ const migration = readFileSync(
 const endpoint = readFileSync("src/app/api/customer-window/mcp-eap/sync/route.ts", "utf8");
 const mapper = readFileSync("src/lib/customer-window/mcp-eap-booking-mapper.ts", "utf8");
 const importRpc = readFileSync(
-  "supabase/migrations/20260831130000_add_customer_source_bookings_mcp_eap_m2m_import.sql",
+  "supabase/migrations/20260904180000_support_customer_window_mcp_eap_deactivation.sql",
   "utf8",
 );
 
@@ -109,14 +108,11 @@ test("all state RPCs are security definer and executable only by service role", 
   assert.match(migration, /to service_role/g);
 });
 
-test("existing endpoint mapper and import RPC remain untouched and reusable", () => {
+test("existing endpoint mapper and import RPC remain reusable for new rows", () => {
   assert.match(endpoint, /const SOURCE = "MCP_BUCHUNGEN"/);
   assert.match(endpoint, /const MAX_ROWS_PER_REQUEST = 500/);
   assert.match(endpoint, /import_customer_source_bookings_mcp_eap_m2m/);
-  assert.match(mapper, /BookingStatus must be 1 or 8/);
-  assert.match(importRpc, /elsif v_existing\.row_hash = v_input\.row_hash/);
-  const changed = execFileSync("git", ["diff", "--name-only"], { encoding: "utf8" });
-  assert.doesNotMatch(changed, /src\/app\/api\/customer-window\/mcp-eap\/sync\/route\.ts/);
-  assert.doesNotMatch(changed, /src\/lib\/customer-window\/mcp-eap-booking-mapper\.ts/);
-  assert.doesNotMatch(changed, /20260831130000_add_customer_source_bookings_mcp_eap_m2m_import\.sql/);
+  assert.match(mapper, /requiredInteger\(row\.BookingStatus, "BookingStatus"\)/);
+  assert.doesNotMatch(mapper, /BookingStatus must be 1 or 8/);
+  assert.match(importRpc, /if v_existing\.row_hash = v_input\.row_hash/);
 });

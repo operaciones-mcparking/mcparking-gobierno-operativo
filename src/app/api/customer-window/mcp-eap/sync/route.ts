@@ -20,8 +20,11 @@ const { isValidPurchaseSyncSecret } = requireFromRoute(
 
 type ImportRpcResult = {
   conflictRows?: number;
+  deactivatedRows?: number;
+  ignoredInvalidRows?: number;
   insertedRows?: number;
   invalidRows?: number;
+  reactivatedRows?: number;
   rowsReceived?: number;
   unchangedRows?: number;
   updatedRows?: number;
@@ -84,9 +87,12 @@ export async function POST(request: NextRequest) {
   if (uniqueRows.length === 0) {
     return NextResponse.json({
       conflictRows: localConflictRows,
+      deactivatedRows: 0,
+      ignoredInvalidRows: 0,
       insertedRows: 0,
       invalidRows,
       ok: true,
+      reactivatedRows: 0,
       rowsReceived: payload.rows.length,
       unchangedRows: 0,
       updatedRows: 0,
@@ -101,9 +107,12 @@ export async function POST(request: NextRequest) {
   const result = data as ImportRpcResult;
   return NextResponse.json({
     conflictRows: localConflictRows + (result.conflictRows ?? 0),
+    deactivatedRows: result.deactivatedRows ?? 0,
+    ignoredInvalidRows: result.ignoredInvalidRows ?? 0,
     insertedRows: result.insertedRows ?? 0,
     invalidRows: invalidRows + (result.invalidRows ?? 0),
     ok: true,
+    reactivatedRows: result.reactivatedRows ?? 0,
     rowsReceived: payload.rows.length,
     unchangedRows: result.unchangedRows ?? 0,
     updatedRows: result.updatedRows ?? 0,

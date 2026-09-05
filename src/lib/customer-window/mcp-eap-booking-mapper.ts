@@ -166,7 +166,6 @@ export function mapMcpEapBookingSourceRow(row: McpEapBookingSourceRow): Customer
   const sourceBookingCode = cleanText(row.Buchungsnummer);
   if (!sourceBookingCode) throw new Error("Buchungsnummer is required.");
   const bookingStatus = requiredInteger(row.BookingStatus, "BookingStatus");
-  if (bookingStatus !== 1 && bookingStatus !== 8) throw new Error("BookingStatus must be 1 or 8.");
   const website = requiredInteger(row.Website, "Website");
   const sourceCreatedAt = localTimestamp(row.Buchungszeit);
   if (!sourceCreatedAt) throw new Error("Buchungszeit must be a timezone-free source timestamp.");

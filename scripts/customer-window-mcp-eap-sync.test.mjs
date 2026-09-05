@@ -5,7 +5,7 @@ import test from "node:test";
 const route = readFileSync("src/app/api/customer-window/mcp-eap/sync/route.ts", "utf8");
 const middleware = readFileSync("src/middleware.ts", "utf8");
 const tableMigration = readFileSync("supabase/migrations/20260831120000_create_customer_source_bookings_mcp_eap.sql", "utf8");
-const importMigration = readFileSync("supabase/migrations/20260831130000_add_customer_source_bookings_mcp_eap_m2m_import.sql", "utf8");
+const importMigration = readFileSync("supabase/migrations/20260904180000_support_customer_window_mcp_eap_deactivation.sql", "utf8");
 
 test("endpoint validates exact source, raw rows, and the 500-row limit", () => {
   assert.match(route, /const SOURCE = "MCP_BUCHUNGEN"/);
@@ -28,7 +28,10 @@ test("endpoint uses existing server-side M2M authentication and an exact bypass"
 test("endpoint calls the dedicated RPC and returns only convergence counters", () => {
   assert.match(route, /createSupabaseAdminClient\(\)/);
   assert.match(route, /\.rpc\("import_customer_source_bookings_mcp_eap_m2m"/);
-  for (const counter of ["rowsReceived", "insertedRows", "updatedRows", "unchangedRows", "invalidRows", "conflictRows"]) {
+  for (const counter of [
+    "rowsReceived", "insertedRows", "updatedRows", "unchangedRows", "deactivatedRows",
+    "reactivatedRows", "ignoredInvalidRows", "invalidRows", "conflictRows",
+  ]) {
     assert.match(route, new RegExp(counter));
   }
   assert.doesNotMatch(route, /error\.message|error\.details|SUPABASE_SERVICE_ROLE_KEY|console\./);
@@ -53,13 +56,16 @@ test("import RPC is atomic, bounded, convergent, and never deletes", () => {
   assert.match(importMigration, /v_rows_received < 1 or v_rows_received > 500/);
   assert.match(importMigration, /for update/);
   assert.match(importMigration, /if not found then[\s\S]*insert into public\.customer_source_bookings_mcp_eap/);
-  assert.match(importMigration, /elsif v_existing\.row_hash = v_input\.row_hash then[\s\S]*v_unchanged_rows/);
-  assert.match(importMigration, /else[\s\S]*update public\.customer_source_bookings_mcp_eap/);
+  assert.match(importMigration, /if v_existing\.row_hash = v_input\.row_hash then[\s\S]*v_unchanged_rows/);
+  assert.match(importMigration, /update public\.customer_source_bookings_mcp_eap target/);
   assert.doesNotMatch(importMigration, /\bdelete\s+from\b/i);
 });
 
 test("import RPC reports complete accounting and is service-role-only", () => {
-  for (const counter of ["rowsReceived", "insertedRows", "updatedRows", "unchangedRows", "invalidRows", "conflictRows"]) {
+  for (const counter of [
+    "rowsReceived", "insertedRows", "updatedRows", "unchangedRows", "deactivatedRows",
+    "reactivatedRows", "ignoredInvalidRows", "invalidRows", "conflictRows",
+  ]) {
     assert.match(importMigration, new RegExp(`'${counter}'`));
   }
   assert.match(importMigration, /revoke all on function public\.import_customer_source_bookings_mcp_eap_m2m\(jsonb\)[\s\S]*from public, anon, authenticated, service_role/);
