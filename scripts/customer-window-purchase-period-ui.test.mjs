@@ -136,7 +136,8 @@ test("tables expose period and historical counts without commercial amounts", ()
   for (const field of ["purchasesInPeriod", "firstPurchaseInPeriod", "lastPurchaseInPeriod", "totalReservations", "mcpCount", "eapCount", "okpCount", "okpExpressCount", "okpRioClarilloCount", "okpOtrosCount"]) {
     assert.match(view, new RegExp(field));
   }
-  assert.doesNotMatch(view, /totalSpend|averageTicket|source_total_amount|\bamount\b|\brevenue\b/i);
+  const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
+  assert.doesNotMatch(tableBlock, /totalSpend|averageTicket|source_total_amount|\bamount\b|\brevenue\b/i);
 });
 
 test("both customer tables use the same compact four-column contract", () => {
@@ -199,7 +200,7 @@ test("customer detail uses an accessible right drawer and visual timeline", () =
   assert.match(drawerBlock, /sm:col-start-3 sm:ml-1[\s\S]*sm:col-start-1 sm:mr-1/);
   assert.match(drawerBlock, /<details[\s\S]*<summary/);
   assert.match(drawerBlock, /purchase_created_at[\s\S]*source_booking_code[\s\S]*planned_arrival_at[\s\S]*planned_departure_at/);
-  assert.doesNotMatch(drawerBlock, /totalSpend|averageTicket|source_total_amount|\bamount\b|\brevenue\b/i);
+  assert.doesNotMatch(drawerBlock, /totalSpend|averageTicket|source_total_amount|\brevenue\b/i);
 });
 
 test("customer detail keeps a compact managerial summary and secondary information collapsed", () => {
@@ -243,6 +244,41 @@ test("customer detail uses lightweight typography and source-family timeline acc
   assert.match(drawerBlock, /border-l-\[#2563a6\][\s\S]*bg-\[#f8fbfe\]/);
   assert.match(drawerBlock, /text-xs font-medium text-navy">\{displayDate\(booking\.purchase_created_at\)\}/);
   assert.match(drawerBlock, /text-\[11px\] font-normal text-slate-500">\{familyLabel\}/);
+});
+
+test("eligible ticket events show canonical economics without changing timeline sides", () => {
+  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
+
+  assert.match(drawerBlock, /booking\.is_pack === false[\s\S]*booking\.economic_eligible === true[\s\S]*booking\.economics_available === true/);
+  assert.match(drawerBlock, /displayClp\(booking\.paid_amount\)/);
+  assert.match(drawerBlock, /ADR \{displayAdr\(booking\.paid_adr\)\}/);
+  assert.match(drawerBlock, /displayDiscountPercentage\(booking\.discount_percentage\)/);
+  for (const label of ["Precio pagado", "Precio lista", "Descuento \\$", "Descuento %", "Días", "ADR pagado", "ADR lista"]) {
+    assert.match(drawerBlock, new RegExp(label));
+  }
+  assert.match(drawerBlock, /booking\.is_pack \? "Pack" : "Boleta"/);
+  assert.match(drawerBlock, /showEconomics \? <div/);
+  assert.match(drawerBlock, /showEconomics \? <>/);
+  assert.match(drawerBlock, /sm:col-start-3 sm:ml-1[\s\S]*sm:col-start-1 sm:mr-1/);
+});
+
+test("timeline hides zero discount and shows uninterpreted source promo codes", () => {
+  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
+
+  assert.match(view, /booking\.source === "OKP" \? booking\.coupon_code : booking\.promotion_code/);
+  assert.match(drawerBlock, /discountPercentage !== null && discountPercentage > 0/);
+  assert.match(drawerBlock, />Código \{promotionCode\}<\/p>/);
+  assert.match(drawerBlock, /const promotionCode = showEconomics \? promotionCodeForBooking\(booking\) : null/);
+  assert.doesNotMatch(drawerBlock, /Banco|BIN|Convenio|Campaña|Promoción bancaria/);
+  assert.match(drawerBlock, /sm:col-start-3 sm:ml-1[\s\S]*sm:col-start-1 sm:mr-1/);
+});
+
+test("economic presentation preserves CLP zero percentages and nulls", () => {
+  assert.match(view, /new Intl\.NumberFormat\("es-CL", \{ currency: "CLP", maximumFractionDigits: 0, style: "currency" \}\)/);
+  assert.match(view, /amount === null[\s\S]*"No disponible"/);
+  assert.match(view, /maximumFractionDigits: 1/);
+  assert.match(view, /percentage > 0 \? `-\$\{formatted\}%` : `\$\{formatted\}%`/);
+  assert.doesNotMatch(view, /booking\.(?:paid_amount|paid_adr|list_adr) \|\| 0/);
 });
 
 test("customer panels share desktop width height and bounded vertical scrolling", () => {

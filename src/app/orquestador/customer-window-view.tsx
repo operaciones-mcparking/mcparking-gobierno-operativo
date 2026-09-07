@@ -64,7 +64,21 @@ type PeriodCustomer = {
 };
 type PeriodList = { items: PeriodCustomer[]; page: number; pageSize: number; total: number };
 type CustomerSummary = Record<string, unknown> & { customerId: string; ok: boolean };
-type Booking = Record<string, unknown> & { source_row_id: number };
+type Booking = Record<string, unknown> & {
+  coupon_code?: string | null;
+  discount_amount?: number | null;
+  discount_percentage?: number | null;
+  economic_days?: number | null;
+  economic_eligible?: boolean;
+  economics_available?: boolean;
+  is_pack?: boolean;
+  list_adr?: number | null;
+  list_amount?: number | null;
+  paid_adr?: number | null;
+  paid_amount?: number | null;
+  promotion_code?: string | null;
+  source_row_id: number;
+};
 type Timeline = { items: Booking[]; total: number };
 type ClassificationCriteria = Record<string, unknown>;
 
@@ -81,6 +95,39 @@ function displayCount(value: unknown) {
 function displayDate(value: unknown) {
   const raw = typeof value === "string" ? value.slice(0, 10) : "";
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw.split("-").reverse().join("-") : "No disponible";
+}
+
+function finiteNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function displayClp(value: unknown) {
+  const amount = finiteNumber(value);
+  return amount === null
+    ? "No disponible"
+    : new Intl.NumberFormat("es-CL", { currency: "CLP", maximumFractionDigits: 0, style: "currency" }).format(amount);
+}
+
+function displayAdr(value: unknown) {
+  const amount = finiteNumber(value);
+  return amount === null ? "No disponible" : `${displayClp(amount)}/día`;
+}
+
+function displayDiscountPercentage(value: unknown) {
+  const percentage = finiteNumber(value);
+  if (percentage === null) return "No disponible";
+  const formatted = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(percentage * 100);
+  return percentage > 0 ? `-${formatted}%` : `${formatted}%`;
+}
+
+function promotionCodeForBooking(booking: Booking) {
+  const value = booking.source === "OKP" ? booking.coupon_code : booking.promotion_code;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function lifecycleLabel(value: string | null) {
@@ -552,14 +599,35 @@ function CustomerDetailDrawer({
                   {(timeline?.items ?? []).map((booking) => {
                     const isOkpBooking = booking.source === "OKP";
                     const familyLabel = isOkpBooking ? "OKP" : displayText(booking.brand, "MCP/EAP");
+                    const showEconomics = booking.is_pack === false
+                      && booking.economic_eligible === true
+                      && booking.economics_available === true;
+                    const discountPercentage = finiteNumber(booking.discount_percentage);
+                    const promotionCode = showEconomics ? promotionCodeForBooking(booking) : null;
                     return (
                       <li className="relative grid grid-cols-[20px_minmax(0,1fr)] pb-4 last:pb-0 sm:grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]" key={`${booking.source}-${booking.source_row_id}`}>
                         <span className={`relative z-[1] col-start-1 row-start-1 mt-3 h-2.5 w-2.5 justify-self-center rounded-full border-2 border-white ring-1 sm:col-start-2 ${isOkpBooking ? "bg-[#00a86b] ring-[#a7dcc4]" : "bg-[#2563a6] ring-[#b7cee5]"}`} />
                         <details className={`group col-start-2 row-start-1 min-w-0 rounded-lg border border-l-2 p-2.5 shadow-[0_3px_10px_rgba(2,53,116,0.035)] transition ${isOkpBooking ? "border-[#cce9dc] border-l-[#00a86b] bg-[#f8fcfa] hover:border-[#8fd0b1] open:border-[#8fd0b1] sm:col-start-3 sm:ml-1" : "border-[#d6e4f2] border-l-[#2563a6] bg-[#f8fbfe] hover:border-[#9bbdde] open:border-[#9bbdde] sm:col-start-1 sm:mr-1"}`}>
                           <summary className={`cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-sea/30 [&::-webkit-details-marker]:hidden ${isOkpBooking ? "" : "sm:text-right"}`}>
                             <div className={`flex flex-wrap items-start gap-1.5 ${isOkpBooking ? "justify-between" : "justify-between sm:flex-row-reverse"}`}><div><p className="text-xs font-medium text-navy">{displayDate(booking.purchase_created_at)}</p><p className="mt-0.5 break-all text-[11px] font-normal text-slate-500">{familyLabel} · {displayText(booking.source_booking_code)}</p></div><ValueBadge tone={booking.is_pack ? "success" : "neutral"}>{booking.is_pack ? "Pack" : "Boleta"}</ValueBadge></div>
+                            {showEconomics ? <div className={`mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] ${isOkpBooking ? "" : "sm:justify-end"}`}><span className="font-medium text-navy">{displayClp(booking.paid_amount)}</span><span className="text-slate-500">ADR {displayAdr(booking.paid_adr)}</span>{discountPercentage !== null && discountPercentage > 0 ? <span className="text-slate-500">{displayDiscountPercentage(discountPercentage)}</span> : null}</div> : null}
+                            {promotionCode ? <p className={`mt-0.5 break-all text-[10px] font-normal text-slate-500 ${isOkpBooking ? "" : "sm:text-right"}`}>Código {promotionCode}</p> : null}
                           </summary>
-                          <dl className={`mt-2 grid gap-1.5 border-t border-[#e7eef4] pt-2 text-xs ${isOkpBooking ? "" : "sm:text-right"}`}><div><dt className="text-[11px] font-normal text-slate-500">Parking</dt><dd className="break-words font-medium text-navy">{displayText(booking.parking)}</dd></div><div><dt className="text-[11px] font-normal text-slate-500">Estado</dt><dd className="font-medium text-navy">{displayText(booking.status)}</dd></div><div><dt className="text-[11px] font-normal text-slate-500">Llegada / salida</dt><dd className="font-medium text-navy">{displayDate(booking.planned_arrival_at)} · {displayDate(booking.planned_departure_at)}</dd></div><div><dt className="text-[11px] font-normal text-slate-500">Duración</dt><dd className="font-medium text-navy">{booking.duration_days === null ? "No disponible" : `${displayCount(booking.duration_days)} días`}</dd></div></dl>
+                          <dl className={`mt-2 grid gap-1.5 border-t border-[#e7eef4] pt-2 text-xs sm:grid-cols-2 ${isOkpBooking ? "" : "sm:text-right"}`}>
+                            <div><dt className="text-[11px] font-normal text-slate-500">Parking</dt><dd className="break-words font-medium text-navy">{displayText(booking.parking)}</dd></div>
+                            <div><dt className="text-[11px] font-normal text-slate-500">Estado</dt><dd className="font-medium text-navy">{displayText(booking.status)}</dd></div>
+                            <div><dt className="text-[11px] font-normal text-slate-500">Llegada / salida</dt><dd className="font-medium text-navy">{displayDate(booking.planned_arrival_at)} · {displayDate(booking.planned_departure_at)}</dd></div>
+                            <div><dt className="text-[11px] font-normal text-slate-500">Duración</dt><dd className="font-medium text-navy">{booking.duration_days === null ? "No disponible" : `${displayCount(booking.duration_days)} días`}</dd></div>
+                            {showEconomics ? <>
+                              <div><dt className="text-[11px] font-normal text-slate-500">Precio pagado</dt><dd className="font-medium text-navy">{displayClp(booking.paid_amount)}</dd></div>
+                              <div><dt className="text-[11px] font-normal text-slate-500">Precio lista</dt><dd className="font-medium text-navy">{displayClp(booking.list_amount)}</dd></div>
+                              <div><dt className="text-[11px] font-normal text-slate-500">Descuento $</dt><dd className="font-medium text-navy">{displayClp(booking.discount_amount)}</dd></div>
+                              <div><dt className="text-[11px] font-normal text-slate-500">Descuento %</dt><dd className="font-medium text-navy">{displayDiscountPercentage(booking.discount_percentage)}</dd></div>
+                              <div><dt className="text-[11px] font-normal text-slate-500">Días</dt><dd className="font-medium text-navy">{displayCount(booking.economic_days)}</dd></div>
+                              <div><dt className="text-[11px] font-normal text-slate-500">ADR pagado</dt><dd className="font-medium text-navy">{displayAdr(booking.paid_adr)}</dd></div>
+                              <div><dt className="text-[11px] font-normal text-slate-500">ADR lista</dt><dd className="font-medium text-navy">{displayAdr(booking.list_adr)}</dd></div>
+                            </> : null}
+                          </dl>
                         </details>
                       </li>
                     );
