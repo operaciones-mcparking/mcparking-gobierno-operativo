@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp, SlidersHorizontal, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronUp, Info, SlidersHorizontal, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -81,6 +81,48 @@ type Booking = Record<string, unknown> & {
 };
 type Timeline = { items: Booking[]; total: number };
 type ClassificationCriteria = Record<string, unknown>;
+type CustomerEconomicsBaseValues = {
+  averageBoletaTicket: number | null;
+  discountUsagePct: number | null;
+  discountAmount: number | null;
+  economicDays: number | null;
+  listAdr: number | null;
+  listAmount: number | null;
+  paidAdr: number | null;
+  paidAmount: number | null;
+  weightedDiscountPct: number | null;
+};
+type CustomerEconomicsTotal = CustomerEconomicsBaseValues & {
+  boletaCount: number;
+  discountedBoletaCount: number;
+  packCount: number;
+  totalReservations: number;
+};
+type CustomerEconomicsParking = CustomerEconomicsBaseValues & {
+  bookingCount: number;
+  discountedBookingCount: number;
+};
+type CustomerEconomics = {
+  byParking: Record<string, CustomerEconomicsParking>;
+  customerId: string;
+  discountCodes: Array<{ code: string; lastUsedAt: string | null; source: string; uses: number }>;
+  ok: boolean;
+  total: CustomerEconomicsTotal;
+};
+type CustomerIdentityValues = {
+  emails: string[];
+  phones: string[];
+  plates: string[];
+};
+type CustomerIdentityCounts = { emails: number; phones: number; plates: number };
+type CustomerIdentities = {
+  confirmed: CustomerIdentityValues;
+  conflictCounts: CustomerIdentityCounts;
+  customerId: string;
+  ok: boolean;
+  pending: { plates: Array<{ confidence: string; value: string }> };
+  pendingCounts: CustomerIdentityCounts;
+};
 
 const emptyPeriodList: PeriodList = { items: [], page: 1, pageSize: PERIOD_PAGE_SIZE, total: 0 };
 
@@ -90,6 +132,11 @@ function displayText(value: unknown, fallback = "No disponible") {
 
 function displayCount(value: unknown) {
   return typeof value === "number" ? value.toLocaleString("es-CL") : "0";
+}
+
+function displayOptionalCount(value: unknown) {
+  const count = finiteNumber(value);
+  return count === null ? "No disponible" : count.toLocaleString("es-CL");
 }
 
 function displayDate(value: unknown) {
@@ -123,6 +170,39 @@ function displayDiscountPercentage(value: unknown) {
   if (percentage === null) return "No disponible";
   const formatted = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(percentage * 100);
   return percentage > 0 ? `-${formatted}%` : `${formatted}%`;
+}
+
+function displayPercentage(value: unknown) {
+  const percentage = finiteNumber(value);
+  return percentage === null
+    ? "No disponible"
+    : `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(percentage * 100)}%`;
+}
+
+function customerEconomicsParkingLabel(key: string) {
+  const labels: Record<string, string> = {
+    EAP: "EAP",
+    MCP: "MCP",
+    OKP_EXP: "OKP Express",
+    OKP_FIDAE: "OKP FIDAE",
+    OKP_PREMIUM: "OKP Premium",
+    OKP_RC: "OKP RC",
+  };
+  return labels[key] ?? key;
+}
+
+function MetricLabel({ children, description }: { children: string; description: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      {children}
+      <span className="group relative inline-flex">
+        <button aria-label={`${children}: ${description}`} className="rounded-full text-slate-400 outline-none transition hover:text-navy focus-visible:ring-2 focus-visible:ring-sea/30" type="button">
+          <Info aria-hidden="true" className="h-3 w-3" />
+        </button>
+        <span className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 hidden w-56 -translate-x-1/2 rounded-md bg-navy px-2.5 py-2 text-left text-[10px] font-normal leading-4 text-white shadow-lg group-hover:block group-focus-within:block" role="tooltip">{description}</span>
+      </span>
+    </span>
+  );
 }
 
 function promotionCodeForBooking(booking: Booking) {
@@ -524,9 +604,126 @@ function CustomerPeriodTable({ error, family, list, loading, onPageChange, onSel
   );
 }
 
+function SecondaryViewHeader({ onBack, title }: { onBack: () => void; title: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <button aria-label="Volver al detalle del cliente" className="rounded-lg border border-[#d7e3ec] p-1.5 text-navy transition hover:bg-[#f3f9fc] focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={onBack} title="Volver" type="button"><ChevronLeft className="h-4 w-4" /></button>
+      <h3 className="text-sm font-medium text-slate-700">{title}</h3>
+    </div>
+  );
+}
+
+function CustomerEconomicsPanel({ economics, error, loading, onBack }: { economics: CustomerEconomics | null; error: string | null; loading: boolean; onBack: () => void }) {
+  return (
+    <section aria-labelledby="customer-economics-title">
+      <SecondaryViewHeader onBack={onBack} title="Economía del cliente" />
+      <h3 className="sr-only" id="customer-economics-title">Economía del cliente</h3>
+      {loading ? <p className="mt-3 text-xs text-slate-500">Cargando economía...</p> : null}
+      {error ? <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{error}</p> : null}
+      {economics?.ok ? (
+        <div className="mt-3 space-y-4">
+          <dl className="grid gap-x-4 gap-y-3 rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ["Gasto histórico", displayClp(economics.total.paidAmount), "Suma de lo efectivamente pagado en reservas Boleta económicamente válidas. No incluye Packs."],
+              ["Valor promedio reserva", displayClp(economics.total.averageBoletaTicket), "Promedio pagado por reserva Boleta. Se calcula como gasto total dividido por cantidad de Boletas elegibles. No es ADR."],
+              ["ADR pagado", displayAdr(economics.total.paidAdr), "Valor efectivamente pagado por día reservado. Suma de pagos dividida por suma de días."],
+              ["ADR lista", displayAdr(economics.total.listAdr), "Valor lista antes de descuentos por día reservado. Suma de precio lista dividida por suma de días."],
+              ["Descuento ponderado", displayDiscountPercentage(economics.total.weightedDiscountPct), "Porcentaje del precio lista total que fue descontado. Se calcula usando sumas, no promediando porcentajes individuales."],
+              ["Boletas con descuento", `${displayCount(economics.total.discountedBoletaCount)} / ${displayCount(economics.total.boletaCount)} · ${displayPercentage(economics.total.discountUsagePct)}`, "Cantidad y porcentaje de reservas Boleta en las que se aplicó algún descuento."],
+              ["Días económicos", displayOptionalCount(economics.total.economicDays), "Total de días de reservas Boleta utilizados para los cálculos de ADR. No incluye Packs ni reservas económicamente no evaluables."],
+            ].map(([label, value, description]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-normal text-slate-500"><MetricLabel description={description as string}>{label as string}</MetricLabel></dt><dd className="mt-0.5 break-words text-sm font-medium text-navy">{value}</dd></div>)}
+            <div className="min-w-0"><dt className="text-[11px] font-normal text-slate-500">Boletas</dt><dd className="mt-0.5 text-sm font-medium text-navy">{displayCount(economics.total.boletaCount)}</dd></div>
+            <div className="min-w-0"><dt className="text-[11px] font-normal text-slate-500">Packs</dt><dd className="mt-0.5 text-sm font-medium text-navy">{displayCount(economics.total.packCount)}</dd></div>
+          </dl>
+
+          {Object.keys(economics.byParking).length > 0 ? (
+            <div>
+              <p className="text-xs font-medium text-slate-600">Por estacionamiento</p>
+              <div className="mt-1.5 grid gap-2">
+                {(["MCP", "EAP", "OKP_RC", "OKP_EXP", "OKP_PREMIUM", "OKP_FIDAE"] as const).flatMap((key) => {
+                  const values = economics.byParking[key];
+                  if (!values) return [];
+                  const isOkp = key.startsWith("OKP_");
+                  return [
+                    <div className={`min-w-0 rounded-lg border border-l-2 px-2.5 py-2 ${isOkp ? "border-[#cce9dc] border-l-[#00a86b] bg-[#f8fcfa]" : "border-[#d6e4f2] border-l-[#2563a6] bg-[#f8fbfe]"}`} key={key}>
+                      <div className="flex items-center justify-between gap-2"><p className="text-xs font-medium text-navy">{customerEconomicsParkingLabel(key)}</p><span className="text-[10px] text-slate-500">{displayCount(values.bookingCount)} boletas</span></div>
+                      <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                        <div><dt className="text-[10px] text-slate-500">Pagado</dt><dd className="text-xs font-medium text-navy">{displayClp(values.paidAmount)}</dd></div>
+                        <div><dt className="text-[10px] text-slate-500">Valor promedio reserva</dt><dd className="text-xs font-medium text-navy">{displayClp(values.averageBoletaTicket)}</dd></div>
+                        <div><dt className="text-[10px] text-slate-500">Lista</dt><dd className="text-xs font-medium text-navy">{displayClp(values.listAmount)}</dd></div>
+                        <div><dt className="text-[10px] text-slate-500">ADR pagado / lista</dt><dd className="text-xs font-medium text-navy">{displayAdr(values.paidAdr)} · {displayAdr(values.listAdr)}</dd></div>
+                        <div><dt className="text-[10px] text-slate-500">Descuento</dt><dd className="text-xs font-medium text-navy">{displayClp(values.discountAmount)} · {displayDiscountPercentage(values.weightedDiscountPct)}</dd></div>
+                        <div><dt className="text-[10px] text-slate-500">Días económicos</dt><dd className="text-xs font-medium text-navy">{displayOptionalCount(values.economicDays)}</dd></div>
+                        <div><dt className="text-[10px] text-slate-500">Con descuento</dt><dd className="text-xs font-medium text-navy">{displayCount(values.discountedBookingCount)} · {displayPercentage(values.discountUsagePct)}</dd></div>
+                      </dl>
+                    </div>,
+                  ];
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {economics.discountCodes.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium text-slate-600">Códigos utilizados</p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {economics.discountCodes.map((item) => <span className="rounded-full border border-[#d7e3ec] bg-white px-2 py-1 text-[10px] font-normal text-slate-600" key={`${item.source}-${item.code}`}>{item.source} · {item.code} · {displayCount(item.uses)} usos</span>)}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function IdentityList({ emptyLabel, items }: { emptyLabel: string; items: string[] }) {
+  return items.length > 0
+    ? <ul className="mt-1 space-y-1">{items.map((item) => <li className="break-all text-xs font-normal text-navy" key={item}>{item}</li>)}</ul>
+    : <p className="mt-1 text-xs text-slate-400">{emptyLabel}</p>;
+}
+
+function CustomerInformationPanel({ error, identities, loading, onBack, summary }: { error: string | null; identities: CustomerIdentities | null; loading: boolean; onBack: () => void; summary: CustomerSummary | null }) {
+  const conflictTotal = identities
+    ? identities.conflictCounts.emails + identities.conflictCounts.phones + identities.conflictCounts.plates
+    : 0;
+
+  return (
+    <section aria-labelledby="customer-information-title">
+      <SecondaryViewHeader onBack={onBack} title="Más información" />
+      <h3 className="sr-only" id="customer-information-title">Más información</h3>
+      {loading ? <p className="mt-3 text-xs text-slate-500">Cargando identidades...</p> : null}
+      {error ? <p className="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{error}</p> : null}
+      {identities?.ok ? (
+        <div className="mt-3 space-y-3">
+          {conflictTotal > 0 ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800" role="status">{displayCount(conflictTotal)} {conflictTotal === 1 ? "identidad requiere" : "identidades requieren"} revisión</p> : null}
+          <div className="grid gap-3 rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-3 sm:grid-cols-2">
+            <div><p className="text-[11px] text-slate-500">Emails confirmados ({displayCount(identities.confirmed.emails.length)})</p><IdentityList emptyLabel="Sin emails confirmados" items={identities.confirmed.emails} /></div>
+            <div><p className="text-[11px] text-slate-500">Teléfonos confirmados ({displayCount(identities.confirmed.phones.length)})</p><IdentityList emptyLabel="Sin teléfonos confirmados" items={identities.confirmed.phones} /></div>
+            <div><p className="text-[11px] text-slate-500">Patentes confirmadas ({displayCount(identities.confirmed.plates.length)})</p><IdentityList emptyLabel="Sin patentes confirmadas" items={identities.confirmed.plates} /></div>
+            <div>
+              <p className="text-[11px] text-slate-500">Patentes por confirmar ({displayCount(identities.pending.plates.length)})</p>
+              {identities.pending.plates.length > 0 ? <ul className="mt-1 space-y-1.5">{identities.pending.plates.map((plate) => <li className="flex flex-wrap items-center gap-1.5" key={`${plate.value}-${plate.confidence}`}><span className="break-all text-xs text-navy">{plate.value}</span><ValueBadge tone="warning">Por confirmar</ValueBadge></li>)}</ul> : <p className="mt-1 text-xs text-slate-400">Sin patentes por confirmar</p>}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {summary?.ok ? (
+        <dl className="mt-3 grid gap-x-4 gap-y-2 rounded-lg border border-[#e4edf4] px-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[["MCP", displayCount(summary.mcpCount)], ["EAP", displayCount(summary.eapCount)], ["OKP", displayCount(summary.okpCount)], ["Última marca", displayText(summary.lastBrand)], ["Último parking", displayText(summary.lastParking)]].map(([label, value]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-normal text-slate-500">{label}</dt><dd className="mt-0.5 break-words text-sm font-normal text-navy">{value}</dd></div>)}
+        </dl>
+      ) : null}
+      {summary?.needsReview === true && conflictTotal === 0 ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800" role="status">Requiere revisión</p> : null}
+    </section>
+  );
+}
+
 function CustomerDetailDrawer({
   customer,
   customerId,
+  economics,
+  economicsError,
+  economicsLoading,
   error,
   loading,
   onClose,
@@ -537,6 +734,9 @@ function CustomerDetailDrawer({
 }: {
   customer: PeriodCustomer | null;
   customerId: string | null;
+  economics: CustomerEconomics | null;
+  economicsError: string | null;
+  economicsLoading: boolean;
   error: string | null;
   loading: boolean;
   onClose: () => void;
@@ -546,6 +746,38 @@ function CustomerDetailDrawer({
   timelinePage: number;
 }) {
   const timelinePageCount = Math.max(1, Math.ceil((timeline?.total ?? 0) / TIMELINE_PAGE_SIZE));
+  const [detailView, setDetailView] = useState<"main" | "economics" | "information">("main");
+  const [identities, setIdentities] = useState<CustomerIdentities | null>(null);
+  const [identitiesLoading, setIdentitiesLoading] = useState(false);
+  const [identitiesError, setIdentitiesError] = useState<string | null>(null);
+  const identitiesController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    identitiesController.current?.abort();
+    setDetailView("main");
+    setIdentities(null);
+    setIdentitiesError(null);
+    setIdentitiesLoading(false);
+  }, [customerId]);
+
+  async function openInformation() {
+    setDetailView("information");
+    if (identities || identitiesLoading || !customerId) return;
+    identitiesController.current?.abort();
+    const controller = new AbortController();
+    identitiesController.current = controller;
+    setIdentitiesLoading(true);
+    setIdentitiesError(null);
+    try {
+      const nextIdentities = await getJson(`/api/orquestador/customer-window/customers?action=identities&customerId=${customerId}`, controller.signal);
+      if (identitiesController.current === controller) setIdentities(nextIdentities as CustomerIdentities);
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (identitiesController.current === controller) setIdentitiesError(cause instanceof Error ? cause.message : "No fue posible cargar las identidades del cliente.");
+    } finally {
+      if (identitiesController.current === controller) setIdentitiesLoading(false);
+    }
+  }
 
   if (!customerId) return null;
 
@@ -555,8 +787,8 @@ function CustomerDetailDrawer({
   return (
     <div aria-labelledby="customer-window-detail-title" aria-modal="true" className="fixed inset-0 z-50 flex justify-end bg-navy/35" role="dialog">
       <button aria-label="Cerrar detalle del cliente" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} type="button" />
-      <aside className="relative flex h-full w-full max-w-full flex-col overflow-y-auto overflow-x-hidden bg-white shadow-2xl md:max-w-2xl">
-        <header className="sticky top-0 z-10 border-b border-[#e4edf4] bg-white p-4">
+      <aside className="relative flex h-full w-full max-w-full flex-col overflow-hidden bg-white shadow-2xl md:max-w-2xl">
+        <header className="z-10 shrink-0 border-b border-[#e4edf4] bg-white p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500">Detalle del cliente</p>
@@ -568,7 +800,9 @@ function CustomerDetailDrawer({
           {customer ? <div className="mt-3 flex flex-wrap items-center gap-1.5"><ValueBadge tone={lifecycleTone(customer.lifecycleStatus)}>{lifecycleLabel(customer.lifecycleStatus)}</ValueBadge><TierBadge value={customer.tier} /><ValueBadge tone={behaviorTone(customer.brandBehavior)}>{behaviorLabel(customer.brandBehavior)}</ValueBadge></div> : null}
         </header>
 
-        <div className="grid gap-4 p-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="relative overflow-clip p-4">
+          <div aria-hidden={detailView !== "main"} className={`grid gap-4 transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${detailView === "main" ? "relative translate-x-0 opacity-100" : "pointer-events-none absolute inset-x-4 top-4 -translate-x-4 opacity-0"}`} inert={detailView !== "main"}>
           {loading && !summary ? <p className="text-sm text-slate-600">Cargando detalle...</p> : null}
           {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
           {summary?.ok ? (
@@ -583,12 +817,10 @@ function CustomerDetailDrawer({
           ) : null}
 
           {summary?.ok ? (
-            <details className="rounded-lg border border-[#e4edf4] bg-white">
-              <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-normal text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sea/30 [&::-webkit-details-marker]:hidden">Más información</summary>
-              <dl className="grid gap-x-4 gap-y-2 border-t border-[#e4edf4] px-3 py-2.5 sm:grid-cols-2">
-                {[["MCP", displayCount(summary.mcpCount)], ["EAP", displayCount(summary.eapCount)], ["OKP", displayCount(summary.okpCount)], ["Última marca", displayText(summary.lastBrand)], ["Último parking", displayText(summary.lastParking)], ["Teléfonos conocidos", displayCount(summary.knownPhonesCount)], ["Emails conocidos", displayCount(summary.knownEmailsCount)], ["Patentes conocidas", displayCount(summary.knownPlatesCount)]].map(([label, value]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-normal text-slate-500">{label}</dt><dd className="mt-0.5 break-words text-sm font-normal text-navy">{value}</dd></div>)}
-              </dl>
-            </details>
+            <section aria-label="Acciones del detalle" className="flex flex-wrap gap-2">
+              <button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-xs font-medium text-navy transition hover:border-sea focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={() => setDetailView("economics")} type="button">Economía</button>
+              <button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-xs font-medium text-navy transition hover:border-sea focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={() => void openInformation()} type="button">Más información</button>
+            </section>
           ) : null}
 
           {summary?.ok ? (
@@ -637,6 +869,14 @@ function CustomerDetailDrawer({
               <div className="mt-4 flex items-center justify-between gap-3"><button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={loading || timelinePage <= 1} onClick={() => onPageChange(timelinePage - 1)} type="button">Anterior</button><span className="text-sm text-slate-600">Página {timelinePage} de {timelinePageCount}</span><button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={loading || timelinePage >= timelinePageCount} onClick={() => onPageChange(timelinePage + 1)} type="button">Siguiente</button></div>
             </section>
           ) : null}
+          </div>
+          <div aria-hidden={detailView !== "economics"} className={`transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${detailView === "economics" ? "relative translate-x-0 opacity-100" : "pointer-events-none absolute inset-x-4 top-4 translate-x-6 opacity-0"}`} inert={detailView !== "economics"}>
+            <CustomerEconomicsPanel economics={economics} error={economicsError} loading={economicsLoading} onBack={() => setDetailView("main")} />
+          </div>
+          <div aria-hidden={detailView !== "information"} className={`transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${detailView === "information" ? "relative translate-x-0 opacity-100" : "pointer-events-none absolute inset-x-4 top-4 translate-x-6 opacity-0"}`} inert={detailView !== "information"}>
+            <CustomerInformationPanel error={identitiesError} identities={identities} loading={identitiesLoading} onBack={() => setDetailView("main")} summary={summary} />
+          </div>
+        </div>
         </div>
       </aside>
     </div>
@@ -673,6 +913,10 @@ export function CustomerWindowView() {
   const [selectedCustomer, setSelectedCustomer] = useState<PeriodCustomer | null>(null);
   const [summary, setSummary] = useState<CustomerSummary | null>(null);
   const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [economics, setEconomics] = useState<CustomerEconomics | null>(null);
+  const [economicsLoading, setEconomicsLoading] = useState(false);
+  const [economicsError, setEconomicsError] = useState<string | null>(null);
+  const economicsController = useRef<AbortController | null>(null);
   const [timelinePage, setTimelinePage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -731,8 +975,11 @@ export function CustomerWindowView() {
   }, [brandBehavior, lifecycleStatus, packStatus, periodRange.from, periodRange.to, tier]);
 
   const closeCustomerDrawer = useCallback(() => {
+    economicsController.current?.abort();
     setDrawerCustomerId(null);
     setSelectedCustomer(null);
+    setEconomics(null);
+    setEconomicsError(null);
     setError(null);
   }, []);
 
@@ -823,6 +1070,21 @@ export function CustomerWindowView() {
   async function selectCustomer(customerId: string, customer: PeriodCustomer | null = null) {
     setDrawerCustomerId(customerId); setSelectedCustomer(customer);
     setLoading(true); setError(null); setSummary(null); setTimeline(null); setTimelinePage(1);
+    economicsController.current?.abort();
+    const controller = new AbortController();
+    economicsController.current = controller;
+    setEconomics(null); setEconomicsError(null); setEconomicsLoading(true);
+    void getJson(`/api/orquestador/customer-window/customers?action=economics&customerId=${customerId}`, controller.signal)
+      .then((nextEconomics) => {
+        if (economicsController.current === controller) setEconomics(nextEconomics as CustomerEconomics);
+      })
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        if (economicsController.current === controller) setEconomicsError(cause instanceof Error ? cause.message : "No fue posible cargar la economía del cliente.");
+      })
+      .finally(() => {
+        if (economicsController.current === controller) setEconomicsLoading(false);
+      });
     try {
       const [nextSummary, nextTimeline] = await Promise.all([
         getJson(`/api/orquestador/customer-window/customers?action=summary&customerId=${customerId}`),
@@ -871,7 +1133,7 @@ export function CustomerWindowView() {
           <Panel action={<button aria-controls="customer-window-classification-criteria" aria-expanded={criteriaOpen} className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] px-3 py-2 text-sm font-semibold text-navy hover:border-sea" onClick={toggleCriteria} type="button">{criteriaOpen ? "Ocultar" : "Mostrar"}{criteriaOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>} description="Consulta las reglas oficiales utilizadas por el modelo comercial." title="Criterios de clasificación"><div id="customer-window-classification-criteria">{criteriaOpen && criteriaLoading ? <p className="mt-4 text-sm text-slate-600">Cargando criterios...</p> : null}{criteriaOpen && criteriaError ? <p className="mt-4 text-sm text-red-700" role="alert">{criteriaError}</p> : null}{criteriaOpen && criteria ? <ClassificationCriteriaContent criteria={criteria} /> : null}</div></Panel>
         </>
       )}
-      <CustomerDetailDrawer customer={selectedCustomer} customerId={drawerCustomerId} error={error} loading={loading} onClose={closeCustomerDrawer} onPageChange={changeTimelinePage} summary={summary} timeline={timeline} timelinePage={timelinePage} />
+      <CustomerDetailDrawer customer={selectedCustomer} customerId={drawerCustomerId} economics={economics} economicsError={economicsError} economicsLoading={economicsLoading} error={error} loading={loading} onClose={closeCustomerDrawer} onPageChange={changeTimelinePage} summary={summary} timeline={timeline} timelinePage={timelinePage} />
     </section>
   );
 }

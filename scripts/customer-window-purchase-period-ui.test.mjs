@@ -205,11 +205,11 @@ test("customer detail uses an accessible right drawer and visual timeline", () =
 
 test("customer detail keeps a compact managerial summary and secondary information collapsed", () => {
   const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
+  const informationPanel = view.slice(view.indexOf("function CustomerInformationPanel"), view.indexOf("function CustomerDetailDrawer"));
   const headerBlock = drawerBlock.slice(drawerBlock.indexOf("<header"), drawerBlock.indexOf("</header>"));
   const summaryStart = drawerBlock.indexOf(">Resumen</h3>");
-  const moreInformationStart = drawerBlock.indexOf("<details", summaryStart);
-  const summaryBlock = drawerBlock.slice(summaryStart, moreInformationStart);
-  const moreInformationBlock = drawerBlock.slice(moreInformationStart, drawerBlock.indexOf("Historial de compras", moreInformationStart));
+  const actionsStart = drawerBlock.indexOf('aria-label="Acciones del detalle"', summaryStart);
+  const summaryBlock = drawerBlock.slice(summaryStart, actionsStart);
 
   assert.match(headerBlock, /primaryIdentity[\s\S]*secondaryIdentity[\s\S]*lifecycleLabel[\s\S]*TierBadge[\s\S]*behaviorLabel/);
   assert.doesNotMatch(headerBlock, /packLabel|packStatus|Pack|Boleta/);
@@ -218,14 +218,16 @@ test("customer detail keeps a compact managerial summary and secondary informati
   }
   for (const secondaryLabel of ["MCP", "EAP", "OKP", "Última marca", "Último parking", "Teléfonos conocidos", "Emails conocidos", "Patentes conocidas"]) {
     assert.doesNotMatch(summaryBlock, new RegExp(secondaryLabel));
-    assert.match(moreInformationBlock, new RegExp(secondaryLabel));
   }
+  for (const secondaryLabel of ["MCP", "EAP", "OKP", "Última marca", "Último parking"]) assert.match(informationPanel, new RegExp(secondaryLabel));
+  for (const identityLabel of ["Emails confirmados", "Teléfonos confirmados", "Patentes confirmadas", "Patentes por confirmar"]) assert.match(informationPanel, new RegExp(identityLabel));
   assert.match(summaryBlock, /summary\.purchaseCount/);
   assert.match(summaryBlock, /summary\.packCount[\s\S]*summary\.nonPackCount/);
   assert.match(summaryBlock, /summary\.needsReview === true[\s\S]*Requiere revisión/);
   assert.doesNotMatch(drawerBlock, /Sin observaciones/);
-  assert.match(moreInformationBlock, /<details className=[\s\S]*<summary[^>]*>Más información<\/summary>/);
-  assert.doesNotMatch(moreInformationBlock, /<details[^>]*\sopen(?:=|\s|>)/);
+  assert.match(drawerBlock, /aria-hidden=\{detailView !== "information"\}[\s\S]*<CustomerInformationPanel/);
+  assert.match(drawerBlock, /openInformation\(\)[\s\S]*>Más información<\/button>/);
+  assert.doesNotMatch(drawerBlock, /<summary[^>]*>Más información<\/summary>/);
 });
 
 test("customer detail uses lightweight typography and source-family timeline accents", () => {
@@ -286,6 +288,19 @@ test("customer panels share desktop width height and bounded vertical scrolling"
   const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
   assert.match(tableBlock, /max-h-\[640px\] overflow-y-auto overscroll-contain/);
   assert.doesNotMatch(tableBlock, /overflow-x-auto/);
+});
+
+test("drawer uses one conditional vertical scroll surface for every detail view", () => {
+  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
+  const asideStart = drawerBlock.indexOf("<aside");
+  const asideOpeningTag = drawerBlock.slice(asideStart, drawerBlock.indexOf(">", asideStart) + 1);
+  assert.match(asideOpeningTag, /h-full[\s\S]*overflow-hidden[\s\S]*md:max-w-2xl/);
+  assert.doesNotMatch(asideOpeningTag, /overflow-y-(?:auto|scroll)/);
+  assert.match(drawerBlock, /min-h-0 flex-1 overflow-y-auto overscroll-contain[\s\S]*relative overflow-clip p-4/);
+  assert.doesNotMatch(drawerBlock, /overflow-y-scroll/);
+  assert.doesNotMatch(drawerBlock, /max-h-|h-screen/);
+  assert.match(drawerBlock, /aria-hidden=\{detailView !== "main"\}[\s\S]*aria-hidden=\{detailView !== "economics"\}[\s\S]*aria-hidden=\{detailView !== "information"\}/);
+  assert.match(drawerBlock, /motion-reduce:transition-none/);
 });
 
 test("drawer closes without resetting period filters or family pages", () => {

@@ -7,6 +7,8 @@ import { isCustomerSearchType } from "@/lib/customer-window/customer-search";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
   getCustomerWindowClassificationCriteria,
+  getCustomerWindowEconomics,
+  getCustomerWindowIdentities,
   getCustomerWindowPurchasePeriodMetrics,
   getCustomerWindowSummary,
   listCustomerWindowBookings,
@@ -139,6 +141,20 @@ export async function GET(request: NextRequest) {
     const result = await getCustomerWindowSummary(customerId);
     return result.error
       ? jsonError("No fue posible consultar el cliente.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "economics") {
+    const result = await getCustomerWindowEconomics(customerId);
+    return result.error
+      ? jsonError("No fue posible consultar la economia del cliente.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "identities") {
+    const result = await getCustomerWindowIdentities(customerId);
+    return result.error
+      ? jsonError("No fue posible consultar las identidades del cliente.", 500)
       : NextResponse.json(result.data, { headers: noStoreHeaders });
   }
 
