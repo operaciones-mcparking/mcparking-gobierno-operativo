@@ -227,6 +227,24 @@ test("customer detail keeps a compact managerial summary and secondary informati
   assert.doesNotMatch(moreInformationBlock, /<details[^>]*\sopen(?:=|\s|>)/);
 });
 
+test("customer detail uses lightweight typography and source-family timeline accents", () => {
+  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
+  const headerBlock = drawerBlock.slice(drawerBlock.indexOf("<header"), drawerBlock.indexOf("</header>"));
+
+  assert.match(headerBlock, /text-xs font-medium text-slate-500">Detalle del cliente/);
+  assert.match(headerBlock, /text-base font-medium leading-5 text-navy/);
+  assert.match(headerBlock, /text-xs font-normal text-slate-500/);
+  assert.doesNotMatch(headerBlock, /Detalle del cliente<\/p>[\s\S]*uppercase/);
+  assert.match(headerBlock, /ValueBadge tone=\{lifecycleTone\([\s\S]*TierBadge[\s\S]*ValueBadge tone=\{behaviorTone/);
+  assert.match(drawerBlock, /text-sm font-medium text-slate-700">Resumen/);
+  assert.match(drawerBlock, /text-sm font-medium text-slate-700">Historial de compras/);
+  assert.match(drawerBlock, /isOkpBooking \? "bg-\[#00a86b\] ring-\[#a7dcc4\]" : "bg-\[#2563a6\] ring-\[#b7cee5\]"/);
+  assert.match(drawerBlock, /border-l-\[#00a86b\][\s\S]*bg-\[#f8fcfa\]/);
+  assert.match(drawerBlock, /border-l-\[#2563a6\][\s\S]*bg-\[#f8fbfe\]/);
+  assert.match(drawerBlock, /text-xs font-medium text-navy">\{displayDate\(booking\.purchase_created_at\)\}/);
+  assert.match(drawerBlock, /text-\[11px\] font-normal text-slate-500">\{familyLabel\}/);
+});
+
 test("customer panels share desktop width height and bounded vertical scrolling", () => {
   assert.match(view, /grid items-stretch gap-5 xl:grid-cols-2[\s\S]*family="MCP_EAP"[\s\S]*family="OKP"/);
   const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));

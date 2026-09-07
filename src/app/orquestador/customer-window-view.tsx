@@ -509,27 +509,27 @@ function CustomerDetailDrawer({
     <div aria-labelledby="customer-window-detail-title" aria-modal="true" className="fixed inset-0 z-50 flex justify-end bg-navy/35" role="dialog">
       <button aria-label="Cerrar detalle del cliente" className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} type="button" />
       <aside className="relative flex h-full w-full max-w-full flex-col overflow-y-auto overflow-x-hidden bg-white shadow-2xl md:max-w-2xl">
-        <header className="sticky top-0 z-10 border-b border-[#d6e1ea] bg-white p-5">
+        <header className="sticky top-0 z-10 border-b border-[#e4edf4] bg-white p-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase text-sea">Detalle del cliente</p>
-              <h2 className="mt-2 break-all text-xl font-semibold text-navy" id="customer-window-detail-title">{primaryIdentity}</h2>
-              {secondaryIdentity ? <p className="mt-1 break-words text-sm text-slate-600">{secondaryIdentity}</p> : null}
+              <p className="text-xs font-medium text-slate-500">Detalle del cliente</p>
+              <h2 className="mt-1.5 break-all text-base font-medium leading-5 text-navy" id="customer-window-detail-title">{primaryIdentity}</h2>
+              {secondaryIdentity ? <p className="mt-1 break-words text-xs font-normal text-slate-500">{secondaryIdentity}</p> : null}
             </div>
-            <button aria-label="Cerrar detalle del cliente" className="rounded-lg border border-[#d7e3ec] p-2 text-navy transition hover:bg-[#f3f9fc] focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={onClose} title="Cerrar" type="button"><X className="h-5 w-5" /></button>
+            <button aria-label="Cerrar detalle del cliente" className="rounded-lg border border-[#d7e3ec] p-1.5 text-navy transition hover:bg-[#f3f9fc] focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={onClose} title="Cerrar" type="button"><X className="h-4 w-4" /></button>
           </div>
-          {customer ? <div className="mt-4 flex flex-wrap items-center gap-2 text-sm"><span className="font-medium text-navy">{lifecycleLabel(customer.lifecycleStatus)}</span><TierBadge value={customer.tier} /><span className="rounded bg-[#eef5f8] px-2 py-1 text-xs font-medium text-navy">{behaviorLabel(customer.brandBehavior)}</span></div> : null}
+          {customer ? <div className="mt-3 flex flex-wrap items-center gap-1.5"><ValueBadge tone={lifecycleTone(customer.lifecycleStatus)}>{lifecycleLabel(customer.lifecycleStatus)}</ValueBadge><TierBadge value={customer.tier} /><ValueBadge tone={behaviorTone(customer.brandBehavior)}>{behaviorLabel(customer.brandBehavior)}</ValueBadge></div> : null}
         </header>
 
-        <div className="grid gap-5 p-5">
+        <div className="grid gap-4 p-4">
           {loading && !summary ? <p className="text-sm text-slate-600">Cargando detalle...</p> : null}
           {error ? <p className="text-sm text-red-700" role="alert">{error}</p> : null}
           {summary?.ok ? (
             <section>
-              <h3 className="text-sm font-semibold uppercase text-slate-500">Resumen</h3>
-              <dl className="mt-3 grid gap-x-4 gap-y-3 rounded-lg border border-[#e4edf4] bg-[#f8fbfd] p-4 sm:grid-cols-2 lg:grid-cols-3">
-                {[["Primera compra", displayDate(summary.firstPurchaseAt)], ["Última compra", displayDate(summary.lastPurchaseAt)], ["Reservas históricas", displayCount(summary.purchaseCount)], ["Reservas futuras", displayCount(summary.futureBookingCount)], ["Packs / Boletas", `${displayCount(summary.packCount)} / ${displayCount(summary.nonPackCount)}`]].map(([label, value]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-medium uppercase text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-medium text-navy">{value}</dd></div>)}
-                <div className="min-w-0"><dt className="text-[11px] font-medium uppercase text-slate-500">Comportamiento</dt><dd className="mt-1"><ValueBadge tone={behaviorTone(customer?.brandBehavior ?? null)}>{behaviorLabel(customer?.brandBehavior ?? null)}</ValueBadge></dd></div>
+              <h3 className="text-sm font-medium text-slate-700">Resumen</h3>
+              <dl className="mt-2 grid gap-x-4 gap-y-2 rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
+                {[["Primera compra", displayDate(summary.firstPurchaseAt)], ["Última compra", displayDate(summary.lastPurchaseAt)], ["Reservas históricas", displayCount(summary.purchaseCount)], ["Reservas futuras", displayCount(summary.futureBookingCount)], ["Packs / Boletas", `${displayCount(summary.packCount)} / ${displayCount(summary.nonPackCount)}`]].map(([label, value]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-normal text-slate-500">{label}</dt><dd className="mt-0.5 break-words text-sm font-medium text-navy">{value}</dd></div>)}
+                <div className="min-w-0"><dt className="text-[11px] font-normal text-slate-500">Comportamiento</dt><dd className="mt-0.5"><ValueBadge tone={behaviorTone(customer?.brandBehavior ?? null)}>{behaviorLabel(customer?.brandBehavior ?? null)}</ValueBadge></dd></div>
               </dl>
               {summary.needsReview === true ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800" role="status">Requiere revisión</p> : null}
             </section>
@@ -537,29 +537,29 @@ function CustomerDetailDrawer({
 
           {summary?.ok ? (
             <details className="rounded-lg border border-[#e4edf4] bg-white">
-              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium text-navy outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sea/30 [&::-webkit-details-marker]:hidden">Más información</summary>
-              <dl className="grid gap-x-4 gap-y-3 border-t border-[#e4edf4] px-4 py-3 sm:grid-cols-2">
-                {[["MCP", displayCount(summary.mcpCount)], ["EAP", displayCount(summary.eapCount)], ["OKP", displayCount(summary.okpCount)], ["Última marca", displayText(summary.lastBrand)], ["Último parking", displayText(summary.lastParking)], ["Teléfonos conocidos", displayCount(summary.knownPhonesCount)], ["Emails conocidos", displayCount(summary.knownEmailsCount)], ["Patentes conocidas", displayCount(summary.knownPlatesCount)]].map(([label, value]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-medium uppercase text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-normal text-navy">{value}</dd></div>)}
+              <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-normal text-slate-700 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sea/30 [&::-webkit-details-marker]:hidden">Más información</summary>
+              <dl className="grid gap-x-4 gap-y-2 border-t border-[#e4edf4] px-3 py-2.5 sm:grid-cols-2">
+                {[["MCP", displayCount(summary.mcpCount)], ["EAP", displayCount(summary.eapCount)], ["OKP", displayCount(summary.okpCount)], ["Última marca", displayText(summary.lastBrand)], ["Último parking", displayText(summary.lastParking)], ["Teléfonos conocidos", displayCount(summary.knownPhonesCount)], ["Emails conocidos", displayCount(summary.knownEmailsCount)], ["Patentes conocidas", displayCount(summary.knownPlatesCount)]].map(([label, value]) => <div className="min-w-0" key={label as string}><dt className="text-[11px] font-normal text-slate-500">{label}</dt><dd className="mt-0.5 break-words text-sm font-normal text-navy">{value}</dd></div>)}
               </dl>
             </details>
           ) : null}
 
           {summary?.ok ? (
             <section>
-              <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold uppercase text-slate-500">Historial de compras</h3><span className="text-xs text-slate-500">{timeline?.total ?? 0} registros</span></div>
+              <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-medium text-slate-700">Historial de compras</h3><span className="text-xs font-normal text-slate-500">{timeline?.total ?? 0} registros</span></div>
               {(timeline?.items ?? []).length ? (
-                <ol className="relative mt-4 before:absolute before:bottom-0 before:left-[9px] before:top-0 before:w-px before:bg-[#cbd8e3] sm:before:left-1/2">
+                <ol className="relative mt-3 before:absolute before:bottom-0 before:left-[9px] before:top-0 before:w-px before:bg-[#d7e3ec] sm:before:left-1/2">
                   {(timeline?.items ?? []).map((booking) => {
                     const isOkpBooking = booking.source === "OKP";
                     const familyLabel = isOkpBooking ? "OKP" : displayText(booking.brand, "MCP/EAP");
                     return (
-                      <li className="relative grid grid-cols-[20px_minmax(0,1fr)] pb-5 last:pb-0 sm:grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]" key={`${booking.source}-${booking.source_row_id}`}>
-                        <span className="relative z-[1] col-start-1 row-start-1 mt-4 h-3 w-3 justify-self-center rounded-full border-2 border-white bg-sea ring-1 ring-[#9ec8d8] sm:col-start-2" />
-                        <details className={`group col-start-2 row-start-1 min-w-0 rounded-xl border border-[#d6e1ea] bg-white p-3 shadow-[0_5px_14px_rgba(2,53,116,0.04)] transition hover:border-sea/50 open:border-sea/50 ${isOkpBooking ? "sm:col-start-3 sm:ml-1" : "sm:col-start-1 sm:mr-1"}`}>
+                      <li className="relative grid grid-cols-[20px_minmax(0,1fr)] pb-4 last:pb-0 sm:grid-cols-[minmax(0,1fr)_28px_minmax(0,1fr)]" key={`${booking.source}-${booking.source_row_id}`}>
+                        <span className={`relative z-[1] col-start-1 row-start-1 mt-3 h-2.5 w-2.5 justify-self-center rounded-full border-2 border-white ring-1 sm:col-start-2 ${isOkpBooking ? "bg-[#00a86b] ring-[#a7dcc4]" : "bg-[#2563a6] ring-[#b7cee5]"}`} />
+                        <details className={`group col-start-2 row-start-1 min-w-0 rounded-lg border border-l-2 p-2.5 shadow-[0_3px_10px_rgba(2,53,116,0.035)] transition ${isOkpBooking ? "border-[#cce9dc] border-l-[#00a86b] bg-[#f8fcfa] hover:border-[#8fd0b1] open:border-[#8fd0b1] sm:col-start-3 sm:ml-1" : "border-[#d6e4f2] border-l-[#2563a6] bg-[#f8fbfe] hover:border-[#9bbdde] open:border-[#9bbdde] sm:col-start-1 sm:mr-1"}`}>
                           <summary className={`cursor-pointer list-none outline-none focus-visible:ring-2 focus-visible:ring-sea/30 [&::-webkit-details-marker]:hidden ${isOkpBooking ? "" : "sm:text-right"}`}>
-                            <div className={`flex flex-wrap items-start gap-2 ${isOkpBooking ? "justify-between" : "justify-between sm:flex-row-reverse"}`}><div><p className="text-sm font-semibold text-navy">{displayDate(booking.purchase_created_at)}</p><p className="mt-0.5 break-all text-xs text-slate-500">{familyLabel} · {displayText(booking.source_booking_code)}</p></div><ValueBadge tone={booking.is_pack ? "success" : "neutral"}>{booking.is_pack ? "Pack" : "Boleta"}</ValueBadge></div>
+                            <div className={`flex flex-wrap items-start gap-1.5 ${isOkpBooking ? "justify-between" : "justify-between sm:flex-row-reverse"}`}><div><p className="text-xs font-medium text-navy">{displayDate(booking.purchase_created_at)}</p><p className="mt-0.5 break-all text-[11px] font-normal text-slate-500">{familyLabel} · {displayText(booking.source_booking_code)}</p></div><ValueBadge tone={booking.is_pack ? "success" : "neutral"}>{booking.is_pack ? "Pack" : "Boleta"}</ValueBadge></div>
                           </summary>
-                          <dl className={`mt-3 grid gap-2 border-t border-[#edf2f6] pt-3 text-sm ${isOkpBooking ? "" : "sm:text-right"}`}><div><dt className="text-xs text-slate-500">Parking</dt><dd className="break-words font-medium text-navy">{displayText(booking.parking)}</dd></div><div><dt className="text-xs text-slate-500">Estado</dt><dd className="font-medium text-navy">{displayText(booking.status)}</dd></div><div><dt className="text-xs text-slate-500">Llegada / salida</dt><dd className="font-medium text-navy">{displayDate(booking.planned_arrival_at)} · {displayDate(booking.planned_departure_at)}</dd></div><div><dt className="text-xs text-slate-500">Duración</dt><dd className="font-medium text-navy">{booking.duration_days === null ? "No disponible" : `${displayCount(booking.duration_days)} días`}</dd></div></dl>
+                          <dl className={`mt-2 grid gap-1.5 border-t border-[#e7eef4] pt-2 text-xs ${isOkpBooking ? "" : "sm:text-right"}`}><div><dt className="text-[11px] font-normal text-slate-500">Parking</dt><dd className="break-words font-medium text-navy">{displayText(booking.parking)}</dd></div><div><dt className="text-[11px] font-normal text-slate-500">Estado</dt><dd className="font-medium text-navy">{displayText(booking.status)}</dd></div><div><dt className="text-[11px] font-normal text-slate-500">Llegada / salida</dt><dd className="font-medium text-navy">{displayDate(booking.planned_arrival_at)} · {displayDate(booking.planned_departure_at)}</dd></div><div><dt className="text-[11px] font-normal text-slate-500">Duración</dt><dd className="font-medium text-navy">{booking.duration_days === null ? "No disponible" : `${displayCount(booking.duration_days)} días`}</dd></div></dl>
                         </details>
                       </li>
                     );
