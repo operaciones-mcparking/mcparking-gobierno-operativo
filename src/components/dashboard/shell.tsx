@@ -71,7 +71,7 @@ export async function DashboardShell({
   children: React.ReactNode;
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
 }) {
   const supabase = await createSupabaseAuthServerClient();
   const {
@@ -213,9 +213,11 @@ export async function DashboardShell({
                 <h1 className="max-w-4xl text-2xl font-medium leading-tight tracking-tight text-navy sm:text-[1.9rem]">
                   {title}
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-                  {description}
-                </p>
+                {description ? (
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+                    {description}
+                  </p>
+                ) : null}
               </div>
             </header>
 

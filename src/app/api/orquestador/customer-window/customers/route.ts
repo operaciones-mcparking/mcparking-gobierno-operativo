@@ -6,6 +6,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isCustomerSearchType } from "@/lib/customer-window/customer-search";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
+  getCustomerWindowClassificationCriteria,
+  getCustomerWindowPurchasePeriodMetrics,
   getCustomerWindowSummary,
   listCustomerWindowBookings,
   listCustomerWindowCustomersByPurchasePeriod,
@@ -51,6 +53,39 @@ export async function GET(request: NextRequest) {
   }
 
   const action = request.nextUrl.searchParams.get("action");
+  if (action === "criteria") {
+    const result = await getCustomerWindowClassificationCriteria();
+    return result.error
+      ? jsonError("No fue posible consultar los criterios de clasificacion.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "period-metrics") {
+    const from = request.nextUrl.searchParams.get("from") ?? "";
+    const to = request.nextUrl.searchParams.get("to") ?? "";
+    const lifecycleStatus = optionalAllowedValue(request.nextUrl.searchParams.get("lifecycleStatus"), allowedLifecycleStatuses);
+    const tier = optionalAllowedValue(request.nextUrl.searchParams.get("tier"), allowedTiers);
+    const packStatus = optionalAllowedValue(request.nextUrl.searchParams.get("packStatus"), allowedPackStatuses);
+    const brandBehavior = optionalAllowedValue(request.nextUrl.searchParams.get("brandBehavior"), allowedBrandBehaviors);
+    if (
+      !isValidDateValue(from) || !isValidDateValue(to) || from > to
+      || lifecycleStatus === undefined || tier === undefined || packStatus === undefined || brandBehavior === undefined
+    ) {
+      return jsonError("Metricas por periodo invalidas.", 400);
+    }
+    const result = await getCustomerWindowPurchasePeriodMetrics({
+      brandBehavior,
+      from,
+      lifecycleStatus,
+      packStatus,
+      tier,
+      to,
+    });
+    return result.error
+      ? jsonError("No fue posible consultar las metricas del periodo.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
   if (action === "list-by-period") {
     const from = request.nextUrl.searchParams.get("from") ?? "";
     const to = request.nextUrl.searchParams.get("to") ?? "";

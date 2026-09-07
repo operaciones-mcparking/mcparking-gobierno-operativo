@@ -54,7 +54,7 @@ test("C. selector unificado contiene Dashboard y Centro de Control", () => {
   assert.match(tabs, /\/orquestador\?view=\$\{view\}/);
   assert.match(orquestadorPage, /eyebrow="Operaciones McParking"/);
   assert.match(orquestadorPage, /title="McParking Dashboard"/);
-  assert.match(orquestadorPage, /description="Monitoreo operacional y control de procesos\."/);
+  assert.doesNotMatch(orquestadorPage, /Monitoreo operacional y control de procesos\./);
   assert.doesNotMatch(orquestadorPage, /McParking Orquestador|centro de control seguro del orquestador existente/);
   assert.doesNotMatch(client, /McParking Orquestador|Centro de Control|href="\/orquestador"/);
 });

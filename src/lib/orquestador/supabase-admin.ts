@@ -728,6 +728,16 @@ export async function listCustomerWindowBookings(customerId: string, page: numbe
   }
 }
 
+export async function getCustomerWindowClassificationCriteria() {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_get_classification_criteria");
+    return error ? singleError<unknown>() : { data, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}
+
 type CustomerWindowPeriodListInput = {
   brandBehavior: string | null;
   family: "MCP_EAP" | "OKP";
@@ -739,6 +749,8 @@ type CustomerWindowPeriodListInput = {
   tier: string | null;
   to: string;
 };
+
+type CustomerWindowPeriodMetricsInput = Omit<CustomerWindowPeriodListInput, "family" | "page" | "pageSize">;
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -791,6 +803,23 @@ export async function listCustomerWindowCustomersByPurchasePeriod(input: Custome
     });
 
     return { data: { ...data, items }, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}
+
+export async function getCustomerWindowPurchasePeriodMetrics(input: CustomerWindowPeriodMetricsInput) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_get_purchase_period_facets", {
+      p_brand_behavior: input.brandBehavior,
+      p_from: input.from,
+      p_lifecycle_status: input.lifecycleStatus,
+      p_pack_status: input.packStatus,
+      p_tier: input.tier,
+      p_to: input.to,
+    });
+    return error || !isJsonRecord(data) ? singleError<unknown>() : { data, error: false };
   } catch {
     return singleError<unknown>();
   }
