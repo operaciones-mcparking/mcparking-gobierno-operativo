@@ -109,6 +109,19 @@ type CustomerEconomics = {
   ok: boolean;
   total: CustomerEconomicsTotal;
 };
+type CustomerCommercialSignal = {
+  asOfAt: string;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  evidence: Record<string, unknown>;
+  label: string;
+  signalKey: "PRICE_LIST_BUYER" | "OCCASIONAL_PROMO" | "DISCOUNT_DEPENDENT" | "PACK_CANDIDATE" | "RECOVERABLE";
+};
+type CustomerCommercialSignals = {
+  customerId: string;
+  ok: boolean;
+  ruleVersion: string;
+  signals: CustomerCommercialSignal[];
+};
 type CustomerIdentityValues = {
   emails: string[];
   phones: string[];
@@ -177,6 +190,11 @@ function displayPercentage(value: unknown) {
   return percentage === null
     ? "No disponible"
     : `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(percentage * 100)}%`;
+}
+
+function displayDecimal(value: unknown) {
+  const number = finiteNumber(value);
+  return number === null ? "No disponible" : number.toLocaleString("es-CL", { maximumFractionDigits: 1 });
 }
 
 function customerEconomicsParkingLabel(key: string) {
@@ -718,6 +736,48 @@ function CustomerInformationPanel({ error, identities, loading, onBack, summary 
   );
 }
 
+function signalDescription(signal: CustomerCommercialSignal) {
+  const evidence = signal.evidence;
+  if (signal.signalKey === "PACK_CANDIDATE") {
+    return `${displayCount(evidence.boletaCount)} boletas, ${displayCount(evidence.economicDays)} días económicos y ${displayCount(evidence.reservations12m)} compras en los últimos 12 meses.`;
+  }
+  if (signal.signalKey === "RECOVERABLE") {
+    return `Recencia de ${displayCount(evidence.currentRecencyDays)} días, equivalente a ${displayDecimal(evidence.recencyRatio)} veces su intervalo mediano de ${displayCount(evidence.medianPurchaseIntervalDays)} días.`;
+  }
+  const boletaCount = displayCount(evidence.boletaCount);
+  const discountedCount = displayCount(evidence.discountedBoletaCount);
+  if (signal.signalKey === "PRICE_LIST_BUYER") {
+    return `${boletaCount} boletas históricas sin uso de descuento.`;
+  }
+  return `${discountedCount} de ${boletaCount} boletas usaron descuento. Descuento ponderado: ${displayPercentage(evidence.weightedDiscountPct)}.`;
+}
+
+function CustomerSignalsPanel({ error, loading, onBack, signals }: { error: string | null; loading: boolean; onBack: () => void; signals: CustomerCommercialSignals | null }) {
+  return (
+    <section aria-labelledby="customer-signals-title">
+      <SecondaryViewHeader onBack={onBack} title="Perfil de compra" />
+      <h3 className="sr-only" id="customer-signals-title">Perfil de compra</h3>
+      {loading ? <p className="mt-4 text-sm text-slate-600">Cargando perfil de compra...</p> : null}
+      {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
+      {!loading && !error && signals?.ok ? (
+        signals.signals.length > 0 ? (
+          <div className="mt-4 grid gap-2">
+            {signals.signals.map((signal) => (
+              <article className="rounded-lg border border-[#d7e3ec] bg-[#fbfcfd] px-3 py-3" key={signal.signalKey}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-sm font-medium text-navy">{signal.label}</h4>
+                  <ValueBadge tone={signal.confidence === "HIGH" ? "success" : "warning"}>{signal.confidence}</ValueBadge>
+                </div>
+                <p className="mt-1.5 text-xs font-normal leading-5 text-slate-600">{signalDescription(signal)}</p>
+              </article>
+            ))}
+          </div>
+        ) : <div className="mt-4"><EmptyState description="Este cliente no tiene señales comerciales activas con evidencia suficiente." /></div>
+      ) : null}
+    </section>
+  );
+}
+
 function CustomerDetailDrawer({
   customer,
   customerId,
@@ -746,7 +806,11 @@ function CustomerDetailDrawer({
   timelinePage: number;
 }) {
   const timelinePageCount = Math.max(1, Math.ceil((timeline?.total ?? 0) / TIMELINE_PAGE_SIZE));
-  const [detailView, setDetailView] = useState<"main" | "economics" | "information">("main");
+  const [detailView, setDetailView] = useState<"main" | "economics" | "signals" | "information">("main");
+  const [signals, setSignals] = useState<CustomerCommercialSignals | null>(null);
+  const [signalsLoading, setSignalsLoading] = useState(false);
+  const [signalsError, setSignalsError] = useState<string | null>(null);
+  const signalsController = useRef<AbortController | null>(null);
   const [identities, setIdentities] = useState<CustomerIdentities | null>(null);
   const [identitiesLoading, setIdentitiesLoading] = useState(false);
   const [identitiesError, setIdentitiesError] = useState<string | null>(null);
@@ -754,11 +818,34 @@ function CustomerDetailDrawer({
 
   useEffect(() => {
     identitiesController.current?.abort();
+    signalsController.current?.abort();
     setDetailView("main");
+    setSignals(null);
+    setSignalsError(null);
+    setSignalsLoading(false);
     setIdentities(null);
     setIdentitiesError(null);
     setIdentitiesLoading(false);
   }, [customerId]);
+
+  async function openSignals() {
+    setDetailView("signals");
+    if (signals || signalsLoading || !customerId) return;
+    signalsController.current?.abort();
+    const controller = new AbortController();
+    signalsController.current = controller;
+    setSignalsLoading(true);
+    setSignalsError(null);
+    try {
+      const nextSignals = await getJson(`/api/orquestador/customer-window/customers?action=signals&customerId=${customerId}`, controller.signal);
+      if (signalsController.current === controller) setSignals(nextSignals as CustomerCommercialSignals);
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (signalsController.current === controller) setSignalsError(cause instanceof Error ? cause.message : "No fue posible cargar el perfil de compra.");
+    } finally {
+      if (signalsController.current === controller) setSignalsLoading(false);
+    }
+  }
 
   async function openInformation() {
     setDetailView("information");
@@ -819,6 +906,7 @@ function CustomerDetailDrawer({
           {summary?.ok ? (
             <section aria-label="Acciones del detalle" className="flex flex-wrap gap-2">
               <button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-xs font-medium text-navy transition hover:border-sea focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={() => setDetailView("economics")} type="button">Economía</button>
+              <button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-xs font-medium text-navy transition hover:border-sea focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={() => void openSignals()} type="button">Perfil de compra</button>
               <button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-xs font-medium text-navy transition hover:border-sea focus:outline-none focus:ring-2 focus:ring-sea/30" onClick={() => void openInformation()} type="button">Más información</button>
             </section>
           ) : null}
@@ -872,6 +960,9 @@ function CustomerDetailDrawer({
           </div>
           <div aria-hidden={detailView !== "economics"} className={`transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${detailView === "economics" ? "relative translate-x-0 opacity-100" : "pointer-events-none absolute inset-x-4 top-4 translate-x-6 opacity-0"}`} inert={detailView !== "economics"}>
             <CustomerEconomicsPanel economics={economics} error={economicsError} loading={economicsLoading} onBack={() => setDetailView("main")} />
+          </div>
+          <div aria-hidden={detailView !== "signals"} className={`transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${detailView === "signals" ? "relative translate-x-0 opacity-100" : "pointer-events-none absolute inset-x-4 top-4 translate-x-6 opacity-0"}`} inert={detailView !== "signals"}>
+            <CustomerSignalsPanel error={signalsError} loading={signalsLoading} onBack={() => setDetailView("main")} signals={signals} />
           </div>
           <div aria-hidden={detailView !== "information"} className={`transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none ${detailView === "information" ? "relative translate-x-0 opacity-100" : "pointer-events-none absolute inset-x-4 top-4 translate-x-6 opacity-0"}`} inert={detailView !== "information"}>
             <CustomerInformationPanel error={identitiesError} identities={identities} loading={identitiesLoading} onBack={() => setDetailView("main")} summary={summary} />

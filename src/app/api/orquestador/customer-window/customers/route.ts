@@ -7,6 +7,7 @@ import { isCustomerSearchType } from "@/lib/customer-window/customer-search";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
   getCustomerWindowClassificationCriteria,
+  getCustomerWindowCommercialSignals,
   getCustomerWindowEconomics,
   getCustomerWindowIdentities,
   getCustomerWindowPurchasePeriodMetrics,
@@ -148,6 +149,13 @@ export async function GET(request: NextRequest) {
     const result = await getCustomerWindowEconomics(customerId);
     return result.error
       ? jsonError("No fue posible consultar la economia del cliente.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "signals") {
+    const result = await getCustomerWindowCommercialSignals(customerId);
+    return result.error
+      ? jsonError("No fue posible consultar el perfil de compra.", 500)
       : NextResponse.json(result.data, { headers: noStoreHeaders });
   }
 

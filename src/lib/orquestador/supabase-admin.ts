@@ -726,6 +726,18 @@ export async function getCustomerWindowEconomics(customerId: string) {
   }
 }
 
+export async function getCustomerWindowCommercialSignals(customerId: string) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_get_commercial_signals", {
+      p_customer_id: customerId,
+    });
+    return error ? singleError<unknown>() : { data, error: false };
+  } catch {
+    return singleError<unknown>();
+  }
+}
+
 export async function getCustomerWindowIdentities(customerId: string) {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
