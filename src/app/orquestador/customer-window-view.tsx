@@ -521,7 +521,7 @@ function CustomerPeriodSelector({ onApply, preset, range }: {
   return (
     <div className="relative grid min-w-0 gap-3 text-sm font-medium text-navy sm:grid-cols-[minmax(180px,220px)_auto] sm:items-end" ref={rootRef}>
       <div className="grid min-w-0 gap-1">
-        <span>Periodo</span>
+        <span className="text-xs leading-4 text-slate-600">Periodo</span>
         <button aria-controls={popoverId} aria-expanded={isOpen} aria-haspopup="dialog" className="flex h-10 w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-[#cbd8e3] bg-white px-3 text-left text-sm text-navy outline-none transition hover:bg-[#f8fbfd] focus:border-sea focus:ring-2 focus:ring-[#9bcbdc]/40" onClick={() => {
           if (!isOpen && preset === "custom") {
             openCustomPanel();
@@ -534,7 +534,7 @@ function CustomerPeriodSelector({ onApply, preset, range }: {
         </button>
       </div>
       <div className="grid min-w-0 gap-1">
-        <span>Rango seleccionado</span>
+        <span className="text-xs leading-4 text-slate-600">Rango seleccionado</span>
         <p className="flex h-10 min-w-0 items-center text-sm font-normal text-slate-500 sm:whitespace-nowrap">{displayDate(range.from)} <span className="px-1.5" aria-hidden="true">→</span> {displayDate(range.to)}</p>
       </div>
 
@@ -579,12 +579,12 @@ function CustomerRepresentationFacets({ error, facets, loading }: {
   ] : [];
 
   return (
-    <section aria-label="Resumen de representaciones del período" className="mt-5 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
-      {loading && !facets ? <><p className="px-4 py-3 text-xs text-slate-600">Actualizando datos...</p><div className="grid animate-pulse gap-px bg-[#e4edf4] sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div className="h-24 bg-white" key={index} />)}</div></> : null}
-      {error ? <p className="px-4 py-3 text-xs text-red-700" role="alert">No fue posible cargar los conteos de representaciones.</p> : null}
+    <section aria-label="Resumen de representaciones del período" className="mt-3 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
+      {loading && !facets ? <><p className="px-4 py-2 text-xs text-slate-600">Actualizando datos...</p><div className="grid animate-pulse gap-px bg-[#e4edf4] sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div className="h-20 bg-white" key={index} />)}</div></> : null}
+      {error ? <p className="px-4 py-2 text-xs text-red-700" role="alert">No fue posible cargar los conteos de representaciones.</p> : null}
       {facets ? (
         <div className="relative"><div aria-live="polite" className="absolute right-4 top-2 text-[11px] text-slate-500">{loading ? "Actualizando..." : ""}</div><div className={`grid divide-y divide-[#e4edf4] transition-opacity sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4 ${loading ? "opacity-60" : "opacity-100"}`}>
-          {rows.map((row) => <div className="px-4 py-3" key={row.label}><p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{row.label}</p><p className="mt-1 text-2xl font-semibold leading-none text-navy">{displaySafeCount(row.value)}</p>{row.label === "Representaciones" ? <p className="mt-1 text-[11px] text-slate-500">Incluye grupos relacionados pendientes de revisión</p> : null}</div>)}
+          {rows.map((row) => <div className="px-4 py-2.5" key={row.label}><p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{row.label}</p><p className="mt-1 text-2xl font-semibold leading-none text-navy">{displaySafeCount(row.value)}</p>{row.label === "Representaciones" ? <p className="mt-1 text-[11px] text-slate-500">Incluye grupos relacionados pendientes de revisión</p> : null}</div>)}
         </div></div>
       ) : null}
     </section>
@@ -607,15 +607,14 @@ function CustomerWindowRefreshHealthStrip({ error, health, loading }: {
 }) {
   if (error) {
     return (
-      <section aria-label="Estado de actualización de Customer Window" className="mt-5 border-y border-amber-200 bg-amber-50/70 px-5 py-3">
-        <div className="flex items-center gap-2 text-sm font-semibold text-amber-900"><TriangleAlert aria-hidden="true" className="h-4 w-4" />Estado de actualización no disponible</div>
-        <p className="mt-1 text-xs text-amber-800">Las representaciones y conteos continúan disponibles.</p>
+      <section aria-label="Estado de actualización de Customer Window" className="mt-3 border-y border-amber-200 bg-amber-50/70 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-amber-900"><span className="flex items-center gap-2 text-sm font-semibold"><TriangleAlert aria-hidden="true" className="h-4 w-4" />Estado de actualización no disponible</span><span className="text-xs text-amber-800">Las representaciones y conteos continúan disponibles.</span></div>
       </section>
     );
   }
   if (!health) {
     return loading ? (
-      <section aria-label="Estado de actualización de Customer Window" className="mt-5 border-y border-[#d6e1ea] bg-white px-5 py-3">
+      <section aria-label="Estado de actualización de Customer Window" className="mt-3 border-y border-[#d6e1ea] bg-white px-4 py-2">
         <div className="flex items-center gap-2 text-sm text-slate-600"><RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />Consultando estado de actualización...</div>
       </section>
     ) : null;
@@ -636,16 +635,14 @@ function CustomerWindowRefreshHealthStrip({ error, health, loading }: {
       : health.retentionStatus === "error" ? "con error" : "sin telemetría";
 
   return (
-    <section aria-label="Estado de actualización de Customer Window" className={`mt-5 border-y px-5 py-3 ${presentation.classes}`}>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-        <div className="flex items-center gap-2 text-sm font-semibold"><Icon aria-hidden="true" className={`h-4 w-4 ${health.status === "refreshing" ? "animate-spin" : ""}`} />{presentation.title}</div>
-        <p className="text-xs">Frecuencia esperada: cada {health.cadenceMinutes} min</p>
-      </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+    <section aria-label="Estado de actualización de Customer Window" className={`mt-3 border-y px-4 py-2 ${presentation.classes}`}>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+        <span className="flex items-center gap-2 text-sm font-semibold"><Icon aria-hidden="true" className={`h-4 w-4 ${health.status === "refreshing" ? "animate-spin" : ""}`} />{presentation.title}</span>
         <span>{primaryTime}</span>
         <span>Retención: {retentionLabel}</span>
         <span>Históricos pendientes: {health.retentionRemaining.toLocaleString("es-CL")}</span>
         {health.status === "error" && health.lastErrorCode ? <span title="Detalle operacional seguro">Detalle: {health.lastErrorCode}{health.lastErrorPhase ? ` / ${health.lastErrorPhase}` : ""}</span> : null}
+        <span className="ml-auto whitespace-nowrap">Frecuencia esperada: cada {health.cadenceMinutes} min</span>
       </div>
     </section>
   );
@@ -2297,17 +2294,19 @@ export function CustomerWindowView() {
   }
 
   return (
-    <section className="mt-5">
-      <div className="flex gap-2 border-b border-[#d6e1ea]" role="tablist" aria-label="Customer Window">{(["clientes", "campanas"] as const).map((value) => <button aria-selected={section === value} className={`border-b-2 px-4 py-3 text-sm font-semibold ${section === value ? "border-sea text-navy" : "border-transparent text-slate-500"}`} key={value} onClick={() => setSection(value)} role="tab" type="button">{value === "clientes" ? "Clientes" : "Campañas"}</button>)}</div>
+    <section className="mt-4">
+      <div className="flex gap-2 border-b border-[#d6e1ea]" role="tablist" aria-label="Customer Window">{(["clientes", "campanas"] as const).map((value) => <button aria-selected={section === value} className={`border-b-2 px-4 py-2.5 text-sm font-semibold ${section === value ? "border-sea text-navy" : "border-transparent text-slate-500"}`} key={value} onClick={() => setSection(value)} role="tab" type="button">{value === "clientes" ? "Clientes" : "Campañas"}</button>)}</div>
       {section === "campanas" ? <Panel title="Campañas"><p className="mt-4 text-sm text-slate-600">Próximamente.</p></Panel> : (
         <>
-          <section aria-label="Buscar representaciones" className="mt-5 border-y border-[#d6e1ea] bg-white px-5 py-4">
-            <label className="text-xs font-medium text-slate-600" htmlFor="customer-window-v2-search">Buscar clientes</label>
-            <div className="relative mt-2"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input autoComplete="off" className="w-full rounded-lg border border-[#cbd8e3] py-2.5 pl-9 pr-3 text-sm text-navy outline-none transition placeholder:text-slate-400 focus:border-sea focus:ring-2 focus:ring-sea/20" id="customer-window-v2-search" maxLength={128} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Buscar por email, teléfono, reserva o cliente..." type="search" value={searchQuery} /></div>
-            <CustomerRepresentationSearchResults error={searchError} loading={searchLoading} onSelect={selectSearchRepresentation} query={searchQuery} result={searchResult} />
-          </section>
-          <section aria-label="Filtros de clientes" className="relative z-20 mt-5 overflow-visible rounded-xl border border-[#d6e1ea] bg-white px-5 py-4 shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
-            <CustomerPeriodSelector onApply={applyPeriod} preset={periodPreset} range={periodRange} />
+          <section aria-label="Controles de clientes" className="relative z-20 mt-3 overflow-visible rounded-xl border border-[#d6e1ea] bg-white px-4 py-3 shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
+            <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(340px,auto)_minmax(320px,1fr)] lg:items-start lg:gap-6">
+              <CustomerPeriodSelector onApply={applyPeriod} preset={periodPreset} range={periodRange} />
+              <div className="min-w-0">
+                <label className="block text-xs font-medium leading-4 text-slate-600" htmlFor="customer-window-v2-search">Buscar clientes</label>
+                <div className="relative mt-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input autoComplete="off" className="h-10 w-full rounded-lg border border-[#cbd8e3] py-2 pl-9 pr-3 text-sm text-navy outline-none transition placeholder:text-slate-400 focus:border-sea focus:ring-2 focus:ring-sea/20" id="customer-window-v2-search" maxLength={128} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Buscar por email, teléfono, reserva o cliente..." type="search" value={searchQuery} /></div>
+                <CustomerRepresentationSearchResults error={searchError} loading={searchLoading} onSelect={selectSearchRepresentation} query={searchQuery} result={searchResult} />
+              </div>
+            </div>
           </section>
           <CustomerWindowRefreshHealthStrip error={refreshHealthError} health={refreshHealth} loading={refreshHealthLoading} />
           <CustomerRepresentationFacets error={periodFacetsError} facets={periodFacets} loading={periodFacetsLoading} />

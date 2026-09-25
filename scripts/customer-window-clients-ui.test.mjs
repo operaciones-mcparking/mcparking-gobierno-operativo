@@ -24,6 +24,17 @@ test("legacy typed point search stays removed while v2 unified search is server-
   assert.match(view, /normalizeCustomerWindowRepresentationSearchV2/);
 });
 
+test("customer controls and operational summary use the compact responsive layout", () => {
+  assert.match(view, /aria-label="Controles de clientes"[\s\S]*<CustomerPeriodSelector[\s\S]*htmlFor="customer-window-v2-search"/);
+  assert.match(view, /lg:grid-cols-\[minmax\(340px,auto\)_minmax\(320px,1fr\)\]/);
+  assert.match(view, /lg:items-start/);
+  assert.match(view, /<span className="text-xs leading-4 text-slate-600">Periodo<[\s\S]*<span className="text-xs leading-4 text-slate-600">Rango seleccionado<[\s\S]*className="block text-xs font-medium leading-4 text-slate-600"/);
+  assert.doesNotMatch(view, /aria-label="Buscar representaciones"|aria-label="Filtros de clientes"/);
+  assert.match(view, /aria-label="Estado de actualización de Customer Window"[\s\S]*mt-3[\s\S]*gap-x-5[\s\S]*Frecuencia esperada:/);
+  assert.match(view, /aria-label="Resumen de representaciones del período" className="mt-3/);
+  assert.match(view, /rows\.map\(\(row\) => <div className="px-4 py-2\.5"/);
+});
+
 test("search selections carry their own related authority while period rows keep the health fallback", () => {
   assert.match(view, /selectSearchRepresentation[\s\S]*authoritySnapshotId: null[\s\S]*authoritySnapshotId: item\.authoritySnapshotId/);
   assert.match(view, /resolvedAuthoritySnapshotId = representation\?\.representationType === "related_review"[\s\S]*representation\.authoritySnapshotId \?\? activeSnapshotId/);
