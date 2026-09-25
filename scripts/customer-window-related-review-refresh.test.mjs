@@ -796,7 +796,9 @@ test("logging and latest state use an allowlist and atomic replacement", () => {
     "stableCoveragePostcheckMs", "lastPostcheckPhaseStarted",
     "lastPostcheckPhaseFinished", "lastPostcheckPhaseDurationMs", "retentionAttempted",
     "retentionDeleted", "retentionRemaining", "retentionDurationMs",
-    "retentionLastDeletedSnapshotId", "retentionErrorCode", "retentionMs"]) {
+    "retentionLastDeletedSnapshotId", "retentionErrorCode", "retentionMs",
+    "buildCode", "buildPhase", "lastBuildCode", "lastBuildPhase", "lastBuildCommitted",
+    "lastDbConstraint", "lastDbTable", "lastDbColumn"]) {
     assert.match(wrapper, new RegExp(field));
   }
   assert.match(wrapper, /refresh-\{0\}\.ndjson/);
@@ -809,6 +811,79 @@ test("logging and latest state use an allowlist and atomic replacement", () => {
     assert.match(wrapper, new RegExp(field));
   }
   assert.doesNotMatch(wrapper, /WriteAllText\([^\n]*(?:passwordPlain|hmacPlain|databaseUrl)/i);
+});
+
+test("PowerShell persists safe build diagnostics to NDJSON and latest state", {
+  skip: process.platform !== "win32",
+}, () => {
+  const powershell = join(process.env.SystemRoot ?? "C:\\Windows", "System32",
+    "WindowsPowerShell", "v1.0", "powershell.exe");
+  const wrapperPath = join(scriptDirectory, "customer-window-related-review-refresh.ps1")
+    .replaceAll("'", "''");
+  const command = `
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+  '${wrapperPath}', [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) { throw 'Wrapper parse failure' }
+foreach ($name in @('Throw-Code', 'Test-CountValue', 'Get-OptionalProperty',
+    'Add-SafeAuditWaitFields', 'Get-SafeRefreshRecord', 'Write-AtomicJson',
+    'Publish-OperationalState')) {
+  $function = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+      $node.Name -eq $name
+  }, $true)
+  if ($null -eq $function) { throw "Missing function $name" }
+  Invoke-Expression $function.Extent.Text
+}
+$root = Join-Path ([IO.Path]::GetTempPath()) ('rr-build-diagnostic-' + [guid]::NewGuid().ToString('N'))
+$logDirectory = Join-Path $root 'logs'
+$stateDirectory = Join-Path $root 'state'
+$latestPath = Join-Path $stateDirectory 'latest.json'
+[void][IO.Directory]::CreateDirectory($logDirectory)
+[void][IO.Directory]::CreateDirectory($stateDirectory)
+try {
+  $result = '{"ok":false,"code":"build_ready_failed","phase":"build-ready",' +
+    '"buildCode":"source_or_link_anomaly","buildPhase":"staging_audit",' +
+    '"dbCode":"23514","dbConstraint":"safe_constraint","dbTable":"safe_table",' +
+    '"dbColumn":"safe_column","activated":false,"committed":false}' | ConvertFrom-Json
+  $started = [DateTimeOffset]::UtcNow
+  $record = Get-SafeRefreshRecord -Result $result -Started $started -Finished $started -ChildExitCode 1 -DurationMs 25
+  Publish-OperationalState -Record $record -DurationMs 25
+  $line = Get-Content -LiteralPath (Get-ChildItem -LiteralPath $logDirectory -File |
+    Select-Object -First 1).FullName -Raw | ConvertFrom-Json
+  $latest = Get-Content -LiteralPath $latestPath -Raw | ConvertFrom-Json
+  if ($line.code -ne 'build_ready_failed' -or
+    $line.buildCode -ne 'source_or_link_anomaly' -or
+    $line.buildPhase -ne 'staging_audit' -or $line.dbCode -ne '23514' -or
+    $line.dbConstraint -ne 'safe_constraint' -or $line.dbTable -ne 'safe_table' -or
+    $line.dbColumn -ne 'safe_column' -or $line.committed -ne $false) {
+    throw 'NDJSON build diagnostic mismatch'
+  }
+  if ($latest.lastErrorCode -ne 'build_ready_failed' -or
+    $latest.lastBuildCode -ne 'source_or_link_anomaly' -or
+    $latest.lastBuildPhase -ne 'staging_audit' -or $latest.lastDbCode -ne '23514' -or
+    $latest.lastBuildCommitted -ne $false -or
+    $latest.lastDbConstraint -ne 'safe_constraint' -or
+    $latest.lastDbTable -ne 'safe_table' -or $latest.lastDbColumn -ne 'safe_column') {
+    throw 'latest build diagnostic mismatch'
+  }
+  $serialized = $line | ConvertTo-Json -Compress
+  if ($serialized -match 'message|stack|query|password|token') {
+    throw 'Unsafe build diagnostic field persisted'
+  }
+} finally {
+  [IO.Directory]::Delete($root, $true)
+}
+`;
+  const environment = { ...process.env };
+  delete environment.PSModulePath;
+  const result = spawnSync(powershell,
+    ["-NoProfile", "-NonInteractive", "-Command", command],
+    { encoding: "utf8", env: environment });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
 test("PowerShell 5.1 atomically overwrites latest.json with a valid backup path", {

@@ -363,7 +363,8 @@ function Get-SafeRefreshRecord {
     childExitCode = $ChildExitCode
     durationMs = $DurationMs
   }
-  foreach ($name in @('code', 'phase', 'diagnosticCode', 'retentionErrorCode')) {
+  foreach ($name in @('code', 'phase', 'diagnosticCode', 'retentionErrorCode',
+      'buildCode', 'buildPhase')) {
     $value = Get-OptionalProperty -Object $Result -Name $name
     if ($null -ne $value) {
       if ($value -isnot [string] -or $value -notmatch '^[A-Za-z0-9_-]{1,80}$') {
@@ -580,7 +581,12 @@ function Publish-OperationalState {
   $recordCode = Get-OptionalProperty -Object $Record -Name 'code'
   $recordPhase = Get-OptionalProperty -Object $Record -Name 'phase'
   $recordDiagnosticCode = Get-OptionalProperty -Object $Record -Name 'diagnosticCode'
+  $recordBuildCode = Get-OptionalProperty -Object $Record -Name 'buildCode'
+  $recordBuildPhase = Get-OptionalProperty -Object $Record -Name 'buildPhase'
   $recordDbCode = Get-OptionalProperty -Object $Record -Name 'dbCode'
+  $recordDbConstraint = Get-OptionalProperty -Object $Record -Name 'dbConstraint'
+  $recordDbTable = Get-OptionalProperty -Object $Record -Name 'dbTable'
+  $recordDbColumn = Get-OptionalProperty -Object $Record -Name 'dbColumn'
   $recordChildExitCode = Get-OptionalProperty -Object $Record -Name 'childExitCode'
   $recordAuditPhaseStarted = Get-OptionalProperty -Object $Record -Name 'auditPhaseStarted'
   $recordAuditPhaseFinished = Get-OptionalProperty -Object $Record -Name 'auditPhaseFinished'
@@ -625,7 +631,15 @@ function Publish-OperationalState {
     lastErrorCode = if ($Record.ok) { $null } else { $recordCode }
     lastErrorPhase = if ($Record.ok) { $null } else { $recordPhase }
     lastDiagnosticCode = if ($Record.ok) { $null } else { $recordDiagnosticCode }
+    lastBuildCode = if ($Record.ok) { $null } else { $recordBuildCode }
+    lastBuildPhase = if ($Record.ok) { $null } else { $recordBuildPhase }
+    lastBuildCommitted = if ($Record.ok -or $null -eq $recordBuildCode) {
+      $null
+    } else { $recordCommitted }
     lastDbCode = if ($Record.ok) { $null } else { $recordDbCode }
+    lastDbConstraint = if ($Record.ok) { $null } else { $recordDbConstraint }
+    lastDbTable = if ($Record.ok) { $null } else { $recordDbTable }
+    lastDbColumn = if ($Record.ok) { $null } else { $recordDbColumn }
     lastAuditPhaseStarted = if ($Record.ok) { $null } else { $recordAuditPhaseStarted }
     lastAuditPhaseFinished = if ($Record.ok) { $null } else { $recordAuditPhaseFinished }
     lastAuditPhaseDurationMs = if ($Record.ok) { $null } else { $recordAuditPhaseDuration }

@@ -150,6 +150,30 @@ export function formatRefreshError(error) {
     result.postcheckPhaseDurationMs = context.postcheckPhaseDurationMs;
   }
   if (context?.readyAudit) Object.assign(result, context.readyAudit);
+  if (context?.buildFailure) Object.assign(result, context.buildFailure);
+  return result;
+}
+
+function safeBuildFailure(error, formatter = formatBuilderError) {
+  const formatted = formatter(error);
+  const result = {
+    buildCode: typeof formatted?.code === "string"
+      && /^[a-z][a-z0-9_]{0,79}$/.test(formatted.code)
+      ? formatted.code : "builder_failed",
+    buildPhase: typeof formatted?.phase === "string"
+      && /^[a-z][a-z0-9_]{0,79}$/.test(formatted.phase)
+      ? formatted.phase : "initializing",
+    committed: formatted?.committed === true,
+  };
+  if (typeof formatted?.dbCode === "string" && /^[A-Z0-9]{5}$/.test(formatted.dbCode)) {
+    result.dbCode = formatted.dbCode;
+  }
+  for (const key of ["dbConstraint", "dbTable", "dbColumn"]) {
+    if (typeof formatted?.[key] === "string"
+      && /^[A-Za-z_][A-Za-z0-9_]{0,62}$/.test(formatted[key])) {
+      result[key] = formatted[key];
+    }
+  }
   return result;
 }
 
@@ -439,6 +463,7 @@ export async function runRefresh({
   heartbeatFactory = createOperationalHeartbeat,
   operationalClientFactory = ({ ClientClass: OperationalClientClass, connection }) =>
     new OperationalClientClass({ ...connection, query_timeout: OPERATIONAL_QUERY_TIMEOUT_MS }),
+  buildErrorFormatter = formatBuilderError,
   randomUUIDFn = randomUUID,
   resumeReadySnapshotId = null,
   now = () => Date.now(),
@@ -455,6 +480,7 @@ export async function runRefresh({
   let activated = false;
   let committed = false;
   let readyAudit = null;
+  let buildFailure = null;
   let readyAuditAttempts = 0;
   let readyAuditRetried = false;
   let firstAuditDbCode = null;
@@ -547,7 +573,8 @@ export async function runRefresh({
       let build;
       try {
         build = await buildFn({ mode: "build-ready", env, ClientClass });
-      } catch {
+      } catch (error) {
+        buildFailure = safeBuildFailure(error, buildErrorFormatter);
         throw new RefreshError("build_ready_failed");
       }
       timings.buildMs = now() - buildStarted;
@@ -769,6 +796,7 @@ export async function runRefresh({
         newSnapshotId,
         activated,
         committed,
+        buildFailure: phase === "build-ready" ? buildFailure : null,
         readyAudit: phase === "ready-audit" ? readyAudit : null,
         postcheckPhaseStarted,
         postcheckPhaseFinished,

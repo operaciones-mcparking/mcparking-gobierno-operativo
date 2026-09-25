@@ -189,15 +189,81 @@ test("manual refresh completes build audit activate and both postchecks", async 
 });
 
 test("build failure stops before audit and activation", async () => {
-  const { state, options } = fixture({ buildError: new Error("sensitive") });
+  const unsafe = new Error("sensitive message");
+  unsafe.stack = "sensitive stack";
+  const { state, options } = fixture({ buildError: unsafe });
   let failure;
   try { await runRefresh(options); } catch (error) { failure = error; }
   assert.deepEqual(formatRefreshError(failure), {
     ok: false, code: "build_ready_failed", phase: "build-ready", activated: false,
+    buildCode: "builder_failed", buildPhase: "initializing", committed: false,
   });
   assert.deepEqual(state.calls, ["connect", "build", "end"]);
   assert.equal(state.operationalFinishes.length, 1);
   assert.equal(state.operationalFinishes[0].success, false);
+  assert.equal(state.operationalFinishes[0].errorCode, "build_ready_failed");
+  assert.equal(state.retentionCalls, 0);
+  assert.doesNotMatch(JSON.stringify(formatRefreshError(failure)), /sensitive message|sensitive stack/);
+});
+
+test("build failure preserves sanitized builder phase and PostgreSQL metadata", async () => {
+  const databaseError = Object.assign(new Error("unsafe detail"), {
+    code: "23514",
+    constraint: "customer_related_review_groups_booking_count_check",
+    table: "customer_related_review_groups",
+    column: "booking_count",
+  });
+  const { state, options } = fixture({ buildError: databaseError });
+  options.buildErrorFormatter = () => ({
+    ok: false,
+    code: "builder_failed",
+    phase: "groups_insert",
+    committed: false,
+    dbCode: "23514",
+    dbConstraint: "customer_related_review_groups_booking_count_check",
+    dbTable: "customer_related_review_groups",
+    dbColumn: "booking_count",
+  });
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+  assert.deepEqual(formatRefreshError(failure), {
+    ok: false,
+    code: "build_ready_failed",
+    phase: "build-ready",
+    activated: false,
+    buildCode: "builder_failed",
+    buildPhase: "groups_insert",
+    committed: false,
+    dbCode: "23514",
+    dbConstraint: "customer_related_review_groups_booking_count_check",
+    dbTable: "customer_related_review_groups",
+    dbColumn: "booking_count",
+  });
+  assert.deepEqual(state.calls, ["connect", "build", "end"]);
+  assert.equal(state.retentionCalls, 0);
+});
+
+test("BuildError metadata remains causal while the public refresh code stays compatible", async () => {
+  const { state, options } = fixture({ buildError: new Error("not emitted") });
+  options.buildErrorFormatter = () => ({
+    ok: false,
+    code: "source_or_link_anomaly",
+    phase: "staging_audit",
+    committed: false,
+  });
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+  assert.deepEqual(formatRefreshError(failure), {
+    ok: false,
+    code: "build_ready_failed",
+    phase: "build-ready",
+    activated: false,
+    buildCode: "source_or_link_anomaly",
+    buildPhase: "staging_audit",
+    committed: false,
+  });
+  assert.deepEqual(state.calls, ["connect", "build", "end"]);
+  assert.equal(state.operationalFinishes.length, 1);
   assert.equal(state.operationalFinishes[0].errorCode, "build_ready_failed");
 });
 
