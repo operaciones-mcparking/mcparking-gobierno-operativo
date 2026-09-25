@@ -9,7 +9,7 @@ export function isCustomerSearchType(value: string | null): value is CustomerSea
 export function normalizeCustomerSearchValue(type: CustomerSearchType, raw: string) {
   const value = raw.trim();
   if (type === "email") return value.toLowerCase();
-  if (type === "plate") return value.toUpperCase().replace(/[\s-]/g, "");
+  if (type === "plate") return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (type !== "phone") return value;
 
   let digits = value.replace(/\D/g, "");
@@ -20,4 +20,28 @@ export function normalizeCustomerSearchValue(type: CustomerSearchType, raw: stri
   if (digits.length === 10 && digits.startsWith("09")) return `56${digits.slice(1)}`;
   if (digits.length === 11 && digits.startsWith("56")) return digits;
   return "";
+}
+
+export type CustomerWindowSearchTermsV2 = {
+  email: string | null;
+  exactIdentifier: string;
+  numericIdentifier: string | null;
+  phone: string | null;
+  plate: string | null;
+};
+
+export function buildCustomerWindowSearchTermsV2(raw: string): CustomerWindowSearchTermsV2 | null {
+  const exactIdentifier = raw.trim();
+  if (exactIdentifier.length < 2 || exactIdentifier.length > 128) return null;
+  const email = normalizeCustomerSearchValue("email", exactIdentifier);
+  const phone = normalizeCustomerSearchValue("phone", exactIdentifier);
+  const plate = normalizeCustomerSearchValue("plate", exactIdentifier);
+  const numericIdentifier = /^[1-9]\d{0,18}$/.test(exactIdentifier) ? exactIdentifier : null;
+  return {
+    email: /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ? email : null,
+    exactIdentifier,
+    numericIdentifier,
+    phone: phone || null,
+    plate: plate.length >= 4 && plate.length <= 12 ? plate : null,
+  };
 }
