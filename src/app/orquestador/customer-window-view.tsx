@@ -102,6 +102,7 @@ type PeriodCustomer = {
   totalReservations: number;
 };
 type CustomerRepresentationListItemBaseV2 = {
+  authoritySnapshotId?: string | null;
   contactSummary: CustomerWindowContactSummaryV2;
   firstPurchaseAt: string | null;
   lastBookingAtInPeriod: string | null;
@@ -1415,6 +1416,9 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   const overviewController = useRef<AbortController | null>(null);
   const bookingsController = useRef<AbortController | null>(null);
   const identityDetailController = useRef<AbortController | null>(null);
+  const resolvedAuthoritySnapshotId = representation?.representationType === "related_review"
+    ? representation.authoritySnapshotId ?? activeSnapshotId
+    : null;
 
   useEffect(() => {
     overviewController.current?.abort();
@@ -1424,7 +1428,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     setBookingsPage(1);
     if (!representation) return;
     const locator = customer360LocatorFromRepresentation({
-      activeSnapshotId,
+      activeSnapshotId: resolvedAuthoritySnapshotId,
       representationId: representation.representationId,
       representationKey: representation.representationKey,
       representationType: representation.representationType,
@@ -1459,7 +1463,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
         if (overviewController.current === controller) setOverviewLoading(false);
       });
     return () => controller.abort();
-  }, [activeSnapshotId, representation]);
+  }, [representation, resolvedAuthoritySnapshotId]);
 
   useEffect(() => {
     bookingsController.current?.abort();
@@ -1467,7 +1471,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     setBookingsError(null);
     if (!representation) return;
     const locator = customer360LocatorFromRepresentation({
-      activeSnapshotId,
+      activeSnapshotId: resolvedAuthoritySnapshotId,
       representationId: representation.representationId,
       representationKey: representation.representationKey,
       representationType: representation.representationType,
@@ -1500,7 +1504,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
         if (bookingsController.current === controller) setBookingsLoading(false);
       });
     return () => controller.abort();
-  }, [activeSnapshotId, bookingsPage, representation]);
+  }, [bookingsPage, representation, resolvedAuthoritySnapshotId]);
 
   useEffect(() => {
     identityDetailController.current?.abort();
@@ -1511,14 +1515,14 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     setIdentityDetailError(null);
     setIdentityDetailStale(false);
     return () => identityDetailController.current?.abort();
-  }, [activeSnapshotId, representation]);
+  }, [representation, resolvedAuthoritySnapshotId]);
 
   async function openCustomer360Identity() {
     setActiveView("identity");
     if (!representation || representation.representationType !== "related_review"
       || identityDetail || identityDetailLoading || identityDetailController.current) return;
     const expectedLocator = customer360LocatorFromRepresentation({
-      activeSnapshotId,
+      activeSnapshotId: resolvedAuthoritySnapshotId,
       representationId: representation.representationId,
       representationKey: representation.representationKey,
       representationType: representation.representationType,
@@ -2276,9 +2280,9 @@ export function CustomerWindowView() {
 
   function selectSearchRepresentation(item: CustomerWindowRepresentationSearchItemV2) {
     if (item.representationType === "confirmed_customer" && item.customerId && item.relatedGroupId === null && item.metricScope === "all_confirmed_sources") {
-      selectRepresentation({ ...item, customerId: item.customerId, metricScope: "all_confirmed_sources", relatedGroupId: null, representationType: "confirmed_customer" });
+      selectRepresentation({ ...item, authoritySnapshotId: null, customerId: item.customerId, metricScope: "all_confirmed_sources", relatedGroupId: null, representationType: "confirmed_customer" });
     } else if (item.representationType === "related_review" && item.customerId === null && item.relatedGroupId && item.metricScope === "mcp_eap_active_snapshot") {
-      selectRepresentation({ ...item, customerId: null, metricScope: "mcp_eap_active_snapshot", relatedGroupId: item.relatedGroupId, representationType: "related_review" });
+      selectRepresentation({ ...item, authoritySnapshotId: item.authoritySnapshotId, customerId: null, metricScope: "mcp_eap_active_snapshot", relatedGroupId: item.relatedGroupId, representationType: "related_review" });
     }
   }
 

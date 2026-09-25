@@ -59,6 +59,7 @@ const related = {
 const searchResult = {
   items: [{
     ...related,
+    authoritySnapshotId: "33333333-3333-4333-8333-333333333333",
     displayEmail: "observed@example.com",
     displayPhone: "+56922222222",
     firstPurchaseAt: "2026-01-02T10:00:00",
@@ -199,6 +200,19 @@ test("helpers call only the versioned RPCs with exact parameter names", () => {
 
 test("v2 search contract accepts exact historical matches and rejects unsafe shapes", () => {
   assert.deepEqual(contract.normalizeCustomerWindowRepresentationSearchV2(searchResult), searchResult);
+  const confirmedSearchResult = {
+    ...searchResult,
+    items: [{
+      ...searchResult.items[0],
+      ...confirmed,
+      authoritySnapshotId: null,
+      matchSemantics: "direct",
+      matchType: "exact_email",
+    }],
+  };
+  assert.deepEqual(contract.normalizeCustomerWindowRepresentationSearchV2(confirmedSearchResult), confirmedSearchResult);
+  assert.equal(contract.normalizeCustomerWindowRepresentationSearchV2({ ...searchResult, items: [{ ...searchResult.items[0], authoritySnapshotId: null }] }), null);
+  assert.equal(contract.normalizeCustomerWindowRepresentationSearchV2({ ...confirmedSearchResult, items: [{ ...confirmedSearchResult.items[0], authoritySnapshotId: "33333333-3333-4333-8333-333333333333" }] }), null);
   assert.equal(contract.normalizeCustomerWindowRepresentationSearchV2({ ...searchResult, limit: 21 }), null);
   assert.equal(contract.normalizeCustomerWindowRepresentationSearchV2({ ...searchResult, items: [{ ...searchResult.items[0], matchSemantics: "direct" }] }), null);
   assert.equal(contract.normalizeCustomerWindowRepresentationSearchV2({ ...searchResult, items: [searchResult.items[0], searchResult.items[0]] }), null);

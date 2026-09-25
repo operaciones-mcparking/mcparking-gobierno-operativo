@@ -5,8 +5,12 @@ import ts from "typescript";
 
 const migrationPath = "supabase/migrations/20260923160000_add_customer_window_v2_representation_search.sql";
 const harnessPath = "supabase/debug/customer_window_v2_representation_search_reversible_test.sql";
+const authorityMigrationPath = "supabase/migrations/20260925170000_extend_customer_window_v2_search_authority_snapshot.sql";
+const authorityHarnessPath = "supabase/debug/customer_window_v2_search_authority_snapshot_reversible_test.sql";
 const migration = readFileSync(migrationPath, "utf8");
 const harness = readFileSync(harnessPath, "utf8");
+const authorityMigration = readFileSync(authorityMigrationPath, "utf8");
+const authorityHarness = readFileSync(authorityHarnessPath, "utf8");
 
 function migrationBody(source) {
   const start = source.indexOf("create or replace function public.customer_window_v2_search_representations_mcp_eap");
@@ -28,6 +32,17 @@ test("search RPC is exact read-only stable and service-role-only", () => {
   assert.match(migration, /grant execute on function[\s\S]*to service_role/);
   const rpc = migration.slice(migration.indexOf("create or replace function"), migration.indexOf("revoke all on function"));
   assert.doesNotMatch(rpc, /\binsert\b|\bupdate\b|\bdelete\b|\bmerge\b|execute\s+/i);
+});
+
+test("incremental search contract carries exact snapshot authority without broadening search", () => {
+  assert.match(authorityMigration, /'authoritySnapshotId', case enriched\.representation_type\s+when 'related_review' then enriched\.snapshot_id else null end/);
+  assert.match(authorityMigration, /select authority\.active_snapshot_count, authority\.snapshot_id[\s\S]*customer_window_mcp_eap_active_snapshot_authority_v2/);
+  assert.doesNotMatch(authorityMigration, /\bilike\b|similarity\s*\(|levenshtein|soundex/i);
+  assert.doesNotMatch(authorityMigration, /\binsert\b|\bupdate\b|\bdelete\b|\bmerge\b/i);
+  assert.equal(migrationBody(authorityHarness), migrationBody(authorityMigration));
+  assert.match(authorityHarness, /Confirmed search authority snapshot contract failed/);
+  assert.match(authorityHarness, /Related search authority snapshot contract failed/);
+  assert.match(authorityHarness, /rollback;[\s\S]*base_search_rpc_restored_after_rollback/);
 });
 
 test("search supports only certified exact identifiers and active snapshot representations", () => {

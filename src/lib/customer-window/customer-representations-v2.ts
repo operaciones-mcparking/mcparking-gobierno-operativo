@@ -43,6 +43,7 @@ export type CustomerWindowRepresentationListV2 = {
 };
 
 export type CustomerWindowRepresentationSearchItemV2 = CustomerWindowRepresentationV2 & {
+  authoritySnapshotId: string | null;
   displayEmail: string | null;
   displayPhone: string | null;
   matchSemantics: "direct" | "observed_in_group" | "historically_related" | "booking" | "source_customer";
@@ -348,6 +349,8 @@ export function normalizeCustomerWindowRepresentationSearchV2(
     const historicalType = item.matchType === "historical_email" || item.matchType === "historical_phone";
     if (historicalType !== (item.matchSemantics === "historically_related")) return null;
     if (historicalType && representation.representationType !== "related_review") return null;
+    if (representation.representationType === "confirmed_customer" && item.authoritySnapshotId !== null) return null;
+    if (representation.representationType === "related_review" && !isUuid(item.authoritySnapshotId)) return null;
     return item as CustomerWindowRepresentationSearchItemV2;
   });
   if (items.some((item) => item === null)) return null;

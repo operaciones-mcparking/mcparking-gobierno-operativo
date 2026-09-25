@@ -24,6 +24,15 @@ test("legacy typed point search stays removed while v2 unified search is server-
   assert.match(view, /normalizeCustomerWindowRepresentationSearchV2/);
 });
 
+test("search selections carry their own related authority while period rows keep the health fallback", () => {
+  assert.match(view, /selectSearchRepresentation[\s\S]*authoritySnapshotId: null[\s\S]*authoritySnapshotId: item\.authoritySnapshotId/);
+  assert.match(view, /resolvedAuthoritySnapshotId = representation\?\.representationType === "related_review"[\s\S]*representation\.authoritySnapshotId \?\? activeSnapshotId/);
+  assert.match(view, /customer360LocatorFromRepresentation\(\{[\s\S]*activeSnapshotId: resolvedAuthoritySnapshotId/);
+  assert.doesNotMatch(view.slice(view.indexOf("function selectSearchRepresentation"), view.indexOf("async function changeTimelinePage")), /refreshHealth/);
+  assert.doesNotMatch(view.slice(view.indexOf("function normalizeRepresentationListForUi"), view.indexOf("function displayOptionalCount")), /authoritySnapshotId/);
+  assert.match(view, /<Customer360Drawer activeSnapshotId=\{refreshHealth\?\.activeSnapshotId \?\? null\}/);
+});
+
 test("admin-only endpoint rejects invalid inputs and caps page size", () => {
   assert.match(route, /getActiveAdminUser\(\)/);
   assert.match(route, /isCustomerSearchType\(type\)/);
