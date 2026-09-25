@@ -337,8 +337,10 @@ test("identity resolution renders scoped observed and historical contacts withou
   assert.match(contactsBlock, /Contactos relacionados/);
   assert.match(contactsBlock, /Observado en este grupo/);
   assert.match(contactsBlock, /Relacionado históricamente/);
-  assert.match(contactsBlock, /Relacionado por historial del mismo teléfono/);
-  assert.match(contactsBlock, /Relacionado por historial del mismo email/);
+  assert.match(contactsBlock, /Mismo teléfono/);
+  assert.match(contactsBlock, /Mismo email/);
+  assert.match(contactsBlock, /Fuente:/);
+  assert.match(contactsBlock, /Reserva:/);
   assert.match(view, /RELATED_CONTACT_INITIAL_LIMIT = 5/);
   assert.match(contactsBlock, /contacts\.slice\(0, RELATED_CONTACT_INITIAL_LIMIT\)/);
   assert.match(contactsBlock, /Ver todos/);

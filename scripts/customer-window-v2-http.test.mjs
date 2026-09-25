@@ -154,8 +154,8 @@ const identityResolutionDetail = {
   relatedGroupId: "a".repeat(64),
   relatedContacts: {
     emails: [
-      { bookingCount: 2, firstSeenAt: "2026-01-01T10:00:00", lastSeenAt: "2026-02-01T10:00:00", profileId: null, relation: "observed_in_group", relationReason: null, sourceCount: 1, value: "observed@example.com" },
-      { bookingCount: 1, firstSeenAt: "2025-01-01T10:00:00Z", lastSeenAt: "2025-01-01T10:00:00Z", profileId: "44444444-4444-4444-8444-444444444444", relation: "historically_related", relationReason: "same_profile_history", sourceCount: 1, value: "historical@example.com" },
+      { bookingCode: "MCP100", bookingCount: 2, firstSeenAt: "2026-01-01T10:00:00", lastSeenAt: "2026-02-01T10:00:00", observedAt: "2026-02-01T10:00:00", profileId: null, relation: "observed_in_group", relationReason: null, source: "MCP_EAP", sourceCount: 1, sourceRowId: 101, type: "email", value: "observed@example.com" },
+      { bookingCode: "25LJL1009", bookingCount: 1, firstSeenAt: "2025-01-01T10:00:00Z", lastSeenAt: "2025-01-01T10:00:00Z", observedAt: "2025-01-01T10:00:00Z", profileId: null, relation: "historically_related", relationReason: "same_phone_history", source: "OKP", sourceCount: 1, sourceRowId: 202921, type: "email", value: "historical@example.com" },
     ],
     phones: [],
   },
@@ -234,8 +234,10 @@ test("identity resolution validator accepts scoped partial evidence and merged p
   assert.equal(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [identityResolutionDetail.relatedContacts.emails[0], identityResolutionDetail.relatedContacts.emails[0]], phones: [] } }), null);
   assert.equal(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [{ ...identityResolutionDetail.relatedContacts.emails[0], relationReason: "same_phone_history" }], phones: [] } }), null);
   assert.equal(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [{ ...identityResolutionDetail.relatedContacts.emails[1], relationReason: null }], phones: [] } }), null);
+  assert.equal(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [{ ...identityResolutionDetail.relatedContacts.emails[1], source: "OTHER" }], phones: [] } }), null);
+  assert.equal(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [{ ...identityResolutionDetail.relatedContacts.emails[1], type: "phone" }], phones: [] } }), null);
   assert.ok(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [], phones: [] } }));
-  assert.ok(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [...identityResolutionDetail.relatedContacts.emails, { bookingCount: 0, firstSeenAt: null, lastSeenAt: null, profileId: "55555555-5555-4555-8555-555555555555", relation: "historically_related", relationReason: "same_phone_history", sourceCount: 1, value: "second-historical@example.com" }], phones: [] } }));
+  assert.ok(contract.normalizeCustomerWindowIdentityResolutionDetailV2({ ...identityResolutionDetail, relatedContacts: { emails: [...identityResolutionDetail.relatedContacts.emails, { bookingCode: null, bookingCount: 0, firstSeenAt: null, lastSeenAt: null, observedAt: null, profileId: "55555555-5555-4555-8555-555555555555", relation: "historically_related", relationReason: "same_profile_history", source: null, sourceCount: 1, sourceRowId: null, type: "email", value: "second-historical@example.com" }], phones: [] } }));
 });
 
 test("list validator accepts confirmed and related representations and preserves bigint strings", () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const migrationPath = "supabase/migrations/20260923150000_extend_customer_window_v2_identity_resolution_pivot_contacts.sql";
+const migrationPath = "supabase/migrations/20260925180000_extend_customer_window_v2_identity_resolution_cross_source_contacts.sql";
 const harnessPath = "supabase/debug/customer_window_v2_identity_resolution_detail_reversible_test.sql";
 const postcheckPath = "supabase/debug/customer_window_v2_identity_resolution_pivot_contacts_postcheck.sql";
 const migration = readFileSync(migrationPath, "utf8");
@@ -72,9 +72,21 @@ test("contradictory pivot expansion is one hop and evidence gated", () => {
   const rpc = functionBlock(migration);
   assert.match(rpc, /event\.reason_code = 'contradictory_phone_email'[\s\S]*contradictorySignals[\s\S]*emailsForPhone[\s\S]*> 1/);
   assert.match(rpc, /event\.reason_code = 'contradictory_phone_email'[\s\S]*contradictorySignals[\s\S]*phonesForEmail[\s\S]*> 1/);
-  assert.match(rpc, /same_phone_history_observations[\s\S]*from observed_contacts pivot[\s\S]*booking\.phone_normalized = pivot\.normalized_value/);
-  assert.match(rpc, /same_email_history_observations[\s\S]*from observed_contacts pivot[\s\S]*booking\.email_normalized = pivot\.normalized_value/);
+  assert.match(rpc, /same_phone_history_observations[\s\S]*from observed_contacts pivot[\s\S]*customer_source_bookings_okp[\s\S]*phone_normalized = pivot\.normalized_value[\s\S]*customer_source_bookings_mcp_eap[\s\S]*phone_normalized = pivot\.normalized_value/);
+  assert.match(rpc, /same_email_history_observations[\s\S]*from observed_contacts pivot[\s\S]*customer_source_bookings_okp[\s\S]*email_normalized = pivot\.normalized_value[\s\S]*customer_source_bookings_mcp_eap[\s\S]*email_normalized = pivot\.normalized_value/);
   assert.doesNotMatch(rpc, /from same_phone_historical_contacts pivot|from same_email_historical_contacts pivot/);
+});
+
+test("cross-source contacts expose deterministic provenance without changing group counts", () => {
+  const rpc = functionBlock(migration);
+  for (const field of ["type", "source", "sourceRowId", "bookingCode", "observedAt"]) {
+    assert.match(rpc, new RegExp(`'${field}'`));
+  }
+  assert.match(rpc, /count\(distinct \(observation\.source, observation\.source_row_id\)\)/);
+  assert.match(rpc, /order by observation\.source_created_at desc nulls last, observation\.source,[\s\S]*observation\.source_row_id desc/);
+  assert.match(rpc, /'same_phone_history'::text as relation_reason/);
+  assert.match(rpc, /'same_email_history'::text as relation_reason/);
+  assert.doesNotMatch(rpc, /update public\.customer_booking_profile_links|insert into public\.customer_booking_profile_links|merged_into_profile_id\s*=/i);
 });
 
 test("real-case postcheck derives direct phone history without hardcoded contacts or writes", () => {
@@ -97,6 +109,9 @@ test("existing indexes cover group profile assignment and event lookups", () => 
   assert.match(indexes, /customer_identity_resolution_events_mcp_eap_non_safe_lookup_idx[\s\S]*source_row_id,[\s\S]*resolver_version,[\s\S]*created_at desc/);
   assert.match(sourceSchema, /customer_source_bookings_mcp_eap_phone_idx[\s\S]*phone_normalized/);
   assert.match(sourceSchema, /customer_source_bookings_mcp_eap_email_idx[\s\S]*email_normalized/);
+  const okpSchema = readFileSync("supabase/migrations/20260825120000_create_customer_source_bookings_okp.sql", "utf8");
+  assert.match(okpSchema, /customer_source_bookings_okp_phone_idx[\s\S]*phone_normalized/);
+  assert.match(okpSchema, /customer_source_bookings_okp_email_idx[\s\S]*email_normalized/);
   assert.doesNotMatch(migration, /create\s+(?:unique\s+)?index/i);
 });
 
@@ -104,7 +119,7 @@ test("reversible harness embeds the exact RPC and covers fail-closed cases", () 
   assert.equal(normalizedSql(functionBlock(harness)), normalizedSql(functionBlock(migration)));
   assert.match(harness, /^begin;/);
   assert.doesNotMatch(harness, /\bcommit\s*;/i);
-  for (const marker of ["one_profile_ok", "multiple_profiles_ok", "v1_contradictory_phone_email_available", "v2_review_profile_reused_exact_available", "partial_evidence_supported", "merged_profile_case_available", "merged_status_profile_count", "merged_pointer_profile_count", "merged_profile_supported", "large_group_ok", "related_contacts_shape_ok", "related_contacts_profile_scope_ok", "related_contacts_deduped_ok", "related_contacts_reason_ok", "missing_group_rejected", "active_scope_ok", "cross_group_leakage_count"]) {
+  for (const marker of ["one_profile_ok", "multiple_profiles_ok", "v1_contradictory_phone_email_available", "v2_review_profile_reused_exact_available", "partial_evidence_supported", "merged_profile_case_available", "merged_status_profile_count", "merged_pointer_profile_count", "merged_profile_supported", "large_group_ok", "related_contacts_shape_ok", "related_contacts_profile_scope_ok", "related_contacts_deduped_ok", "related_contacts_reason_ok", "related_contacts_provenance_shape_ok", "missing_group_rejected", "active_scope_ok", "cross_group_leakage_count"]) {
     assert.match(harness, new RegExp(marker));
   }
   assert.match(harness, /when case_id\.merged_profile_group is null then true/);

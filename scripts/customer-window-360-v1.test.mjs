@@ -263,22 +263,27 @@ test("identity detail keeps observed and historical contacts distinct for the co
       status: "active",
     }],
     relatedContacts: {
-      emails: [{ bookingCount: 1, firstSeenAt: "2026-09-25T11:00:00Z", lastSeenAt: "2026-09-25T11:00:00Z", profileId: "22222222-2222-4222-8222-222222222222", relation: "observed_in_group", relationReason: null, sourceCount: 1, value: "fernandarayensandoval@gmail.com" }, { bookingCount: 1, firstSeenAt: "2026-09-20T11:00:00Z", lastSeenAt: "2026-09-20T11:00:00Z", profileId: null, relation: "historically_related", relationReason: "same_phone_history", sourceCount: 1, value: "fernanda.sandoval@latam.com" }],
-      phones: [{ bookingCount: 1, firstSeenAt: "2026-09-25T11:00:00Z", lastSeenAt: "2026-09-25T11:00:00Z", profileId: "22222222-2222-4222-8222-222222222222", relation: "observed_in_group", relationReason: null, sourceCount: 1, value: "56956265973" }],
+      emails: [{ bookingCode: "MCP500680", bookingCount: 1, firstSeenAt: "2026-09-25T11:00:00Z", lastSeenAt: "2026-09-25T11:00:00Z", observedAt: "2026-09-25T11:00:00Z", profileId: "22222222-2222-4222-8222-222222222222", relation: "observed_in_group", relationReason: null, source: "MCP_EAP", sourceCount: 1, sourceRowId: 806093, type: "email", value: "benjaponsr@gmail.com" }, { bookingCode: "25LJL1009", bookingCount: 1, firstSeenAt: "2025-06-02T12:39:39", lastSeenAt: "2025-06-02T12:39:39", observedAt: "2025-06-02T12:39:39", profileId: null, relation: "historically_related", relationReason: "same_phone_history", source: "OKP", sourceCount: 1, sourceRowId: 202921, type: "email", value: "iiii@okpe.cl" }],
+      phones: [{ bookingCode: "MCP500680", bookingCount: 1, firstSeenAt: "2026-09-25T11:00:00Z", lastSeenAt: "2026-09-25T11:00:00Z", observedAt: "2026-09-25T11:00:00Z", profileId: "22222222-2222-4222-8222-222222222222", relation: "observed_in_group", relationReason: null, source: "MCP_EAP", sourceCount: 1, sourceRowId: 806093, type: "phone", value: "56982287983" }],
     },
     relatedGroupId: "ecb286114f10e203f5125bc35f65eb72663e817460ad03d5b6dfb17ad4018cb9",
     snapshotId: relatedLocator.authoritySnapshotId,
     summary: { bookingCount: 1, candidateCount: 0, conflictCount: 1, emailCount: 1, phoneCount: 1, profileCount: 1, sourceCustomerCount: 1, v1BookingCount: 0, v2BookingCount: 1 },
   });
   assert.ok(detail);
-  assert.equal(detail.relatedContacts.emails.find((contact) => contact.relation === "observed_in_group")?.value, "fernandarayensandoval@gmail.com");
-  assert.equal(detail.relatedContacts.emails.find((contact) => contact.relation === "historically_related")?.value, "fernanda.sandoval@latam.com");
+  assert.equal(detail.relatedContacts.emails.find((contact) => contact.relation === "observed_in_group")?.value, "benjaponsr@gmail.com");
+  assert.equal(detail.relatedContacts.emails.find((contact) => contact.relation === "historically_related")?.value, "iiii@okpe.cl");
+  assert.equal(detail.relatedContacts.emails.find((contact) => contact.relation === "historically_related")?.source, "OKP");
+  assert.equal(detail.summary.emailCount, 1);
   assert.equal(detail.events[0].reason, "contradictory_phone_email");
   assert.equal(detail.events[0].evidence.emailsForPhone, 2);
   const contacts = view.slice(view.indexOf("function CustomerRelatedContacts"), view.indexOf("const CUSTOMER_IDENTITY_PREVIEW_STATUS"));
   assert.match(contacts, /contact\.relation === "observed_in_group"/);
   assert.match(contacts, /contact\.relation === "historically_related"/);
   assert.match(contacts, /Los históricos explican relaciones del caso; no confirman que pertenezcan a una misma persona\./);
+  assert.match(view, /Mismo teléfono/);
+  assert.match(view, /Fuente:/);
+  assert.match(view, /Reserva:/);
 });
 
 test("identity panel keeps profiles members evidence and conceptual decisions bounded and read only", () => {

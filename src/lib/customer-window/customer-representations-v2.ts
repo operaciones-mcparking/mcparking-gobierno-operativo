@@ -138,13 +138,18 @@ export type CustomerWindowIdentityResolutionEvidenceV2 = {
 };
 
 export type CustomerWindowRelatedContactV2 = {
+  bookingCode: string | null;
   bookingCount: CustomerWindowSafeCount;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
+  observedAt: string | null;
   profileId: string | null;
   relation: "observed_in_group" | "historically_related";
   relationReason: "same_email_history" | "same_phone_history" | "same_profile_history" | null;
+  source: "MCP_EAP" | "OKP" | null;
   sourceCount: CustomerWindowSafeCount;
+  sourceRowId: CustomerWindowSafeCount | null;
+  type: "email" | "phone";
   value: string;
 };
 
@@ -419,16 +424,28 @@ export function normalizeCustomerWindowIdentityResolutionDetailV2(
       ? contact.relationReason === null
       : contact.relationReason !== null)
     && (contact.profileId === null || (isUuid(contact.profileId) && scopedProfileIds.has(contact.profileId)))
+    && (contact.source === null || contact.source === "MCP_EAP" || contact.source === "OKP")
+    && (contact.sourceRowId === null || isSafeCount(contact.sourceRowId))
+    && isNullableString(contact.bookingCode)
+    && isNullableString(contact.observedAt)
+    && (contact.source === null
+      ? contact.relationReason === "same_profile_history"
+        && contact.sourceRowId === null
+        && contact.bookingCode === null
+        && contact.observedAt === null
+      : contact.sourceRowId !== null && isNonEmptyString(contact.observedAt))
     && isNullableString(contact.firstSeenAt)
     && isNullableString(contact.lastSeenAt)
     && isSafeCount(contact.sourceCount)
     && countAsBigInt(contact.sourceCount) >= BigInt(1)
     && isSafeCount(contact.bookingCount));
+  const contactTypesValid = value.relatedContacts.emails.every((contact) => isRecord(contact) && contact.type === "email")
+    && value.relatedContacts.phones.every((contact) => isRecord(contact) && contact.type === "phone");
   const contactsUnique = (contacts: unknown[]) => {
     const values = contacts.map((contact) => isRecord(contact) ? contact.value : null);
     return values.every(isNonEmptyString) && hasUniqueStrings(values as string[]);
   };
-  if (!profilesValid || !membersValid || !eventsValid || !contactsValid
+  if (!profilesValid || !membersValid || !eventsValid || !contactsValid || !contactTypesValid
     || !contactsUnique(value.relatedContacts.emails)
     || !contactsUnique(value.relatedContacts.phones)) return null;
   if (countAsBigInt(summary.bookingCount as CustomerWindowSafeCount) !== BigInt(value.members.length)) return null;
