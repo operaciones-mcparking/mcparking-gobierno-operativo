@@ -15,10 +15,13 @@ test("navigation adds Customer Window without changing the default dashboard", (
   assert.match(view, /Clientes[\s\S]*Campañas[\s\S]*Próximamente/);
 });
 
-test("point search UI and its client-only state are removed", () => {
-  assert.doesNotMatch(view, /Buscar cliente específico|Busca por una identidad|searchCustomers|searchOptions|SearchResult/);
-  assert.doesNotMatch(view, /customer-search-type|customer-search-value|action=search|normalizeCustomerSearchValue/);
-  assert.doesNotMatch(view, /searchType|setSearchType|setQuery|setResults/);
+test("legacy typed point search stays removed while v2 unified search is server-side", () => {
+  assert.doesNotMatch(view, /Buscar cliente específico|Busca por una identidad|searchCustomers|searchOptions/);
+  assert.doesNotMatch(view, /customer-search-type|customer-search-value|normalizeCustomerSearchValue/);
+  assert.doesNotMatch(view, /searchType|setSearchType|setResults/);
+  assert.match(view, /customer-window-v2-search/);
+  assert.match(view, /action: "search-v2"/);
+  assert.match(view, /normalizeCustomerWindowRepresentationSearchV2/);
 });
 
 test("admin-only endpoint rejects invalid inputs and caps page size", () => {
@@ -27,16 +30,19 @@ test("admin-only endpoint rejects invalid inputs and caps page size", () => {
   assert.match(route, /uuidPattern\.test\(customerId\)/);
   assert.match(route, /boundedInteger\(request\.nextUrl\.searchParams\.get\("pageSize"\), 20, 100\)/);
   assert.match(route, /action === "criteria"/);
+  assert.match(route, /action === "search-v2"/);
   assert.match(route, /action === "search"[\s\S]*action === "summary"[\s\S]*action === "bookings"/);
 });
 
 test("client remains demand-driven and paginates timeline by twenty", () => {
   assert.match(view, /const TIMELINE_PAGE_SIZE = 20/);
-  assert.match(view, /Promise\.all\(\[[\s\S]*action=summary[\s\S]*action=bookings/);
-  const pagingStart = view.indexOf("async function changeTimelinePage");
-  const pagingBlock = view.slice(pagingStart, view.indexOf("\n\n  return (", pagingStart));
-  assert.match(pagingBlock, /action=bookings/);
-  assert.doesNotMatch(pagingBlock, /action=summary|action=search/);
+  const drawerStart = view.indexOf("function Customer360Drawer");
+  const drawerBlock = view.slice(drawerStart, view.indexOf("\nfunction CustomerDetailDrawer", drawerStart));
+  assert.equal((drawerBlock.match(/\/api\/orquestador\/customer-window\/360\/overview/g) ?? []).length, 1);
+  assert.equal((drawerBlock.match(/\/api\/orquestador\/customer-window\/360\/bookings/g) ?? []).length, 1);
+  assert.match(drawerBlock, /params\.set\("page", String\(bookingsPage\)\)/);
+  assert.match(drawerBlock, /setBookingsPage\(\(page\) => Math\.max\(1, page - 1\)\)/);
+  assert.match(drawerBlock, /setBookingsPage\(\(page\) => page \+ 1\)/);
 });
 
 test("unvalidated commercial amount metrics are not rendered", () => {

@@ -144,12 +144,12 @@ test("confirmed and related rows use sober explicit badges", () => {
   assert.doesNotMatch(tableBlock, /Inválido|Cliente malo|Conflicto crítico|Error/);
 });
 
-test("related selection opens its v2 drawer and never reaches the legacy customerId path", () => {
+test("related selection opens Customer 360 and never reaches the legacy customerId path", () => {
   const selectionBlock = sourceBlock(view, "function selectRepresentation", "async function changeTimelinePage");
-  assert.match(selectionBlock, /representation\.representationType === "related_review"/);
+  assert.match(selectionBlock, /setSelectedRepresentation\(representation\)/);
   assert.match(selectionBlock, /setDrawerCustomerId\(null\)/);
-  assert.match(selectionBlock, /return;[\s\S]*selectCustomer\(representation\.customerId\)/);
-  assert.match(view, /<RelatedReviewDrawer key=\{relatedRepresentation\?\.representationKey \?\? "related-review-closed"\} onClose=\{closeCustomerDrawer\} representation=\{relatedRepresentation\}/);
+  assert.doesNotMatch(selectionBlock, /selectCustomer\(/);
+  assert.match(view, /<Customer360Drawer[\s\S]*representation=\{selectedRepresentation\}/);
   assert.doesNotMatch(selectionBlock, /selectCustomer\(representation\.relatedGroupId\)/);
 });
 
@@ -394,13 +394,15 @@ test("related identity review remains explanatory and read-only", () => {
   assert.doesNotMatch(drawerBlock, /Confirmar como mismo cliente|Mantener separados|onConfirm|onReject|method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
 });
 
-test("confirmed selection keeps the existing legacy drawer request path", () => {
-  const customerBlock = sourceBlock(view, "async function selectCustomer", "function selectRepresentation");
-  assert.match(customerBlock, /setDrawerCustomerId\(customerId\)/);
-  assert.match(customerBlock, /action=economics&customerId=\$\{customerId\}/);
-  assert.match(customerBlock, /action=summary&customerId=\$\{customerId\}/);
-  assert.match(customerBlock, /action=bookings&customerId=\$\{customerId\}/);
-  assert.match(view, /<CustomerDetailDrawer customerId=\{drawerCustomerId\}[\s\S]*representation=\{confirmedRepresentation\}/);
+test("confirmed selection uses the global Customer 360 locator", () => {
+  const selectionBlock = sourceBlock(view, "function selectRepresentation", "async function changeTimelinePage");
+  const drawerBlock = sourceBlock(view, "function Customer360Drawer", "function CustomerDetailDrawer");
+  assert.match(selectionBlock, /setSelectedRepresentation\(representation\)/);
+  assert.doesNotMatch(selectionBlock, /selectCustomer\(/);
+  assert.match(drawerBlock, /customer360LocatorFromRepresentation/);
+  assert.match(drawerBlock, /\/api\/orquestador\/customer-window\/360\/overview/);
+  assert.match(drawerBlock, /\/api\/orquestador\/customer-window\/360\/bookings/);
+  assert.match(view, /<Customer360Drawer[\s\S]*representation=\{selectedRepresentation\}/);
 });
 
 test("list rendering does not introduce N plus one detail requests", () => {
@@ -482,12 +484,11 @@ test("the shared drawer remains responsive and handles empty and paginated histo
   assert.match(sharedBlock, /Página \{page\} de \{pageCount\}/);
 });
 
-test("legacy drawer and criteria actions remain unchanged and on demand", () => {
-  assert.match(view, /action=summary&customerId=/);
-  assert.match(view, /action=bookings&customerId=/);
-  assert.match(view, /action=economics&customerId=/);
-  assert.match(view, /action=signals&customerId=/);
-  assert.match(view, /action=identities&customerId=/);
+test("Customer 360 replaces legacy selection reads while criteria remains on demand", () => {
+  const selectionBlock = sourceBlock(view, "function selectRepresentation", "async function changeTimelinePage");
+  assert.doesNotMatch(selectionBlock, /action=(?:summary|bookings|economics|signals|identities)/);
+  assert.match(view, /customer-window\/360\/overview/);
+  assert.match(view, /customer-window\/360\/bookings/);
   assert.match(view, /action=criteria/);
   assert.ok(route.indexOf("getActiveAdminUser()") < route.indexOf('action === "criteria"'));
   assert.match(admin, /customer_window_get_classification_criteria/);

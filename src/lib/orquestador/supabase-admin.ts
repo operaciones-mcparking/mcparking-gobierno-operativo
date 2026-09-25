@@ -69,6 +69,16 @@ import {
   normalizeCustomerWindowRefreshHealth,
   type CustomerWindowRefreshHealth,
 } from "@/lib/customer-window/customer-refresh-health";
+import {
+  normalizeCustomer360Bookings,
+  normalizeCustomer360ObservedContacts,
+  normalizeCustomer360Overview,
+  type Customer360Bookings,
+  type Customer360ErrorCode,
+  type Customer360Locator,
+  type Customer360ObservedContacts,
+  type Customer360Overview,
+} from "@/lib/customer-window/customer-360-v1";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -81,6 +91,11 @@ type OrquestadorResult<T> = {
 type OrquestadorSingleResult<T> = {
   data: T | null;
   error: boolean;
+};
+
+export type Customer360ReadResult<T> = {
+  data: T | null;
+  errorCode: Customer360ErrorCode | null;
 };
 
 type OperationalUpdateRpcRow = RawCompositeRunJobRow & {
@@ -1033,5 +1048,84 @@ export async function listCustomerWindowV2RepresentationBookings(
       : singleError<CustomerWindowRepresentationBookingsResponseV2>();
   } catch {
     return singleError<CustomerWindowRepresentationBookingsResponseV2>();
+  }
+}
+
+const customer360ErrorCodes = new Set<Customer360ErrorCode>([
+  "authority_not_found",
+  "invalid_locator_contract",
+  "representation_authority_unavailable",
+  "representation_contract_unavailable",
+  "representation_not_found",
+  "stale_representation",
+]);
+
+function customer360ErrorCode(error: { message?: string } | null): Customer360ErrorCode {
+  return error?.message && customer360ErrorCodes.has(error.message as Customer360ErrorCode)
+    ? error.message as Customer360ErrorCode
+    : "representation_contract_unavailable";
+}
+
+export async function getCustomerWindow360Overview(
+  locator: Customer360Locator,
+): Promise<Customer360ReadResult<Customer360Overview>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_360_v1_get_overview", {
+      p_locator: locator,
+    });
+    if (error) return { data: null, errorCode: customer360ErrorCode(error) };
+    const normalized = normalizeCustomer360Overview(data);
+    return normalized
+      ? { data: normalized, errorCode: null }
+      : { data: null, errorCode: "representation_contract_unavailable" };
+  } catch {
+    return { data: null, errorCode: "representation_contract_unavailable" };
+  }
+}
+
+export async function listCustomerWindow360Bookings(input: {
+  locator: Customer360Locator;
+  page: number;
+  pageSize: number;
+}): Promise<Customer360ReadResult<Customer360Bookings>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_360_v1_list_bookings", {
+      p_locator: input.locator,
+      p_page: input.page,
+      p_page_size: input.pageSize,
+    });
+    if (error) return { data: null, errorCode: customer360ErrorCode(error) };
+    const normalized = normalizeCustomer360Bookings(data);
+    return normalized
+      ? { data: normalized, errorCode: null }
+      : { data: null, errorCode: "representation_contract_unavailable" };
+  } catch {
+    return { data: null, errorCode: "representation_contract_unavailable" };
+  }
+}
+
+export async function listCustomerWindow360ObservedContacts(input: {
+  contactType: "email" | "phone";
+  locator: Customer360Locator;
+  page: number;
+  pageSize: number;
+}): Promise<Customer360ReadResult<Customer360ObservedContacts>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_360_v1_list_observed_contacts", {
+      p_contact_type: input.contactType,
+      p_locator: input.locator,
+      p_page: input.page,
+      p_page_size: input.pageSize,
+    });
+    if (error) return { data: null, errorCode: customer360ErrorCode(error) };
+    const normalized = normalizeCustomer360ObservedContacts(data);
+    return normalized
+      ? { data: normalized, errorCode: null }
+      : { data: null, errorCode: "representation_contract_unavailable" };
+  } catch {
+    return { data: null, errorCode: "representation_contract_unavailable" };
   }
 }

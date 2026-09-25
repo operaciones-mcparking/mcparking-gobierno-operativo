@@ -4,12 +4,14 @@ type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 type SleepLike = (delayMs: number, signal?: AbortSignal) => Promise<void>;
 
 export class CustomerWindowHttpError extends Error {
+  readonly code: string | null;
   readonly retryable: boolean;
   readonly status: number;
 
-  constructor(message: string, status: number, retryable = status >= 500 && status <= 599) {
+  constructor(message: string, status: number, retryable = status >= 500 && status <= 599, code: string | null = null) {
     super(message);
     this.name = "CustomerWindowHttpError";
+    this.code = code;
     this.retryable = retryable;
     this.status = status;
   }
@@ -77,7 +79,8 @@ export async function getCustomerWindowJson(
     const retryable = isRecord(body) && typeof body.retryable === "boolean"
       ? body.retryable
       : response.status >= 500 && response.status <= 599;
-    throw new CustomerWindowHttpError(message, response.status, retryable);
+    const code = isRecord(body) && typeof body.code === "string" ? body.code : null;
+    throw new CustomerWindowHttpError(message, response.status, retryable, code);
   }
   if (body === null) throw new CustomerWindowResponseError();
   return body;
