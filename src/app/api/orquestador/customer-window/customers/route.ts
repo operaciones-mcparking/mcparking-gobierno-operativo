@@ -3,18 +3,26 @@ export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isCustomerSearchType } from "@/lib/customer-window/customer-search";
+import { buildCustomerWindowSearchTermsV2, isCustomerSearchType } from "@/lib/customer-window/customer-search";
+import { isCustomerWindowRepresentationTypeV2 } from "@/lib/customer-window/customer-representations-v2";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
   getCustomerWindowClassificationCriteria,
   getCustomerWindowCommercialSignals,
   getCustomerWindowEconomics,
   getCustomerWindowIdentities,
+  getCustomerWindowRefreshHealth,
+  getCustomerWindowV2IdentityResolutionDetail,
   getCustomerWindowPurchasePeriodMetrics,
   getCustomerWindowSummary,
+  getCustomerWindowV2PurchasePeriodFacets,
+  getCustomerWindowV2RepresentationSummary,
   listCustomerWindowBookings,
   listCustomerWindowCustomersByPurchasePeriod,
+  listCustomerWindowV2RepresentationBookings,
+  listCustomerWindowV2RepresentationsByPurchasePeriod,
   searchCustomerWindowCustomers,
+  searchCustomerWindowV2Representations,
 } from "@/lib/orquestador/supabase-admin";
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
@@ -25,9 +33,13 @@ const allowedLifecycleStatuses = new Set(["NEW", "FREQUENT"]);
 const allowedTiers = new Set(["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND"]);
 const allowedPackStatuses = new Set(["PACK", "NO_PACK"]);
 const allowedBrandBehaviors = new Set(["ONLY_MCP_EAP", "ONLY_OKP", "MIGRATED_TO_MCP_EAP", "MIGRATED_TO_OKP", "ALTERNATING"]);
+const postgresIntegerMaximum = 2_147_483_647;
 
-function jsonError(error: string, status: number) {
-  return NextResponse.json({ error, ok: false }, { headers: noStoreHeaders, status });
+function jsonError(error: string, status: number, retryable?: boolean) {
+  return NextResponse.json(
+    { error, ok: false, ...(typeof retryable === "boolean" ? { retryable } : {}) },
+    { headers: noStoreHeaders, status },
+  );
 }
 
 function boundedInteger(value: string | null, fallback: number, maximum: number) {
@@ -56,6 +68,13 @@ export async function GET(request: NextRequest) {
   }
 
   const action = request.nextUrl.searchParams.get("action");
+  if (action === "refresh-health") {
+    const result = await getCustomerWindowRefreshHealth();
+    return result.error
+      ? jsonError("No fue posible consultar el estado de actualizacion.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
   if (action === "criteria") {
     const result = await getCustomerWindowClassificationCriteria();
     return result.error
@@ -119,6 +138,97 @@ export async function GET(request: NextRequest) {
     });
     return result.error
       ? jsonError("No fue posible consultar clientes por periodo.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "list-by-period-v2") {
+    const from = request.nextUrl.searchParams.get("from") ?? "";
+    const to = request.nextUrl.searchParams.get("to") ?? "";
+    const page = boundedInteger(request.nextUrl.searchParams.get("page"), 1, postgresIntegerMaximum);
+    const pageSize = boundedInteger(request.nextUrl.searchParams.get("pageSize"), 25, 100);
+    if (!isValidDateValue(from) || !isValidDateValue(to) || from > to || page === null || pageSize === null) {
+      return jsonError("Listado de representaciones por periodo invalido.", 400);
+    }
+    const result = await listCustomerWindowV2RepresentationsByPurchasePeriod({
+      from,
+      page,
+      pageSize,
+      to,
+    });
+    return result.error
+      ? jsonError("No fue posible consultar representaciones por periodo.", 500, result.retryable)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "period-facets-v2") {
+    const from = request.nextUrl.searchParams.get("from") ?? "";
+    const to = request.nextUrl.searchParams.get("to") ?? "";
+    if (!isValidDateValue(from) || !isValidDateValue(to) || from > to) {
+      return jsonError("Facetas de representaciones por periodo invalidas.", 400);
+    }
+    const result = await getCustomerWindowV2PurchasePeriodFacets({ from, to });
+    return result.error
+      ? jsonError("No fue posible consultar las facetas del periodo.", 500, result.retryable)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "summary-v2") {
+    const representationType = request.nextUrl.searchParams.get("representationType");
+    const representationId = request.nextUrl.searchParams.get("representationId")?.trim() ?? "";
+    if (!isCustomerWindowRepresentationTypeV2(representationType) || !representationId || representationId.length > 128) {
+      return jsonError("Representacion invalida.", 400);
+    }
+    const result = await getCustomerWindowV2RepresentationSummary({ representationId, representationType });
+    return result.error
+      ? jsonError("No fue posible consultar la representacion.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "identity-resolution-detail-v2") {
+    const representationType = request.nextUrl.searchParams.get("representationType");
+    const relatedGroupId = request.nextUrl.searchParams.get("relatedGroupId")?.trim() ?? "";
+    if (representationType !== "related_review" || !/^[0-9a-f]{64}$/.test(relatedGroupId)) {
+      return jsonError("Detalle de resolucion de identidad invalido.", 400);
+    }
+    const result = await getCustomerWindowV2IdentityResolutionDetail(relatedGroupId);
+    return result.error
+      ? jsonError("No fue posible consultar el detalle de resolucion de identidad.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "bookings-v2") {
+    const representationType = request.nextUrl.searchParams.get("representationType");
+    const representationId = request.nextUrl.searchParams.get("representationId")?.trim() ?? "";
+    const page = boundedInteger(request.nextUrl.searchParams.get("page"), 1, postgresIntegerMaximum);
+    const pageSize = boundedInteger(request.nextUrl.searchParams.get("pageSize"), 25, 100);
+    if (
+      !isCustomerWindowRepresentationTypeV2(representationType)
+      || !representationId
+      || representationId.length > 128
+      || page === null
+      || pageSize === null
+    ) {
+      return jsonError("Historial de representacion invalido.", 400);
+    }
+    const result = await listCustomerWindowV2RepresentationBookings({
+      page,
+      pageSize,
+      representationId,
+      representationType,
+    });
+    return result.error
+      ? jsonError("No fue posible consultar el historial de la representacion.", 500)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "search-v2") {
+    const query = request.nextUrl.searchParams.get("query") ?? "";
+    const limit = boundedInteger(request.nextUrl.searchParams.get("limit"), 20, 20);
+    const terms = buildCustomerWindowSearchTermsV2(query);
+    if (!terms || limit === null) return jsonError("Busqueda de representaciones invalida.", 400);
+    const result = await searchCustomerWindowV2Representations({ ...terms, limit });
+    return result.error
+      ? jsonError("No fue posible buscar representaciones.", 500)
       : NextResponse.json(result.data, { headers: noStoreHeaders });
   }
 

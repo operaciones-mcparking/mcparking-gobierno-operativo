@@ -4,10 +4,14 @@ import { readFileSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import {
+  createOperationalHeartbeat,
+  finishOperationalRefresh,
   formatRefreshError,
+  heartbeatOperationalRefresh,
   parseRefreshArgs,
   runReadyAuditIsolated,
   runRefresh,
+  startOperationalRefresh,
   STABLE_COVERAGE_SQL,
 } from "./customer-window-related-review-mcp-eap-v1-refresh.mjs";
 
@@ -29,7 +33,8 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
   retryContract = null, lifecycleInvalid = false, retentionError = null,
   retentionResults = null } = {}) {
   const state = { queries: [], ended: 0, calls: [], lockHeld: false,
-    keyBytes: Buffer.alloc(32, 7), retentionCalls: 0 };
+    keyBytes: Buffer.alloc(32, 7), retentionCalls: 0, operationalStarts: 0,
+    operationalFinishes: [], heartbeatStops: 0 };
   class Client {
     async connect() {
       state.calls.push("connect");
@@ -118,9 +123,29 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
     return { ok: true, mode: "activate", status: "active", committed: true,
       postCommitVerificationOk: true, previousActiveSnapshotId: previousSnapshotId };
   };
+  const operationalStartFn = async ({ runId }) => {
+    state.operationalStarts++;
+    return { ok: true, runId, containsPii: false };
+  };
+  const operationalFinishFn = async (input) => {
+    state.operationalFinishes.push(input);
+    return { ok: true, runId: input.runId, status: input.success ? "success" : "error",
+      containsPii: false };
+  };
+  const heartbeatFactory = ({ beat }) => {
+    state.heartbeatBeat = beat;
+    return { stop: async () => { state.heartbeatStops++; } };
+  };
+  const operationalClientFactory = () => ({
+    connect: async () => {},
+    end: async () => {},
+  });
   let tick = 0;
   return { state, options: { env: {}, ClientClass: Client, parseEnv, buildFn, auditFn,
-    activateFn, now: () => { tick += 10; return tick; },
+    activateFn, operationalStartFn, operationalFinishFn, heartbeatFactory,
+    operationalClientFactory,
+    randomUUIDFn: () => "11111111-1111-4111-8111-111111111111",
+    now: () => { tick += 10; return tick; },
     sleepFn: async (delayMs) => { state.calls.push(`sleep:${delayMs}`); } } };
 }
 
@@ -145,6 +170,11 @@ test("manual refresh completes build audit activate and both postchecks", async 
   assert.equal(result.retentionRemaining, 0);
   assert.equal(result.retentionLastDeletedSnapshotId, null);
   assert.equal(state.retentionCalls, 1);
+  assert.equal(state.operationalStarts, 1);
+  assert.equal(state.operationalFinishes.length, 1);
+  assert.equal(state.operationalFinishes[0].success, true);
+  assert.equal(state.operationalFinishes[0].retentionAttempted, true);
+  assert.equal(state.heartbeatStops, 1);
   assert.equal(result.containsPii, false);
   assert.equal(result.readyAuditAttempts, 1);
   assert.equal(result.readyAuditRetried, false);
@@ -166,6 +196,73 @@ test("build failure stops before audit and activation", async () => {
     ok: false, code: "build_ready_failed", phase: "build-ready", activated: false,
   });
   assert.deepEqual(state.calls, ["connect", "build", "end"]);
+  assert.equal(state.operationalFinishes.length, 1);
+  assert.equal(state.operationalFinishes[0].success, false);
+  assert.equal(state.operationalFinishes[0].errorCode, "build_ready_failed");
+});
+
+test("operational heartbeat emits one pulse at a time and cleans its timer", async () => {
+  let callback;
+  let cleared = 0;
+  let beats = 0;
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const heartbeat = createOperationalHeartbeat({
+    beat: async () => { beats++; await pending; },
+    intervalMs: 60_000,
+    setIntervalFn: (fn, interval) => {
+      assert.equal(interval, 60_000);
+      callback = fn;
+      return 17;
+    },
+    clearIntervalFn: (timer) => { assert.equal(timer, 17); cleared++; },
+    onFailure: () => assert.fail("heartbeat should not fail"),
+  });
+  callback();
+  callback();
+  await Promise.resolve();
+  assert.equal(beats, 1);
+  release();
+  await heartbeat.stop();
+  assert.equal(cleared, 1);
+});
+
+test("transient heartbeat failure is sanitized and stop leaves no timer", async () => {
+  let callback;
+  let observed;
+  let cleared = 0;
+  const heartbeat = createOperationalHeartbeat({
+    beat: async () => { throw Object.assign(new Error("password=secret"), { code: "08006" }); },
+    setIntervalFn: (fn) => { callback = fn; return 21; },
+    clearIntervalFn: () => { cleared++; },
+    onFailure: (error) => { observed = error.code; },
+  });
+  callback();
+  await new Promise((resolve) => setImmediate(resolve));
+  await heartbeat.stop();
+  assert.equal(observed, "08006");
+  assert.equal(cleared, 1);
+});
+
+test("operational RPC adapters preserve run CAS and safe finish telemetry", async () => {
+  const runId = "11111111-1111-4111-8111-111111111111";
+  const calls = [];
+  const client = { query: async (sql, values) => {
+    calls.push({ sql, values });
+    const status = sql.includes("refresh_finish") ? (values[1] ? "success" : "error") : null;
+    return { rows: [{ result: { ok: true, runId, ...(status ? { status } : {}),
+      containsPii: false } }] };
+  } };
+  await startOperationalRefresh({ client, runId });
+  await heartbeatOperationalRefresh({ client, runId });
+  await finishOperationalRefresh({ client, runId, success: false,
+    errorCode: "ready_audit_failed", errorPhase: "ready-audit",
+    retentionAttempted: false });
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[0].values, [runId]);
+  assert.deepEqual(calls[1].values, [runId]);
+  assert.deepEqual(calls[2].values, [runId, false, "ready_audit_failed", "ready-audit",
+    false, null, null, null]);
 });
 
 test("ready audit failure leaves the READY snapshot and never activates", async () => {
@@ -882,5 +979,5 @@ test("orchestrator reuses certified modules and emits no PII or secrets", () => 
   assert.match(STABLE_COVERAGE_SQL, /greatest\(booking\.created_at, booking\.updated_at,[\s\S]*link\.created_at, link\.updated_at\)/);
   assert.doesNotMatch(source, /console\.(?:log|error)\([^\n]*(?:DATABASE_URL|HMAC|password|email|phone|source_row_id)/i);
   assert.equal((source.match(/console\.log\(JSON\.stringify/g) ?? []).length, 1);
-  assert.equal((source.match(/console\.error\(JSON\.stringify/g) ?? []).length, 1);
+  assert.equal((source.match(/console\.error\(JSON\.stringify/g) ?? []).length, 3);
 });

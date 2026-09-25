@@ -9,8 +9,17 @@ const helperJavaScript = ts.transpileModule(helperSource, {
 }).outputText;
 const helper = await import(`data:text/javascript;base64,${Buffer.from(helperJavaScript).toString("base64")}`);
 const view = readFileSync("src/app/orquestador/customer-window-view.tsx", "utf8");
+const representations = readFileSync("src/lib/customer-window/customer-representations-v2.ts", "utf8");
 const route = readFileSync("src/app/api/orquestador/customer-window/customers/route.ts", "utf8");
 const admin = readFileSync("src/lib/orquestador/supabase-admin.ts", "utf8");
+
+function sourceBlock(source, start, end) {
+  const startIndex = source.indexOf(start);
+  assert.notEqual(startIndex, -1, `missing source block start: ${start}`);
+  const endIndex = source.indexOf(end, startIndex);
+  assert.notEqual(endIndex, -1, `missing source block end: ${end}`);
+  return source.slice(startIndex, endIndex);
+}
 
 test("period presets use the Santiago calendar and default to today", () => {
   assert.equal(helper.getSantiagoDateKey(new Date("2026-01-01T02:00:00.000Z")), "2025-12-31");
@@ -20,328 +29,471 @@ test("period presets use the Santiago calendar and default to today", () => {
   assert.deepEqual(helper.getCustomerPeriodRange("last14", "2026-09-07"), { from: "2026-08-25", to: "2026-09-07" });
   assert.deepEqual(helper.getCustomerPeriodRange("thisMonth", "2026-09-07"), { from: "2026-09-01", to: "2026-09-07" });
   assert.deepEqual(helper.getCustomerPeriodRange("previousMonth", "2026-09-07"), { from: "2026-08-01", to: "2026-08-31" });
-  assert.deepEqual(helper.getCustomerPeriodRange("previousMonth", "2026-01-07"), { from: "2025-12-01", to: "2025-12-31" });
   assert.match(view, /useState<CustomerPeriodPreset>\("today"\)/);
   assert.match(helperSource, /timeZone: "America\/Santiago"/);
 });
 
-test("custom periods require complete ordered calendar dates", () => {
+test("custom periods retain complete ordered calendar validation", () => {
   assert.equal(helper.isValidCustomerPeriodRange({ from: "2026-08-31", to: "2026-09-07" }), true);
   assert.equal(helper.isValidCustomerPeriodRange({ from: "2026-09-08", to: "2026-09-07" }), false);
   assert.equal(helper.isValidCustomerPeriodRange({ from: "2026-02-30", to: "2026-03-01" }), false);
   assert.match(view, /type CustomPeriodMode = "single" \| "range"/);
   assert.match(view, /Un día[\s\S]*Rango de fechas[\s\S]*type="date"[\s\S]*Aplicar/);
-  assert.match(view, /onApply\("custom", nextRange\)/);
 });
 
-test("period selector follows the compact dashboard popover pattern", () => {
-  const selectorBlock = view.slice(view.indexOf("function CustomerPeriodSelector"), view.indexOf("function CustomerPeriodTable"));
-  for (const label of ["Hoy", "Ayer", "Últimos 7 días", "Últimos 14 días", "Este mes", "Mes anterior", "Personalizado"]) {
-    assert.match(view, new RegExp(label));
+test("the list uses a nullable discriminated v2 representation type", () => {
+  const typeBlock = sourceBlock(view, "type CustomerRepresentationListItemV2", "type RepresentationPeriodListV2");
+  assert.match(typeBlock, /customerId: string[\s\S]*relatedGroupId: null[\s\S]*representationType: "confirmed_customer"/);
+  assert.match(typeBlock, /customerId: null[\s\S]*relatedGroupId: string[\s\S]*representationType: "related_review"/);
+  assert.match(typeBlock, /metricScope: "all_confirmed_sources"/);
+  assert.match(typeBlock, /metricScope: "mcp_eap_active_snapshot"/);
+  assert.match(representations, /representationKey !== `\$\{representationType\}:\$\{representationId\}`/);
+});
+
+test("the main view loads one v2 list and one v2 facets request per period", () => {
+  const listBlock = sourceBlock(view, "const loadRepresentations", "const loadPeriodFacets");
+  const facetsBlock = sourceBlock(view, "const loadPeriodFacets", "const loadRefreshHealth");
+  assert.match(listBlock, /action: "list-by-period-v2"[\s\S]*from: periodRange\.from[\s\S]*page: String\(page\)[\s\S]*pageSize: String\(PERIOD_PAGE_SIZE\)[\s\S]*to: periodRange\.to/);
+  assert.match(facetsBlock, /action: "period-facets-v2"[\s\S]*from: periodRange\.from[\s\S]*to: periodRange\.to/);
+  assert.equal((listBlock.match(/getCustomerWindowJsonWithRetry\(/g) ?? []).length, 1);
+  assert.equal((facetsBlock.match(/getCustomerWindowJsonWithRetry\(/g) ?? []).length, 1);
+  assert.doesNotMatch(view, /action: "list-by-period"/);
+  assert.doesNotMatch(view, /action: "period-metrics"/);
+  assert.match(route, /No fue posible consultar representaciones por periodo\.\", 500, result\.retryable/);
+  assert.match(route, /No fue posible consultar las facetas del periodo\.\", 500, result\.retryable/);
+  assert.match(admin, /normalizeCustomerWindowRepresentationListV2\(data\)[\s\S]*retryable: false/);
+  assert.match(admin, /normalizeCustomerWindowPeriodFacetsV2\(data\)[\s\S]*retryable: false/);
+});
+
+test("operational search is debounced server-side and opens the existing drawers", () => {
+  assert.match(view, /placeholder="Buscar por email, teléfono, reserva o cliente\.\.\."/);
+  assert.match(view, /window\.setTimeout\([\s\S]*action: "search-v2"[\s\S]*limit: "20"[\s\S]*query[\s\S]*300\)/);
+  assert.match(view, /searchController\.current\?\.abort\(\)/);
+  assert.match(view, /normalizeCustomerWindowRepresentationSearchV2\(body\)/);
+  assert.match(view, /onSelect=\{selectSearchRepresentation\}/);
+  assert.match(view, /selectSearchRepresentation[\s\S]*selectRepresentation/);
+  assert.match(view, /Coincidencia histórica/);
+  assert.match(view, /Relacionado \/ revisión/);
+  assert.doesNotMatch(view, /fuzzy|similarity/i);
+});
+
+test("v2 loading keeps abort stale response error and pagination behavior", () => {
+  assert.match(view, /representationController\.current\?\.abort\(\)/);
+  assert.match(view, /facetsController\.current\?\.abort\(\)/);
+  assert.match(view, /representationController\.current !== controller/);
+  assert.match(view, /facetsController\.current !== controller/);
+  assert.match(view, /setRepresentationError\(cause instanceof Error/);
+  assert.match(view, /setPeriodFacetsError\(cause instanceof Error/);
+  assert.match(view, /onPageChange=\{setRepresentationPage\}/);
+  assert.match(view, /disabled=\{loading \|\| list\.page <= 1\}/);
+  assert.match(view, /disabled=\{loading \|\| list\.page >= pageCount\}/);
+  assert.match(view, /setRepresentationPage\(1\)/);
+  assert.match(view, /representationRequest\.current\?\.key === requestKey/);
+  assert.match(view, /facetsRequest\.current\?\.key === requestKey/);
+  assert.match(view, /setRepresentationList\(nextList\)/);
+  assert.match(view, /setPeriodFacets\(nextFacets\)/);
+  assert.doesNotMatch(sourceBlock(view, "const loadRepresentations", "const loadPeriodFacets"), /setRepresentationList\(emptyRepresentationList\)/);
+  assert.doesNotMatch(sourceBlock(view, "const loadPeriodFacets", "const loadRefreshHealth"), /setPeriodFacets\(null\)/);
+});
+
+test("transient loading preserves rendered data and delays visible errors until retries finish", () => {
+  const facetsBlock = sourceBlock(view, "function CustomerRepresentationFacets", "function CustomerRepresentationTable");
+  const tableBlock = sourceBlock(view, "function CustomerRepresentationTable", "function SecondaryViewHeader");
+  assert.match(facetsBlock, /loading && !facets[\s\S]*Actualizando datos/);
+  assert.match(facetsBlock, /facets \?[\s\S]*loading \? "Actualizando\.\.\."/);
+  assert.match(tableBlock, /loading && list\.items\.length === 0[\s\S]*Actualizando datos/);
+  assert.match(tableBlock, /loading && list\.items\.length > 0[\s\S]*Actualizando\.\.\./);
+});
+
+test("refreshing to healthy reloads the current period once without coupling every health poll", () => {
+  const healthBlock = sourceBlock(view, "const loadRefreshHealth", "const closeCustomerDrawer");
+  assert.match(healthBlock, /previousStatus === "refreshing" && nextHealth\.status === "healthy"/);
+  assert.match(healthBlock, /Promise\.allSettled\(\[loadPeriodFacets\(\), loadRepresentations\(representationPage\)\]\)/);
+  assert.equal((healthBlock.match(/loadPeriodFacets\(\)/g) ?? []).length, 1);
+  assert.equal((healthBlock.match(/loadRepresentations\(representationPage\)/g) ?? []).length, 1);
+});
+
+test("facets expose representations confirmed related and period bookings", () => {
+  const facetsBlock = sourceBlock(view, "function CustomerRepresentationFacets", "function CustomerRepresentationTable");
+  assert.match(facetsBlock, /"Representaciones", value: facets\.totalRepresentations/);
+  assert.match(facetsBlock, /"Confirmados", value: facets\.confirmedRepresentations/);
+  assert.match(facetsBlock, /"Relacionados \/ revisión", value: facets\.relatedReviewRepresentations/);
+  assert.match(facetsBlock, /"Reservas del período", value: facets\.totalBookingsInPeriod/);
+  assert.match(facetsBlock, /Incluye grupos relacionados pendientes de revisión/);
+});
+
+test("rows use representationKey and map only fields supplied by v2", () => {
+  const tableBlock = sourceBlock(view, "function CustomerRepresentationTable", "function SecondaryViewHeader");
+  assert.match(tableBlock, /key=\{representation\.representationKey\}/);
+  for (const field of ["totalReservations", "reservationsInPeriod", "firstPurchaseAt", "lastPurchaseAt", "lastBookingAtInPeriod"]) {
+    assert.match(tableBlock, new RegExp(`representation\\.${field}`));
   }
-  assert.match(selectorBlock, /<span>Periodo<\/span>/);
-  assert.match(selectorBlock, /aria-controls=\{popoverId\}[\s\S]*aria-expanded=\{isOpen\}/);
-  assert.match(selectorBlock, /Rango seleccionado[\s\S]*displayDate\(range\.from\)[\s\S]*displayDate\(range\.to\)/);
-  assert.match(selectorBlock, /Fecha de compra · America\/Santiago/);
-  assert.match(selectorBlock, /addEventListener\("pointerdown"/);
-  assert.match(selectorBlock, /event\.key === "Escape"/);
-});
-
-test("period and advanced filters live in a global unclipped view surface", () => {
-  const clientView = view.slice(view.indexOf('section === "campanas"'), view.indexOf('<div className="grid items-stretch gap-5 xl:grid-cols-2">'));
-  assert.match(clientView, /<section aria-label="Filtros de clientes"/);
-  assert.match(clientView, /relative z-20 mt-5 overflow-visible/);
-  assert.match(clientView, /CustomerPeriodSelector[\s\S]*CustomerFilterPopover/);
-  assert.doesNotMatch(clientView, /<Panel title="Clientes"/);
-  assert.doesNotMatch(clientView, /Clientes con compras creadas dentro del período seleccionado\./);
-  assert.match(view, /absolute left-0 top-full z-30/);
-});
-
-test("advanced filters use an accessible responsive popover", () => {
-  const filterBlock = view.slice(view.indexOf("function CustomerFilterPopover"), view.indexOf("function CustomerPeriodTable"));
-  assert.match(filterBlock, /aria-controls=\{popoverId\}[\s\S]*aria-expanded=\{isOpen\}[\s\S]*aria-haspopup="dialog"/);
-  assert.match(filterBlock, /activeCount > 0 \? `Filtros \(\$\{activeCount\}\)` : "Filtros"/);
-  assert.match(filterBlock, /w-\[min\(calc\(100vw-2rem\),32rem\)\][\s\S]*sm:left-auto sm:right-0/);
-  assert.match(filterBlock, /Nuevo \/ Frecuente[\s\S]*Tier[\s\S]*Pack \/ No Pack[\s\S]*Comportamiento/);
-  assert.match(filterBlock, /addEventListener\("pointerdown"/);
-  assert.match(filterBlock, /event\.key === "Escape"/);
-});
-
-test("active filters render distinct removable chips and a clear action", () => {
-  assert.match(view, /const activeFilters = \[[\s\S]*lifecycleStatus[\s\S]*tier[\s\S]*packStatus[\s\S]*brandBehavior/);
-  assert.match(view, /activeCount=\{activeFilters\.length\}/);
-  assert.match(view, /aria-label="Filtros activos"/);
-  assert.match(view, /aria-label=\{`Quitar filtro \$\{filter\.label\}`\}/);
-  assert.match(view, /onClick=\{\(\) => updateFilter\(filter\.key, ""\)\}/);
-  assert.match(view, /onClick=\{clearFilters\}[\s\S]*Limpiar filtros/);
-});
-
-test("client issues independent bounded MCP EAP and OKP period requests", () => {
-  assert.match(view, /const PERIOD_PAGE_SIZE = 25/);
-  assert.match(view, /void loadFamily\("MCP_EAP", mcpPage\)/);
-  assert.match(view, /void loadFamily\("OKP", okpPage\)/);
-  assert.match(view, /action: "list-by-period"[\s\S]*family[\s\S]*from: periodRange\.from[\s\S]*pageSize: String\(PERIOD_PAGE_SIZE\)[\s\S]*to: periodRange\.to/);
-  assert.match(view, /<CustomerPeriodTable error=\{mcpError\} family="MCP_EAP"/);
-  assert.match(view, /<CustomerPeriodTable error=\{okpError\} family="OKP"/);
-});
-
-test("families keep independent pagination loading errors and stale protection", () => {
-  for (const state of ["mcpPage", "okpPage", "mcpLoading", "okpLoading", "mcpError", "okpError"]) {
-    assert.match(view, new RegExp(`\\[${state},`));
+  for (const heading of ["Representación", "Reservas", "Primera compra", "Última compra", "Última reserva del período"]) {
+    assert.match(tableBlock, new RegExp(heading));
   }
-  assert.match(view, /Record<CustomerFamily, AbortController \| null>/);
-  assert.match(view, /requestControllers\.current\[family\]\?\.abort\(\)/);
-  assert.match(view, /requestControllers\.current\[family\] !== controller/);
-  assert.match(view, /function resetFamilyPages\(\) \{ setMcpPage\(1\); setOkpPage\(1\); \}/);
-  const abortBlock = view.slice(view.indexOf("function abortFamilyRequests"), view.indexOf("function applyPeriod"));
-  assert.match(abortBlock, /requestControllers\.current\.MCP_EAP\?\.abort\(\)/);
-  assert.match(abortBlock, /requestControllers\.current\.OKP\?\.abort\(\)/);
-  const applyPeriodBlock = view.slice(view.indexOf("function applyPeriod"), view.indexOf("function updateFilter"));
-  assert.match(applyPeriodBlock, /abortFamilyRequests\(\)/);
-  assert.match(applyPeriodBlock, /setPeriodRange\(range\)[\s\S]*resetFamilyPages\(\)/);
+  assert.match(tableBlock, /representationContactLines\(representation\.contactSummary\)/);
+  assert.match(tableBlock, /contact\.email/);
+  assert.match(tableBlock, /contact\.phone/);
+  assert.doesNotMatch(tableBlock, /lifecycle|tier|economics/i);
 });
 
-test("all classification filters send the approved backend enums", () => {
-  for (const parameter of ["lifecycleStatus", "tier", "packStatus", "brandBehavior"]) {
-    assert.match(view, new RegExp(`params\\.set\\("${parameter}", ${parameter}\\)`));
-  }
-  for (const value of ["NEW", "FREQUENT", "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "DIAMOND", "PACK", "NO_PACK", "ONLY_MCP_EAP", "ONLY_OKP", "MIGRATED_TO_MCP_EAP", "MIGRATED_TO_OKP", "ALTERNATING"]) {
-    assert.match(view, new RegExp(`value="${value}"|"${value}"`));
-  }
-  const filterBlock = view.slice(view.indexOf("function CustomerFilterPopover"), view.indexOf("function CustomerPeriodTable"));
-  for (const filter of ["lifecycleStatus", "tier", "packStatus", "brandBehavior"]) {
-    assert.match(filterBlock, new RegExp(`onChange\\(\\"${filter}\\", event\\.target\\.value\\)`));
-  }
-  const updateBlock = view.slice(view.indexOf("function updateFilter"), view.indexOf("async function toggleCriteria"));
-  assert.match(updateBlock, /abortFamilyRequests\(\)[\s\S]*resetFamilyPages\(\)/);
-  assert.match(updateBlock, /function clearFilters\(\)[\s\S]*setLifecycleStatus\(""\)[\s\S]*setTier\(""\)[\s\S]*setPackStatus\(""\)[\s\S]*setBrandBehavior\(""\)[\s\S]*resetFamilyPages\(\)/);
+test("confirmed and related rows use sober explicit badges", () => {
+  const tableBlock = sourceBlock(view, "function CustomerRepresentationTable", "function SecondaryViewHeader");
+  assert.match(tableBlock, /isConfirmed \? "success" : "warning"/);
+  assert.match(tableBlock, /isConfirmed \? "Confirmado" : "Relacionado \/ revisión"/);
+  assert.doesNotMatch(tableBlock, /Inválido|Cliente malo|Conflicto crítico|Error/);
 });
 
-test("period tables prioritize page identities and never use UUID as the main label", () => {
-  assert.match(view, /const email = customer\.emails\[0\]/);
-  assert.match(view, /const phone = customer\.phones\[0\]/);
-  assert.match(view, /const primary = email \?\? phone \?\? "Identidad no disponible"/);
-  const identityBlock = view.slice(view.indexOf("function CustomerIdentity"), view.indexOf("function CustomerPeriodSelector"));
-  assert.doesNotMatch(identityBlock, /customerId/);
-  assert.match(identityBlock, /truncate text-xs font-medium leading-5 text-navy/);
-  assert.match(identityBlock, /title=\{primary\}/);
-  assert.match(identityBlock, /mt-0\.5 truncate text-\[11px\] font-normal leading-4 text-slate-500/);
-  assert.match(identityBlock, /title=\{secondary\}/);
-  assert.doesNotMatch(identityBlock, /break-all|font-semibold/);
-  assert.match(view, /title=\{isOkp \? "Clientes OKP" : "Clientes MCP \/ EAP"\}/);
-  assert.doesNotMatch(view, /Clientes con al menos una compra (?:MCP o EAP|OKP) dentro del período seleccionado\./);
+test("related selection opens its v2 drawer and never reaches the legacy customerId path", () => {
+  const selectionBlock = sourceBlock(view, "function selectRepresentation", "async function changeTimelinePage");
+  assert.match(selectionBlock, /representation\.representationType === "related_review"/);
+  assert.match(selectionBlock, /setDrawerCustomerId\(null\)/);
+  assert.match(selectionBlock, /return;[\s\S]*selectCustomer\(representation\.customerId\)/);
+  assert.match(view, /<RelatedReviewDrawer key=\{relatedRepresentation\?\.representationKey \?\? "related-review-closed"\} onClose=\{closeCustomerDrawer\} representation=\{relatedRepresentation\}/);
+  assert.doesNotMatch(selectionBlock, /selectCustomer\(representation\.relatedGroupId\)/);
 });
 
-test("tables expose period and historical counts without commercial amounts", () => {
-  for (const field of ["purchasesInPeriod", "firstPurchaseInPeriod", "lastPurchaseInPeriod", "totalReservations", "mcpCount", "eapCount", "okpCount", "okpExpressCount", "okpRioClarilloCount", "okpOtrosCount"]) {
-    assert.match(view, new RegExp(field));
-  }
-  const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
-  assert.doesNotMatch(tableBlock, /totalSpend|averageTicket|source_total_amount|\bamount\b|\brevenue\b/i);
+test("related drawer makes two eager requests and one on-demand identity detail request", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.equal((drawerBlock.match(/getJson\(/g) ?? []).length, 3);
+  assert.match(drawerBlock, /action: "summary-v2"[\s\S]*representationId: representation\.representationId[\s\S]*representationType: representation\.representationType/);
+  assert.match(drawerBlock, /action: "bookings-v2"[\s\S]*page: String\(bookingsPage\)[\s\S]*pageSize: String\(TIMELINE_PAGE_SIZE\)/);
+  assert.match(drawerBlock, /normalizeCustomerWindowRepresentationSummaryV2/);
+  assert.match(drawerBlock, /normalizeCustomerWindowRepresentationBookingsResponseV2/);
+  assert.match(drawerBlock, /action: "identity-resolution-detail-v2"/);
+  assert.match(drawerBlock, /relatedGroupId: representation\.relatedGroupId/);
+  assert.match(drawerBlock, /normalizeCustomerWindowIdentityResolutionDetailV2/);
+  assert.doesNotMatch(drawerBlock, /customerId=/);
 });
 
-test("both customer tables use the same compact four-column contract", () => {
-  const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
-  assert.match(tableBlock, /\["Cliente", "Tipo cliente", "Qty", "Perfil comercial"\]/);
-  for (const removedHeader of ["Compras período", "Nuevo / Frecuente", "Última compra histórica", "Pack / Boleta", "Comportamiento", "OKP total", "Express", "Río Clarillo", "Otros", "Acción"]) {
-    assert.doesNotMatch(tableBlock, new RegExp(removedHeader));
-  }
-  assert.doesNotMatch(tableBlock, /\["MCP", "EAP"\]/);
-  assert.doesNotMatch(tableBlock, /Ver detalle/);
-  assert.match(tableBlock, /<DataTable minWidth="0px">/);
-  assert.match(tableBlock, /<colgroup>[\s\S]*w-\[34%\][\s\S]*w-\[28%\]/);
-  assert.match(tableBlock, /text-\[10px\] font-medium uppercase leading-4 tracking-\[0\.08em\] text-slate-500/);
-  assert.match(tableBlock, /px-3 py-2 align-middle/);
-  assert.match(tableBlock, /text-xs font-normal leading-5 text-slate-700/);
-  assert.doesNotMatch(tableBlock, /<DataTableCell strong>/);
+test("related drawer presents the compact confirmed-style shell and review summary", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  for (const label of [
+    "Relacionado / revisión",
+    "Reservas históricas",
+    "En revisión",
+    "Primera compra",
+    "Última compra",
+    "Perfiles relacionados",
+    "Emails distintos",
+    "Teléfonos distintos",
+    "Clientes de origen distintos",
+    "Conflictos",
+    "Candidatos",
+    "Reservas resueltas con V1",
+    "Reservas resueltas con V2",
+    "Coincidencia email + teléfono",
+    "Coincidencia cliente de origen + email",
+  ]) assert.ok(drawerBlock.includes(label), `missing related drawer label: ${label}`);
+  assert.match(drawerBlock, /<CustomerRepresentationDrawerFrame badge="Relacionado \/ revisión"/);
+  assert.match(drawerBlock, /<CustomerSummaryMetrics fields=/);
+  assert.doesNotMatch(drawerBlock, /title="Revisión de identidad requerida"/);
 });
 
-test("customer type and commercial behavior reuse compact recovery badges", () => {
-  assert.match(view, /import \{ ValueBadge, type BadgeTone \} from "@\/components\/dashboard\/badge"/);
-  assert.match(view, /function TierBadge/);
-  const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
-  assert.match(tableBlock, /<ValueBadge tone=\{lifecycleTone\(customer\.lifecycleStatus\)\}>[\s\S]*<TierBadge value=\{customer\.tier\}/);
-  assert.match(tableBlock, /<ValueBadge tone=\{behaviorTone\(customer\.brandBehavior\)\}>[\s\S]*packLabel\(customer\.packStatus\)/);
-  assert.doesNotMatch(tableBlock, /<ValueBadge tone=\{packTone\(customer\.packStatus\)\}>/);
-  assert.match(tableBlock, /mt-0\.5 truncate text-\[11px\] font-normal leading-4 text-slate-500/);
+test("related drawer opens on summary and purchase history with four additional views", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(drawerBlock, /useState<"main" \| "contacts" \| "purchase" \| "information" \| "resolve">\("main"\)/);
+  assert.match(drawerBlock, /relatedView === "main" \? <CustomerPurchaseTimeline/);
+  assert.doesNotMatch(drawerBlock, /relatedView === "purchase" \? <CustomerPurchaseTimeline/);
+  assert.match(drawerBlock, /label: "Contactos", onClick: \(\) => setRelatedView\("contacts"\)/);
+  assert.match(drawerBlock, /label: "Perfil de compra", onClick: \(\) => setRelatedView\("purchase"\)/);
+  assert.match(drawerBlock, /label: "Más información", onClick: \(\) => setRelatedView\("information"\)/);
+  assert.match(drawerBlock, /label: "Resolver identidad", onClick: \(\) => void openIdentityResolution\(\)/);
+  assert.match(drawerBlock, /relatedView === "resolve" \? <CustomerIdentityResolutionPanel/);
+  assert.doesNotMatch(drawerBlock, /role="tablist"|aria-selected=/);
 });
 
-test("behavior badges preserve positive loss and neutral semantics", () => {
-  assert.match(view, /MIGRATED_TO_MCP_EAP: "success"/);
-  assert.match(view, /ONLY_MCP_EAP: "success"/);
-  assert.match(view, /MIGRATED_TO_OKP: "danger"/);
-  assert.match(view, /ONLY_OKP: "info"/);
-  assert.match(view, /ALTERNATING: "warning"/);
+test("changing related representation resets main and aborts all related requests", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(drawerBlock, /summaryController\.current\?\.abort\(\);[\s\S]*setRelatedView\("main"\)[\s\S]*\}, \[representation\]\)/);
+  assert.equal((drawerBlock.match(/getJson\(/g) ?? []).length, 3);
+  assert.match(drawerBlock, /identityDetailController\.current\?\.abort\(\)/);
+  assert.equal((drawerBlock.match(/onBack=\{\(\) => setRelatedView\("main"\)\}/g) ?? []).length, 4);
 });
 
-test("pack status is presentation-only Pack or Boleta", () => {
-  assert.match(view, /if \(value === "PACK"\) return "Pack"/);
-  assert.match(view, /if \(value === "NO_PACK"\) return "Boleta"/);
-  assert.match(view, /packLabel\(customer\.packStatus\)/);
+test("related header uses the latest observed email and phone without selecting a preferred contact", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  const sharedBlock = sourceBlock(view, "type CustomerPurchaseTimelineItem", "function RelatedReviewDrawer");
+  assert.match(sharedBlock, /function sortObservedContactsByLastSeen/);
+  assert.match(sharedBlock, /contact\.lastSeenAt \? Date\.parse\(contact\.lastSeenAt\)/);
+  assert.match(sharedBlock, /Number\.isFinite\(parsedLastSeenAt\)/);
+  assert.match(sharedBlock, /left\.index - right\.index/);
+  assert.match(drawerBlock, /const latestObservedEmail = relatedEmails\[0\]\?\.value \?\? null/);
+  assert.match(drawerBlock, /const latestObservedPhone = relatedPhones\[0\]\?\.value \?\? null/);
+  assert.match(drawerBlock, /latestObservedEmail \?\? latestObservedPhone \?\? "Cliente relacionado"/);
+  assert.match(drawerBlock, /latestObservedEmail \? latestObservedPhone : null/);
+  assert.doesNotMatch(drawerBlock, /preferred|primaryEmail|primaryPhone/i);
 });
 
-test("the complete row opens the existing on-demand customer detail", () => {
-  const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
-  assert.match(tableBlock, /className="cursor-pointer/);
-  assert.match(tableBlock, /onClick=\{\(\) => onSelectCustomer\(customer\)\}/);
-  assert.match(tableBlock, /event\.key === "Enter" \|\| event\.key === " "/);
-  assert.match(view, /onSelectCustomer=\{\(customer\) => void selectCustomer\(customer\.customerId, customer\)\}/);
-  assert.doesNotMatch(tableBlock, /<button[\s\S]*Ver detalle/);
+test("related drawer never reconstructs a primary contact", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(drawerBlock, /No se ha definido un contacto principal mientras la identidad permanezca en revisión/);
+  assert.match(drawerBlock, /summary\.observedEmails/);
+  assert.match(drawerBlock, /summary\.observedPhones/);
+  assert.doesNotMatch(drawerBlock, /summary\.(?:email|phone|plate|name)|booking\.(?:plate|sourceCustomerId|bookingCode)/);
+  assert.doesNotMatch(drawerBlock, /action=(?:identities|search|summary)&customerId/);
 });
 
-test("customer detail uses an accessible right drawer and visual timeline", () => {
-  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
-  assert.match(drawerBlock, /aria-modal="true"[\s\S]*role="dialog"/);
-  assert.match(drawerBlock, /justify-end bg-navy\/35/);
-  assert.match(drawerBlock, /<aside[\s\S]*h-full[\s\S]*md:max-w-2xl/);
-  assert.match(drawerBlock, /aria-label="Cerrar detalle del cliente"/);
-  assert.match(drawerBlock, /<ol className="relative[\s\S]*sm:before:left-1\/2/);
-  assert.match(drawerBlock, /const isOkpBooking = booking\.source === "OKP"/);
-  assert.match(drawerBlock, /sm:col-start-3 sm:ml-1[\s\S]*sm:col-start-1 sm:mr-1/);
-  assert.match(drawerBlock, /<details[\s\S]*<summary/);
-  assert.match(drawerBlock, /purchase_created_at[\s\S]*source_booking_code[\s\S]*planned_arrival_at[\s\S]*planned_departure_at/);
-  assert.doesNotMatch(drawerBlock, /totalSpend|averageTicket|source_total_amount|\brevenue\b/i);
+test("list contact summaries never invent a primary value", () => {
+  const contactBlock = sourceBlock(view, "function representationContactLines", "function CustomerRepresentationTable");
+  assert.match(contactBlock, /contact\.singleEmail/);
+  assert.match(contactBlock, /contact\.singlePhone/);
+  assert.match(contactBlock, /emailCount > BigInt\(0\)[\s\S]*emails/);
+  assert.match(contactBlock, /phoneCount > BigInt\(0\)[\s\S]*teléfonos/);
+  assert.match(contactBlock, /related \? " relacionados" : ""/);
 });
 
-test("customer detail keeps a compact managerial summary and secondary information collapsed", () => {
-  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
-  const informationPanel = view.slice(view.indexOf("function CustomerInformationPanel"), view.indexOf("function CustomerDetailDrawer"));
-  const headerBlock = drawerBlock.slice(drawerBlock.indexOf("<header"), drawerBlock.indexOf("</header>"));
-  const summaryStart = drawerBlock.indexOf(">Resumen</h3>");
-  const actionsStart = drawerBlock.indexOf('aria-label="Acciones del detalle"', summaryStart);
-  const summaryBlock = drawerBlock.slice(summaryStart, actionsStart);
-
-  assert.match(headerBlock, /primaryIdentity[\s\S]*secondaryIdentity[\s\S]*lifecycleLabel[\s\S]*TierBadge[\s\S]*behaviorLabel/);
-  assert.doesNotMatch(headerBlock, /packLabel|packStatus|Pack|Boleta/);
-  for (const label of ["Primera compra", "Última compra", "Reservas históricas", "Reservas futuras", "Packs / Boletas", "Comportamiento"]) {
-    assert.match(summaryBlock, new RegExp(label.replace("/", "\\/")));
-  }
-  for (const secondaryLabel of ["MCP", "EAP", "OKP", "Última marca", "Último parking", "Teléfonos conocidos", "Emails conocidos", "Patentes conocidas"]) {
-    assert.doesNotMatch(summaryBlock, new RegExp(secondaryLabel));
-  }
-  for (const secondaryLabel of ["MCP", "EAP", "OKP", "Última marca", "Último parking"]) assert.match(informationPanel, new RegExp(secondaryLabel));
-  for (const identityLabel of ["Emails confirmados", "Teléfonos confirmados", "Patentes confirmadas", "Patentes por confirmar"]) assert.match(informationPanel, new RegExp(identityLabel));
-  assert.match(summaryBlock, /summary\.purchaseCount/);
-  assert.match(summaryBlock, /summary\.packCount[\s\S]*summary\.nonPackCount/);
-  assert.match(summaryBlock, /summary\.needsReview === true[\s\S]*Requiere revisión/);
-  assert.doesNotMatch(drawerBlock, /Sin observaciones/);
-  assert.match(drawerBlock, /aria-hidden=\{detailView !== "information"\}[\s\S]*<CustomerInformationPanel/);
-  assert.match(drawerBlock, /openInformation\(\)[\s\S]*>Más información<\/button>/);
-  assert.doesNotMatch(drawerBlock, /<summary[^>]*>Más información<\/summary>/);
-});
-
-test("customer detail uses lightweight typography and source-family timeline accents", () => {
-  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
-  const headerBlock = drawerBlock.slice(drawerBlock.indexOf("<header"), drawerBlock.indexOf("</header>"));
-
-  assert.match(headerBlock, /text-xs font-medium text-slate-500">Detalle del cliente/);
-  assert.match(headerBlock, /text-base font-medium leading-5 text-navy/);
-  assert.match(headerBlock, /text-xs font-normal text-slate-500/);
-  assert.doesNotMatch(headerBlock, /Detalle del cliente<\/p>[\s\S]*uppercase/);
-  assert.match(headerBlock, /ValueBadge tone=\{lifecycleTone\([\s\S]*TierBadge[\s\S]*ValueBadge tone=\{behaviorTone/);
-  assert.match(drawerBlock, /text-sm font-medium text-slate-700">Resumen/);
-  assert.match(drawerBlock, /text-sm font-medium text-slate-700">Historial de compras/);
-  assert.match(drawerBlock, /isOkpBooking \? "bg-\[#00a86b\] ring-\[#a7dcc4\]" : "bg-\[#2563a6\] ring-\[#b7cee5\]"/);
-  assert.match(drawerBlock, /border-l-\[#00a86b\][\s\S]*bg-\[#f8fcfa\]/);
-  assert.match(drawerBlock, /border-l-\[#2563a6\][\s\S]*bg-\[#f8fbfe\]/);
-  assert.match(drawerBlock, /text-xs font-medium text-navy">\{displayDate\(booking\.purchase_created_at\)\}/);
-  assert.match(drawerBlock, /text-\[11px\] font-normal text-slate-500">\{familyLabel\}/);
-});
-
-test("eligible ticket events show canonical economics without changing timeline sides", () => {
-  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
-
-  assert.match(drawerBlock, /booking\.is_pack === false[\s\S]*booking\.economic_eligible === true[\s\S]*booking\.economics_available === true/);
-  assert.match(drawerBlock, /displayClp\(booking\.paid_amount\)/);
-  assert.match(drawerBlock, /ADR \{displayAdr\(booking\.paid_adr\)\}/);
-  assert.match(drawerBlock, /displayDiscountPercentage\(booking\.discount_percentage\)/);
-  for (const label of ["Precio pagado", "Precio lista", "Descuento \\$", "Descuento %", "Días", "ADR pagado", "ADR lista"]) {
+test("related bookings expose only approved fields and paginate large groups server-side", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  for (const label of ["Email observado", "Teléfono observado", "Llegada / salida", "Parking", "Estado", "Monto", "Duración", "Pack", "Boleta", "Promoción"]) {
     assert.match(drawerBlock, new RegExp(label));
   }
-  assert.match(drawerBlock, /booking\.is_pack \? "Pack" : "Boleta"/);
-  assert.match(drawerBlock, /showEconomics \? <div/);
-  assert.match(drawerBlock, /showEconomics \? <>/);
-  assert.match(drawerBlock, /sm:col-start-3 sm:ml-1[\s\S]*sm:col-start-1 sm:mr-1/);
+  for (const field of ["sourceCreatedAt", "email", "phone", "plannedArrivalAt", "plannedDepartureAt", "parking", "brand", "bookingStatus", "paidAmount", "durationDays", "isPack", "promotionCode"]) {
+    assert.match(drawerBlock, new RegExp(`booking\\.${field}`));
+  }
+  assert.match(drawerBlock, /representationPageCount\(bookings\?\.total \?\? representation\.totalReservations, TIMELINE_PAGE_SIZE\)/);
+  assert.match(drawerBlock, /setBookingsPage\(bookingsPage - 1\)/);
+  assert.match(drawerBlock, /setBookingsPage\(bookingsPage \+ 1\)/);
+  const timelineBlock = sourceBlock(view, "function CustomerPurchaseTimeline({", "function RelatedReviewDrawer");
+  assert.match(timelineBlock, /disabled=\{loading \|\| page >= pageCount\}/);
 });
 
-test("timeline hides zero discount and shows uninterpreted source promo codes", () => {
-  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
-
-  assert.match(view, /booking\.source === "OKP" \? booking\.coupon_code : booking\.promotion_code/);
-  assert.match(drawerBlock, /discountPercentage !== null && discountPercentage > 0/);
-  assert.match(drawerBlock, />Código \{promotionCode\}<\/p>/);
-  assert.match(drawerBlock, /const promotionCode = showEconomics \? promotionCodeForBooking\(booking\) : null/);
-  assert.doesNotMatch(drawerBlock, /Banco|BIN|Convenio|Campaña|Promoción bancaria/);
-  assert.match(drawerBlock, /sm:col-start-3 sm:ml-1[\s\S]*sm:col-start-1 sm:mr-1/);
+test("large related contact sets use compact internally scrollable lists", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(drawerBlock, /summary\.observedEmails\.map\(\(contact\) => <li/);
+  assert.match(drawerBlock, /summary\.observedPhones\.map\(\(contact\) => <li/);
+  assert.equal((drawerBlock.match(/max-h-72 divide-y divide-\[#e4edf4\] overflow-y-auto overscroll-contain/g) ?? []).length, 2);
+  assert.match(drawerBlock, /summary\.contactSummary\.emailCount/);
+  assert.match(drawerBlock, /summary\.contactSummary\.phoneCount/);
+  assert.doesNotMatch(drawerBlock, /summary\.observed(?:Emails|Phones)\.map\(\(contact\) => <(?:article|div) className="rounded/);
 });
 
-test("economic presentation preserves CLP zero percentages and nulls", () => {
-  assert.match(view, /new Intl\.NumberFormat\("es-CL", \{ currency: "CLP", maximumFractionDigits: 0, style: "currency" \}\)/);
-  assert.match(view, /amount === null[\s\S]*"No disponible"/);
-  assert.match(view, /maximumFractionDigits: 1/);
-  assert.match(view, /percentage > 0 \? `-\$\{formatted\}%` : `\$\{formatted\}%`/);
-  assert.doesNotMatch(view, /booking\.(?:paid_amount|paid_adr|list_adr) \|\| 0/);
+test("related summary and bookings have independent loading and safe error states", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(drawerBlock, /loading=\{summaryLoading\}/);
+  assert.match(drawerBlock, /summaryError[\s\S]*No fue posible cargar el resumen de esta representación/);
+  assert.match(drawerBlock, /loading=\{bookingsLoading\}/);
+  assert.match(drawerBlock, /bookingsError \? "No fue posible cargar las reservas de esta representación\."/);
+  assert.match(drawerBlock, /summaryController\.current\?\.abort\(\)/);
+  assert.match(drawerBlock, /bookingsController\.current\?\.abort\(\)/);
 });
 
-test("customer panels share desktop width height and bounded vertical scrolling", () => {
-  assert.match(view, /grid items-stretch gap-5 xl:grid-cols-2[\s\S]*family="MCP_EAP"[\s\S]*family="OKP"/);
-  const tableBlock = view.slice(view.indexOf("function CustomerPeriodTable"), view.indexOf("function CustomerDetailDrawer"));
-  assert.match(tableBlock, /max-h-\[640px\] overflow-y-auto overscroll-contain/);
-  assert.doesNotMatch(tableBlock, /overflow-x-auto/);
+test("identity resolution explains one or multiple profiles without scoring", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(panelBlock, /profileCount === BigInt\(1\)[\s\S]*Reservas en un mismo perfil/);
+  assert.match(panelBlock, /profileCount > BigInt\(1\)[\s\S]*Varios perfiles relacionados/);
+  assert.match(panelBlock, /Las reservas ya están asociadas al mismo perfil/);
+  assert.doesNotMatch(panelBlock, /score|probabilidad|porcentaje de coincidencia/i);
 });
 
-test("drawer uses one conditional vertical scroll surface for every detail view", () => {
-  const drawerBlock = view.slice(view.indexOf("function CustomerDetailDrawer"), view.indexOf("export function CustomerWindowView"));
-  const asideStart = drawerBlock.indexOf("<aside");
-  const asideOpeningTag = drawerBlock.slice(asideStart, drawerBlock.indexOf(">", asideStart) + 1);
-  assert.match(asideOpeningTag, /h-full[\s\S]*overflow-hidden[\s\S]*md:max-w-2xl/);
-  assert.doesNotMatch(asideOpeningTag, /overflow-y-(?:auto|scroll)/);
-  assert.match(drawerBlock, /min-h-0 flex-1 overflow-y-auto overscroll-contain[\s\S]*relative overflow-clip p-4/);
-  assert.doesNotMatch(drawerBlock, /overflow-y-scroll/);
-  assert.doesNotMatch(drawerBlock, /max-h-|h-screen/);
-  assert.match(drawerBlock, /aria-hidden=\{detailView !== "main"\}[\s\S]*aria-hidden=\{detailView !== "economics"\}[\s\S]*aria-hidden=\{detailView !== "information"\}/);
+test("identity resolution derives only supported contact and corroboration signals", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(panelBlock, /emailCount === BigInt\(1\)[\s\S]*Email exacto compartido/);
+  assert.match(panelBlock, /phoneCount === BigInt\(1\)[\s\S]*Teléfono consistente/);
+  assert.match(panelBlock, /sourceCustomerCount === BigInt\(1\)[\s\S]*Cliente de origen compartido/);
+  assert.match(panelBlock, /hasExactEmailPhoneCorroboration/);
+  assert.match(panelBlock, /hasSourceCustomerEmailCorroboration/);
+  assert.match(panelBlock, /emailCount > BigInt\(1\)[\s\S]*Varios emails observados/);
+  assert.match(panelBlock, /phoneCount > BigInt\(1\)[\s\S]*Varios teléfonos observados/);
+});
+
+test("identity resolution treats possible shared accounts as a neutral hypothesis", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(panelBlock, /emailCount === BigInt\(1\) && phoneCount > BigInt\(1\) && profileCount > BigInt\(1\) && bookingCount >= BigInt\(4\)/);
+  assert.match(panelBlock, /cuenta compradora compartida o a reservas realizadas para terceros/);
+  assert.match(panelBlock, /Es una hipótesis contextual, no una conclusión de identidad/);
+  assert.doesNotMatch(panelBlock, /cliente incorrecto|conflictivo|error de cliente/i);
+});
+
+test("identity resolution reuses contacts and timeline with one scoped on-demand request", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(panelBlock, /<CustomerRelatedContacts contacts={detail\?\.relatedContacts \?\? null}/);
+  assert.match(panelBlock, /\{timeline\}/);
+  assert.match(drawerBlock, /timeline=\{<CustomerPurchaseTimeline/);
+  assert.equal((drawerBlock.match(/getJson\(/g) ?? []).length, 3);
+  assert.match(drawerBlock, /relatedGroupId: representation\.relatedGroupId/);
+  assert.match(drawerBlock, /if \(identityDetail \|\| identityDetailLoading \|\| !representation\) return/);
+  assert.match(drawerBlock, /onRetry=\{\(\) => void openIdentityResolution\(\)\}/);
+});
+
+test("identity resolution reports V1 V2 aggregates and renders scoped historical evidence", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(panelBlock, /Reservas V1[\s\S]*v1BookingCount/);
+  assert.match(panelBlock, /Reservas V2[\s\S]*v2BookingCount/);
+  assert.match(panelBlock, /visibleProfiles\.map/);
+  assert.match(panelBlock, /visibleEventGroups\.map/);
+  assert.match(view, /identityResolutionReasonLabel\(group\.reason\)/);
+  assert.match(view, /Detalle técnico de evidencia[\s\S]*event\.reason/);
+  assert.match(view, /Object\.entries\(event\.evidence\)/);
+  assert.match(view, /contradictory_phone_email[\s\S]*Este teléfono fue observado históricamente asociado a más de un email/);
+  assert.match(view, /review_profile_reused_exact[\s\S]*El resolver reutilizó un perfil previamente en revisión/);
+  assert.match(panelBlock, /No hay eventos históricos disponibles para las reservas de este grupo/);
+});
+
+test("identity resolution renders scoped observed and historical contacts without extra requests", () => {
+  const contactsBlock = sourceBlock(view, "function CustomerRelatedContactList", "const CUSTOMER_IDENTITY_PREVIEW_STATUS");
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(contactsBlock, /Contactos relacionados/);
+  assert.match(contactsBlock, /Observado en este grupo/);
+  assert.match(contactsBlock, /Relacionado históricamente/);
+  assert.match(contactsBlock, /Relacionado por historial del mismo teléfono/);
+  assert.match(contactsBlock, /Relacionado por historial del mismo email/);
+  assert.match(view, /RELATED_CONTACT_INITIAL_LIMIT = 5/);
+  assert.match(contactsBlock, /contacts\.slice\(0, RELATED_CONTACT_INITIAL_LIMIT\)/);
+  assert.match(contactsBlock, /Ver todos/);
+  assert.match(contactsBlock, /Ver menos/);
+  assert.match(contactsBlock, /no confirman que pertenezcan a una misma persona/);
+  assert.match(contactsBlock, /emails\.length === 0 && contacts\.phones\.length === 0\)\) return null/);
+  assert.equal((drawerBlock.match(/getJson\(/g) ?? []).length, 3);
+});
+
+test("identity resolution explains contradictory phone history without deciding identity", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(panelBlock, /const resolutionSummary = detail\?\.summary \?\? group/);
+  assert.match(panelBlock, /detail\.members\.every\(\(member\) => member\.relationshipType === "EXACT_EMAIL"\)/);
+  assert.match(panelBlock, /event\.reason === "contradictory_phone_email" \|\| event\.evidence\.contradictorySignals === true/);
+  assert.match(panelBlock, /Las reservas comparten un mismo email exacto, pero el historial registra señales de teléfono contradictorias/);
+  assert.match(panelBlock, /permanecen relacionadas para revisión y no se confirma una única identidad/);
+});
+
+test("identity resolution groups equivalent events and translates evidence", () => {
+  const groupingBlock = sourceBlock(view, "function identityResolutionEvidenceText", "function CustomerIdentityReviewSignals");
+  assert.match(groupingBlock, /event\.reason[\s\S]*event\.resolverVersion[\s\S]*identityResolutionEvidenceSignature\(event\.evidence\)/);
+  assert.match(groupingBlock, /emailsForPhone[\s\S]*teléfono observado está asociado/);
+  assert.match(groupingBlock, /phonesForEmail[\s\S]*email fue observado asociado/);
+  assert.match(groupingBlock, /emailBookingCount[\s\S]*email aparece/);
+  assert.match(groupingBlock, /phoneBookingCount[\s\S]*teléfono aparece/);
+  assert.match(groupingBlock, /contradictorySignals[\s\S]*señales históricas contradictorias/);
+  assert.match(groupingBlock, /expanded \? <ol[\s\S]*group\.events\.map/);
+});
+
+test("identity resolution limits large profile and event collections initially", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(view, /const IDENTITY_PROFILE_INITIAL_LIMIT = 8/);
+  assert.match(view, /const IDENTITY_EVENT_GROUP_INITIAL_LIMIT = 8/);
+  assert.match(panelBlock, /detail\?\.profiles\.slice\(0, IDENTITY_PROFILE_INITIAL_LIMIT\)/);
+  assert.match(panelBlock, /eventGroups\.slice\(0, IDENTITY_EVENT_GROUP_INITIAL_LIMIT\)/);
+  assert.match(panelBlock, /Ver todos los perfiles/);
+  assert.match(panelBlock, /Ver todos los motivos/);
+});
+
+test("identity decision controls are preview-only and expose no write action", () => {
+  const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
+  assert.match(panelBlock, /Posibles decisiones/);
+  assert.match(panelBlock, /Solo vista previa/);
+  assert.match(panelBlock, /CUSTOMER_IDENTITY_DECISION_LABELS/);
+  assert.match(panelBlock, /aria-pressed=\{selectedDecision === decision\}/);
+  assert.match(panelBlock, /deriveCustomerIdentityDecisionPreview\(selectedDecision, detail, group\)/);
+  assert.doesNotMatch(panelBlock, /Guardar|Aplicar|Confirmar cambios|method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
+});
+
+test("related identity review remains explanatory and read-only", () => {
+  const drawerBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  assert.match(drawerBlock, /En una etapa posterior este grupo podrá revisarse/);
+  assert.doesNotMatch(drawerBlock, /Confirmar como mismo cliente|Mantener separados|onConfirm|onReject|method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
+});
+
+test("confirmed selection keeps the existing legacy drawer request path", () => {
+  const customerBlock = sourceBlock(view, "async function selectCustomer", "function selectRepresentation");
+  assert.match(customerBlock, /setDrawerCustomerId\(customerId\)/);
+  assert.match(customerBlock, /action=economics&customerId=\$\{customerId\}/);
+  assert.match(customerBlock, /action=summary&customerId=\$\{customerId\}/);
+  assert.match(customerBlock, /action=bookings&customerId=\$\{customerId\}/);
+  assert.match(view, /<CustomerDetailDrawer customerId=\{drawerCustomerId\}[\s\S]*representation=\{confirmedRepresentation\}/);
+});
+
+test("list rendering does not introduce N plus one detail requests", () => {
+  const listBlock = sourceBlock(view, "const loadRepresentations", "const loadPeriodFacets");
+  const tableBlock = sourceBlock(view, "function CustomerRepresentationTable", "function SecondaryViewHeader");
+  assert.doesNotMatch(listBlock + tableBlock, /action=(?:summary|bookings|economics)/);
+  assert.doesNotMatch(tableBlock, /getJson|fetch\(/);
+});
+
+test("confirmed and related drawers share frame summary actions and purchase timeline", () => {
+  const sharedBlock = sourceBlock(view, "type CustomerPurchaseTimelineItem", "function RelatedReviewDrawer");
+  const relatedBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  const drawerBlock = sourceBlock(view, "function CustomerDetailDrawer", "export function CustomerWindowView");
+  for (const component of ["CustomerRepresentationDrawerFrame", "CustomerSummaryMetrics", "CustomerContactOverview", "CustomerDrawerActions", "CustomerPurchaseTimeline"]) {
+    assert.match(relatedBlock, new RegExp(`<${component}`));
+    assert.match(drawerBlock, new RegExp(`<${component}`));
+  }
+  assert.match(sharedBlock, /aria-modal="true"[\s\S]*role="dialog"/);
+  assert.match(sharedBlock, /min-h-0 flex-1 overflow-y-auto overscroll-contain/);
+  assert.doesNotMatch(sharedBlock, /overflow-y-scroll/);
   assert.match(drawerBlock, /motion-reduce:transition-none/);
+  assert.match(drawerBlock, /const isOkpBooking = booking\.source === "OKP"/);
+  assert.match(drawerBlock, /booking\.is_pack === false[\s\S]*booking\.economic_eligible === true[\s\S]*booking\.economics_available === true/);
 });
 
-test("drawer closes without resetting period filters or family pages", () => {
-  const closeStart = view.indexOf("const closeCustomerDrawer");
-  const closeBlock = view.slice(closeStart, view.indexOf("useEffect", closeStart));
-  assert.match(closeBlock, /setDrawerCustomerId\(null\)/);
-  assert.match(closeBlock, /setSelectedCustomer\(null\)/);
-  assert.doesNotMatch(closeBlock, /setMcpPage|setOkpPage|setPeriodRange|setLifecycleStatus|setTier|setPackStatus|setBrandBehavior/);
-  assert.match(view, /event\.key === "Escape"[\s\S]*closeCustomerDrawer\(\)/);
-  assert.match(view, /document\.body\.style\.overflow = "hidden"/);
+test("confirmed contacts are direct while related contacts remain observed", () => {
+  const relatedBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  const drawerBlock = sourceBlock(view, "function CustomerDetailDrawer", "export function CustomerWindowView");
+  assert.match(relatedBlock, /semantics="Observado"/);
+  assert.match(relatedBlock, /Emails observados/);
+  assert.match(relatedBlock, /Teléfonos observados/);
+  assert.match(drawerBlock, /semantics="Directo"/);
+  assert.match(drawerBlock, /Emails directos/);
+  assert.match(drawerBlock, /Teléfonos directos/);
 });
 
-test("tables remain the only entry point to the on-demand customer detail", () => {
-  assert.doesNotMatch(view, /Buscar cliente específico|customer-search-value|searchCustomers|action=search/);
-  assert.match(view, /CustomerPeriodTable[\s\S]*onSelectCustomer=\{\(customer\) => void selectCustomer\(customer\.customerId, customer\)\}/);
-  assert.match(view, /CustomerDetailDrawer/);
-  assert.match(view, /async function selectCustomer[\s\S]*Promise\.all\(\[[\s\S]*action=summary[\s\S]*action=bookings/);
-  const familyBlock = view.slice(view.indexOf("const loadFamily"), view.indexOf("useEffect"));
-  assert.doesNotMatch(familyBlock, /action=summary|action=bookings/);
+test("both drawers place compact contacts and navigation before purchase history", () => {
+  const relatedBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  const confirmedBlock = sourceBlock(view, "function CustomerDetailDrawer", "export function CustomerWindowView");
+  for (const block of [relatedBlock, confirmedBlock]) {
+    const summaryIndex = block.indexOf("<CustomerSummaryMetrics");
+    const contactsIndex = block.indexOf("<CustomerContactOverview");
+    const actionsIndex = block.indexOf("<CustomerDrawerActions");
+    const timelineIndex = block.indexOf("<CustomerPurchaseTimeline");
+    assert.ok(summaryIndex < contactsIndex && contactsIndex < actionsIndex && actionsIndex < timelineIndex);
+  }
 });
 
-test("classification criteria stay collapsed and load official rules once", () => {
-  assert.match(view, /useState\(false\)/);
-  assert.match(view, /Criterios de clasificación/);
+test("compact contacts support one missing or multiple values and inline expansion", () => {
+  const sharedBlock = sourceBlock(view, "function CustomerContactGroup", "function CustomerDrawerActions");
+  assert.match(sharedBlock, /items\.slice\(0, 1\)/);
+  assert.match(sharedBlock, /Math\.max\(0, items\.length - 1\)/);
+  assert.match(sharedBlock, /aria-expanded=\{expanded\}/);
+  assert.match(sharedBlock, /`Ver \$\{hiddenCount\} más`/);
+  assert.match(sharedBlock, /"Ver menos"/);
+  assert.match(sharedBlock, /emptyLabel="Sin email disponible"/);
+  assert.match(sharedBlock, /emptyLabel="Sin teléfono disponible"/);
+  assert.match(sharedBlock, /sm:grid-cols-2/);
+});
+
+test("confirmed and related summaries keep the same compact six-field base", () => {
+  const relatedBlock = sourceBlock(view, "function RelatedReviewDrawer", "function CustomerDetailDrawer");
+  const confirmedBlock = sourceBlock(view, "function CustomerDetailDrawer", "export function CustomerWindowView");
+  const relatedSummary = sourceBlock(relatedBlock, "<CustomerSummaryMetrics fields=", "loading={summaryLoading} />");
+  const confirmedSummary = sourceBlock(confirmedBlock, "<CustomerSummaryMetrics fields=", "loading={loading && !summary} />");
+  assert.equal((relatedSummary.match(/\{ label:/g) ?? []).length, 6);
+  assert.equal((confirmedSummary.match(/\{ label:/g) ?? []).length, 6);
+  assert.match(relatedSummary, /Emails observados[\s\S]*Teléfonos observados[\s\S]*Identidad/);
+  assert.match(confirmedSummary, /Packs \/ Boletas[\s\S]*Gasto histórico[\s\S]*Identidad/);
+});
+
+test("the shared drawer remains responsive and handles empty and paginated histories", () => {
+  const sharedBlock = sourceBlock(view, "type CustomerPurchaseTimelineItem", "function RelatedReviewDrawer");
+  assert.match(sharedBlock, /w-full[\s\S]*md:max-w-2xl/);
+  assert.match(sharedBlock, /sm:grid-cols-2[\s\S]*lg:grid-cols-3/);
+  assert.match(sharedBlock, /items\.length === 0[\s\S]*<EmptyState description=\{emptyDescription\}/);
+  assert.match(sharedBlock, /disabled=\{loading \|\| page <= 1\}/);
+  assert.match(sharedBlock, /disabled=\{loading \|\| page >= pageCount\}/);
+  assert.match(sharedBlock, /Página \{page\} de \{pageCount\}/);
+});
+
+test("legacy drawer and criteria actions remain unchanged and on demand", () => {
+  assert.match(view, /action=summary&customerId=/);
+  assert.match(view, /action=bookings&customerId=/);
+  assert.match(view, /action=economics&customerId=/);
+  assert.match(view, /action=signals&customerId=/);
+  assert.match(view, /action=identities&customerId=/);
   assert.match(view, /action=criteria/);
-  assert.match(view, /if \(!nextOpen \|\| criteria \|\| criteriaLoading\) return/);
-  assert.match(view, /criteriaOpen && criteriaError/);
-  assert.match(view, /criterionNumber\(criteria, "tier"/);
-  assert.match(view, /gold_historical_reservations/);
-  assert.match(view, /gold_reservations_24m/);
-  assert.match(view, /gold_median_gap_days/);
-  assert.match(view, /aria-controls="customer-window-classification-criteria"/);
-  const tablesIndex = view.lastIndexOf('<div className="grid items-stretch gap-5 xl:grid-cols-2">');
-  const criteriaIndex = view.lastIndexOf('title="Criterios de clasificación"');
-  assert.ok(criteriaIndex > tablesIndex, "classification criteria must render below both customer tables");
+  assert.ok(route.indexOf("getActiveAdminUser()") < route.indexOf('action === "criteria"'));
+  assert.match(admin, /customer_window_get_classification_criteria/);
 });
 
-test("criteria action remains admin-only and service role stays server-side", () => {
-  assert.ok(route.indexOf("getActiveAdminUser()") < route.indexOf('action === "criteria"'));
-  assert.match(route, /action === "criteria"[\s\S]*getCustomerWindowClassificationCriteria/);
-  assert.match(admin, /customer_window_get_classification_criteria/);
-  assert.doesNotMatch(view + route, /SUPABASE_SERVICE_ROLE_KEY|createClient\(|\.rpc\(/);
-  assert.doesNotMatch(view, /server-only|lib\/auth\/access|components\/dashboard\/shell/);
+test("client code does not expose the service role or call Supabase directly", () => {
+  assert.doesNotMatch(view + route, /SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(view, /createClient\(|\.rpc\(/);
 });

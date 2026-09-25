@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import pg from "pg";
 import {
   formatBuilderError,
@@ -22,6 +23,20 @@ const RETENTION_MAX_CALLS = 2;
 const RETENTION_RPC_SQL = `
   select public.customer_related_review_prune_superseded_v1_m2m() as result
 `;
+const OPERATIONAL_START_SQL = `
+  select public.customer_related_review_refresh_start_v1_m2m($1::uuid) as result
+`;
+const OPERATIONAL_HEARTBEAT_SQL = `
+  select public.customer_related_review_refresh_heartbeat_v1_m2m($1::uuid) as result
+`;
+const OPERATIONAL_FINISH_SQL = `
+  select public.customer_related_review_refresh_finish_v1_m2m(
+    $1::uuid, $2::boolean, $3::text, $4::text, $5::boolean,
+    $6::integer, $7::uuid, $8::text
+  ) as result
+`;
+const HEARTBEAT_INTERVAL_MS = 60_000;
+const OPERATIONAL_QUERY_TIMEOUT_MS = 15_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const errorContext = new WeakMap();
 const READY_AUDIT_SCRIPT = fileURLToPath(new URL(
@@ -152,6 +167,65 @@ export async function runSnapshotRetention({ client }) {
         && UUID.test(response.deletedSnapshotId))),
   "retention_contract_invalid");
   return response;
+}
+
+function operationalResult(response, expectedStatus = null) {
+  check(response && typeof response === "object" && !Array.isArray(response)
+    && response.ok === true && response.containsPii === false
+    && typeof response.runId === "string" && UUID.test(response.runId)
+    && (expectedStatus === null || response.status === expectedStatus),
+  "refresh_operational_contract_invalid");
+  return response;
+}
+
+export async function startOperationalRefresh({ client, runId }) {
+  return operationalResult((await client.query(OPERATIONAL_START_SQL, [runId])).rows[0]?.result);
+}
+
+export async function heartbeatOperationalRefresh({ client, runId }) {
+  return operationalResult((await client.query(OPERATIONAL_HEARTBEAT_SQL,
+    [runId])).rows[0]?.result);
+}
+
+export async function finishOperationalRefresh({ client, runId, success, errorCode = null,
+  errorPhase = null, retentionAttempted = false, retentionDeleted = null,
+  retentionLastDeletedSnapshotId = null, retentionErrorCode = null }) {
+  return operationalResult((await client.query(OPERATIONAL_FINISH_SQL, [
+    runId, success, errorCode, errorPhase, retentionAttempted,
+    retentionAttempted ? retentionDeleted : null,
+    retentionAttempted ? retentionLastDeletedSnapshotId : null,
+    retentionAttempted ? retentionErrorCode : null,
+  ])).rows[0]?.result, success ? "success" : "error");
+}
+
+function safeHeartbeatFailure(error) {
+  const safe = formatBuilderError(error);
+  const result = { event: "refresh_heartbeat_failed", containsPii: false };
+  for (const key of ["dbCode", "dbConstraint", "dbTable", "dbColumn", "errorType"]) {
+    if (safe[key]) result[key] = safe[key];
+  }
+  return result;
+}
+
+export function createOperationalHeartbeat({ beat, intervalMs = HEARTBEAT_INTERVAL_MS,
+  setIntervalFn = setInterval, clearIntervalFn = clearInterval,
+  onFailure = (error) => console.error(JSON.stringify(safeHeartbeatFailure(error))) }) {
+  let stopped = false;
+  let inFlight = null;
+  const pulse = () => {
+    if (stopped || inFlight) return;
+    inFlight = Promise.resolve().then(beat).catch(onFailure).finally(() => { inFlight = null; });
+  };
+  const timer = setIntervalFn(pulse, intervalMs);
+  return {
+    async stop() {
+      if (!stopped) {
+        stopped = true;
+        clearIntervalFn(timer);
+      }
+      if (inFlight) await inFlight;
+    },
+  };
 }
 
 function readyAuditDiagnostic(result = null, error = null) {
@@ -359,6 +433,13 @@ export async function runRefresh({
   auditFn = runReadyAuditIsolated,
   activateFn = runActivate,
   retentionFn = runSnapshotRetention,
+  operationalStartFn = startOperationalRefresh,
+  operationalHeartbeatFn = heartbeatOperationalRefresh,
+  operationalFinishFn = finishOperationalRefresh,
+  heartbeatFactory = createOperationalHeartbeat,
+  operationalClientFactory = ({ ClientClass: OperationalClientClass, connection }) =>
+    new OperationalClientClass({ ...connection, query_timeout: OPERATIONAL_QUERY_TIMEOUT_MS }),
+  randomUUIDFn = randomUUID,
   resumeReadySnapshotId = null,
   now = () => Date.now(),
   sleepFn = (delayMs) => new Promise((resolveSleep) => setTimeout(resolveSleep, delayMs)),
@@ -368,6 +449,7 @@ export async function runRefresh({
   const timings = {};
   let phase = "preflight";
   let client;
+  let operationalClient;
   let lockAcquired = false;
   let newSnapshotId = null;
   let activated = false;
@@ -390,6 +472,10 @@ export async function runRefresh({
   let retentionStartedAt = null;
   let retentionDurationMs = null;
   let diagnosticCode = "arguments";
+  let operationalStarted = false;
+  let operationalFinished = false;
+  let heartbeat = null;
+  const runId = randomUUIDFn();
   const auditTelemetry = () => ({
     readyAuditAttempts,
     readyAuditRetried,
@@ -404,6 +490,7 @@ export async function runRefresh({
     "invalid_resume_ready_snapshot_id");
     check(Number.isInteger(readyAuditRetryDelayMs) && readyAuditRetryDelayMs >= 0,
       "invalid_ready_audit_retry_delay");
+    check(typeof runId === "string" && UUID.test(runId), "invalid_refresh_run_id");
     if (resumeReadySnapshotId) resumeReadySnapshotId = resumeReadySnapshotId.toLowerCase();
     diagnosticCode = "environment";
     const parsed = parseEnv(env);
@@ -420,6 +507,17 @@ export async function runRefresh({
     )).rows[0];
     check(lock?.acquired === true, "refresh_already_running");
     lockAcquired = true;
+
+    diagnosticCode = "operational_start";
+    operationalClient = operationalClientFactory({ ClientClass, connection: parsed.connection });
+    await operationalClient.connect();
+    const operationalStart = await operationalStartFn({ client: operationalClient, runId });
+    check(operationalStart?.ok === true && operationalStart.runId === runId,
+      "refresh_operational_start_failed");
+    operationalStarted = true;
+    heartbeat = heartbeatFactory({
+      beat: () => operationalHeartbeatFn({ client: operationalClient, runId }),
+    });
 
     diagnosticCode = "snapshot_contract_query";
     const preflight = (await client.query(PREFLIGHT_SQL)).rows[0];
@@ -588,6 +686,22 @@ export async function runRefresh({
     timings.retentionMs = retentionDurationMs;
     timings.totalMs = now() - totalStarted;
 
+    await heartbeat.stop();
+    heartbeat = null;
+    diagnosticCode = "operational_finish_success";
+    const operationalFinish = await operationalFinishFn({
+      client: operationalClient,
+      runId,
+      success: true,
+      retentionAttempted,
+      retentionDeleted,
+      retentionLastDeletedSnapshotId,
+      retentionErrorCode: null,
+    });
+    check(operationalFinish?.ok === true && operationalFinish.runId === runId
+      && operationalFinish.status === "success", "refresh_operational_finish_failed");
+    operationalFinished = true;
+
     return {
       ok: true,
       mode: "refresh",
@@ -618,6 +732,36 @@ export async function runRefresh({
       timings,
     };
   } catch (error) {
+    if (heartbeat) {
+      await heartbeat.stop();
+      heartbeat = null;
+    }
+    if (operationalStarted && !operationalFinished && operationalClient) {
+      const errorCode = error instanceof RefreshError
+        && /^[a-z][a-z0-9_]{0,79}$/.test(error.code) ? error.code : "refresh_failed";
+      const errorPhase = /^[a-z][a-z0-9_-]{0,79}$/.test(phase) ? phase : "refresh";
+      const retentionErrorCode = retentionAttempted && phase === "retention"
+        ? (errorCode === "refresh_failed" ? "retention_failed" : errorCode) : null;
+      try {
+        const operationalFinish = await operationalFinishFn({
+          client: operationalClient,
+          runId,
+          success: false,
+          errorCode,
+          errorPhase,
+          retentionAttempted,
+          retentionDeleted,
+          retentionLastDeletedSnapshotId,
+          retentionErrorCode,
+        });
+        operationalFinished = operationalFinish?.ok === true;
+      } catch (finishError) {
+        console.error(JSON.stringify({
+          ...safeHeartbeatFailure(finishError),
+          event: "refresh_operational_finish_failed",
+        }));
+      }
+    }
     if (error && typeof error === "object") {
       errorContext.set(error, {
         phase,
@@ -640,6 +784,10 @@ export async function runRefresh({
     }
     throw error;
   } finally {
+    if (heartbeat) await heartbeat.stop();
+    if (operationalClient) {
+      try { await operationalClient.end(); } catch { /* Operational telemetry is isolated. */ }
+    }
     if (client && lockAcquired) {
       try {
         await client.query("select pg_catalog.pg_advisory_unlock($1::integer, $2::integer)",

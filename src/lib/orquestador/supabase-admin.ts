@@ -50,6 +50,25 @@ import {
 
 import type { OperationalDashboardQuery } from "@/lib/dashboard/operacional";
 import { collectOccupancyRpcPages } from "@/lib/dashboard/ocupacion";
+import {
+  normalizeCustomerWindowPeriodFacetsV2,
+  normalizeCustomerWindowIdentityResolutionDetailV2,
+  normalizeCustomerWindowRepresentationBookingsResponseV2,
+  normalizeCustomerWindowRepresentationListV2,
+  normalizeCustomerWindowRepresentationSearchV2,
+  normalizeCustomerWindowRepresentationSummaryV2,
+  type CustomerWindowPeriodFacetsV2,
+  type CustomerWindowIdentityResolutionDetailV2,
+  type CustomerWindowRepresentationBookingsResponseV2,
+  type CustomerWindowRepresentationListV2,
+  type CustomerWindowRepresentationSearchV2,
+  type CustomerWindowRepresentationSummaryV2,
+  type CustomerWindowRepresentationTypeV2,
+} from "@/lib/customer-window/customer-representations-v2";
+import {
+  normalizeCustomerWindowRefreshHealth,
+  type CustomerWindowRefreshHealth,
+} from "@/lib/customer-window/customer-refresh-health";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -195,6 +214,20 @@ export async function listOrchestratorJobsPage(input: {
     return error ? emptyResult() : { data: (data ?? []).map(safeJobRow), error: false };
   } catch {
     return emptyResult();
+  }
+}
+
+export async function getCustomerWindowRefreshHealth(): Promise<
+  OrquestadorSingleResult<CustomerWindowRefreshHealth>
+> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_get_refresh_health_v1_m2m");
+    if (error) return singleError();
+    const normalized = normalizeCustomerWindowRefreshHealth(data);
+    return normalized ? { data: normalized, error: false } : singleError();
+  } catch {
+    return singleError();
   }
 }
 
@@ -788,6 +821,25 @@ type CustomerWindowPeriodListInput = {
 
 type CustomerWindowPeriodMetricsInput = Omit<CustomerWindowPeriodListInput, "family" | "page" | "pageSize">;
 
+type CustomerWindowV2PeriodListInput = {
+  from: string;
+  page: number;
+  pageSize: number;
+  to: string;
+};
+
+type CustomerWindowV2PeriodFacetsInput = Pick<CustomerWindowV2PeriodListInput, "from" | "to">;
+
+type CustomerWindowV2RepresentationInput = {
+  representationId: string;
+  representationType: CustomerWindowRepresentationTypeV2;
+};
+
+type CustomerWindowV2RepresentationBookingsInput = CustomerWindowV2RepresentationInput & {
+  page: number;
+  pageSize: number;
+};
+
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -858,5 +910,128 @@ export async function getCustomerWindowPurchasePeriodMetrics(input: CustomerWind
     return error || !isJsonRecord(data) ? singleError<unknown>() : { data, error: false };
   } catch {
     return singleError<unknown>();
+  }
+}
+
+export async function listCustomerWindowV2RepresentationsByPurchasePeriod(
+  input: CustomerWindowV2PeriodListInput,
+) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc(
+      "customer_window_v2_list_representations_by_purchase_period",
+      {
+        p_from: input.from,
+        p_page: input.page,
+        p_page_size: input.pageSize,
+        p_to: input.to,
+      },
+    );
+    if (error) return { data: null, error: true, retryable: true };
+    const normalized = normalizeCustomerWindowRepresentationListV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : { data: null, error: true, retryable: false };
+  } catch {
+    return { data: null, error: true, retryable: true };
+  }
+}
+
+export async function getCustomerWindowV2PurchasePeriodFacets(
+  input: CustomerWindowV2PeriodFacetsInput,
+) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_v2_get_purchase_period_facets", {
+      p_from: input.from,
+      p_to: input.to,
+    });
+    if (error) return { data: null, error: true, retryable: true };
+    const normalized = normalizeCustomerWindowPeriodFacetsV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : { data: null, error: true, retryable: false };
+  } catch {
+    return { data: null, error: true, retryable: true };
+  }
+}
+
+export async function searchCustomerWindowV2Representations(input: {
+  email: string | null;
+  exactIdentifier: string;
+  limit: number;
+  numericIdentifier: string | null;
+  phone: string | null;
+  plate: string | null;
+}) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_v2_search_representations_mcp_eap", {
+      p_email: input.email,
+      p_exact_identifier: input.exactIdentifier,
+      p_limit: input.limit,
+      p_numeric_identifier: input.numericIdentifier,
+      p_phone: input.phone,
+      p_plate: input.plate,
+    });
+    const normalized = error ? null : normalizeCustomerWindowRepresentationSearchV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : singleError<CustomerWindowRepresentationSearchV2>();
+  } catch {
+    return singleError<CustomerWindowRepresentationSearchV2>();
+  }
+}
+
+export async function getCustomerWindowV2RepresentationSummary(
+  input: CustomerWindowV2RepresentationInput,
+) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_v2_get_representation_summary", {
+      p_representation_id: input.representationId,
+      p_representation_type: input.representationType,
+    });
+    const normalized = error ? null : normalizeCustomerWindowRepresentationSummaryV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : singleError<CustomerWindowRepresentationSummaryV2>();
+  } catch {
+    return singleError<CustomerWindowRepresentationSummaryV2>();
+  }
+}
+
+export async function getCustomerWindowV2IdentityResolutionDetail(relatedGroupId: string) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_v2_get_identity_resolution_detail", {
+      p_related_group_id: relatedGroupId,
+    });
+    const normalized = error ? null : normalizeCustomerWindowIdentityResolutionDetailV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : singleError<CustomerWindowIdentityResolutionDetailV2>();
+  } catch {
+    return singleError<CustomerWindowIdentityResolutionDetailV2>();
+  }
+}
+
+export async function listCustomerWindowV2RepresentationBookings(
+  input: CustomerWindowV2RepresentationBookingsInput,
+) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_v2_list_representation_bookings", {
+      p_page: input.page,
+      p_page_size: input.pageSize,
+      p_representation_id: input.representationId,
+      p_representation_type: input.representationType,
+    });
+    const normalized = error ? null : normalizeCustomerWindowRepresentationBookingsResponseV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : singleError<CustomerWindowRepresentationBookingsResponseV2>();
+  } catch {
+    return singleError<CustomerWindowRepresentationBookingsResponseV2>();
   }
 }
