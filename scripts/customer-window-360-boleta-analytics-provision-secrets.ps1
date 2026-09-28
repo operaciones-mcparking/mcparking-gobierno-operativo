@@ -105,3 +105,4 @@ try {
   if ($proc) { $proc.Dispose() }
   $plain=$null; $secure=$null; $url=$null; $out=$null; $err=$null
 }
+exit 0

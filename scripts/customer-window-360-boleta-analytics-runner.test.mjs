@@ -53,5 +53,17 @@ test("secret provisioning validates before atomically publishing a DPAPI bundle"
   assert.match(secrets, /function Publish-Bundle/);
   assert.match(secrets, /WriteAllText\(\$item\.Temp/);
   assert.match(secrets, /\[IO\.File\]::Replace/);
+  assert.match(secrets, /\}\r?\nexit 0\s*$/);
+  assert.doesNotMatch(secrets, /\$LASTEXITCODE/);
   assert.doesNotMatch(secrets, /password\s*=\s*['\"][^'\"]+['\"]/i);
+});
+
+test("connection checks certify the client TLS socket instead of backend pg_stat_ssl", () => {
+  const runner = readFileSync(new URL("./customer-window-360-boleta-analytics-v1-runner.mjs", import.meta.url), "utf8");
+  assert.match(runner, /connection\?\.stream/);
+  assert.match(runner, /stream\?\.encrypted === true/);
+  assert.match(runner, /stream\?\.authorized === true/);
+  assert.match(runner, /ssl\.rejectUnauthorized === true/);
+  assert.match(runner, /stream\?\.servername === host/);
+  assert.doesNotMatch(runner, /pg_stat_ssl/);
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  CALCULATION_VERSION, parseArguments, runRunner, safeError,
+  CALCULATION_VERSION, clientTlsIsAuthorized, parseArguments, runRunner, safeError,
 } from "./customer-window-360-boleta-analytics-v1-runner.mjs";
 
 const caFixture = encodeURIComponent(fileURLToPath(import.meta.url));
@@ -14,7 +14,17 @@ function fakeFsEnv() {
 
 class FakeClient {
   static instances = [];
-  constructor(config) { this.config = config; this.calls = []; this.iteration = 0; FakeClient.instances.push(this); }
+  constructor(config) {
+    this.config = config;
+    this.calls = [];
+    this.iteration = 0;
+    const parsed = new URL(config.connectionString);
+    this.connectionParameters = { host: parsed.hostname, ssl: config.ssl };
+    this.connection = { stream: {
+      encrypted: true, authorized: true, authorizationError: null, servername: parsed.hostname,
+    } };
+    FakeClient.instances.push(this);
+  }
   async connect() { this.connected = true; }
   async end() { this.ended = true; }
   async query(sql, params = []) {
@@ -40,6 +50,48 @@ class FakeClient {
     throw new Error("unexpected query");
   }
 }
+
+test("TLS certification uses the authorized client socket, not backend pg_stat_ssl", async () => {
+  FakeClient.instances = [];
+  const result = await runRunner({ options: parseArguments(["--check-connection"]),
+    env: fakeFsEnv(), ClientClass: FakeClient });
+  assert.equal(result.tlsValid, true);
+  assert.equal(FakeClient.instances[0].calls.some(({ sql }) => sql.includes("pg_stat_ssl")), false);
+  assert.equal(clientTlsIsAuthorized(FakeClient.instances[0]), true);
+});
+
+test("TLS certification rejects unauthorized certificates, insecure mode, and hostname mismatch", async () => {
+  class UnauthorizedClient extends FakeClient {
+    constructor(config) { super(config); this.connection.stream.authorized = false; }
+  }
+  class InsecureClient extends FakeClient {
+    constructor(config) { super(config); this.connectionParameters.ssl.rejectUnauthorized = false; }
+  }
+  class HostnameMismatchClient extends FakeClient {
+    constructor(config) { super(config); this.connection.stream.servername = "wrong.example.test"; }
+  }
+
+  for (const ClientClass of [UnauthorizedClient, InsecureClient, HostnameMismatchClient]) {
+    const result = await runRunner({ options: parseArguments(["--check-connection"]),
+      env: fakeFsEnv(), ClientClass });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, "database_tls_invalid");
+    assert.equal(result.phase, "tls");
+  }
+});
+
+test("a CA or hostname handshake failure remains fail-closed", async () => {
+  class HandshakeFailureClient extends FakeClient {
+    async connect() {
+      throw Object.assign(new Error("certificate rejected"), { code: "CERT_HAS_EXPIRED" });
+    }
+  }
+  const result = await runRunner({ options: parseArguments(["--check-connection"]),
+    env: fakeFsEnv(), ClientClass: HandshakeFailureClient });
+  assert.equal(result.ok, false);
+  assert.equal(result.phase, "connect");
+  assert.equal(result.errorType, "Error");
+});
 
 test("argument validation separates canary and drain modes", () => {
   const id = "11111111-1111-4111-8111-111111111111";

@@ -122,6 +122,18 @@ function loadConnection(env) {
   return { connectionString: url.toString(), ssl: { ca, rejectUnauthorized: true }, query_timeout: 130_000 };
 }
 
+export function clientTlsIsAuthorized(client) {
+  const ssl = client?.connectionParameters?.ssl;
+  const host = client?.connectionParameters?.host;
+  const stream = client?.connection?.stream;
+  return Boolean(
+    ssl && typeof ssl === "object" && ssl.rejectUnauthorized === true &&
+    stream?.encrypted === true && stream?.authorized === true &&
+    !stream?.authorizationError && typeof host === "string" && host.length > 0 &&
+    stream?.servername === host
+  );
+}
+
 function validateRefresh(payload, expectedMode) {
   if (!payload || payload.ok !== true || payload.mode !== expectedMode ||
       payload.calculationVersion !== CALCULATION_VERSION ||
@@ -154,6 +166,10 @@ export async function runRunner({ options, env = process.env, ClientClass = pg.C
     client = new ClientClass(loadConnection(env));
     phase = "connect";
     await client.connect();
+    phase = "tls";
+    if (!clientTlsIsAuthorized(client)) {
+      throw new RunnerError("database_tls_invalid", phase);
+    }
     phase = "session_settings";
     await client.query("set statement_timeout = '120s'");
     await client.query("set lock_timeout = '30s'");
