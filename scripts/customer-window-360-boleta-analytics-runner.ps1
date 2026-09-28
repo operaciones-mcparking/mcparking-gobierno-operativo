@@ -218,7 +218,9 @@ try {
     $arguments += @('--mode', $Mode.ToLowerInvariant(), '--limit', [string]$Limit,
       '--max-iterations', [string]$MaxIterations, '--max-runtime-ms', [string]$MaxRuntimeMs,
       '--pause-ms', [string]$PauseMs)
-    foreach ($id in @($CustomerId)) { $arguments += @('--customer-id', $id.ToString()) }
+    if ($null -ne $CustomerId -and $CustomerId.Count -gt 0) {
+      foreach ($id in $CustomerId) { $arguments += @('--customer-id', $id.ToString()) }
+    }
     if ($IncludeCounts) { $arguments += '--include-counts' }
   }
   $child = Invoke-RunnerChild -NodeExecutable $node -Arguments $arguments -ConnectionUrl $databaseUrl

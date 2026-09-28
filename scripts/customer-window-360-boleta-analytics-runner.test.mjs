@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
@@ -12,6 +13,55 @@ test("wrapper has mutually exclusive run and read-only validation modes", () => 
   assert.match(wrapper, /ParameterSetName = 'Config'/);
   assert.match(wrapper, /ParameterSetName = 'Connection'/);
   assert.match(wrapper, /Customer UUIDs are only valid in Canary mode/);
+});
+
+test("wrapper only appends customer IDs when the PowerShell array has real values", () => {
+  assert.match(wrapper, /if \(\$null -ne \$CustomerId -and \$CustomerId\.Count -gt 0\) \{/);
+  assert.match(wrapper, /foreach \(\$id in \$CustomerId\) \{ \$arguments \+= @\('--customer-id', \$id\.ToString\(\)\) \}/);
+  assert.doesNotMatch(wrapper, /foreach \(\$id in @\(\$CustomerId\)\)/);
+
+  const script = String.raw`
+$ErrorActionPreference = 'Stop'
+$cases = @(
+  [pscustomobject]@{ Name = 'null'; Value = $null },
+  [pscustomobject]@{ Name = 'empty'; Value = [Guid[]]@() },
+  [pscustomobject]@{ Name = 'single'; Value = [Guid[]]@([Guid]'10000000-0000-4000-8000-000000000001') },
+  [pscustomobject]@{ Name = 'multiple'; Value = [Guid[]]@(
+    [Guid]'10000000-0000-4000-8000-000000000001',
+    [Guid]'20000000-0000-4000-8000-000000000002'
+  ) }
+)
+$result = foreach ($case in $cases) {
+  $CustomerId = $case.Value
+  $arguments = @('--mode', 'bootstrap')
+  if ($null -ne $CustomerId -and $CustomerId.Count -gt 0) {
+    foreach ($id in $CustomerId) { $arguments += @('--customer-id', $id.ToString()) }
+  }
+  [pscustomobject]@{
+    Name = $case.Name
+    CustomerArgumentCount = @($arguments | Where-Object { $_ -eq '--customer-id' }).Count
+  }
+}
+$result | ConvertTo-Json -Compress
+`;
+  const powershell = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+  });
+  assert.equal(powershell.status, 0, powershell.stderr);
+  const result = JSON.parse(powershell.stdout.trim());
+  assert.deepEqual(result, [
+    { Name: "null", CustomerArgumentCount: 0 },
+    { Name: "empty", CustomerArgumentCount: 0 },
+    { Name: "single", CustomerArgumentCount: 1 },
+    { Name: "multiple", CustomerArgumentCount: 2 },
+  ]);
+});
+
+test("bootstrap, as_of, and auto modes do not require customer IDs", () => {
+  const runner = readFileSync(new URL("./customer-window-360-boleta-analytics-v1-runner.mjs", import.meta.url), "utf8");
+  assert.match(runner, /\["canary", "auto", "bootstrap", "as_of"\]\.includes\(options\.mode\)/);
+  assert.match(runner, /if \(options\.mode === "canary"\)/);
+  assert.match(runner, /else if \(options\.customerIds\.length\)/);
 });
 
 test("wrapper uses a separate DPAPI/TLS configuration and never HMAC", () => {
