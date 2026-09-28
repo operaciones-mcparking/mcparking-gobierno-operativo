@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
-  CALCULATION_VERSION, clientTlsIsAuthorized, parseArguments, runRunner, safeError,
+  CALCULATION_VERSION, MIN_NEXT_REFRESH_BUDGET_MS, clientTlsIsAuthorized, parseArguments, runRunner, safeError,
 } from "./customer-window-360-boleta-analytics-v1-runner.mjs";
 
 const caFixture = encodeURIComponent(fileURLToPath(import.meta.url));
@@ -99,6 +99,13 @@ test("argument validation separates canary and drain modes", () => {
   assert.throws(() => parseArguments(["--mode", "bootstrap", "--customer-id", id]), /customer_ids_only_allowed/);
   assert.throws(() => parseArguments(["--mode", "canary"]), /canary_customer_ids_required/);
   assert.equal(parseArguments(["--mode", "auto", "--limit", "500"]).limit, 500);
+  assert.equal(parseArguments(["--mode", "as_of", "--max-iterations", "400"]).maxIterations, 400);
+  assert.throws(() => parseArguments(["--mode", "auto", "--max-iterations", "101"]),
+    /max_iterations_not_allowed_for_mode/);
+  assert.throws(() => parseArguments(["--mode", "bootstrap", "--max-iterations", "400"]),
+    /max_iterations_not_allowed_for_mode/);
+  assert.throws(() => parseArguments(["--mode", "as_of", "--max-runtime-ms", "1200001"]),
+    /max_runtime_not_allowed_for_as_of/);
   assert.equal(parseArguments(["--check-connection"]).checkConnection, true);
 });
 
@@ -165,6 +172,67 @@ test("busy lock is a successful no-op", async () => {
     env: fakeFsEnv(), ClientClass: BusyClient });
   assert.equal(result.finalStatus, "skipped_locked");
   assert.equal(result.ok, true);
+});
+
+test("auto can recover on its next run after an earlier skipped lock", async () => {
+  class RecoveringLockClient extends FakeClient {
+    static lockAttempts = 0;
+    async query(sql, params = []) {
+      if (sql.includes("pg_try_advisory_lock")) {
+        this.calls.push({ sql, params });
+        RecoveringLockClient.lockAttempts += 1;
+        return { rows: [{ acquired: RecoveringLockClient.lockAttempts > 1 }] };
+      }
+      return super.query(sql, params);
+    }
+  }
+  RecoveringLockClient.lockAttempts = 0;
+  const options = parseArguments(["--mode", "auto", "--pause-ms", "0"]);
+  const skipped = await runRunner({ options, env: fakeFsEnv(), ClientClass: RecoveringLockClient });
+  const recovered = await runRunner({ options, env: fakeFsEnv(), ClientClass: RecoveringLockClient,
+    wait: async () => {} });
+  assert.equal(skipped.finalStatus, "skipped_locked");
+  assert.equal(recovered.finalStatus, "success_drained");
+  assert.equal(recovered.iterations, 2);
+});
+
+test("as_of stops partial before an unsafe next RPC and a later run resumes to drain", async () => {
+  let clock = 0;
+  let remainingBatches = 12;
+  class PersistentBacklogClient extends FakeClient {
+    async query(sql, params = []) {
+      if (sql.includes("select public.customer_window_refresh_boleta_analytics_v1_m2m")) {
+        this.calls.push({ sql, params });
+        clock += 15_500;
+        remainingBatches -= 1;
+        return { rows: [{ result: { ok: true, mode: "as_of", processedProfiles: 500,
+          removedProfiles: 0, hasMore: remainingBatches > 0, calculationVersion: CALCULATION_VERSION } }] };
+      }
+      return super.query(sql, params);
+    }
+  }
+  const first = await runRunner({
+    options: parseArguments(["--mode", "as_of", "--max-iterations", "400",
+      "--max-runtime-ms", "60000", "--pause-ms", "2000"]),
+    env: fakeFsEnv(), ClientClass: PersistentBacklogClient, now: () => clock,
+    wait: async (ms) => { clock += ms; },
+  });
+  assert.equal(MIN_NEXT_REFRESH_BUDGET_MS, 30_000);
+  assert.equal(first.finalStatus, "success_partial");
+  assert.equal(first.iterations, 2);
+  assert.equal(first.hasMore, true);
+  assert.equal(remainingBatches, 10);
+
+  clock = 0;
+  const resumed = await runRunner({
+    options: parseArguments(["--mode", "as_of", "--max-iterations", "400",
+      "--max-runtime-ms", "1200000", "--pause-ms", "0"]),
+    env: fakeFsEnv(), ClientClass: PersistentBacklogClient, now: () => clock,
+    wait: async () => {},
+  });
+  assert.equal(resumed.finalStatus, "success_drained");
+  assert.equal(resumed.iterations, 10);
+  assert.equal(remainingBatches, 0);
 });
 
 test("as_of without backlog is a successful drained no-op", async () => {

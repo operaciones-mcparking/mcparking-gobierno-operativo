@@ -5,7 +5,7 @@ param(
   [ValidateSet('Canary', 'Auto', 'Bootstrap', 'AsOf')][string]$Mode,
   [Parameter(ParameterSetName = 'Run')][Guid[]]$CustomerId,
   [Parameter(ParameterSetName = 'Run')][ValidateRange(1, 500)][int]$Limit = 500,
-  [Parameter(ParameterSetName = 'Run')][ValidateRange(1, 100)][int]$MaxIterations = 10,
+  [Parameter(ParameterSetName = 'Run')][ValidateRange(1, 400)][int]$MaxIterations = 10,
   [Parameter(ParameterSetName = 'Run')][ValidateRange(1000, 7200000)][int]$MaxRuntimeMs = 1200000,
   [Parameter(ParameterSetName = 'Run')][ValidateRange(0, 60000)][int]$PauseMs = 2000,
   [Parameter(ParameterSetName = 'Run')][switch]$IncludeCounts,
@@ -207,6 +207,8 @@ try {
   if ($PSCmdlet.ParameterSetName -eq 'Run') {
     if ($Mode -eq 'Canary' -and (!$CustomerId -or $CustomerId.Count -lt 1)) { throw 'Canary requires explicit customer UUIDs.' }
     if ($Mode -ne 'Canary' -and $CustomerId -and $CustomerId.Count -gt 0) { throw 'Customer UUIDs are only valid in Canary mode.' }
+    if ($Mode -ne 'AsOf' -and $MaxIterations -gt 100) { throw 'Only AsOf may use more than 100 iterations.' }
+    if ($Mode -eq 'AsOf' -and $MaxRuntimeMs -gt 1200000) { throw 'AsOf runtime cannot exceed 20 minutes.' }
   }
   $node = Resolve-NodeExecutable -Requested $NodePath
   $settings = Read-Settings

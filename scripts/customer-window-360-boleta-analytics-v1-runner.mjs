@@ -7,6 +7,7 @@ export const EXPECTED_LOGIN = "customer_360_boleta_analytics_runner_login";
 export const EXPECTED_DATABASE_USER = `${EXPECTED_LOGIN}.gyejtqetzumphtatifkl`;
 export const CAPABILITY_ROLE = "customer_360_boleta_analytics_runner";
 export const LOCK_KEY = "customer_window_boleta_analytics_v1_refresh";
+export const MIN_NEXT_REFRESH_BUDGET_MS = 30_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_CODE = /^[a-z][a-z0-9_]{0,79}$/;
 
@@ -44,7 +45,7 @@ export function parseArguments(argv) {
     if (token === "--mode") options.mode = next();
     else if (token === "--customer-id") options.customerIds.push(next());
     else if (token === "--limit") options.limit = integer(next(), "limit", 1, 500);
-    else if (token === "--max-iterations") options.maxIterations = integer(next(), "maxIterations", 1, 100);
+    else if (token === "--max-iterations") options.maxIterations = integer(next(), "maxIterations", 1, 400);
     else if (token === "--max-runtime-ms") options.maxRuntimeMs = integer(next(), "maxRuntimeMs", 1_000, 7_200_000);
     else if (token === "--pause-ms") options.pauseMs = integer(next(), "pauseMs", 0, 60_000);
     else if (token === "--include-counts") options.includeCounts = true;
@@ -70,6 +71,12 @@ export function parseArguments(argv) {
     options.maxIterations = 1;
   } else if (options.customerIds.length) {
     throw new RunnerError("customer_ids_only_allowed_for_canary", "arguments");
+  }
+  if (options.mode !== "as_of" && options.maxIterations > 100) {
+    throw new RunnerError("max_iterations_not_allowed_for_mode", "arguments");
+  }
+  if (options.mode === "as_of" && options.maxRuntimeMs > 1_200_000) {
+    throw new RunnerError("max_runtime_not_allowed_for_as_of", "arguments");
   }
   return options;
 }
@@ -161,6 +168,7 @@ export async function runRunner({ options, env = process.env, ClientClass = pg.C
   let hasMore = false;
   let statusBefore = null;
   let statusAfter = null;
+  let longestRefreshMs = 0;
   const event = (type, fields = {}) => emit({ event: type, runId, mode: options.mode ?? "connection_check", ...fields });
   try {
     client = new ClientClass(loadConnection(env));
@@ -241,11 +249,17 @@ export async function runRunner({ options, env = process.env, ClientClass = pg.C
       canaryCustomerCount: options.mode === "canary" ? options.customerIds.length : undefined });
     do {
       if (now() - started >= options.maxRuntimeMs) break;
+      if (iterations > 0) {
+        const nextRefreshBudgetMs = Math.max(MIN_NEXT_REFRESH_BUDGET_MS, longestRefreshMs * 2) + options.pauseMs;
+        if (now() - started + nextRefreshBudgetMs > options.maxRuntimeMs) break;
+      }
       phase = "refresh";
+      const refreshStarted = now();
       const payload = validateRefresh((await client.query(
         "select public.customer_window_refresh_boleta_analytics_v1_m2m($1::uuid[], $2::integer, $3::text) as result",
         [options.mode === "canary" ? options.customerIds : null, options.limit, effectiveMode],
       )).rows[0]?.result, effectiveMode);
+      longestRefreshMs = Math.max(longestRefreshMs, now() - refreshStarted);
       iterations += 1;
       processedTotal += payload.processedProfiles;
       removedTotal += payload.removedProfiles;
@@ -254,7 +268,6 @@ export async function runRunner({ options, env = process.env, ClientClass = pg.C
         processedProfiles: payload.processedProfiles, removedProfiles: payload.removedProfiles,
         hasMore, calculationVersion: payload.calculationVersion });
       if (!hasMore || options.mode === "canary" || iterations >= options.maxIterations) break;
-      if (now() - started + options.pauseMs >= options.maxRuntimeMs) break;
       await wait(options.pauseMs);
     } while (true);
     phase = "status_after";

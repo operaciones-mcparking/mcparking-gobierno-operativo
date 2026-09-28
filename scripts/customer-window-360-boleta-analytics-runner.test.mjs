@@ -137,6 +137,13 @@ test("bootstrap, as_of, and auto modes do not require customer IDs", () => {
   assert.match(runner, /else if \(options\.customerIds\.length\)/);
 });
 
+test("PowerShell limits the expanded drain budget to AsOf and forwards exact CLI arguments", () => {
+  assert.match(wrapper, /ValidateRange\(1, 400\).*\$MaxIterations = 10/);
+  assert.match(wrapper, /\$Mode -ne 'AsOf' -and \$MaxIterations -gt 100/);
+  assert.match(wrapper, /\$Mode -eq 'AsOf' -and \$MaxRuntimeMs -gt 1200000/);
+  assert.match(wrapper, /'--max-iterations', \[string\]\$MaxIterations, '--max-runtime-ms', \[string\]\$MaxRuntimeMs/);
+});
+
 test("wrapper uses a separate DPAPI/TLS configuration and never HMAC", () => {
   assert.match(wrapper, /Customer360BoletaAnalytics/);
   assert.match(wrapper, /runner-password\.dpapi/);
