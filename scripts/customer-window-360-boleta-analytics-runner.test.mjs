@@ -57,6 +57,79 @@ $result | ConvertTo-Json -Compress
   ]);
 });
 
+test("PowerShell 5.1 maps every public mode to the exact runner CLI mode", () => {
+  assert.match(wrapper, /function Resolve-CliMode/);
+  assert.match(wrapper, /'AsOf' \{ return 'as_of' \}/);
+  assert.doesNotMatch(wrapper, /\$Mode\.ToLowerInvariant\(\)/);
+
+  const script = String.raw`
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+function Resolve-CliMode {
+  param([string]$RequestedMode)
+  switch ($RequestedMode) {
+    'Canary' { return 'canary' }
+    'Auto' { return 'auto' }
+    'Bootstrap' { return 'bootstrap' }
+    'AsOf' { return 'as_of' }
+    default { throw 'Unsupported runner mode.' }
+  }
+}
+$result = [ordered]@{}
+foreach ($mode in @('Canary','Auto','Bootstrap','AsOf')) {
+  $result[$mode] = Resolve-CliMode -RequestedMode $mode
+}
+try { [void](Resolve-CliMode -RequestedMode 'Unsupported'); $result.FailClosed = $false }
+catch { $result.FailClosed = $true }
+$result | ConvertTo-Json -Compress
+`;
+  const powershell = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+  });
+  assert.equal(powershell.status, 0, powershell.stderr);
+  assert.deepEqual(JSON.parse(powershell.stdout.trim()), {
+    Canary: "canary", Auto: "auto", Bootstrap: "bootstrap", AsOf: "as_of", FailClosed: true,
+  });
+});
+
+test("PowerShell 5.1 safely preserves minimal and partial child errors", () => {
+  for (const property of ["mode", "iterations", "processedTotal", "removedTotal", "hasMore", "finalStatus"]) {
+    assert.match(wrapper, new RegExp(`Get-SafeProperty \\$Result '${property}'`));
+  }
+  assert.match(wrapper, /Get-SafeProperty \$child\.Result 'finalStatus'/);
+
+  const script = String.raw`
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+function Get-SafeProperty {
+  param($Value, [string]$Name)
+  if ($null -ne $Value -and $Value.PSObject.Properties.Name -contains $Name) { return $Value.$Name }
+  return $null
+}
+$minimal = '{"ok":false,"code":"invalid_mode"}' | ConvertFrom-Json
+$partial = '{"ok":false,"code":"runner_failed","phase":"refresh","processedProfiles":2}' | ConvertFrom-Json
+$result = [pscustomobject]@{
+  MinimalCode = Get-SafeProperty $minimal 'code'
+  MinimalFinalStatus = Get-SafeProperty $minimal 'finalStatus'
+  MinimalHasMore = Get-SafeProperty $minimal 'hasMore'
+  PartialCode = Get-SafeProperty $partial 'code'
+  PartialPhase = Get-SafeProperty $partial 'phase'
+  PartialProcessedProfiles = Get-SafeProperty $partial 'processedProfiles'
+  PartialRemovedProfiles = Get-SafeProperty $partial 'removedProfiles'
+}
+$result | ConvertTo-Json -Compress
+`;
+  const powershell = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+  });
+  assert.equal(powershell.status, 0, powershell.stderr);
+  assert.deepEqual(JSON.parse(powershell.stdout.trim()), {
+    MinimalCode: "invalid_mode", MinimalFinalStatus: null, MinimalHasMore: null,
+    PartialCode: "runner_failed", PartialPhase: "refresh", PartialProcessedProfiles: 2,
+    PartialRemovedProfiles: null,
+  });
+});
+
 test("bootstrap, as_of, and auto modes do not require customer IDs", () => {
   const runner = readFileSync(new URL("./customer-window-360-boleta-analytics-v1-runner.mjs", import.meta.url), "utf8");
   assert.match(runner, /\["canary", "auto", "bootstrap", "as_of"\]\.includes\(options\.mode\)/);

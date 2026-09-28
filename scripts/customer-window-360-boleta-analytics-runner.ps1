@@ -102,6 +102,17 @@ function Get-SafeProperty {
   return $null
 }
 
+function Resolve-CliMode {
+  param([string]$RequestedMode)
+  switch ($RequestedMode) {
+    'Canary' { return 'canary' }
+    'Auto' { return 'auto' }
+    'Bootstrap' { return 'bootstrap' }
+    'AsOf' { return 'as_of' }
+    default { throw 'Unsupported runner mode.' }
+  }
+}
+
 function Publish-State {
   param($Result, [object[]]$Events, [datetime]$StartedAt, [datetime]$FinishedAt)
   if (-not (Test-Path -LiteralPath $logDirectory -PathType Container) -or
@@ -118,17 +129,18 @@ function Publish-State {
   if (Test-Path -LiteralPath $latestPath -PathType Leaf) {
     try { $prior = Get-Content -LiteralPath $latestPath -Raw | ConvertFrom-Json } catch { $prior = $null }
   }
+  $resultOk = Get-SafeProperty $Result 'ok'
   $latest = [ordered]@{
     lastAttemptAt = $FinishedAt.ToString('o')
-    lastSuccessAt = if ($Result.ok -eq $true) { $FinishedAt.ToString('o') } elseif ($prior) { $prior.lastSuccessAt } else { $null }
-    mode = $Result.mode
+    lastSuccessAt = if ($resultOk -eq $true) { $FinishedAt.ToString('o') } elseif ($prior) { Get-SafeProperty $prior 'lastSuccessAt' } else { $null }
+    mode = Get-SafeProperty $Result 'mode'
     durationMs = [int64]($FinishedAt - $StartedAt).TotalMilliseconds
-    iterations = $Result.iterations
-    processedTotal = $Result.processedTotal
-    removedTotal = $Result.removedTotal
-    hasMore = $Result.hasMore
-    finalStatus = $Result.finalStatus
-    lastSafeError = if ($Result.ok -eq $true) { $null } else { [ordered]@{
+    iterations = Get-SafeProperty $Result 'iterations'
+    processedTotal = Get-SafeProperty $Result 'processedTotal'
+    removedTotal = Get-SafeProperty $Result 'removedTotal'
+    hasMore = Get-SafeProperty $Result 'hasMore'
+    finalStatus = Get-SafeProperty $Result 'finalStatus'
+    lastSafeError = if ($resultOk -eq $true) { $null } else { [ordered]@{
       code = Get-SafeProperty $Result 'code'
       phase = Get-SafeProperty $Result 'phase'
       dbCode = Get-SafeProperty $Result 'dbCode'
@@ -215,7 +227,7 @@ try {
   $arguments = @()
   if ($TestDatabaseConnection) { $arguments += '--check-connection' }
   else {
-    $arguments += @('--mode', $Mode.ToLowerInvariant(), '--limit', [string]$Limit,
+    $arguments += @('--mode', (Resolve-CliMode -RequestedMode $Mode), '--limit', [string]$Limit,
       '--max-iterations', [string]$MaxIterations, '--max-runtime-ms', [string]$MaxRuntimeMs,
       '--pause-ms', [string]$PauseMs)
     if ($null -ne $CustomerId -and $CustomerId.Count -gt 0) {
@@ -227,14 +239,17 @@ try {
   $finishedAt = Get-Date
   if (-not $TestDatabaseConnection) {
     $allEvents = @($child.Events) + @((Select-SafeRecord ([pscustomobject]@{
-      event = 'wrapper_finished'; mode = $child.Result.mode; ok = $child.Result.ok;
-      finalStatus = $child.Result.finalStatus; childExitCode = $child.Result.childExitCode;
+      event = 'wrapper_finished'; mode = Get-SafeProperty $child.Result 'mode';
+      ok = Get-SafeProperty $child.Result 'ok';
+      finalStatus = Get-SafeProperty $child.Result 'finalStatus';
+      childExitCode = Get-SafeProperty $child.Result 'childExitCode';
       finishedAt = $finishedAt.ToString('o')
     })))
     Publish-State -Result $child.Result -Events $allEvents -StartedAt $startedAt -FinishedAt $finishedAt
   }
   $child.Result | ConvertTo-Json -Depth 5 -Compress
-  if ($child.Result.ok -ne $true -or $child.Result.childExitCode -ne 0) { exit 1 }
+  if ((Get-SafeProperty $child.Result 'ok') -ne $true -or
+      (Get-SafeProperty $child.Result 'childExitCode') -ne 0) { exit 1 }
   exit 0
 } catch {
   $safe = [pscustomobject]@{ ok = $false; code = 'wrapper_failed'; phase = 'wrapper';

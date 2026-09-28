@@ -167,6 +167,29 @@ test("busy lock is a successful no-op", async () => {
   assert.equal(result.ok, true);
 });
 
+test("as_of without backlog is a successful drained no-op", async () => {
+  class NoBacklogClient extends FakeClient {
+    async query(sql, params = []) {
+      if (sql.includes("select public.customer_window_refresh_boleta_analytics_v1_m2m")) {
+        this.calls.push({ sql, params });
+        this.iteration += 1;
+        return { rows: [{ result: { ok: true, mode: "as_of", processedProfiles: 0,
+          removedProfiles: 0, hasMore: false, calculationVersion: CALCULATION_VERSION } }] };
+      }
+      return super.query(sql, params);
+    }
+  }
+  const result = await runRunner({ options: parseArguments([
+    "--mode", "as_of", "--limit", "60", "--max-iterations", "1",
+  ]), env: fakeFsEnv(), ClientClass: NoBacklogClient });
+  assert.equal(result.ok, true);
+  assert.equal(result.finalStatus, "success_drained");
+  assert.equal(result.processedTotal, 0);
+  assert.equal(result.removedTotal, 0);
+  assert.equal(result.hasMore, false);
+  assert.equal(result.iterations, 1);
+});
+
 test("counted status is an explicit additional post-run audit", async () => {
   FakeClient.instances = [];
   const options = parseArguments(["--mode", "auto", "--include-counts", "--pause-ms", "0"]);
