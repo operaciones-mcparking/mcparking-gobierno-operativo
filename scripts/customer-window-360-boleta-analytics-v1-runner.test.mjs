@@ -1,0 +1,134 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import {
+  CALCULATION_VERSION, parseArguments, runRunner, safeError,
+} from "./customer-window-360-boleta-analytics-v1-runner.mjs";
+
+const caFixture = encodeURIComponent(fileURLToPath(import.meta.url));
+const url = `postgresql://customer_360_boleta_analytics_runner_login.gyejtqetzumphtatifkl:secret@db.example.test:5432/postgres?sslmode=verify-full&sslrootcert=${caFixture}`;
+
+function fakeFsEnv() {
+  return { BOLETA_ANALYTICS_DATABASE_URL: url };
+}
+
+class FakeClient {
+  static instances = [];
+  constructor(config) { this.config = config; this.calls = []; this.iteration = 0; FakeClient.instances.push(this); }
+  async connect() { this.connected = true; }
+  async end() { this.ended = true; }
+  async query(sql, params = []) {
+    this.calls.push({ sql, params });
+    if (sql.startsWith("set ")) return { rows: [] };
+    if (sql.includes("current_user as")) return { rows: [{
+      current_user_name: "customer_360_boleta_analytics_runner_login",
+      session_user_name: "customer_360_boleta_analytics_runner_login",
+      capability_ok: true, refresh_ok: true, status_ok: true, calculator_denied: true,
+      table_denied: true, create_denied: true, temp_not_explicit: true, temp_via_public: true,
+      statement_timeout: "2min", lock_timeout: "30s",
+    }] };
+    if (sql.includes("pg_try_advisory_lock")) return { rows: [{ acquired: true }] };
+    if (sql.includes("pg_advisory_unlock")) return { rows: [{ pg_advisory_unlock: true }] };
+    if (sql.includes("refresh_status_m2m")) return { rows: [{ status: {
+      calculationVersion: CALCULATION_VERSION, countsIncluded: params[0] === true || sql.includes("(true)"),
+    } }] };
+    if (sql.includes("refresh_boleta_analytics")) {
+      this.iteration += 1;
+      return { rows: [{ result: { ok: true, mode: params[2], processedProfiles: 3,
+        removedProfiles: 0, hasMore: this.iteration < 2, calculationVersion: CALCULATION_VERSION } }] };
+    }
+    throw new Error("unexpected query");
+  }
+}
+
+test("argument validation separates canary and drain modes", () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  assert.equal(parseArguments(["--mode", "canary", "--customer-id", id]).maxIterations, 1);
+  assert.throws(() => parseArguments(["--mode", "bootstrap", "--customer-id", id]), /customer_ids_only_allowed/);
+  assert.throws(() => parseArguments(["--mode", "canary"]), /canary_customer_ids_required/);
+  assert.equal(parseArguments(["--mode", "auto", "--limit", "500"]).limit, 500);
+  assert.equal(parseArguments(["--check-connection"]).checkConnection, true);
+});
+
+test("local runtime certification accepts the direct login only on loopback", async () => {
+  FakeClient.instances = [];
+  const localUrl = `postgresql://customer_360_boleta_analytics_runner_login:secret@localhost:55432/postgres?sslmode=verify-full&sslrootcert=${caFixture}`;
+  const result = await runRunner({ options: parseArguments(["--check-connection"]),
+    env: { BOLETA_ANALYTICS_DATABASE_URL: localUrl, BOLETA_ANALYTICS_LOCAL_RUNTIME_TEST: "1" },
+    ClientClass: FakeClient });
+  assert.equal(result.ok, true);
+  assert.equal(result.mode, "database-connection-check");
+
+  const remoteResult = await runRunner({ options: parseArguments(["--check-connection"]),
+    env: {
+      BOLETA_ANALYTICS_DATABASE_URL: localUrl.replace("localhost", "db.example.test"),
+      BOLETA_ANALYTICS_LOCAL_RUNTIME_TEST: "1",
+    }, ClientClass: FakeClient });
+  assert.equal(remoteResult.code, "database_login_invalid");
+  assert.equal(remoteResult.phase, "env");
+});
+
+test("auto holds one session lock, checks status around the bounded drain, and cleans up", async () => {
+  FakeClient.instances = [];
+  const events = [];
+  const result = await runRunner({
+    options: parseArguments(["--mode", "auto", "--max-iterations", "10", "--pause-ms", "0"]),
+    env: fakeFsEnv(), ClientClass: FakeClient, emit: (event) => events.push(event), wait: async () => {},
+  });
+  assert.equal(result.finalStatus, "success_drained");
+  assert.equal(result.iterations, 2);
+  assert.equal(result.processedTotal, 6);
+  const client = FakeClient.instances[0];
+  assert.equal(client.calls.filter(({ sql }) => sql.includes("pg_try_advisory_lock")).length, 1);
+  assert.equal(client.calls.filter(({ sql }) => sql.includes("pg_advisory_unlock")).length, 1);
+  assert.equal(client.calls.filter(({ sql }) => sql.includes("select public.customer_window_boleta_analytics_v1_refresh_status_m2m")).length, 2);
+  assert.equal(client.calls.filter(({ sql }) => sql.includes("refresh_boleta_analytics_v1_m2m($1::uuid")).length, 2);
+  assert.equal(client.ended, true);
+  assert.deepEqual(events.map(({ event }) => event), ["run_started", "iteration", "iteration", "run_finished"]);
+  assert.doesNotMatch(JSON.stringify({ result, events }), /11111111|secret|postgresql:/i);
+});
+
+test("canary performs exactly one auto RPC and logs only the id count", async () => {
+  FakeClient.instances = [];
+  const id = "11111111-1111-4111-8111-111111111111";
+  const events = [];
+  const result = await runRunner({ options: parseArguments(["--mode", "canary", "--customer-id", id]),
+    env: fakeFsEnv(), ClientClass: FakeClient, emit: (event) => events.push(event) });
+  assert.equal(result.iterations, 1);
+  const call = FakeClient.instances[0].calls.find(({ sql }) => sql.includes("refresh_boleta_analytics_v1_m2m($1::uuid"));
+  assert.equal(call.params[2], "auto");
+  assert.deepEqual(call.params[0], [id]);
+  assert.equal(events[0].canaryCustomerCount, 1);
+  assert.doesNotMatch(JSON.stringify(events), new RegExp(id));
+});
+
+test("busy lock is a successful no-op", async () => {
+  class BusyClient extends FakeClient {
+    async query(sql, params) {
+      if (sql.includes("pg_try_advisory_lock")) { this.calls.push({ sql, params }); return { rows: [{ acquired: false }] }; }
+      return super.query(sql, params);
+    }
+  }
+  const result = await runRunner({ options: parseArguments(["--mode", "as_of"]),
+    env: fakeFsEnv(), ClientClass: BusyClient });
+  assert.equal(result.finalStatus, "skipped_locked");
+  assert.equal(result.ok, true);
+});
+
+test("counted status is an explicit additional post-run audit", async () => {
+  FakeClient.instances = [];
+  const options = parseArguments(["--mode", "auto", "--include-counts", "--pause-ms", "0"]);
+  const result = await runRunner({ options, env: fakeFsEnv(), ClientClass: FakeClient, wait: async () => {} });
+  assert.equal(result.ok, true);
+  const calls = FakeClient.instances[0].calls.filter(({ sql }) => sql.includes("select public.customer_window_boleta_analytics_v1_refresh_status_m2m"));
+  assert.deepEqual(calls.map(({ params }) => params[0]), [false, false, undefined]);
+  assert.match(calls[2].sql, /\(true\)/);
+});
+
+test("errors are fail-closed and expose only safe metadata", () => {
+  const error = Object.assign(new Error("password=secret and row data"), { code: "57014", constraint: "safe_name" });
+  const safe = safeError(error, "refresh");
+  assert.deepEqual(safe, { ok: false, code: "runner_failed", phase: "refresh",
+    dbCode: "57014", dbConstraint: "safe_name" });
+  assert.doesNotMatch(JSON.stringify(safe), /password|secret|row data|stack/i);
+});
