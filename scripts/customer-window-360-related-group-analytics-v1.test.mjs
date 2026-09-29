@@ -94,11 +94,64 @@ test("related analytics tab is lazy, bounded and leaves confirmed analytics unch
   assert.match(view, /Analítica del grupo relacionado/);
   assert.match(view, /No representa una persona confirmada/);
   assert.match(view, /Esta versión no autoriza campañas automáticas/);
-  assert.match(view, /slice\(0, 5\)/);
+  assert.match(view, /slice\(0, RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT\)/);
   assert.match(view, /Ver todos/);
   assert.match(view, /OKP puede aparecer como evidencia histórica en Identidad, no como reserva del grupo/);
   assert.match(drawer, /!related && activeView === "analytics"[\s\S]*Customer360BoletaAnalyticsPanel/);
   assert.doesNotMatch(drawer, /Enviar campaña/);
+});
+
+test("contactability badges explain REVIEW and BLOCKED accessibly without changing the contract", () => {
+  const help = view.slice(
+    view.indexOf("const RELATED_CONTACT_STATUS_HELP"),
+    view.indexOf("function Customer360RelatedGroupAnalyticsPanel"),
+  );
+  assert.match(help, /BLOCKED:[\s\S]*No habilitado para campañas automáticas/);
+  assert.match(help, /Este contacto pertenece a un grupo con identidad en revisión o señales ambiguas/);
+  assert.match(help, /REVIEW:[\s\S]*Requiere revisión/);
+  assert.match(help, /El contacto tiene evidencia útil, pero todavía no cumple las condiciones para uso automático/);
+  assert.match(help, /AUTOMATION_NOT_AUTHORIZED_V1: "Automatización aún no habilitada"/);
+  assert.match(help, /CURRENT_CONFLICT_LINK: "Identidad en conflicto"/);
+  assert.match(help, /MULTIPLE_PROFILES_IN_GROUP: "Varios perfiles relacionados"/);
+  assert.match(help, /MULTIPLE_PHONES_IN_GROUP: "Varios teléfonos asociados"/);
+  assert.match(help, /onMouseEnter=\{\(\) => setOpen\(true\)\}/);
+  assert.match(help, /onFocus=\{\(\) => setOpen\(true\)\}/);
+  assert.match(help, /onClick=\{\(\) => setOpen\(true\)\}/);
+  assert.match(help, /aria-describedby=\{open \? descriptionId : undefined\}/);
+  assert.match(help, /aria-expanded=\{open\}/);
+  assert.match(help, /role="tooltip"/);
+  assert.match(help, /event\.key === "Escape"/);
+  assert.match(help, /document\.addEventListener\("pointerdown", closeOnOutsidePointer\)/);
+  assert.doesNotMatch(help, /reasonCodes\.join/);
+  assert.match(contract, /status: "REVIEW" \| "BLOCKED"/);
+  assert.doesNotMatch(contract, /status: "ELIGIBLE"/);
+  assert.doesNotMatch(help, /Enviar campaña/);
+});
+
+test("large contactability lists stay summarized and paginate twenty candidates at a time", () => {
+  const panel = view.slice(
+    view.indexOf("function Customer360RelatedGroupAnalyticsPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(view, /RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT = 5/);
+  assert.match(view, /RELATED_CONTACT_PAGE_SIZE = 20/);
+  assert.match(panel, /allCandidates\.slice\([\s\S]*contactPage - 1[\s\S]*RELATED_CONTACT_PAGE_SIZE/);
+  assert.match(panel, /allCandidates\.slice\(0, RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT\)/);
+  assert.match(panel, /Alta ambigüedad/);
+  assert.match(panel, /contactos asociados/);
+  assert.match(panel, /Sin candidato único/);
+  assert.match(panel, /Evidencia observada:/);
+  assert.match(panel, /Página \{displayCount\(contactPage\)\} de \{displayCount\(contactPageCount\)\}/);
+  assert.match(panel, /Paginación de candidatos de contacto/);
+  assert.match(panel, />Anterior</);
+  assert.match(panel, />Siguiente</);
+  assert.match(panel, /candidateCount > RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT/);
+  assert.match(panel, /contactPageCount > 1/);
+  assert.match(panel, /\[analytics\.locator\.representationKey, candidateCount\]/);
+  assert.match(panel, /primaryEmail !== null \|\| primaryPhone !== null/);
+  assert.match(panel, /candidate\.eligibility\.status === "BLOCKED"/);
+  assert.doesNotMatch(panel, /ELIGIBLE/);
+  assert.doesNotMatch(panel, /Enviar campaña/);
 });
 
 test("storage estimate and performance contracts stay explicit", () => {

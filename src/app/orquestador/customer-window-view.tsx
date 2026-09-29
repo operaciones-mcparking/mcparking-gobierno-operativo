@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Clock3, Info, RefreshCw, Search, TriangleAlert, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import {
   DataTable,
@@ -1482,22 +1482,129 @@ function Customer360BoletaAnalyticsPanel({ analytics }: { analytics: Customer360
   );
 }
 
-function RelatedContactCandidateRow({ candidate }: { candidate: RelatedGroupContactCandidate }) {
+const RELATED_CONTACT_STATUS_HELP = {
+  BLOCKED: {
+    description: "Este contacto pertenece a un grupo con identidad en revisión o señales ambiguas. Puede revisarse manualmente, pero no debe usarse automáticamente.",
+    title: "No habilitado para campañas automáticas",
+  },
+  REVIEW: {
+    description: "El contacto tiene evidencia útil, pero todavía no cumple las condiciones para uso automático.",
+    title: "Requiere revisión",
+  },
+} as const;
+
+const RELATED_CONTACT_REASON_LABELS: Record<string, string> = {
+  AUTOMATION_NOT_AUTHORIZED_V1: "Automatización aún no habilitada",
+  CURRENT_CONFLICT_LINK: "Identidad en conflicto",
+  MULTIPLE_PHONES_IN_GROUP: "Varios teléfonos asociados",
+  MULTIPLE_PROFILES_IN_GROUP: "Varios perfiles relacionados",
+};
+
+const RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT = 5;
+const RELATED_CONTACT_PAGE_SIZE = 20;
+
+function RelatedContactEligibilityHelp({ candidate }: { candidate: RelatedGroupContactCandidate }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const descriptionId = useId();
   const blocked = candidate.eligibility.status === "BLOCKED";
-  return <li className="grid gap-1 border-t border-[#e4edf4] py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3"><div className="min-w-0"><p className="break-all text-xs font-medium text-navy">{candidate.displayValue}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">Observado en el grupo · {displayCount(candidate.bookingCount)} reservas · {displayDate(candidate.firstSeenAt)} a {displayDate(candidate.lastSeenAt)}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">{candidate.eligibility.reasonCodes.join(" · ")}</p></div><ValueBadge tone={blocked ? "warning" : "neutral"}>{candidate.eligibility.status}</ValueBadge></li>;
+  const help = RELATED_CONTACT_STATUS_HELP[candidate.eligibility.status];
+  const reasons = candidate.eligibility.reasonCodes.map(
+    (reason) => RELATED_CONTACT_REASON_LABELS[reason] ?? "Motivo de revisión no disponible",
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (event.target instanceof Node && !containerRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [open]);
+
+  return <div
+    className="relative inline-flex justify-self-start sm:justify-self-end"
+    onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+    }}
+    onMouseEnter={() => setOpen(true)}
+    onMouseLeave={() => setOpen(false)}
+    ref={containerRef}
+  >
+    <button
+      aria-controls={descriptionId}
+      aria-describedby={open ? descriptionId : undefined}
+      aria-expanded={open}
+      aria-label={`${candidate.eligibility.status}: ${help.title}. Mostrar explicación`}
+      className="cursor-help rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sea focus-visible:ring-offset-2"
+      onClick={() => setOpen(true)}
+      onFocus={() => setOpen(true)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setOpen(false);
+          event.currentTarget.blur();
+        }
+      }}
+      type="button"
+    >
+      <ValueBadge tone={blocked ? "warning" : "neutral"}>{candidate.eligibility.status}</ValueBadge>
+    </button>
+    {open ? <div
+      className="absolute right-0 top-full z-20 mt-2 w-72 max-w-[calc(100vw-3rem)] rounded-md border border-[#d6e1ea] bg-white p-3 text-left shadow-lg"
+      id={descriptionId}
+      role="tooltip"
+    >
+      <p className="text-xs font-semibold text-navy">{help.title}</p>
+      <p className="mt-1 text-[11px] leading-4 text-slate-600">{help.description}</p>
+      {reasons.length ? <div className="mt-2 border-t border-[#e4edf4] pt-2"><p className="text-[10px] font-medium uppercase text-slate-500">Motivos</p><ul className="mt-1 space-y-1">{reasons.map((reason, index) => <li className="text-[11px] leading-4 text-slate-600" key={`${candidate.normalizedValue}:${index}`}>• {reason}</li>)}</ul></div> : null}
+    </div> : null}
+  </div>;
+}
+
+function RelatedContactCandidateRow({ candidate }: { candidate: RelatedGroupContactCandidate }) {
+  return <li className="grid gap-1 border-t border-[#e4edf4] py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3"><div className="min-w-0"><p className="break-all text-xs font-medium text-navy">{candidate.displayValue}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">Observado en el grupo · {displayCount(candidate.bookingCount)} reservas · {displayDate(candidate.firstSeenAt)} a {displayDate(candidate.lastSeenAt)}</p></div><RelatedContactEligibilityHelp candidate={candidate} /></li>;
 }
 
 function Customer360RelatedGroupAnalyticsPanel({ analytics }: {
   analytics: Customer360RelatedGroupAnalytics;
 }) {
   const [showAllContacts, setShowAllContacts] = useState(false);
-  const candidates = showAllContacts ? analytics.contactability.candidates
-    : analytics.contactability.candidates.slice(0, 5);
+  const [contactPage, setContactPage] = useState(1);
+  const allCandidates = analytics.contactability.candidates;
+  const candidateCount = allCandidates.length;
+  const contactPageCount = Math.max(1, Math.ceil(candidateCount / RELATED_CONTACT_PAGE_SIZE));
+  const candidates = showAllContacts
+    ? allCandidates.slice(
+      (contactPage - 1) * RELATED_CONTACT_PAGE_SIZE,
+      contactPage * RELATED_CONTACT_PAGE_SIZE,
+    )
+    : allCandidates.slice(0, RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT);
   const brandRows = Object.entries(analytics.origin.brandCounts);
   const parkingRows = Object.entries(analytics.origin.parkingCounts);
   const familyRows = Object.entries(analytics.origin.parkingFamilyCounts);
   const primaryEmail = analytics.contactability.primaryContactCandidate.email;
   const primaryPhone = analytics.contactability.primaryContactCandidate.phone;
+  const emailCandidateCount = allCandidates.filter((candidate) => candidate.type === "email").length;
+  const phoneCandidateCount = candidateCount - emailCandidateCount;
+  const blockedCandidateCount = allCandidates.filter(
+    (candidate) => candidate.eligibility.status === "BLOCKED",
+  ).length;
+  const reviewCandidateCount = candidateCount - blockedCandidateCount;
+  const hasPrimaryCandidate = primaryEmail !== null || primaryPhone !== null;
+
+  useEffect(() => {
+    setShowAllContacts(false);
+    setContactPage(1);
+  }, [analytics.locator.representationKey, candidateCount]);
+
+  function toggleAllContacts() {
+    setShowAllContacts((current) => {
+      if (current) setContactPage(1);
+      return !current;
+    });
+  }
+
   return <div className="grid gap-4">
     <section><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-navy">Analítica del grupo relacionado</h2><p className="mt-1 text-xs leading-5 text-slate-600">Lectura agregada del grupo relacionado en el snapshot vigente. No representa una persona confirmada.</p></div><ValueBadge tone="warning">Solo lectura</ValueBadge></div></section>
     <AnalyticsBlock title="Actividad del grupo"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Reservas válidas" value={displayCount(analytics.activity.totalValidBookings)} /><AnalyticsMetric label="Últimos 12 meses" value={displayCount(analytics.activity.bookings12m)} /><AnalyticsMetric label="Últimos 24 meses" value={displayCount(analytics.activity.bookings24m)} /><AnalyticsMetric label="Primera actividad" value={displayDate(analytics.activity.firstActivityAt)} /><AnalyticsMetric label="Última actividad" value={displayDate(analytics.activity.lastActivityAt)} /></dl></AnalyticsBlock>
@@ -1505,7 +1612,15 @@ function Customer360RelatedGroupAnalyticsPanel({ analytics }: {
     <AnalyticsBlock title="Comportamiento BOLETA observado"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Días económicos" value={displayOptionalCount(analytics.behavior.economicDays.total)} /><AnalyticsMetric label="Duración promedio" value={analytics.behavior.economicDays.average === null ? "No disponible" : `${displayDecimal(analytics.behavior.economicDays.average)} días`} /><AnalyticsMetric label="Duración mediana" value={analytics.behavior.economicDays.median === null ? "No disponible" : `${displayDecimal(analytics.behavior.economicDays.median)} días`} /><AnalyticsMetric label="Lead time promedio" value={analytics.behavior.leadTimeDays.average === null ? "No disponible" : `${displayDecimal(analytics.behavior.leadTimeDays.average)} días`} /><AnalyticsMetric label="Lead time mediano" value={analytics.behavior.leadTimeDays.median === null ? "No disponible" : `${displayDecimal(analytics.behavior.leadTimeDays.median)} días`} /><AnalyticsMetric label="Llegadas weekday" value={displayCount(analytics.behavior.arrivals.weekdayCount)} /><AnalyticsMetric label="Llegadas weekend" value={displayCount(analytics.behavior.arrivals.weekendCount)} /><AnalyticsMetric label="Meses activos" value={displayCount(analytics.behavior.arrivals.activeMonths)} /></dl></AnalyticsBlock>
     <AnalyticsBlock title="Economía BOLETA observada del grupo"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Muestra económica" value={displayCount(analytics.boletaEconomics.sampleSize)} /><AnalyticsMetric label="Monto pagado" value={displayClp(analytics.boletaEconomics.paidAmount)} /><AnalyticsMetric label="Monto lista" value={displayClp(analytics.boletaEconomics.listAmount)} /><AnalyticsMetric label="Ticket promedio" value={displayClp(analytics.boletaEconomics.averageTicket)} /><AnalyticsMetric label="Ticket mediano" value={displayClp(analytics.boletaEconomics.medianTicket)} /><AnalyticsMetric label="ADR pagado" value={displayAdr(analytics.boletaEconomics.paidAdr)} /><AnalyticsMetric label="ADR lista" value={displayAdr(analytics.boletaEconomics.listAdr)} /><AnalyticsMetric label="Uso de descuentos" value={displayPercentage(analytics.boletaEconomics.discountUsagePct)} /></dl></AnalyticsBlock>
     <AnalyticsBlock title="Origen"><div className="mt-2 grid gap-3 sm:grid-cols-3"><div><p className="text-[11px] text-slate-500">Marcas MCP / EAP</p><p className="mt-1 text-xs text-navy">{brandRows.map(([value, count]) => `${value}: ${displayCount(count)}`).join(" · ") || "No disponible"}</p></div><div><p className="text-[11px] text-slate-500">Parkings</p><p className="mt-1 text-xs text-navy">{parkingRows.map(([value, count]) => `${value}: ${displayCount(count)}`).join(" · ") || "No disponible"}</p></div><div><p className="text-[11px] text-slate-500">Familias</p><p className="mt-1 text-xs text-navy">{familyRows.map(([value, count]) => `${value}: ${displayCount(count)}`).join(" · ") || "No disponible"}</p></div></div><p className="mt-3 text-[10px] leading-4 text-slate-500">La actividad económica del grupo contiene únicamente reservas MCP/EAP asignadas al snapshot. OKP puede aparecer como evidencia histórica en Identidad, no como reserva del grupo.</p></AnalyticsBlock>
-    <AnalyticsBlock title="Contactabilidad"><div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5"><p className="text-xs font-medium text-amber-900">Revisión humana requerida</p><p className="mt-1 text-[11px] leading-4 text-amber-800">Los contactos son evidencia observada. Esta versión no autoriza campañas automáticas.</p></div><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-[11px] text-slate-500">Mejor email candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryEmail?.displayValue ?? "Sin candidato único"}</dd></div><div><dt className="text-[11px] text-slate-500">Mejor teléfono candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryPhone?.displayValue ?? "Sin candidato único"}</dd></div></dl><ul className="mt-3">{candidates.map((candidate) => <RelatedContactCandidateRow candidate={candidate} key={`${candidate.type}:${candidate.normalizedValue}`} />)}</ul>{analytics.contactability.candidates.length > 5 ? <button className="mt-2 text-xs font-medium text-sea underline underline-offset-2" onClick={() => setShowAllContacts((value) => !value)} type="button">{showAllContacts ? "Ver menos" : `Ver todos (${displayCount(analytics.contactability.candidates.length)})`}</button> : null}<p className="mt-3 text-[10px] leading-4 text-slate-500">El detalle histórico cross-source permanece en la pestaña Identidad.</p></AnalyticsBlock>
+    <AnalyticsBlock title="Contactabilidad">
+      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5"><p className="text-xs font-medium text-amber-900">Revisión humana requerida</p><p className="mt-1 text-[11px] leading-4 text-amber-800">Los contactos son evidencia observada. Esta versión no autoriza campañas automáticas.</p></div>
+      {candidateCount > RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT ? <div className="mt-3 rounded-lg border border-[#dbe6ee] bg-[#f7fafc] px-3 py-2.5"><p className="text-xs font-semibold text-navy">{hasPrimaryCandidate ? "Contactabilidad amplia" : "Alta ambigüedad"}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-600">{displayCount(candidateCount)} contactos asociados · {hasPrimaryCandidate ? "Candidato principal disponible" : "Sin candidato único"}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">Evidencia observada: {displayCount(emailCandidateCount)} emails · {displayCount(phoneCandidateCount)} teléfonos · {displayCount(blockedCandidateCount)} BLOCKED{reviewCandidateCount > 0 ? ` · ${displayCount(reviewCandidateCount)} REVIEW` : ""}</p></div> : null}
+      <dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-[11px] text-slate-500">Mejor email candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryEmail?.displayValue ?? "Sin candidato único"}</dd></div><div><dt className="text-[11px] text-slate-500">Mejor teléfono candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryPhone?.displayValue ?? "Sin candidato único"}</dd></div></dl>
+      <ul className="mt-3">{candidates.map((candidate) => <RelatedContactCandidateRow candidate={candidate} key={`${candidate.type}:${candidate.normalizedValue}`} />)}</ul>
+      {showAllContacts && contactPageCount > 1 ? <nav aria-label="Paginación de candidatos de contacto" className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#e4edf4] pt-3"><p aria-live="polite" className="text-[11px] text-slate-500">Página {displayCount(contactPage)} de {displayCount(contactPageCount)} · {displayCount(candidateCount)} candidatos</p><div className="flex items-center gap-2"><button className="rounded border border-[#d6e1ea] px-2.5 py-1 text-[11px] font-medium text-navy disabled:cursor-not-allowed disabled:opacity-40" disabled={contactPage === 1} onClick={() => setContactPage((page) => Math.max(1, page - 1))} type="button">Anterior</button><button className="rounded border border-[#d6e1ea] px-2.5 py-1 text-[11px] font-medium text-navy disabled:cursor-not-allowed disabled:opacity-40" disabled={contactPage === contactPageCount} onClick={() => setContactPage((page) => Math.min(contactPageCount, page + 1))} type="button">Siguiente</button></div></nav> : null}
+      {candidateCount > RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT ? <button aria-expanded={showAllContacts} className="mt-2 text-xs font-medium text-sea underline underline-offset-2" onClick={toggleAllContacts} type="button">{showAllContacts ? "Ver menos" : `Ver todos (${displayCount(candidateCount)})`}</button> : null}
+      <p className="mt-3 text-[10px] leading-4 text-slate-500">El detalle histórico cross-source permanece en la pestaña Identidad.</p>
+    </AnalyticsBlock>
     <AnalyticsBlock title="Calidad / cobertura"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3"><AnalyticsMetric label="Sin monto pagado" value={displayCount(analytics.dataQuality.missingPaidAmountCount)} /><AnalyticsMetric label="Sin duración" value={displayCount(analytics.dataQuality.missingDurationCount)} /><AnalyticsMetric label="Sin lead time" value={displayCount(analytics.dataQuality.missingLeadTimeCount)} /><AnalyticsMetric label="Lead time inválido" value={displayCount(analytics.dataQuality.invalidLeadTimeCount)} /><AnalyticsMetric label="Parking sin familia" value={displayCount(analytics.dataQuality.missingParkingFamilyCount)} /><AnalyticsMetric label="Corte analítico" value={analytics.dataQuality.asOfDate} /></dl></AnalyticsBlock>
   </div>;
 }
