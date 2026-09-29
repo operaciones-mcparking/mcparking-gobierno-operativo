@@ -363,7 +363,7 @@ function displayDiscountPercentage(value: unknown) {
   const percentage = finiteNumber(value);
   if (percentage === null) return "No disponible";
   const formatted = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(percentage * 100);
-  return percentage > 0 ? `-${formatted}%` : `${formatted}%`;
+  return `${formatted}%`;
 }
 
 function displayPercentage(value: unknown) {

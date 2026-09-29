@@ -63,6 +63,24 @@ test("normalizer preserves real zeroes and unavailable nulls", () => {
   assert.equal(normalized.travelBehavior.stayDays.total, null);
 });
 
+test("weighted discount percentages render as positive contract values", () => {
+  const body = view.match(/function displayDiscountPercentage\(value: unknown\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(body);
+  const render = (value) => Function("value", "finiteNumber", "Intl", body)(
+    value,
+    (input) => typeof input === "number" && Number.isFinite(input) ? input : null,
+    Intl,
+  );
+
+  assert.equal(render(0.40), "40%");
+  assert.equal(render(0.9155623172715772), "91,6%");
+  assert.equal(render(0), "0%");
+  assert.equal(render(null), "No disponible");
+  assert.notEqual(render(0.40), "-40%");
+  assert.notEqual(render(0.9155623172715772), "-91,6%");
+  assert.equal(render(-0.40), "-40%");
+});
+
 test("analytics contract is confirmed-only and validates source shares and warnings", () => {
   assert.equal(normalizeCustomer360BoletaAnalytics({ ...fixture(), locator: { ...locator, representationType: "related_review" } }), null);
   assert.equal(normalizeCustomer360BoletaAnalytics({ ...fixture(), sources: { ...fixture().sources, shares: { MCP_EAP: "1" } } }), null);
