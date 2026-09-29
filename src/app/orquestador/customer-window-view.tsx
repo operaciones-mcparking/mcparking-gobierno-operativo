@@ -58,6 +58,11 @@ import {
   type Customer360Overview,
 } from "@/lib/customer-window/customer-360-v1";
 import {
+  normalizeCustomer360BoletaAnalytics,
+  type Customer360BoletaAnalytics,
+  type Customer360BoletaAnalyticsWarning,
+} from "@/lib/customer-window/customer-360-boleta-analytics-v1";
+import {
   normalizeCustomerWindowRefreshHealth,
   type CustomerWindowRefreshHealth,
 } from "@/lib/customer-window/customer-refresh-health";
@@ -1392,12 +1397,92 @@ function Customer360ObservedContactGroup({ contactType, count, locator, onStale,
   );
 }
 
+const analyticsMonthLabels = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+const analyticsWarningLabels: Record<Customer360BoletaAnalyticsWarning, string> = {
+  ECONOMICS_PARTIAL: "La muestra económica está incompleta.",
+  GAP_LOW_SAMPLE: "Hay pocos intervalos para estimar recompra.",
+  LEAD_TIME_PARTIAL: "El lead time está disponible solo para parte de las reservas.",
+  LOW_SAMPLE_SIZE: "La muestra BOLETA es pequeña.",
+  SEASONALITY_LOW_SAMPLE: "La muestra estacional aún es limitada.",
+};
+
+function AnalyticsMetric({ detail, label, value }: { detail?: string; label: string; value: string }) {
+  return <div className="min-w-0"><dt className="text-[10px] text-slate-500">{label}</dt><dd className="mt-0.5 text-sm font-medium text-navy">{value}</dd>{detail ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{detail}</p> : null}</div>;
+}
+
+function AnalyticsBlock({ children, title }: { children: ReactNode; title: string }) {
+  return <section className="border-t border-[#e4edf4] pt-4 first:border-t-0 first:pt-0"><h3 className="text-sm font-medium text-slate-700">{title}</h3>{children}</section>;
+}
+
+function Customer360BoletaAnalyticsPanel({ analytics }: { analytics: Customer360BoletaAnalytics }) {
+  const stale = analytics.asOfDate < getSantiagoDateKey();
+  const sourceRows = Object.entries(analytics.sources.counts).sort((left, right) => right[1] - left[1]);
+  const topMonths = analytics.travelBehavior.arrivalMonthPattern.topMonths
+    .map((month) => analyticsMonthLabels[month - 1]).filter(Boolean).join(", ");
+  const topCodes = analytics.pricing.discountCodes.slice(0, 6);
+  return (
+    <div aria-label="Analítica BOLETA" className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-3 py-2">
+        <div>
+          <p className="text-xs font-medium text-navy">Analítica BOLETA</p>
+          <p className="text-[10px] text-slate-500">Calculada {displayDate(analytics.asOfDate)} · PACK excluido</p>
+          <p className="mt-0.5 text-[10px] text-slate-600">Historial válido: {displayCount(analytics.dataQuality.totalValidBookingCount)} reservas · {displayCount(analytics.dataQuality.eligibleBoletaBookingCount)} BOLETA · {displayCount(analytics.dataQuality.excludedPackBookingCount)} PACK</p>
+        </div>
+        <ValueBadge tone={stale ? "warning" : "success"}>{stale ? `Datos al ${displayDate(analytics.asOfDate)}` : "Vigente"}</ValueBadge>
+      </div>
+
+      <AnalyticsBlock title="Actividad"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        <AnalyticsMetric label="Reservas BOLETA" value={displayCount(analytics.activity.boletaReservationCount)} />
+        <AnalyticsMetric label="Últimos 12 meses" value={displayCount(analytics.activity.boletaReservations12m)} />
+        <AnalyticsMetric label="Últimos 24 meses" value={displayCount(analytics.activity.boletaReservations24m)} />
+        <AnalyticsMetric label="Recompras" value={displayCount(analytics.activity.boletaRepurchaseCount)} />
+        <AnalyticsMetric label="Primera compra" value={displayDate(analytics.activity.firstBoletaPurchaseAt)} />
+        <AnalyticsMetric label="Última compra" value={displayDate(analytics.activity.lastBoletaPurchaseAt)} />
+        <AnalyticsMetric label="Compra anterior" value={displayDate(analytics.activity.previousBoletaPurchaseAt)} />
+        <AnalyticsMetric label="Días desde última compra" value={displayOptionalCount(analytics.activity.daysSinceLastBoletaPurchase)} />
+        <AnalyticsMetric label="Mediana entre compras" value={analytics.activity.medianBoletaGapDays === null ? "No disponible" : `${displayDecimal(analytics.activity.medianBoletaGapDays)} días`} />
+      </dl></AnalyticsBlock>
+
+      <AnalyticsBlock title="Valor"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        <AnalyticsMetric label="Ticket promedio" value={displayClp(analytics.value.averageTicket)} />
+        <AnalyticsMetric label="Ticket mediano" value={displayClp(analytics.value.medianTicket)} />
+        <AnalyticsMetric label="ADR pagado" value={displayAdr(analytics.pricing.paidAdr)} />
+        <AnalyticsMetric label="ADR lista" value={displayAdr(analytics.pricing.listAdr)} />
+        <AnalyticsMetric label="Días económicos" value={displayOptionalCount(analytics.travelBehavior.stayDays.total)} />
+        <AnalyticsMetric label="Duración promedio" value={analytics.travelBehavior.stayDays.average === null ? "No disponible" : `${displayDecimal(analytics.travelBehavior.stayDays.average)} días`} />
+        <AnalyticsMetric label="Duración mediana" value={analytics.travelBehavior.stayDays.median === null ? "No disponible" : `${displayDecimal(analytics.travelBehavior.stayDays.median)} días`} />
+      </dl></AnalyticsBlock>
+
+      <AnalyticsBlock title="Descuentos"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        <AnalyticsMetric label="Reservas con descuento" value={displayCount(analytics.pricing.discountedBoletaCount)} />
+        <AnalyticsMetric label="Uso de descuentos" value={displayPercentage(analytics.pricing.discountUsagePct)} />
+        <AnalyticsMetric label="Descuento total" value={displayClp(analytics.pricing.totalDiscountAmount)} />
+        <AnalyticsMetric label="Descuento ponderado" value={displayDiscountPercentage(analytics.pricing.weightedDiscountPct)} />
+      </dl>{topCodes.length ? <div className="mt-3 flex flex-wrap gap-1.5">{topCodes.map((code) => <ValueBadge key={`${code.source}-${code.type}-${code.code}`} tone="neutral">{code.code} · {displayCount(code.uses)}</ValueBadge>)}</div> : <p className="mt-2 text-xs text-slate-500">Sin códigos de descuento observados.</p>}</AnalyticsBlock>
+
+      <AnalyticsBlock title="Comportamiento"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+        <AnalyticsMetric label="Lead time promedio" value={analytics.travelBehavior.bookingLeadDays.average === null ? "No disponible" : `${displayDecimal(analytics.travelBehavior.bookingLeadDays.average)} días`} />
+        <AnalyticsMetric label="Lead time mediano" value={analytics.travelBehavior.bookingLeadDays.median === null ? "No disponible" : `${displayDecimal(analytics.travelBehavior.bookingLeadDays.median)} días`} />
+        <AnalyticsMetric label="Llegadas weekday" value={displayCount(analytics.travelBehavior.arrivalDayPattern.weekdayCount)} />
+        <AnalyticsMetric label="Llegadas weekend" value={displayCount(analytics.travelBehavior.arrivalDayPattern.weekendCount)} />
+        <AnalyticsMetric label="Meses principales" value={topMonths || "No disponible"} />
+        <AnalyticsMetric label="Meses activos" value={displayCount(analytics.travelBehavior.arrivalMonthPattern.activeMonthCount)} />
+        <AnalyticsMetric label="Años distintos" value={displayCount(analytics.travelBehavior.arrivalMonthPattern.distinctArrivalYears)} />
+      </dl></AnalyticsBlock>
+
+      <AnalyticsBlock title="Origen"><div className="mt-2 grid gap-2 sm:grid-cols-2">{sourceRows.length ? sourceRows.map(([source, count]) => <div className="flex items-center justify-between gap-3 rounded-lg border border-[#e4edf4] px-3 py-2" key={source}><div><p className="text-xs font-medium text-navy">{source === "MCP_EAP" ? "MCP / EAP" : source}</p><p className="text-[10px] text-slate-500">{displayCount(count)} reservas</p></div><ValueBadge tone="neutral">{displayPercentage(analytics.sources.shares[source] ?? null)}</ValueBadge></div>) : <p className="text-xs text-slate-500">Sin distribución por fuente disponible.</p>}</div><dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3"><AnalyticsMetric label="Marcas principales" value={analytics.sources.topBrands.join(", ") || "No disponible"} /><AnalyticsMetric label="Parkings principales" value={analytics.sources.topParkings.join(", ") || "No disponible"} /><AnalyticsMetric label="Familias de parking" value={Object.keys(analytics.sources.parkingFamilyCounts).join(", ") || "No disponible"} /><AnalyticsMetric label="Marca preferida" value={analytics.sources.preferredBrand ?? "Sin preferencia única"} /><AnalyticsMetric label="Parking preferido" value={analytics.sources.preferredParking ?? "Sin preferencia única"} /></dl></AnalyticsBlock>
+
+      <AnalyticsBlock title="Calidad"><div className="mt-2 flex flex-wrap gap-1.5">{analytics.dataQuality.warnings.length ? analytics.dataQuality.warnings.map((warning) => <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] text-amber-900" key={warning} title={warning}>{analyticsWarningLabels[warning]}</span>) : <ValueBadge tone="success">Sin advertencias</ValueBadge>}</div><p className="mt-2 text-[10px] leading-4 text-slate-500">{displayCount(analytics.dataQuality.eligibleBoletaBookingCount)} reservas BOLETA elegibles · {displayCount(analytics.dataQuality.excludedPackBookingCount)} PACK excluidas · versión {analytics.calculationVersion}</p></AnalyticsBlock>
+    </div>
+  );
+}
+
 function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   activeSnapshotId: string | null;
   onClose: () => void;
   representation: CustomerRepresentationListItemV2 | null;
 }) {
-  const [activeView, setActiveView] = useState<"summary" | "history" | "identity">("summary");
+  const [activeView, setActiveView] = useState<"summary" | "history" | "identity" | "analytics">("summary");
   const [overview, setOverview] = useState<Customer360Overview | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -1410,9 +1495,14 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   const [identityDetailLoading, setIdentityDetailLoading] = useState(false);
   const [identityDetailError, setIdentityDetailError] = useState<string | null>(null);
   const [identityDetailStale, setIdentityDetailStale] = useState(false);
+  const [analytics, setAnalytics] = useState<Customer360BoletaAnalytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+  const [analyticsNotMaterialized, setAnalyticsNotMaterialized] = useState(false);
   const overviewController = useRef<AbortController | null>(null);
   const bookingsController = useRef<AbortController | null>(null);
   const identityDetailController = useRef<AbortController | null>(null);
+  const analyticsController = useRef<AbortController | null>(null);
   const resolvedAuthoritySnapshotId = representation?.representationType === "related_review"
     ? representation.authoritySnapshotId ?? activeSnapshotId
     : null;
@@ -1505,13 +1595,22 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
 
   useEffect(() => {
     identityDetailController.current?.abort();
+    analyticsController.current?.abort();
+    analyticsController.current = null;
     identityDetailController.current = null;
     setActiveView("summary");
     setIdentityDetail(null);
     setIdentityDetailLoading(false);
     setIdentityDetailError(null);
     setIdentityDetailStale(false);
-    return () => identityDetailController.current?.abort();
+    setAnalytics(null);
+    setAnalyticsLoading(false);
+    setAnalyticsError(null);
+    setAnalyticsNotMaterialized(false);
+    return () => {
+      identityDetailController.current?.abort();
+      analyticsController.current?.abort();
+    };
   }, [representation, resolvedAuthoritySnapshotId]);
 
   async function openCustomer360Identity() {
@@ -1564,6 +1663,54 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     }
   }
 
+  async function openCustomer360Analytics() {
+    setActiveView("analytics");
+    if (!representation || representation.representationType !== "confirmed_customer"
+      || analytics || analyticsLoading || analyticsController.current) return;
+    const expectedLocator = customer360LocatorFromRepresentation({
+      activeSnapshotId: null,
+      representationId: representation.representationId,
+      representationKey: representation.representationKey,
+      representationType: representation.representationType,
+    });
+    if (!expectedLocator) {
+      setAnalyticsError("No fue posible determinar el cliente confirmado.");
+      return;
+    }
+    const controller = new AbortController();
+    analyticsController.current = controller;
+    setAnalyticsLoading(true);
+    setAnalyticsError(null);
+    setAnalyticsNotMaterialized(false);
+    try {
+      const params = customer360RequestParams(expectedLocator);
+      const body = await getJson(`/api/orquestador/customer-window/360/analytics?${params.toString()}`, controller.signal);
+      if (analyticsController.current !== controller) return;
+      const normalized = normalizeCustomer360BoletaAnalytics(body);
+      if (!normalized || normalized.locator.representationKey !== representation.representationKey) {
+        throw new Error("Respuesta de analítica Customer 360 inválida.");
+      }
+      setAnalytics(normalized);
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
+      if (analyticsController.current !== controller) return;
+      if (cause instanceof CustomerWindowHttpError && cause.status === 404
+        && cause.code === "boleta_analytics_not_materialized") {
+        setAnalyticsNotMaterialized(true);
+      } else if (cause instanceof CustomerWindowHttpError && cause.status === 409
+        && cause.code === "stale_representation") {
+        setStale(true);
+      } else {
+        setAnalyticsError("No fue posible cargar la analítica BOLETA.");
+      }
+    } finally {
+      if (analyticsController.current === controller) {
+        analyticsController.current = null;
+        setAnalyticsLoading(false);
+      }
+    }
+  }
+
   if (!representation) return null;
   const related = representation.representationType === "related_review";
   const contacts = overview?.identity.contacts;
@@ -1586,20 +1733,20 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     >
       <div className="grid gap-5">
         {stale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">Representación no vigente</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : null}
-        {!stale && related ? <div aria-label="Secciones de Customer 360" className="flex gap-1 border-b border-[#d6e1ea]" role="tablist">{(["summary", "history", "identity"] as const).map((view) => <button aria-selected={activeView === view} className={`border-b-2 px-3 py-2 text-xs font-medium ${activeView === view ? "border-sea text-navy" : "border-transparent text-slate-500 hover:text-navy"}`} key={view} onClick={() => view === "identity" ? void openCustomer360Identity() : setActiveView(view)} role="tab" type="button">{view === "summary" ? "Resumen" : view === "history" ? "Historial" : "Identidad"}</button>)}</div> : null}
-        {!stale && (!related || activeView === "summary") && overviewError ? <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{overviewError}</p> : null}
-        {!stale && (!related || activeView === "summary") ? <CustomerSummaryMetrics fields={overview ? [
+        {!stale ? <div aria-label="Secciones de Customer 360" className="flex gap-1 overflow-x-auto border-b border-[#d6e1ea]" role="tablist">{(related ? ["summary", "history", "identity"] as const : ["summary", "history", "analytics"] as const).map((view) => <button aria-selected={activeView === view} className={`whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium ${activeView === view ? "border-sea text-navy" : "border-transparent text-slate-500 hover:text-navy"}`} key={view} onClick={() => view === "identity" ? void openCustomer360Identity() : view === "analytics" ? void openCustomer360Analytics() : setActiveView(view)} role="tab" type="button">{view === "summary" ? "Resumen" : view === "history" ? "Historial" : view === "identity" ? "Identidad" : "Analítica"}</button>)}</div> : null}
+        {!stale && activeView === "summary" && overviewError ? <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{overviewError}</p> : null}
+        {!stale && activeView === "summary" ? <CustomerSummaryMetrics fields={overview ? [
           { label: "Reservas", value: displayCount(overview.summary.totalBookings) },
           { label: "Primera reserva", value: displayDate(overview.summary.firstBookingAt) },
           { label: "Última reserva", value: displayDate(overview.summary.lastBookingAt) },
           { label: "Identidad", value: <ValueBadge tone={related ? "warning" : "success"}>{related ? "En revisión" : "Confirmada"}</ValueBadge> },
         ] : []} loading={overviewLoading} /> : null}
 
-        {!stale && (!related || activeView === "summary") && overview ? <section aria-labelledby="customer-360-contacts-title"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-700" id="customer-360-contacts-title">Contacto</h3><ValueBadge tone={related ? "warning" : "success"}>{related ? "Observado" : "Directo"}</ValueBadge></div><div className="mt-2 grid gap-2 sm:grid-cols-2">{overview.identity.contacts.semantics === "observed" && locator ? <><Customer360ObservedContactGroup contactType="email" count={overview.identity.contacts.emailCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.emailPreview} /><Customer360ObservedContactGroup contactType="phone" count={overview.identity.contacts.phoneCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.phonePreview} /></> : <><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Email · {displayCount(overview.identity.contacts.emailCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singleEmail ?? "No disponible"}</p></div><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Teléfono · {displayCount(overview.identity.contacts.phoneCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singlePhone ?? "No disponible"}</p></div></>}</div></section> : null}
+        {!stale && activeView === "summary" && overview ? <section aria-labelledby="customer-360-contacts-title"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-700" id="customer-360-contacts-title">Contacto</h3><ValueBadge tone={related ? "warning" : "success"}>{related ? "Observado" : "Directo"}</ValueBadge></div><div className="mt-2 grid gap-2 sm:grid-cols-2">{overview.identity.contacts.semantics === "observed" && locator ? <><Customer360ObservedContactGroup contactType="email" count={overview.identity.contacts.emailCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.emailPreview} /><Customer360ObservedContactGroup contactType="phone" count={overview.identity.contacts.phoneCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.phonePreview} /></> : <><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Email · {displayCount(overview.identity.contacts.emailCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singleEmail ?? "No disponible"}</p></div><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Teléfono · {displayCount(overview.identity.contacts.phoneCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singlePhone ?? "No disponible"}</p></div></>}</div></section> : null}
 
-        {!stale && (!related || activeView === "summary") && overview ? <section aria-labelledby="customer-360-coverage-title"><h3 className="text-sm font-medium text-slate-700" id="customer-360-coverage-title">Cobertura por fuente</h3><div className="mt-2 flex flex-wrap gap-2">{overview.sourceCoverage.map((coverage) => <div className="rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-2" key={coverage.source}><p className="text-[11px] text-slate-500">{coverage.source}</p><p className="text-sm font-medium text-navy">{displayCount(coverage.bookingCount)} reservas</p></div>)}</div></section> : null}
+        {!stale && activeView === "summary" && overview ? <section aria-labelledby="customer-360-coverage-title"><h3 className="text-sm font-medium text-slate-700" id="customer-360-coverage-title">Cobertura por fuente</h3><div className="mt-2 flex flex-wrap gap-2">{overview.sourceCoverage.map((coverage) => <div className="rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-2" key={coverage.source}><p className="text-[11px] text-slate-500">{coverage.source}</p><p className="text-sm font-medium text-navy">{displayCount(coverage.bookingCount)} reservas</p></div>)}</div></section> : null}
 
-        {!stale && (!related || activeView === "history") ? <CustomerPurchaseTimeline
+        {!stale && activeView === "history" ? <CustomerPurchaseTimeline
           emptyDescription="No hay reservas para mostrar."
           error={bookingsError}
           items={timelineItems}
@@ -1610,6 +1757,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
           pageCount={pageCount}
           total={bookings?.pagination.total ?? 0}
         /> : null}
+        {!stale && !related && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica BOLETA...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">Este cliente confirmado todavía no tiene una lectura BOLETA disponible.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : analytics ? <Customer360BoletaAnalyticsPanel analytics={analytics} /> : null : null}
         {!stale && related && activeView === "identity" ? identityDetailStale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">stale_representation</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : <CustomerIdentityResolutionPanel detail={identityDetail} detailError={identityDetailError} detailLoading={identityDetailLoading} group={null} loading={false} onBack={() => setActiveView("summary")} onRetry={() => void openCustomer360Identity()} timeline={null} /> : null}
       </div>
     </CustomerRepresentationDrawerFrame>

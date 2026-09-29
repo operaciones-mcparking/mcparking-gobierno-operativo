@@ -111,6 +111,7 @@ export type Customer360Bookings = {
 
 export type Customer360ErrorCode =
   | "authority_not_found"
+  | "boleta_analytics_not_materialized"
   | "invalid_locator_contract"
   | "representation_authority_unavailable"
   | "representation_contract_unavailable"

@@ -79,6 +79,10 @@ import {
   type Customer360ObservedContacts,
   type Customer360Overview,
 } from "@/lib/customer-window/customer-360-v1";
+import {
+  normalizeCustomer360BoletaAnalytics,
+  type Customer360BoletaAnalytics,
+} from "@/lib/customer-window/customer-360-boleta-analytics-v1";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -1053,6 +1057,7 @@ export async function listCustomerWindowV2RepresentationBookings(
 
 const customer360ErrorCodes = new Set<Customer360ErrorCode>([
   "authority_not_found",
+  "boleta_analytics_not_materialized",
   "invalid_locator_contract",
   "representation_authority_unavailable",
   "representation_contract_unavailable",
@@ -1076,6 +1081,24 @@ export async function getCustomerWindow360Overview(
     });
     if (error) return { data: null, errorCode: customer360ErrorCode(error) };
     const normalized = normalizeCustomer360Overview(data);
+    return normalized
+      ? { data: normalized, errorCode: null }
+      : { data: null, errorCode: "representation_contract_unavailable" };
+  } catch {
+    return { data: null, errorCode: "representation_contract_unavailable" };
+  }
+}
+
+export async function getCustomerWindow360BoletaAnalytics(
+  locator: Customer360Locator,
+): Promise<Customer360ReadResult<Customer360BoletaAnalytics>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_360_v1_get_boleta_analytics", {
+      p_locator: locator,
+    });
+    if (error) return { data: null, errorCode: customer360ErrorCode(error) };
+    const normalized = normalizeCustomer360BoletaAnalytics(data);
     return normalized
       ? { data: normalized, errorCode: null }
       : { data: null, errorCode: "representation_contract_unavailable" };

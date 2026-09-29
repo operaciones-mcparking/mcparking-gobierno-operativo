@@ -65,8 +65,9 @@ test("client remains demand-driven and paginates timeline by twenty", () => {
   assert.match(drawerBlock, /setBookingsPage\(\(page\) => page \+ 1\)/);
 });
 
-test("unvalidated commercial amount metrics are not rendered", () => {
-  assert.doesNotMatch(view, /totalSpend|averageTicket|source_total_amount/);
+test("only certified BOLETA commercial metrics are rendered", () => {
+  assert.doesNotMatch(view, /totalSpend|source_total_amount/);
+  assert.match(view, /analytics\.value\.averageTicket/);
   assert.match(view, /Reservas históricas/);
   assert.match(view, /Historial de compras/);
 });
