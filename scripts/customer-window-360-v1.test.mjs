@@ -206,10 +206,10 @@ test("UI loads overview and bookings independently and renders stale safely", ()
   assert.match(request, /readonly code: string \| null/);
 });
 
-test("related Customer 360 restores lazy read-only identity tabs without changing confirmed", () => {
+test("related Customer 360 exposes lazy analytics and identity tabs without changing confirmed", () => {
   const drawer = view.slice(view.indexOf("function Customer360Drawer"), view.indexOf("function RelatedReviewDrawer"));
-  assert.match(drawer, /\["summary", "history", "identity"\]/);
-  for (const label of ["Resumen", "Historial", "Identidad"]) assert.match(drawer, new RegExp(`"${label}"`));
+  assert.match(drawer, /\["summary", "history", "analytics", "identity"\]/);
+  for (const label of ["Resumen", "Historial", "Analítica", "Identidad"]) assert.match(drawer, new RegExp(`"${label}"`));
   assert.match(drawer, /representation\.representationType !== "related_review"[\s\S]*return/);
   assert.match(drawer, /async function openCustomer360Identity\(\)[\s\S]*action: "identity-resolution-detail-v2"/);
   assert.match(drawer, /relatedGroupId: representation\.relatedGroupId/);

@@ -20,7 +20,8 @@ export function customer360LocatorFromRequest(request: NextRequest): Customer360
 export function customer360ErrorStatus(code: Customer360ErrorCode) {
   if (code === "invalid_locator_contract") return 400;
   if (code === "authority_not_found" || code === "representation_not_found"
-    || code === "boleta_analytics_not_materialized") return 404;
+    || code === "boleta_analytics_not_materialized"
+    || code === "related_group_analytics_not_materialized") return 404;
   if (code === "stale_representation") return 409;
   return 503;
 }

@@ -63,6 +63,11 @@ import {
   type Customer360BoletaAnalyticsWarning,
 } from "@/lib/customer-window/customer-360-boleta-analytics-v1";
 import {
+  normalizeCustomer360RelatedGroupAnalytics,
+  type Customer360RelatedGroupAnalytics,
+  type RelatedGroupContactCandidate,
+} from "@/lib/customer-window/customer-360-related-group-analytics-v1";
+import {
   normalizeCustomerWindowRefreshHealth,
   type CustomerWindowRefreshHealth,
 } from "@/lib/customer-window/customer-refresh-health";
@@ -1477,6 +1482,34 @@ function Customer360BoletaAnalyticsPanel({ analytics }: { analytics: Customer360
   );
 }
 
+function RelatedContactCandidateRow({ candidate }: { candidate: RelatedGroupContactCandidate }) {
+  const blocked = candidate.eligibility.status === "BLOCKED";
+  return <li className="grid gap-1 border-t border-[#e4edf4] py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3"><div className="min-w-0"><p className="break-all text-xs font-medium text-navy">{candidate.displayValue}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">Observado en el grupo · {displayCount(candidate.bookingCount)} reservas · {displayDate(candidate.firstSeenAt)} a {displayDate(candidate.lastSeenAt)}</p><p className="mt-1 text-[10px] leading-4 text-slate-500">{candidate.eligibility.reasonCodes.join(" · ")}</p></div><ValueBadge tone={blocked ? "warning" : "neutral"}>{candidate.eligibility.status}</ValueBadge></li>;
+}
+
+function Customer360RelatedGroupAnalyticsPanel({ analytics }: {
+  analytics: Customer360RelatedGroupAnalytics;
+}) {
+  const [showAllContacts, setShowAllContacts] = useState(false);
+  const candidates = showAllContacts ? analytics.contactability.candidates
+    : analytics.contactability.candidates.slice(0, 5);
+  const brandRows = Object.entries(analytics.origin.brandCounts);
+  const parkingRows = Object.entries(analytics.origin.parkingCounts);
+  const familyRows = Object.entries(analytics.origin.parkingFamilyCounts);
+  const primaryEmail = analytics.contactability.primaryContactCandidate.email;
+  const primaryPhone = analytics.contactability.primaryContactCandidate.phone;
+  return <div className="grid gap-4">
+    <section><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-navy">Analítica del grupo relacionado</h2><p className="mt-1 text-xs leading-5 text-slate-600">Lectura agregada del grupo relacionado en el snapshot vigente. No representa una persona confirmada.</p></div><ValueBadge tone="warning">Solo lectura</ValueBadge></div></section>
+    <AnalyticsBlock title="Actividad del grupo"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Reservas válidas" value={displayCount(analytics.activity.totalValidBookings)} /><AnalyticsMetric label="Últimos 12 meses" value={displayCount(analytics.activity.bookings12m)} /><AnalyticsMetric label="Últimos 24 meses" value={displayCount(analytics.activity.bookings24m)} /><AnalyticsMetric label="Primera actividad" value={displayDate(analytics.activity.firstActivityAt)} /><AnalyticsMetric label="Última actividad" value={displayDate(analytics.activity.lastActivityAt)} /></dl></AnalyticsBlock>
+    <AnalyticsBlock title="BOLETA / PACK"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3"><AnalyticsMetric label="Reservas BOLETA" value={displayCount(analytics.activity.boletaBookings)} /><AnalyticsMetric label="Reservas PACK" value={displayCount(analytics.activity.packBookings)} /></dl></AnalyticsBlock>
+    <AnalyticsBlock title="Comportamiento BOLETA observado"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Días económicos" value={displayOptionalCount(analytics.behavior.economicDays.total)} /><AnalyticsMetric label="Duración promedio" value={analytics.behavior.economicDays.average === null ? "No disponible" : `${displayDecimal(analytics.behavior.economicDays.average)} días`} /><AnalyticsMetric label="Duración mediana" value={analytics.behavior.economicDays.median === null ? "No disponible" : `${displayDecimal(analytics.behavior.economicDays.median)} días`} /><AnalyticsMetric label="Lead time promedio" value={analytics.behavior.leadTimeDays.average === null ? "No disponible" : `${displayDecimal(analytics.behavior.leadTimeDays.average)} días`} /><AnalyticsMetric label="Lead time mediano" value={analytics.behavior.leadTimeDays.median === null ? "No disponible" : `${displayDecimal(analytics.behavior.leadTimeDays.median)} días`} /><AnalyticsMetric label="Llegadas weekday" value={displayCount(analytics.behavior.arrivals.weekdayCount)} /><AnalyticsMetric label="Llegadas weekend" value={displayCount(analytics.behavior.arrivals.weekendCount)} /><AnalyticsMetric label="Meses activos" value={displayCount(analytics.behavior.arrivals.activeMonths)} /></dl></AnalyticsBlock>
+    <AnalyticsBlock title="Economía BOLETA observada del grupo"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Muestra económica" value={displayCount(analytics.boletaEconomics.sampleSize)} /><AnalyticsMetric label="Monto pagado" value={displayClp(analytics.boletaEconomics.paidAmount)} /><AnalyticsMetric label="Monto lista" value={displayClp(analytics.boletaEconomics.listAmount)} /><AnalyticsMetric label="Ticket promedio" value={displayClp(analytics.boletaEconomics.averageTicket)} /><AnalyticsMetric label="Ticket mediano" value={displayClp(analytics.boletaEconomics.medianTicket)} /><AnalyticsMetric label="ADR pagado" value={displayAdr(analytics.boletaEconomics.paidAdr)} /><AnalyticsMetric label="ADR lista" value={displayAdr(analytics.boletaEconomics.listAdr)} /><AnalyticsMetric label="Uso de descuentos" value={displayPercentage(analytics.boletaEconomics.discountUsagePct)} /></dl></AnalyticsBlock>
+    <AnalyticsBlock title="Origen"><div className="mt-2 grid gap-3 sm:grid-cols-3"><div><p className="text-[11px] text-slate-500">Marcas MCP / EAP</p><p className="mt-1 text-xs text-navy">{brandRows.map(([value, count]) => `${value}: ${displayCount(count)}`).join(" · ") || "No disponible"}</p></div><div><p className="text-[11px] text-slate-500">Parkings</p><p className="mt-1 text-xs text-navy">{parkingRows.map(([value, count]) => `${value}: ${displayCount(count)}`).join(" · ") || "No disponible"}</p></div><div><p className="text-[11px] text-slate-500">Familias</p><p className="mt-1 text-xs text-navy">{familyRows.map(([value, count]) => `${value}: ${displayCount(count)}`).join(" · ") || "No disponible"}</p></div></div><p className="mt-3 text-[10px] leading-4 text-slate-500">La actividad económica del grupo contiene únicamente reservas MCP/EAP asignadas al snapshot. OKP puede aparecer como evidencia histórica en Identidad, no como reserva del grupo.</p></AnalyticsBlock>
+    <AnalyticsBlock title="Contactabilidad"><div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5"><p className="text-xs font-medium text-amber-900">Revisión humana requerida</p><p className="mt-1 text-[11px] leading-4 text-amber-800">Los contactos son evidencia observada. Esta versión no autoriza campañas automáticas.</p></div><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-[11px] text-slate-500">Mejor email candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryEmail?.displayValue ?? "Sin candidato único"}</dd></div><div><dt className="text-[11px] text-slate-500">Mejor teléfono candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryPhone?.displayValue ?? "Sin candidato único"}</dd></div></dl><ul className="mt-3">{candidates.map((candidate) => <RelatedContactCandidateRow candidate={candidate} key={`${candidate.type}:${candidate.normalizedValue}`} />)}</ul>{analytics.contactability.candidates.length > 5 ? <button className="mt-2 text-xs font-medium text-sea underline underline-offset-2" onClick={() => setShowAllContacts((value) => !value)} type="button">{showAllContacts ? "Ver menos" : `Ver todos (${displayCount(analytics.contactability.candidates.length)})`}</button> : null}<p className="mt-3 text-[10px] leading-4 text-slate-500">El detalle histórico cross-source permanece en la pestaña Identidad.</p></AnalyticsBlock>
+    <AnalyticsBlock title="Calidad / cobertura"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3"><AnalyticsMetric label="Sin monto pagado" value={displayCount(analytics.dataQuality.missingPaidAmountCount)} /><AnalyticsMetric label="Sin duración" value={displayCount(analytics.dataQuality.missingDurationCount)} /><AnalyticsMetric label="Sin lead time" value={displayCount(analytics.dataQuality.missingLeadTimeCount)} /><AnalyticsMetric label="Lead time inválido" value={displayCount(analytics.dataQuality.invalidLeadTimeCount)} /><AnalyticsMetric label="Parking sin familia" value={displayCount(analytics.dataQuality.missingParkingFamilyCount)} /><AnalyticsMetric label="Corte analítico" value={analytics.dataQuality.asOfDate} /></dl></AnalyticsBlock>
+  </div>;
+}
+
 function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   activeSnapshotId: string | null;
   onClose: () => void;
@@ -1496,6 +1529,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   const [identityDetailError, setIdentityDetailError] = useState<string | null>(null);
   const [identityDetailStale, setIdentityDetailStale] = useState(false);
   const [analytics, setAnalytics] = useState<Customer360BoletaAnalytics | null>(null);
+  const [relatedAnalytics, setRelatedAnalytics] = useState<Customer360RelatedGroupAnalytics | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsNotMaterialized, setAnalyticsNotMaterialized] = useState(false);
@@ -1604,6 +1638,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     setIdentityDetailError(null);
     setIdentityDetailStale(false);
     setAnalytics(null);
+    setRelatedAnalytics(null);
     setAnalyticsLoading(false);
     setAnalyticsError(null);
     setAnalyticsNotMaterialized(false);
@@ -1665,16 +1700,16 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
 
   async function openCustomer360Analytics() {
     setActiveView("analytics");
-    if (!representation || representation.representationType !== "confirmed_customer"
-      || analytics || analyticsLoading || analyticsController.current) return;
+    if (!representation || analytics || relatedAnalytics || analyticsLoading
+      || analyticsController.current) return;
     const expectedLocator = customer360LocatorFromRepresentation({
-      activeSnapshotId: null,
+      activeSnapshotId: resolvedAuthoritySnapshotId,
       representationId: representation.representationId,
       representationKey: representation.representationKey,
       representationType: representation.representationType,
     });
     if (!expectedLocator) {
-      setAnalyticsError("No fue posible determinar el cliente confirmado.");
+      setAnalyticsError("No fue posible determinar la autoridad de la representación.");
       return;
     }
     const controller = new AbortController();
@@ -1686,22 +1721,28 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
       const params = customer360RequestParams(expectedLocator);
       const body = await getJson(`/api/orquestador/customer-window/360/analytics?${params.toString()}`, controller.signal);
       if (analyticsController.current !== controller) return;
-      const normalized = normalizeCustomer360BoletaAnalytics(body);
+      const normalized = representation.representationType === "confirmed_customer"
+        ? normalizeCustomer360BoletaAnalytics(body)
+        : normalizeCustomer360RelatedGroupAnalytics(body);
       if (!normalized || normalized.locator.representationKey !== representation.representationKey) {
         throw new Error("Respuesta de analítica Customer 360 inválida.");
       }
-      setAnalytics(normalized);
+      if (representation.representationType === "confirmed_customer") setAnalytics(normalized as Customer360BoletaAnalytics);
+      else setRelatedAnalytics(normalized as Customer360RelatedGroupAnalytics);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
       if (analyticsController.current !== controller) return;
       if (cause instanceof CustomerWindowHttpError && cause.status === 404
-        && cause.code === "boleta_analytics_not_materialized") {
+        && (cause.code === "boleta_analytics_not_materialized"
+          || cause.code === "related_group_analytics_not_materialized")) {
         setAnalyticsNotMaterialized(true);
       } else if (cause instanceof CustomerWindowHttpError && cause.status === 409
         && cause.code === "stale_representation") {
         setStale(true);
       } else {
-        setAnalyticsError("No fue posible cargar la analítica BOLETA.");
+        setAnalyticsError(representation.representationType === "confirmed_customer"
+          ? "No fue posible cargar la analítica BOLETA."
+          : "No fue posible cargar la analítica del grupo relacionado.");
       }
     } finally {
       if (analyticsController.current === controller) {
@@ -1733,7 +1774,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     >
       <div className="grid gap-5">
         {stale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">Representación no vigente</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : null}
-        {!stale ? <div aria-label="Secciones de Customer 360" className="flex gap-1 overflow-x-auto border-b border-[#d6e1ea]" role="tablist">{(related ? ["summary", "history", "identity"] as const : ["summary", "history", "analytics"] as const).map((view) => <button aria-selected={activeView === view} className={`whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium ${activeView === view ? "border-sea text-navy" : "border-transparent text-slate-500 hover:text-navy"}`} key={view} onClick={() => view === "identity" ? void openCustomer360Identity() : view === "analytics" ? void openCustomer360Analytics() : setActiveView(view)} role="tab" type="button">{view === "summary" ? "Resumen" : view === "history" ? "Historial" : view === "identity" ? "Identidad" : "Analítica"}</button>)}</div> : null}
+        {!stale ? <div aria-label="Secciones de Customer 360" className="flex gap-1 overflow-x-auto border-b border-[#d6e1ea]" role="tablist">{(related ? ["summary", "history", "analytics", "identity"] as const : ["summary", "history", "analytics"] as const).map((view) => <button aria-selected={activeView === view} className={`whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium ${activeView === view ? "border-sea text-navy" : "border-transparent text-slate-500 hover:text-navy"}`} key={view} onClick={() => view === "identity" ? void openCustomer360Identity() : view === "analytics" ? void openCustomer360Analytics() : setActiveView(view)} role="tab" type="button">{view === "summary" ? "Resumen" : view === "history" ? "Historial" : view === "identity" ? "Identidad" : "Analítica"}</button>)}</div> : null}
         {!stale && activeView === "summary" && overviewError ? <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{overviewError}</p> : null}
         {!stale && activeView === "summary" ? <CustomerSummaryMetrics fields={overview ? [
           { label: "Reservas", value: displayCount(overview.summary.totalBookings) },
@@ -1758,6 +1799,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
           total={bookings?.pagination.total ?? 0}
         /> : null}
         {!stale && !related && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica BOLETA...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">Este cliente confirmado todavía no tiene una lectura BOLETA disponible.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : analytics ? <Customer360BoletaAnalyticsPanel analytics={analytics} /> : null : null}
+        {!stale && related && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica del grupo...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">El snapshot vigente todavía no contiene la lectura analítica del grupo.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : relatedAnalytics ? <Customer360RelatedGroupAnalyticsPanel analytics={relatedAnalytics} /> : null : null}
         {!stale && related && activeView === "identity" ? identityDetailStale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">stale_representation</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : <CustomerIdentityResolutionPanel detail={identityDetail} detailError={identityDetailError} detailLoading={identityDetailLoading} group={null} loading={false} onBack={() => setActiveView("summary")} onRetry={() => void openCustomer360Identity()} timeline={null} /> : null}
       </div>
     </CustomerRepresentationDrawerFrame>

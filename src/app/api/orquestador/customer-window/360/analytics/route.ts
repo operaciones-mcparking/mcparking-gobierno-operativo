@@ -5,7 +5,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { customer360ErrorStatus, customer360LocatorFromRequest } from "@/lib/customer-window/customer-360-http";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
-import { getCustomerWindow360BoletaAnalytics } from "@/lib/orquestador/supabase-admin";
+import {
+  getCustomerWindow360BoletaAnalytics,
+  getCustomerWindow360RelatedGroupAnalytics,
+} from "@/lib/orquestador/supabase-admin";
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
 
@@ -19,14 +22,16 @@ export async function GET(request: NextRequest) {
   }
 
   const locator = customer360LocatorFromRequest(request);
-  if (!locator || locator.representationType !== "confirmed_customer") {
+  if (!locator) {
     return NextResponse.json(
       { code: "invalid_locator_contract", ok: false },
       { headers: noStoreHeaders, status: 400 },
     );
   }
 
-  const result = await getCustomerWindow360BoletaAnalytics(locator);
+  const result = locator.representationType === "confirmed_customer"
+    ? await getCustomerWindow360BoletaAnalytics(locator)
+    : await getCustomerWindow360RelatedGroupAnalytics(locator);
   if (result.errorCode) {
     return NextResponse.json(
       { code: result.errorCode, ok: false },
