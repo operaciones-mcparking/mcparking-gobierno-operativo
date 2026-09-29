@@ -19,6 +19,7 @@ import {
   getCustomerWindowV2RepresentationSummary,
   listCustomerWindowBookings,
   listCustomerWindowCustomersByPurchasePeriod,
+  listCustomerWindowOperationalRepresentationsByPurchasePeriod,
   listCustomerWindowV2RepresentationBookings,
   listCustomerWindowV2RepresentationsByPurchasePeriod,
   searchCustomerWindowCustomers,
@@ -157,6 +158,30 @@ export async function GET(request: NextRequest) {
     });
     return result.error
       ? jsonError("No fue posible consultar representaciones por periodo.", 500, result.retryable)
+      : NextResponse.json(result.data, { headers: noStoreHeaders });
+  }
+
+  if (action === "operational-list-v2") {
+    const from = request.nextUrl.searchParams.get("from") ?? "";
+    const to = request.nextUrl.searchParams.get("to") ?? "";
+    const family = request.nextUrl.searchParams.get("family") ?? "";
+    const page = boundedInteger(request.nextUrl.searchParams.get("page"), 1, postgresIntegerMaximum);
+    const pageSize = boundedInteger(request.nextUrl.searchParams.get("pageSize"), 25, 100);
+    if (
+      !isValidDateValue(from) || !isValidDateValue(to) || from > to
+      || !allowedFamilies.has(family) || page === null || pageSize === null
+    ) {
+      return jsonError("Listado operacional por fuente invalido.", 400);
+    }
+    const result = await listCustomerWindowOperationalRepresentationsByPurchasePeriod({
+      family: family as "MCP_EAP" | "OKP",
+      from,
+      page,
+      pageSize,
+      to,
+    });
+    return result.error
+      ? jsonError("No fue posible consultar clientes por fuente.", 500, result.retryable)
       : NextResponse.json(result.data, { headers: noStoreHeaders });
   }
 

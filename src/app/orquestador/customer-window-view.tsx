@@ -31,13 +31,15 @@ import {
 import {
   normalizeCustomerWindowPeriodFacetsV2,
   normalizeCustomerWindowIdentityResolutionDetailV2,
+  normalizeCustomerWindowOperationalRepresentationListV2,
   normalizeCustomerWindowRepresentationBookingsResponseV2,
-  normalizeCustomerWindowRepresentationListV2,
   normalizeCustomerWindowRepresentationSearchV2,
   normalizeCustomerWindowRepresentationSummaryV2,
   type CustomerWindowContactSummaryV2,
   type CustomerWindowIdentityResolutionDetailV2,
   type CustomerWindowObservedContactV2,
+  type CustomerWindowOperationalFamilyV2,
+  type CustomerWindowOperationalRepresentationV2,
   type CustomerWindowPeriodFacetsV2,
   type CustomerWindowRelatedContactV2,
   type CustomerWindowRepresentationBookingsResponseV2,
@@ -136,8 +138,13 @@ type CustomerRepresentationListItemV2 = CustomerRepresentationListItemBaseV2 & (
       representationType: "related_review";
     }
 );
-type RepresentationPeriodListV2 = {
-  items: CustomerRepresentationListItemV2[];
+type OperationalRepresentationListItemV2 = CustomerRepresentationListItemV2 & Pick<
+  CustomerWindowOperationalRepresentationV2,
+  "boletaReservations" | "commercialTrajectory" | "packReservations" | "sourceReservations" | "trajectoryScope"
+>;
+type OperationalRepresentationPeriodListV2 = {
+  family: CustomerWindowOperationalFamilyV2;
+  items: OperationalRepresentationListItemV2[];
   page: number;
   pageSize: number;
   total: CustomerWindowSafeCount;
@@ -216,12 +223,11 @@ type CustomerIdentities = {
   pendingCounts: CustomerIdentityCounts;
 };
 
-const emptyRepresentationList: RepresentationPeriodListV2 = {
-  items: [],
-  page: 1,
-  pageSize: PERIOD_PAGE_SIZE,
-  total: 0,
-};
+function emptyOperationalRepresentationList(
+  family: CustomerWindowOperationalFamilyV2,
+): OperationalRepresentationPeriodListV2 {
+  return { family, items: [], page: 1, pageSize: PERIOD_PAGE_SIZE, total: 0 };
+}
 
 function displayText(value: unknown, fallback = "No disponible") {
   return typeof value === "string" && value ? value : fallback;
@@ -246,11 +252,21 @@ function representationPageCount(total: CustomerWindowSafeCount, pageSize: numbe
   return Math.max(1, Number(pages > maximumPageCount ? maximumPageCount : pages));
 }
 
-function normalizeRepresentationListForUi(value: unknown): RepresentationPeriodListV2 | null {
-  const normalized = normalizeCustomerWindowRepresentationListV2(value);
+function normalizeOperationalRepresentationListForUi(
+  value: unknown,
+): OperationalRepresentationPeriodListV2 | null {
+  const normalized = normalizeCustomerWindowOperationalRepresentationListV2(value);
   if (!normalized) return null;
-  const items = normalized.items.map((item): CustomerRepresentationListItemV2 | null => {
+  const items = normalized.items.map((item): OperationalRepresentationListItemV2 | null => {
+    const operational = {
+      boletaReservations: item.boletaReservations,
+      commercialTrajectory: item.commercialTrajectory,
+      packReservations: item.packReservations,
+      sourceReservations: item.sourceReservations,
+      trajectoryScope: item.trajectoryScope,
+    };
     const common = {
+      ...operational,
       contactSummary: item.contactSummary,
       firstPurchaseAt: item.firstPurchaseAt,
       lastBookingAtInPeriod: item.lastBookingAtInPeriod,
@@ -260,22 +276,18 @@ function normalizeRepresentationListForUi(value: unknown): RepresentationPeriodL
       reservationsInPeriod: item.reservationsInPeriod,
       totalReservations: item.totalReservations,
     };
-    if (
-      item.representationType === "confirmed_customer"
-      && item.customerId !== null
-      && item.relatedGroupId === null
-      && item.metricScope === "all_confirmed_sources"
-    ) return { ...common, customerId: item.customerId, metricScope: item.metricScope, relatedGroupId: null, representationType: item.representationType };
-    if (
-      item.representationType === "related_review"
-      && item.customerId === null
-      && item.relatedGroupId !== null
-      && item.metricScope === "mcp_eap_active_snapshot"
-    ) return { ...common, customerId: null, metricScope: item.metricScope, relatedGroupId: item.relatedGroupId, representationType: item.representationType };
+    if (item.representationType === "confirmed_customer" && item.customerId && item.relatedGroupId === null
+      && item.metricScope === "all_confirmed_sources") {
+      return { ...common, customerId: item.customerId, metricScope: item.metricScope, relatedGroupId: null, representationType: item.representationType };
+    }
+    if (item.representationType === "related_review" && item.customerId === null && item.relatedGroupId
+      && item.metricScope === "mcp_eap_active_snapshot") {
+      return { ...common, customerId: null, metricScope: item.metricScope, relatedGroupId: item.relatedGroupId, representationType: item.representationType };
+    }
     return null;
   });
   if (items.some((item) => item === null)) return null;
-  return { ...normalized, items: items as CustomerRepresentationListItemV2[] };
+  return { ...normalized, items: items as OperationalRepresentationListItemV2[] };
 }
 
 function displayOptionalCount(value: unknown) {
@@ -673,26 +685,27 @@ function representationContactLines(contact: CustomerWindowContactSummaryV2) {
   return { email, phone };
 }
 
-function CustomerRepresentationTable({ error, list, loading, onPageChange, onSelectRepresentation }: {
+function CustomerOperationalRepresentationTable({ error, list, loading, onPageChange, onSelectRepresentation, title }: {
   error: string | null;
-  list: RepresentationPeriodListV2;
+  list: OperationalRepresentationPeriodListV2;
   loading: boolean;
   onPageChange: (page: number) => void;
   onSelectRepresentation: (representation: CustomerRepresentationListItemV2) => void;
+  title: string;
 }) {
   const pageCount = representationPageCount(list.total, list.pageSize);
 
   return (
-    <Panel count={`${displaySafeCount(list.total)} representaciones`} title="Representaciones MCP / EAP">
+    <Panel count={`${displaySafeCount(list.total)} registros`} title={title}>
       {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
       {loading && list.items.length === 0 ? <p className="mt-4 text-sm text-slate-600">Actualizando datos...</p> : null}
       {loading && list.items.length > 0 ? <p aria-live="polite" className="mt-4 text-xs text-slate-500">Actualizando...</p> : null}
-      {!loading && !error && list.items.length === 0 ? <div className="mt-4"><EmptyState description="No hay representaciones con reservas para este período." /></div> : null}
+      {!loading && !error && list.items.length === 0 ? <div className="mt-4"><EmptyState description="No hay clientes con reservas para este período." /></div> : null}
       {list.items.length > 0 ? (
         <div className={`mt-4 transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
           <div className="max-h-[640px] overflow-y-auto overscroll-contain rounded-xl">
-            <DataTable minWidth="760px">
-              <DataTableHead><tr>{["Representación", "Reservas", "Primera compra", "Última compra", "Última reserva del período"].map((label) => <th className="border-b border-[#d6e1ea] px-3 py-2 text-left text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-slate-500" key={label}>{label}</th>)}</tr></DataTableHead>
+            <DataTable minWidth="700px">
+              <DataTableHead><tr>{["Cliente / representación", "Tipo", "QTY", "BOLETA / PACK", "Perfil comercial / trayectoria"].map((label) => <th className="border-b border-[#d6e1ea] px-3 py-2 text-left text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-slate-500" key={label}>{label}</th>)}</tr></DataTableHead>
               <DataTableBody>
                 {list.items.map((representation) => {
                   const isConfirmed = representation.representationType === "confirmed_customer";
@@ -711,11 +724,11 @@ function CustomerRepresentationTable({ error, list, loading, onPageChange, onSel
                       }}
                       tabIndex={0}
                     >
-                      <td className="max-w-0 px-3 py-2 align-middle"><div className="min-w-0"><ValueBadge tone={isConfirmed ? "success" : "warning"}>{isConfirmed ? "Confirmado" : "Relacionado / revisión"}</ValueBadge><p className="mt-1 truncate text-xs font-medium text-navy" title={contact.email}>{contact.email}</p><p className="mt-0.5 truncate text-[11px] text-slate-500" title={contact.phone}>{contact.phone}</p></div></td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p><span className="font-medium text-navy">{displaySafeCount(representation.totalReservations)}</span> totales</p><p className="mt-0.5">{displaySafeCount(representation.reservationsInPeriod)} en el período</p></td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700">{displayDate(representation.firstPurchaseAt)}</td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700">{displayDate(representation.lastPurchaseAt)}</td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700">{displayDate(representation.lastBookingAtInPeriod)}</td>
+                      <td className="max-w-0 px-3 py-2 align-middle"><div className="min-w-0"><p className="truncate text-xs font-medium text-navy" title={contact.email}>{contact.email}</p><p className="mt-0.5 truncate text-[11px] text-slate-500" title={contact.phone}>{contact.phone}</p></div></td>
+                      <td className="px-3 py-2 align-middle"><ValueBadge tone={isConfirmed ? "success" : "warning"}>{isConfirmed ? "Confirmado" : "Relacionado / revisión"}</ValueBadge></td>
+                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p><span className="font-medium text-navy">{displaySafeCount(representation.sourceReservations)}</span> en {list.family === "OKP" ? "OKP" : "MCP/EAP"}</p><p className="mt-0.5">{displaySafeCount(representation.reservationsInPeriod)} en el período</p></td>
+                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p>{displaySafeCount(representation.boletaReservations)} BOLETA</p><p className="mt-0.5">{displaySafeCount(representation.packReservations)} PACK</p></td>
+                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p className="font-medium text-navy">{behaviorLabel(representation.commercialTrajectory)}</p>{representation.trajectoryScope === "related_group" ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Alcance: grupo MCP/EAP en revisión</p> : null}</td>
                     </tr>
                   );
                 })}
@@ -2311,12 +2324,18 @@ export function CustomerWindowView() {
   const [section, setSection] = useState<"clientes" | "campanas">("clientes");
   const [periodPreset, setPeriodPreset] = useState<CustomerPeriodPreset>("today");
   const [periodRange, setPeriodRange] = useState<CustomerPeriodRange>(initialRange.current);
-  const [representationPage, setRepresentationPage] = useState(1);
-  const [representationList, setRepresentationList] = useState<RepresentationPeriodListV2>(emptyRepresentationList);
-  const [representationLoading, setRepresentationLoading] = useState(false);
-  const [representationError, setRepresentationError] = useState<string | null>(null);
-  const representationController = useRef<AbortController | null>(null);
-  const representationRequest = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const [okpPage, setOkpPage] = useState(1);
+  const [okpList, setOkpList] = useState<OperationalRepresentationPeriodListV2>(() => emptyOperationalRepresentationList("OKP"));
+  const [okpLoading, setOkpLoading] = useState(false);
+  const [okpError, setOkpError] = useState<string | null>(null);
+  const okpController = useRef<AbortController | null>(null);
+  const okpRequest = useRef<{ key: string; promise: Promise<void> } | null>(null);
+  const [mcpEapPage, setMcpEapPage] = useState(1);
+  const [mcpEapList, setMcpEapList] = useState<OperationalRepresentationPeriodListV2>(() => emptyOperationalRepresentationList("MCP_EAP"));
+  const [mcpEapLoading, setMcpEapLoading] = useState(false);
+  const [mcpEapError, setMcpEapError] = useState<string | null>(null);
+  const mcpEapController = useRef<AbortController | null>(null);
+  const mcpEapRequest = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResult, setSearchResult] = useState<CustomerWindowRepresentationSearchV2 | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -2348,40 +2367,49 @@ export function CustomerWindowView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadRepresentations = useCallback((page: number) => {
-    const requestKey = `${periodRange.from}:${periodRange.to}:${page}`;
-    if (representationRequest.current?.key === requestKey) return representationRequest.current.promise;
-    representationController.current?.abort();
+  const loadOperationalRepresentations = useCallback((family: CustomerWindowOperationalFamilyV2, page: number) => {
+    const requestRef = family === "OKP" ? okpRequest : mcpEapRequest;
+    const controllerRef = family === "OKP" ? okpController : mcpEapController;
+    const requestKey = `${family}:${periodRange.from}:${periodRange.to}:${page}`;
+    if (requestRef.current?.key === requestKey) return requestRef.current.promise;
+    controllerRef.current?.abort();
     const controller = new AbortController();
-    representationController.current = controller;
+    controllerRef.current = controller;
     const params = new URLSearchParams({
-      action: "list-by-period-v2",
+      action: "operational-list-v2",
+      family,
       from: periodRange.from,
       page: String(page),
       pageSize: String(PERIOD_PAGE_SIZE),
       to: periodRange.to,
     });
     const promise = (async () => {
-      setRepresentationLoading(true);
-      setRepresentationError(null);
+      if (family === "OKP") { setOkpLoading(true); setOkpError(null); }
+      else { setMcpEapLoading(true); setMcpEapError(null); }
       try {
         const body = await getCustomerWindowJsonWithRetry(`/api/orquestador/customer-window/customers?${params.toString()}`, controller.signal);
-        if (representationController.current !== controller) return;
-        const nextList = normalizeRepresentationListForUi(body);
-        if (!nextList) throw new Error("Respuesta de representaciones inválida.");
-        setRepresentationList(nextList);
+        if (controllerRef.current !== controller) return;
+        const nextList = normalizeOperationalRepresentationListForUi(body);
+        if (!nextList || nextList.family !== family) throw new Error("Respuesta operacional inválida.");
+        if (family === "OKP") setOkpList(nextList);
+        else setMcpEapList(nextList);
       } catch (cause) {
         if (cause instanceof DOMException && cause.name === "AbortError") return;
-        if (representationController.current === controller) {
-          setRepresentationError(cause instanceof Error ? cause.message : "No fue posible cargar las representaciones.");
+        if (controllerRef.current === controller) {
+          const message = cause instanceof Error ? cause.message : "No fue posible cargar los clientes por fuente.";
+          if (family === "OKP") setOkpError(message);
+          else setMcpEapError(message);
         }
       } finally {
-        if (representationController.current === controller) setRepresentationLoading(false);
+        if (controllerRef.current === controller) {
+          if (family === "OKP") setOkpLoading(false);
+          else setMcpEapLoading(false);
+        }
       }
     })();
-    representationRequest.current = { key: requestKey, promise };
+    requestRef.current = { key: requestKey, promise };
     void promise.then(() => {
-      if (representationRequest.current?.promise === promise) representationRequest.current = null;
+      if (requestRef.current?.promise === promise) requestRef.current = null;
     });
     return promise;
   }, [periodRange.from, periodRange.to]);
@@ -2440,7 +2468,11 @@ export function CustomerWindowView() {
       setRefreshHealth(nextHealth);
       setRefreshHealthError(false);
       if (previousStatus === "refreshing" && nextHealth.status === "healthy") {
-        void Promise.allSettled([loadPeriodFacets(), loadRepresentations(representationPage)]);
+        void Promise.allSettled([
+          loadPeriodFacets(),
+          loadOperationalRepresentations("OKP", okpPage),
+          loadOperationalRepresentations("MCP_EAP", mcpEapPage),
+        ]);
       }
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -2448,7 +2480,7 @@ export function CustomerWindowView() {
     } finally {
       if (refreshHealthController.current === controller) setRefreshHealthLoading(false);
     }
-  }, [loadPeriodFacets, loadRepresentations, representationPage]);
+  }, [loadOperationalRepresentations, loadPeriodFacets, mcpEapPage, okpPage]);
 
   const closeCustomerDrawer = useCallback(() => {
     economicsController.current?.abort();
@@ -2461,10 +2493,17 @@ export function CustomerWindowView() {
 
   useEffect(() => {
     if (section !== "clientes") return;
-    void loadRepresentations(representationPage);
-    const controller = representationController.current;
+    void loadOperationalRepresentations("OKP", okpPage);
+    const controller = okpController.current;
     return () => controller?.abort();
-  }, [loadRepresentations, representationPage, section]);
+  }, [loadOperationalRepresentations, okpPage, section]);
+
+  useEffect(() => {
+    if (section !== "clientes") return;
+    void loadOperationalRepresentations("MCP_EAP", mcpEapPage);
+    const controller = mcpEapController.current;
+    return () => controller?.abort();
+  }, [loadOperationalRepresentations, mcpEapPage, section]);
 
   useEffect(() => {
     if (section !== "clientes") return;
@@ -2541,7 +2580,8 @@ export function CustomerWindowView() {
   }, [closeCustomerDrawer, drawerCustomerId, selectedRepresentation]);
 
   function abortRepresentationRequests() {
-    representationController.current?.abort();
+    okpController.current?.abort();
+    mcpEapController.current?.abort();
     facetsController.current?.abort();
     setPeriodFacets(null);
     setPeriodFacetsError(null);
@@ -2551,7 +2591,8 @@ export function CustomerWindowView() {
     abortRepresentationRequests();
     setPeriodPreset(preset);
     setPeriodRange(range);
-    setRepresentationPage(1);
+    setOkpPage(1);
+    setMcpEapPage(1);
     setSelectedRepresentation(null);
   }
 
@@ -2615,7 +2656,10 @@ export function CustomerWindowView() {
           </section>
           <CustomerWindowRefreshHealthStrip error={refreshHealthError} health={refreshHealth} loading={refreshHealthLoading} />
           <CustomerRepresentationFacets error={periodFacetsError} facets={periodFacets} loading={periodFacetsLoading} />
-          <CustomerRepresentationTable error={representationError} list={representationList} loading={representationLoading} onPageChange={setRepresentationPage} onSelectRepresentation={selectRepresentation} />
+          <div className="grid items-start gap-4 xl:grid-cols-2">
+            <CustomerOperationalRepresentationTable error={okpError} list={okpList} loading={okpLoading} onPageChange={setOkpPage} onSelectRepresentation={selectRepresentation} title="Clientes OKP" />
+            <CustomerOperationalRepresentationTable error={mcpEapError} list={mcpEapList} loading={mcpEapLoading} onPageChange={setMcpEapPage} onSelectRepresentation={selectRepresentation} title="MCP / EAP" />
+          </div>
           <Panel action={<button aria-controls="customer-window-classification-criteria" aria-expanded={criteriaOpen} className="inline-flex items-center gap-2 rounded-lg border border-[#cbd8e3] px-3 py-2 text-sm font-semibold text-navy hover:border-sea" onClick={toggleCriteria} type="button">{criteriaOpen ? "Ocultar" : "Mostrar"}{criteriaOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</button>} description="Consulta las reglas oficiales utilizadas por el modelo comercial." title="Criterios de clasificación"><div id="customer-window-classification-criteria">{criteriaOpen && criteriaLoading ? <p className="mt-4 text-sm text-slate-600">Cargando criterios...</p> : null}{criteriaOpen && criteriaError ? <p className="mt-4 text-sm text-red-700" role="alert">{criteriaError}</p> : null}{criteriaOpen && criteria ? <ClassificationCriteriaContent criteria={criteria} /> : null}</div></Panel>
         </>
       )}

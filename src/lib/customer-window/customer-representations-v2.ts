@@ -42,6 +42,30 @@ export type CustomerWindowRepresentationListV2 = {
   total: CustomerWindowSafeCount;
 };
 
+export type CustomerWindowOperationalFamilyV2 = "MCP_EAP" | "OKP";
+export type CustomerWindowCommercialTrajectoryV2 =
+  | "ALTERNATING"
+  | "MIGRATED_TO_MCP_EAP"
+  | "MIGRATED_TO_OKP"
+  | "ONLY_MCP_EAP"
+  | "ONLY_OKP";
+
+export type CustomerWindowOperationalRepresentationV2 = CustomerWindowRepresentationV2 & {
+  boletaReservations: CustomerWindowSafeCount;
+  commercialTrajectory: CustomerWindowCommercialTrajectoryV2;
+  packReservations: CustomerWindowSafeCount;
+  sourceReservations: CustomerWindowSafeCount;
+  trajectoryScope: "confirmed_identity" | "related_group";
+};
+
+export type CustomerWindowOperationalRepresentationListV2 = {
+  family: CustomerWindowOperationalFamilyV2;
+  items: CustomerWindowOperationalRepresentationV2[];
+  page: number;
+  pageSize: number;
+  total: CustomerWindowSafeCount;
+};
+
 export type CustomerWindowRepresentationSearchItemV2 = CustomerWindowRepresentationV2 & {
   authoritySnapshotId: string | null;
   displayEmail: string | null;
@@ -333,6 +357,40 @@ export function normalizeCustomerWindowRepresentationListV2(
   const items = value.items.map(normalizeRepresentation);
   if (items.some((item) => item === null)) return null;
   return { ...value, items } as CustomerWindowRepresentationListV2;
+}
+
+export function normalizeCustomerWindowOperationalRepresentationListV2(
+  value: unknown,
+): CustomerWindowOperationalRepresentationListV2 | null {
+  if (!isRecord(value) || (value.family !== "MCP_EAP" && value.family !== "OKP")) return null;
+  if (!Array.isArray(value.items) || !isSafeCount(value.total)) return null;
+  if (!isSafeInteger(value.page, 1) || !isSafeInteger(value.pageSize, 1) || value.pageSize > 100) return null;
+  const trajectories = new Set([
+    "ALTERNATING",
+    "MIGRATED_TO_MCP_EAP",
+    "MIGRATED_TO_OKP",
+    "ONLY_MCP_EAP",
+    "ONLY_OKP",
+  ]);
+  const items = value.items.map((item) => {
+    const representation = normalizeRepresentation(item);
+    if (!representation || !isRecord(item)) return null;
+    if (!isSafeCount(item.sourceReservations)
+      || !isSafeCount(item.boletaReservations)
+      || !isSafeCount(item.packReservations)
+      || !trajectories.has(String(item.commercialTrajectory))) return null;
+    if (countAsBigInt(item.sourceReservations)
+      !== countAsBigInt(item.boletaReservations) + countAsBigInt(item.packReservations)) return null;
+    if (representation.representationType === "confirmed_customer" && item.trajectoryScope !== "confirmed_identity") return null;
+    if (representation.representationType === "related_review") {
+      if (value.family !== "MCP_EAP" || item.trajectoryScope !== "related_group"
+        || item.commercialTrajectory !== "ONLY_MCP_EAP") return null;
+    }
+    if (value.family === "OKP" && representation.representationType !== "confirmed_customer") return null;
+    return item as CustomerWindowOperationalRepresentationV2;
+  });
+  if (items.some((item) => item === null)) return null;
+  return { ...value, items } as CustomerWindowOperationalRepresentationListV2;
 }
 
 export function normalizeCustomerWindowRepresentationSearchV2(

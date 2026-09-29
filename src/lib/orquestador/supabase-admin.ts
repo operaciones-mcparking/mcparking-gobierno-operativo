@@ -53,6 +53,7 @@ import { collectOccupancyRpcPages } from "@/lib/dashboard/ocupacion";
 import {
   normalizeCustomerWindowPeriodFacetsV2,
   normalizeCustomerWindowIdentityResolutionDetailV2,
+  normalizeCustomerWindowOperationalRepresentationListV2,
   normalizeCustomerWindowRepresentationBookingsResponseV2,
   normalizeCustomerWindowRepresentationListV2,
   normalizeCustomerWindowRepresentationSearchV2,
@@ -853,6 +854,10 @@ type CustomerWindowV2PeriodListInput = {
 
 type CustomerWindowV2PeriodFacetsInput = Pick<CustomerWindowV2PeriodListInput, "from" | "to">;
 
+type CustomerWindowOperationalPeriodListInput = CustomerWindowV2PeriodListInput & {
+  family: "MCP_EAP" | "OKP";
+};
+
 type CustomerWindowV2RepresentationInput = {
   representationId: string;
   representationType: CustomerWindowRepresentationTypeV2;
@@ -952,6 +957,31 @@ export async function listCustomerWindowV2RepresentationsByPurchasePeriod(
     );
     if (error) return { data: null, error: true, retryable: true };
     const normalized = normalizeCustomerWindowRepresentationListV2(data);
+    return normalized
+      ? { data: normalized, error: false }
+      : { data: null, error: true, retryable: false };
+  } catch {
+    return { data: null, error: true, retryable: true };
+  }
+}
+
+export async function listCustomerWindowOperationalRepresentationsByPurchasePeriod(
+  input: CustomerWindowOperationalPeriodListInput,
+) {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc(
+      "customer_window_v2_list_operational_representations_by_purchase_period",
+      {
+        p_family: input.family,
+        p_from: input.from,
+        p_page: input.page,
+        p_page_size: input.pageSize,
+        p_to: input.to,
+      },
+    );
+    if (error) return { data: null, error: true, retryable: true };
+    const normalized = normalizeCustomerWindowOperationalRepresentationListV2(data);
     return normalized
       ? { data: normalized, error: false }
       : { data: null, error: true, retryable: false };
