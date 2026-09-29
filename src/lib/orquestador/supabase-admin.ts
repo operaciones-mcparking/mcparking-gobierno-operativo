@@ -188,7 +188,7 @@ function singleError<T>(): OrquestadorSingleResult<T> {
   return { data: null, error: true };
 }
 
-export function createOrquestadorSupabaseAdminClient() {
+export function createOrquestadorSupabaseAdminClient(clientInfo?: string) {
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Missing Supabase server configuration.");
   }
@@ -197,6 +197,7 @@ export function createOrquestadorSupabaseAdminClient() {
     auth: {
       persistSession: false,
     },
+    ...(clientInfo ? { global: { headers: { "X-Client-Info": clientInfo } } } : {}),
   });
 }
 
@@ -1114,9 +1115,10 @@ function customer360ErrorCode(error: { message?: string } | null): Customer360Er
 
 export async function getCustomerWindow360Overview(
   locator: Customer360Locator,
+  clientInfo?: string,
 ): Promise<Customer360ReadResult<Customer360Overview>> {
   try {
-    const supabase = createOrquestadorSupabaseAdminClient();
+    const supabase = createOrquestadorSupabaseAdminClient(clientInfo);
     const rpc = locator.representationType === "global_review"
       ? "customer_window_360_v1_get_global_review_overview"
       : "customer_window_360_v1_get_overview";
@@ -1135,9 +1137,10 @@ export async function getCustomerWindow360Overview(
 
 export async function getCustomerWindow360BoletaAnalytics(
   locator: Customer360Locator,
+  clientInfo?: string,
 ): Promise<Customer360ReadResult<Customer360BoletaAnalytics>> {
   try {
-    const supabase = createOrquestadorSupabaseAdminClient();
+    const supabase = createOrquestadorSupabaseAdminClient(clientInfo);
     const { data, error } = await supabase.rpc("customer_window_360_v1_get_boleta_analytics", {
       p_locator: locator,
     });
@@ -1153,9 +1156,10 @@ export async function getCustomerWindow360BoletaAnalytics(
 
 export async function getCustomerWindow360RelatedGroupAnalytics(
   locator: Customer360Locator,
+  clientInfo?: string,
 ): Promise<Customer360ReadResult<Customer360RelatedGroupAnalytics>> {
   try {
-    const supabase = createOrquestadorSupabaseAdminClient();
+    const supabase = createOrquestadorSupabaseAdminClient(clientInfo);
     const { data, error } = await supabase.rpc("customer_window_360_v1_get_related_group_analytics", {
       p_locator: locator,
     });
@@ -1171,9 +1175,10 @@ export async function getCustomerWindow360RelatedGroupAnalytics(
 
 export async function getCustomerWindow360GlobalReviewAnalytics(
   locator: Customer360Locator,
+  clientInfo?: string,
 ): Promise<Customer360ReadResult<Customer360GlobalReviewAnalytics>> {
   try {
-    const supabase = createOrquestadorSupabaseAdminClient();
+    const supabase = createOrquestadorSupabaseAdminClient(clientInfo);
     const { data, error } = await supabase.rpc("customer_window_360_v1_get_global_review_analytics", {
       p_locator: locator,
     });
@@ -1209,9 +1214,9 @@ export async function listCustomerWindow360Bookings(input: {
   locator: Customer360Locator;
   page: number;
   pageSize: number;
-}): Promise<Customer360ReadResult<Customer360Bookings>> {
+}, clientInfo?: string): Promise<Customer360ReadResult<Customer360Bookings>> {
   try {
-    const supabase = createOrquestadorSupabaseAdminClient();
+    const supabase = createOrquestadorSupabaseAdminClient(clientInfo);
     const rpc = input.locator.representationType === "global_review"
       ? "customer_window_360_v1_list_global_review_bookings"
       : "customer_window_360_v1_list_bookings";

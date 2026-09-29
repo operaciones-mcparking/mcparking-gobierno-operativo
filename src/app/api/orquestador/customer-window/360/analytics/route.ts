@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
 
+import { traceCustomer360RpcCall } from "@/lib/customer-window/customer-360-caller-trace";
 import { customer360ErrorStatus, customer360LocatorFromRequest } from "@/lib/customer-window/customer-360-http";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
@@ -30,11 +31,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const trace = traceCustomer360RpcCall("analytics");
   const result = locator.representationType === "confirmed_customer"
-    ? await getCustomerWindow360BoletaAnalytics(locator)
+    ? await getCustomerWindow360BoletaAnalytics(locator, trace?.clientInfo)
     : locator.representationType === "global_review"
-      ? await getCustomerWindow360GlobalReviewAnalytics(locator)
-      : await getCustomerWindow360RelatedGroupAnalytics(locator);
+      ? await getCustomerWindow360GlobalReviewAnalytics(locator, trace?.clientInfo)
+      : await getCustomerWindow360RelatedGroupAnalytics(locator, trace?.clientInfo);
   if (result.errorCode) {
     return NextResponse.json(
       { code: result.errorCode, ok: false },

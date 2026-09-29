@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
 
+import { traceCustomer360RpcCall } from "@/lib/customer-window/customer-360-caller-trace";
 import { customer360ErrorStatus, customer360LocatorFromRequest } from "@/lib/customer-window/customer-360-http";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import { listCustomerWindow360Bookings } from "@/lib/orquestador/supabase-admin";
@@ -34,7 +35,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const result = await listCustomerWindow360Bookings({ locator, page, pageSize });
+  const trace = traceCustomer360RpcCall("bookings");
+  const result = await listCustomerWindow360Bookings({ locator, page, pageSize }, trace?.clientInfo);
   if (result.errorCode) {
     return NextResponse.json(
       { code: result.errorCode, ok: false },
