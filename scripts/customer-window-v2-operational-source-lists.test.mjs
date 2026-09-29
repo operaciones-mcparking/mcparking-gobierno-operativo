@@ -99,7 +99,7 @@ test("RPC remains service-role only and keeps temporal fields for future consume
 
 test("server validates one request per family and the UI paginates them independently", () => {
   assert.match(route, /action === "operational-list-v2"[\s\S]*allowedFamilies\.has\(family\)/);
-  const postgrestRpcName = "customer_window_v2_list_operational_representations_by_purchase";
+  const postgrestRpcName = "customer_window_v2_list_operational_global_v1";
   assert.equal(Buffer.byteLength(postgrestRpcName, "utf8") <= 63, true);
   assert.match(admin, new RegExp(`${postgrestRpcName}[\\s\\S]*normalizeCustomerWindowOperationalRepresentationListV2`));
   assert.doesNotMatch(admin, /\.rpc\(\s*"customer_window_v2_list_operational_representations_by_purchase_period"/);
@@ -122,6 +122,7 @@ test("list rendering is bounded and opens the existing Customer 360 selection pa
 test("runtime contract accepts source-scoped counts and certified trajectories", () => {
   const normalized = contract.normalizeCustomerWindowOperationalRepresentationListV2({
     family: "MCP_EAP",
+    hotPendingReservations: 0,
     items: [
       {
         ...confirmed,
@@ -142,7 +143,12 @@ test("runtime contract accepts source-scoped counts and certified trajectories",
     ],
     page: 1,
     pageSize: 25,
+    representedConfirmedReservations: 2,
+    representedReviewReservations: 1,
+    stableReservations: 3,
     total: 2,
+    unrepresentedStableReservations: 0,
+    validReservations: 3,
   });
   assert.ok(normalized);
   assert.equal(normalized.items.length, 2);
@@ -151,6 +157,7 @@ test("runtime contract accepts source-scoped counts and certified trajectories",
 test("runtime contract rejects cross-source attribution and inconsistent counts", () => {
   const okpRelated = contract.normalizeCustomerWindowOperationalRepresentationListV2({
     family: "OKP",
+    hotPendingReservations: 0,
     items: [{
       ...related,
       boletaReservations: 2,
@@ -161,12 +168,18 @@ test("runtime contract rejects cross-source attribution and inconsistent counts"
     }],
     page: 1,
     pageSize: 25,
+    representedConfirmedReservations: 0,
+    representedReviewReservations: 2,
+    stableReservations: 2,
     total: 1,
+    unrepresentedStableReservations: 0,
+    validReservations: 2,
   });
   assert.equal(okpRelated, null);
 
   const mismatchedCounts = contract.normalizeCustomerWindowOperationalRepresentationListV2({
     family: "OKP",
+    hotPendingReservations: 0,
     items: [{
       ...confirmed,
       boletaReservations: 2,
@@ -177,7 +190,12 @@ test("runtime contract rejects cross-source attribution and inconsistent counts"
     }],
     page: 1,
     pageSize: 25,
+    representedConfirmedReservations: 2,
+    representedReviewReservations: 0,
+    stableReservations: 2,
     total: 1,
+    unrepresentedStableReservations: 0,
+    validReservations: 2,
   });
   assert.equal(mismatchedCounts, null);
 });

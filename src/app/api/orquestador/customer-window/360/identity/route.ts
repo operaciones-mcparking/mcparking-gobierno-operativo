@@ -5,11 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { customer360ErrorStatus, customer360LocatorFromRequest } from "@/lib/customer-window/customer-360-http";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
-import {
-  getCustomerWindow360BoletaAnalytics,
-  getCustomerWindow360GlobalReviewAnalytics,
-  getCustomerWindow360RelatedGroupAnalytics,
-} from "@/lib/orquestador/supabase-admin";
+import { getCustomerWindow360GlobalReviewIdentity } from "@/lib/orquestador/supabase-admin";
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
 
@@ -21,20 +17,14 @@ export async function GET(request: NextRequest) {
       { headers: noStoreHeaders, status: admin.reason === "unauthenticated" ? 401 : 403 },
     );
   }
-
   const locator = customer360LocatorFromRequest(request);
-  if (!locator) {
+  if (!locator || locator.representationType !== "global_review") {
     return NextResponse.json(
       { code: "invalid_locator_contract", ok: false },
       { headers: noStoreHeaders, status: 400 },
     );
   }
-
-  const result = locator.representationType === "confirmed_customer"
-    ? await getCustomerWindow360BoletaAnalytics(locator)
-    : locator.representationType === "global_review"
-      ? await getCustomerWindow360GlobalReviewAnalytics(locator)
-      : await getCustomerWindow360RelatedGroupAnalytics(locator);
+  const result = await getCustomerWindow360GlobalReviewIdentity(locator);
   if (result.errorCode) {
     return NextResponse.json(
       { code: result.errorCode, ok: false },

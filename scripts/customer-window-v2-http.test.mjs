@@ -194,7 +194,7 @@ test("helpers call only the versioned RPCs with exact parameter names", () => {
   assert.match(admin, /customer_window_v2_get_representation_summary[\s\S]*p_representation_id: input\.representationId[\s\S]*p_representation_type: input\.representationType/);
   assert.match(admin, /customer_window_v2_list_representation_bookings[\s\S]*p_page: input\.page[\s\S]*p_page_size: input\.pageSize[\s\S]*p_representation_id: input\.representationId[\s\S]*p_representation_type: input\.representationType/);
   assert.match(admin, /customer_window_v2_get_identity_resolution_detail[\s\S]*p_related_group_id: relatedGroupId/);
-  assert.match(admin, /customer_window_v2_search_representations_mcp_eap[\s\S]*p_email: input\.email[\s\S]*p_exact_identifier: input\.exactIdentifier[\s\S]*p_limit: input\.limit[\s\S]*p_numeric_identifier: input\.numericIdentifier[\s\S]*p_phone: input\.phone[\s\S]*p_plate: input\.plate/);
+  assert.match(admin, /customer_window_v2_search_global_v1[\s\S]*p_email: input\.email[\s\S]*p_exact_identifier: input\.exactIdentifier[\s\S]*p_limit: input\.limit[\s\S]*p_numeric_identifier: input\.numericIdentifier[\s\S]*p_phone: input\.phone[\s\S]*p_plate: input\.plate/);
   assert.match(admin, /normalizeCustomerWindowRepresentationSearchV2\(data\)/);
 });
 

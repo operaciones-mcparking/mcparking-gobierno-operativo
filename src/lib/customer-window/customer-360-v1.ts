@@ -1,5 +1,5 @@
-export type Customer360RepresentationType = "confirmed_customer" | "related_review";
-export type Customer360Universe = "GLOBAL" | "MCP_EAP";
+export type Customer360RepresentationType = "confirmed_customer" | "global_review" | "related_review";
+export type Customer360Universe = "GLOBAL" | "GLOBAL_REVIEW" | "MCP_EAP";
 
 export type Customer360Locator = {
   authoritySnapshotId: string | null;
@@ -29,6 +29,7 @@ export type Customer360Overview = {
       singlePhone: string | null;
     };
     customerId: string | null;
+    reviewProfileId?: string | null;
     relatedGroupId: string | null;
     relatedReviewSummary: {
       candidateCount: number;
@@ -37,7 +38,7 @@ export type Customer360Overview = {
       v1BookingCount: number;
       v2BookingCount: number;
     } | null;
-    status: "confirmed" | "related_review";
+    status: "confirmed" | "global_review" | "related_review";
   };
   locator: Customer360Locator;
   moduleAvailability: Record<
@@ -46,7 +47,7 @@ export type Customer360Overview = {
   >;
   ok: true;
   representation: {
-    authorityStatus: "global" | "active_snapshot";
+    authorityStatus: "global" | "global_review_profile" | "active_snapshot";
     readOnly: boolean;
   };
   sourceCoverage: Array<{
@@ -146,10 +147,13 @@ function isDistinctStringArray(value: unknown): value is string[] {
 export function normalizeCustomer360Locator(value: unknown): Customer360Locator | null {
   if (!isRecord(value)) return null;
   const { authoritySnapshotId, customerUniverse, representationId, representationKey, representationType } = value;
-  if (representationType !== "confirmed_customer" && representationType !== "related_review") return null;
+  if (representationType !== "confirmed_customer" && representationType !== "global_review"
+    && representationType !== "related_review") return null;
   if (typeof representationId !== "string" || representationKey !== `${representationType}:${representationId}`) return null;
   if (representationType === "confirmed_customer") {
     if (!uuidPattern.test(representationId) || customerUniverse !== "GLOBAL" || authoritySnapshotId !== null) return null;
+  } else if (representationType === "global_review") {
+    if (!uuidPattern.test(representationId) || customerUniverse !== "GLOBAL_REVIEW" || authoritySnapshotId !== null) return null;
   } else if (!groupPattern.test(representationId) || customerUniverse !== "MCP_EAP"
     || typeof authoritySnapshotId !== "string" || !uuidPattern.test(authoritySnapshotId)) return null;
   return value as Customer360Locator;
@@ -177,19 +181,29 @@ export function normalizeCustomer360Overview(value: unknown): Customer360Overvie
   const locator = normalizeCustomer360Locator(value.locator);
   if (!locator || !isRecord(value.representation) || !isRecord(value.identity)
     || !isRecord(value.summary) || !Array.isArray(value.sourceCoverage) || !isRecord(value.moduleAvailability)) return null;
+  const review = locator.representationType !== "confirmed_customer";
   const related = locator.representationType === "related_review";
-  const contacts = normalizeContacts(value.identity.contacts, related ? "observed" : "direct");
-  if (!contacts || value.representation.readOnly !== related
-    || value.representation.authorityStatus !== (related ? "active_snapshot" : "global")
-    || value.identity.status !== (related ? "related_review" : "confirmed")
-    || value.identity.contactability !== (related ? "observed_only" : "direct")) return null;
+  const globalReview = locator.representationType === "global_review";
+  const contacts = normalizeContacts(value.identity.contacts, review ? "observed" : "direct");
+  const expectedAuthority = related ? "active_snapshot" : globalReview ? "global_review_profile" : "global";
+  if (!contacts || value.representation.readOnly !== review
+    || value.representation.authorityStatus !== expectedAuthority
+    || value.identity.status !== (related ? "related_review" : globalReview ? "global_review" : "confirmed")
+    || value.identity.contactability !== (review ? "observed_only" : "direct")) return null;
   if (related) {
     if (value.identity.customerId !== null || value.identity.relatedGroupId !== locator.representationId
       || !isRecord(value.identity.relatedReviewSummary)) return null;
     const group = value.identity.relatedReviewSummary;
     if (![group.profileCount, group.conflictCount, group.candidateCount, group.v1BookingCount, group.v2BookingCount].every(isCount)) return null;
+  } else if (globalReview) {
+    if (value.identity.customerId !== null || value.identity.relatedGroupId !== null
+      || value.identity.reviewProfileId !== locator.representationId
+      || !isRecord(value.identity.relatedReviewSummary)) return null;
+    const group = value.identity.relatedReviewSummary;
+    if (![group.profileCount, group.conflictCount, group.candidateCount, group.v1BookingCount, group.v2BookingCount].every(isCount)) return null;
   } else if (value.identity.customerId !== locator.representationId
-    || value.identity.relatedGroupId !== null || value.identity.relatedReviewSummary !== null) return null;
+    || value.identity.relatedGroupId !== null || value.identity.relatedReviewSummary !== null
+    || (value.identity.reviewProfileId !== undefined && value.identity.reviewProfileId !== null)) return null;
   if (!isCount(value.summary.totalBookings) || !isTimestamp(value.summary.firstBookingAt)
     || !isTimestamp(value.summary.lastBookingAt)) return null;
   const coverageValid = value.sourceCoverage.every((item) => isRecord(item)
@@ -240,7 +254,7 @@ export function normalizeCustomer360ObservedContacts(value: unknown): Customer36
     value.pagination.pageSize as number,
     Math.max(0, (value.pagination.total as number) - ((value.pagination.page as number) - 1) * (value.pagination.pageSize as number)),
   );
-  if (!locator || locator.representationType !== "related_review"
+  if (!locator || locator.representationType === "confirmed_customer"
     || !isCount(value.pagination.total) || !isCount(value.pagination.page) || value.pagination.page < 1
     || !isCount(value.pagination.pageSize) || value.pagination.pageSize < 1 || value.pagination.pageSize > 100
     || value.items.length !== expectedItems || typeof value.pagination.hasNextPage !== "boolean"
@@ -257,6 +271,12 @@ export function customer360LocatorFromRepresentation(input: {
   const locator: Customer360Locator = input.representationType === "confirmed_customer" ? {
     authoritySnapshotId: null,
     customerUniverse: "GLOBAL",
+    representationId: input.representationId,
+    representationKey: input.representationKey,
+    representationType: input.representationType,
+  } : input.representationType === "global_review" ? {
+    authoritySnapshotId: null,
+    customerUniverse: "GLOBAL_REVIEW",
     representationId: input.representationId,
     representationKey: input.representationKey,
     representationType: input.representationType,

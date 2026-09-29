@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const contactType = request.nextUrl.searchParams.get("contactType");
   const page = boundedInteger(request.nextUrl.searchParams.get("page"), 1, 2_147_483_647);
   const pageSize = boundedInteger(request.nextUrl.searchParams.get("pageSize"), 100, 100);
-  if (!locator || locator.representationType !== "related_review"
+  if (!locator || locator.representationType === "confirmed_customer"
     || (contactType !== "email" && contactType !== "phone") || page === null || pageSize === null) {
     return NextResponse.json(
       { code: "invalid_locator_contract", ok: false },

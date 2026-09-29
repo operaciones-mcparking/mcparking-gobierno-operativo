@@ -132,21 +132,36 @@ test("source rows use representationKey with source quantity mix and trajectory"
   for (const field of ["sourceReservations", "reservationsInPeriod", "boletaReservations", "packReservations", "commercialTrajectory"]) {
     assert.match(tableBlock, new RegExp(`representation\\.${field}`));
   }
-  for (const heading of ["Cliente / representación", "Tipo", "QTY", "BOLETA / PACK", "Perfil comercial / trayectoria"]) {
+  for (const heading of ["Cliente / representación", "QTY", "BOLETA / PACK", "Perfil comercial / trayectoria"]) {
     assert.match(tableBlock, new RegExp(heading));
   }
+  assert.doesNotMatch(tableBlock, /\{ label: "Tipo"/);
   assert.doesNotMatch(tableBlock, /Primera compra|Última compra|Última reserva del período/);
   assert.match(tableBlock, /representationContactLines\(representation\.contactSummary\)/);
   assert.match(tableBlock, /contact\.email/);
   assert.match(tableBlock, /contact\.phone/);
   assert.doesNotMatch(tableBlock, /lifecycle|tier|economics/i);
+  assert.match(tableBlock, /list\.hotPendingReservations/);
+  assert.match(tableBlock, /reservas recientes pendientes de estabilizar identidad/);
 });
 
-test("confirmed and related rows use sober explicit badges", () => {
+test("confirmed and related rows use compact accessible status indicators", () => {
   const tableBlock = sourceBlock(view, "function CustomerOperationalRepresentationTable", "function SecondaryViewHeader");
-  assert.match(tableBlock, /isConfirmed \? "success" : "warning"/);
-  assert.match(tableBlock, /isConfirmed \? "Confirmado" : "Relacionado \/ revisión"/);
+  assert.match(tableBlock, /statusLabel = isConfirmed \? "Confirmado" : "Relacionado \/ revisión"/);
+  assert.match(tableBlock, /aria-label=\{statusLabel\}[\s\S]*role="img"[\s\S]*title=\{statusLabel\}/);
+  assert.match(tableBlock, /bg-emerald-500[\s\S]*bg-amber-400/);
+  assert.match(tableBlock, /aria-label="Leyenda de estados"/);
+  assert.match(tableBlock, /Verde: Confirmado/);
+  assert.match(tableBlock, /Amarillo: Relacionado \/ revisión/);
   assert.doesNotMatch(tableBlock, /Inválido|Cliente malo|Conflicto crítico|Error/);
+});
+
+test("source tables fit their panels without a forced desktop horizontal width", () => {
+  const tableBlock = sourceBlock(view, "function CustomerOperationalRepresentationTable", "function searchMatchLabel");
+  assert.match(tableBlock, /\[&_table\]:table-fixed/);
+  assert.match(tableBlock, /<DataTable minWidth="100%">/);
+  assert.doesNotMatch(tableBlock, /minWidth="700px"/);
+  assert.match(tableBlock, /break-words/);
 });
 
 test("related selection opens Customer 360 and never reaches the legacy customerId path", () => {

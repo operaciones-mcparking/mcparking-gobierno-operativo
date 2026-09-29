@@ -70,6 +70,13 @@ import {
   type RelatedGroupContactCandidate,
 } from "@/lib/customer-window/customer-360-related-group-analytics-v1";
 import {
+  normalizeCustomer360GlobalReviewAnalytics,
+  normalizeCustomer360GlobalReviewIdentity,
+  type Customer360GlobalReviewAnalytics,
+  type Customer360GlobalReviewIdentity,
+  type GlobalReviewContactCandidate,
+} from "@/lib/customer-window/customer-360-global-review-v1";
+import {
   normalizeCustomerWindowRefreshHealth,
   type CustomerWindowRefreshHealth,
 } from "@/lib/customer-window/customer-refresh-health";
@@ -133,6 +140,13 @@ type CustomerRepresentationListItemV2 = CustomerRepresentationListItemBaseV2 & (
     }
   | {
       customerId: null;
+      metricScope: "global_review_profile";
+      relatedGroupId: null;
+      representationType: "global_review";
+      reviewProfileId: string;
+    }
+  | {
+      customerId: null;
       metricScope: "mcp_eap_active_snapshot";
       relatedGroupId: string;
       representationType: "related_review";
@@ -144,10 +158,16 @@ type OperationalRepresentationListItemV2 = CustomerRepresentationListItemV2 & Pi
 >;
 type OperationalRepresentationPeriodListV2 = {
   family: CustomerWindowOperationalFamilyV2;
+  hotPendingReservations: CustomerWindowSafeCount;
   items: OperationalRepresentationListItemV2[];
   page: number;
   pageSize: number;
+  representedConfirmedReservations: CustomerWindowSafeCount;
+  representedReviewReservations: CustomerWindowSafeCount;
+  stableReservations: CustomerWindowSafeCount;
   total: CustomerWindowSafeCount;
+  unrepresentedStableReservations: CustomerWindowSafeCount;
+  validReservations: CustomerWindowSafeCount;
 };
 type CustomerSummary = Record<string, unknown> & { customerId: string; ok: boolean };
 type Booking = Record<string, unknown> & {
@@ -226,7 +246,19 @@ type CustomerIdentities = {
 function emptyOperationalRepresentationList(
   family: CustomerWindowOperationalFamilyV2,
 ): OperationalRepresentationPeriodListV2 {
-  return { family, items: [], page: 1, pageSize: PERIOD_PAGE_SIZE, total: 0 };
+  return {
+    family,
+    hotPendingReservations: 0,
+    items: [],
+    page: 1,
+    pageSize: PERIOD_PAGE_SIZE,
+    representedConfirmedReservations: 0,
+    representedReviewReservations: 0,
+    stableReservations: 0,
+    total: 0,
+    unrepresentedStableReservations: 0,
+    validReservations: 0,
+  };
 }
 
 function displayText(value: unknown, fallback = "No disponible") {
@@ -283,6 +315,12 @@ function normalizeOperationalRepresentationListForUi(
     if (item.representationType === "related_review" && item.customerId === null && item.relatedGroupId
       && item.metricScope === "mcp_eap_active_snapshot") {
       return { ...common, customerId: null, metricScope: item.metricScope, relatedGroupId: item.relatedGroupId, representationType: item.representationType };
+    }
+    if (item.representationType === "global_review" && item.customerId === null
+      && item.relatedGroupId === null && item.reviewProfileId === item.representationId
+      && item.metricScope === "global_review_profile") {
+      return { ...common, customerId: null, metricScope: item.metricScope, relatedGroupId: null,
+        representationType: item.representationType, reviewProfileId: item.reviewProfileId };
     }
     return null;
   });
@@ -385,6 +423,9 @@ function packLabel(value: string | null) {
 
 function tierTone(value: string | null): BadgeTone {
   const tones: Record<string, BadgeTone> = {
+    ACTIVITY_CROSS_SOURCE: "warning",
+    ACTIVITY_MCP_EAP: "warning",
+    ACTIVITY_OKP: "warning",
     BRONZE: "warning",
     DIAMOND: "success",
     GOLD: "warning",
@@ -416,6 +457,9 @@ function behaviorTone(value: string | null): BadgeTone {
 
 function behaviorLabel(value: string | null) {
   const labels: Record<string, string> = {
+    ACTIVITY_CROSS_SOURCE: "Actividad cross-source",
+    ACTIVITY_MCP_EAP: "Actividad MCP/EAP",
+    ACTIVITY_OKP: "Actividad OKP",
     ALTERNATING: "Alternante",
     MIGRATED_TO_MCP_EAP: "Migró a MCP/EAP",
     MIGRATED_TO_OKP: "Migró a OKP",
@@ -697,19 +741,30 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
 
   return (
     <Panel count={`${displaySafeCount(list.total)} registros`} title={title}>
+      {safeCountAsBigInt(list.hotPendingReservations) > BigInt(0) ? (
+        <p className="mt-3 text-xs text-slate-500" role="status">
+          {displaySafeCount(list.hotPendingReservations)} reservas recientes pendientes de estabilizar identidad
+        </p>
+      ) : null}
       {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
       {loading && list.items.length === 0 ? <p className="mt-4 text-sm text-slate-600">Actualizando datos...</p> : null}
       {loading && list.items.length > 0 ? <p aria-live="polite" className="mt-4 text-xs text-slate-500">Actualizando...</p> : null}
       {!loading && !error && list.items.length === 0 ? <div className="mt-4"><EmptyState description="No hay clientes con reservas para este período." /></div> : null}
       {list.items.length > 0 ? (
         <div className={`mt-4 transition-opacity ${loading ? "opacity-60" : "opacity-100"}`}>
-          <div className="max-h-[640px] overflow-y-auto overscroll-contain rounded-xl">
-            <DataTable minWidth="700px">
-              <DataTableHead><tr>{["Cliente / representación", "Tipo", "QTY", "BOLETA / PACK", "Perfil comercial / trayectoria"].map((label) => <th className="border-b border-[#d6e1ea] px-3 py-2 text-left text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-slate-500" key={label}>{label}</th>)}</tr></DataTableHead>
+          <div className="max-h-[640px] overflow-y-auto overscroll-contain rounded-xl [&_table]:table-fixed">
+            <DataTable minWidth="100%">
+              <DataTableHead><tr>{[
+                { label: "Cliente / representación", width: "w-[38%]" },
+                { label: "QTY", width: "w-[18%]" },
+                { label: "BOLETA / PACK", width: "w-[18%]" },
+                { label: "Perfil comercial / trayectoria", width: "w-[26%]" },
+              ].map(({ label, width }) => <th className={`${width} border-b border-[#d6e1ea] px-2 py-2 text-left text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-slate-500`} key={label}>{label}</th>)}</tr></DataTableHead>
               <DataTableBody>
                 {list.items.map((representation) => {
                   const isConfirmed = representation.representationType === "confirmed_customer";
                   const contact = representationContactLines(representation.contactSummary);
+                  const statusLabel = isConfirmed ? "Confirmado" : "Relacionado / revisión";
                   return (
                     <tr
                       aria-label={isConfirmed ? "Abrir cliente confirmado" : "Seleccionar representación relacionada pendiente de revisión"}
@@ -724,17 +779,17 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
                       }}
                       tabIndex={0}
                     >
-                      <td className="max-w-0 px-3 py-2 align-middle"><div className="min-w-0"><p className="truncate text-xs font-medium text-navy" title={contact.email}>{contact.email}</p><p className="mt-0.5 truncate text-[11px] text-slate-500" title={contact.phone}>{contact.phone}</p></div></td>
-                      <td className="px-3 py-2 align-middle"><ValueBadge tone={isConfirmed ? "success" : "warning"}>{isConfirmed ? "Confirmado" : "Relacionado / revisión"}</ValueBadge></td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p><span className="font-medium text-navy">{displaySafeCount(representation.sourceReservations)}</span> en {list.family === "OKP" ? "OKP" : "MCP/EAP"}</p><p className="mt-0.5">{displaySafeCount(representation.reservationsInPeriod)} en el período</p></td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p>{displaySafeCount(representation.boletaReservations)} BOLETA</p><p className="mt-0.5">{displaySafeCount(representation.packReservations)} PACK</p></td>
-                      <td className="px-3 py-2 align-middle text-xs text-slate-700"><p className="font-medium text-navy">{behaviorLabel(representation.commercialTrajectory)}</p>{representation.trajectoryScope === "related_group" ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Alcance: grupo MCP/EAP en revisión</p> : null}</td>
+                      <td className="max-w-0 px-2 py-2 align-middle"><div className="flex min-w-0 items-start gap-2"><span aria-label={statusLabel} className={`mt-1 h-2 w-2 shrink-0 rounded-full ${isConfirmed ? "bg-emerald-500" : "bg-amber-400"}`} role="img" title={statusLabel} /><div className="min-w-0"><p className="truncate text-xs font-medium text-navy" title={contact.email}>{contact.email}</p><p className="mt-0.5 truncate text-[11px] text-slate-500" title={contact.phone}>{contact.phone}</p></div></div></td>
+                      <td className="px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p><span className="font-medium text-navy">{displaySafeCount(representation.sourceReservations)}</span> total {list.family === "OKP" ? "OKP" : "MCP/EAP"}</p><p>{displaySafeCount(representation.reservationsInPeriod)} en período</p></td>
+                      <td className="px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p>{displaySafeCount(representation.boletaReservations)} BOLETA</p><p>{displaySafeCount(representation.packReservations)} PACK</p></td>
+                      <td className="break-words px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p className="font-medium text-navy">{behaviorLabel(representation.commercialTrajectory)}</p>{representation.trajectoryScope === "related_group" ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Alcance: grupo MCP/EAP en revisión</p> : representation.trajectoryScope === "review_profile" ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Alcance: perfil global en revisión</p> : null}</td>
                     </tr>
                   );
                 })}
               </DataTableBody>
             </DataTable>
           </div>
+          <div aria-label="Leyenda de estados" className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-500"><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-emerald-500" />Verde: Confirmado</span><span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-amber-400" />Amarillo: Relacionado / revisión</span></div>
           <div className="mt-4 flex items-center justify-between gap-3"><button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={loading || list.page <= 1} onClick={() => onPageChange(list.page - 1)} type="button">Anterior</button><span className="text-sm text-slate-600">Página {list.page} de {pageCount}</span><button className="rounded-lg border border-[#cbd8e3] px-3 py-2 text-sm font-semibold disabled:opacity-50" disabled={loading || list.page >= pageCount} onClick={() => onPageChange(list.page + 1)} type="button">Siguiente</button></div>
         </div>
       ) : null}
@@ -1516,7 +1571,9 @@ const RELATED_CONTACT_REASON_LABELS: Record<string, string> = {
 const RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT = 5;
 const RELATED_CONTACT_PAGE_SIZE = 20;
 
-function RelatedContactEligibilityHelp({ candidate }: { candidate: RelatedGroupContactCandidate }) {
+type ReviewContactCandidate = RelatedGroupContactCandidate | GlobalReviewContactCandidate;
+
+function RelatedContactEligibilityHelp({ candidate }: { candidate: ReviewContactCandidate }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const descriptionId = useId();
@@ -1575,8 +1632,9 @@ function RelatedContactEligibilityHelp({ candidate }: { candidate: RelatedGroupC
   </div>;
 }
 
-function RelatedContactCandidateRow({ candidate }: { candidate: RelatedGroupContactCandidate }) {
-  return <li className="grid gap-1 border-t border-[#e4edf4] py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3"><div className="min-w-0"><p className="break-all text-xs font-medium text-navy">{candidate.displayValue}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">Observado en el grupo · {displayCount(candidate.bookingCount)} reservas · {displayDate(candidate.firstSeenAt)} a {displayDate(candidate.lastSeenAt)}</p></div><RelatedContactEligibilityHelp candidate={candidate} /></li>;
+function RelatedContactCandidateRow({ candidate }: { candidate: ReviewContactCandidate }) {
+  const scope = candidate.relation === "observed_in_group" ? "Observado en el grupo" : "Observado en el perfil en revisión";
+  return <li className="grid gap-1 border-t border-[#e4edf4] py-2.5 first:border-t-0 first:pt-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start sm:gap-3"><div className="min-w-0"><p className="break-all text-xs font-medium text-navy">{candidate.displayValue}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">{scope} · {displayCount(candidate.bookingCount)} reservas · {displayDate(candidate.firstSeenAt)} a {displayDate(candidate.lastSeenAt)}</p></div><RelatedContactEligibilityHelp candidate={candidate} /></li>;
 }
 
 function Customer360RelatedGroupAnalyticsPanel({ analytics }: {
@@ -1638,6 +1696,32 @@ function Customer360RelatedGroupAnalyticsPanel({ analytics }: {
   </div>;
 }
 
+function Customer360GlobalReviewAnalyticsPanel({ analytics }: {
+  analytics: Customer360GlobalReviewAnalytics;
+}) {
+  const candidates = analytics.contactability.candidates;
+  const primaryEmail = analytics.contactability.primaryContactCandidate.email;
+  const primaryPhone = analytics.contactability.primaryContactCandidate.phone;
+  return <div className="grid gap-4">
+    <section><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-navy">Analítica de representación global en revisión</h2><p className="mt-1 text-xs leading-5 text-slate-600">Actividad agregada por perfil de revisión, sin atribuirla a una persona confirmada.</p></div><ValueBadge tone="warning">Solo lectura</ValueBadge></div></section>
+    <AnalyticsBlock title="Actividad"><dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4"><AnalyticsMetric label="Reservas válidas" value={displayCount(analytics.activity.totalValidBookings)} /><AnalyticsMetric label="Reservas BOLETA" value={displayCount(analytics.activity.boletaBookings)} /><AnalyticsMetric label="Reservas PACK" value={displayCount(analytics.activity.packBookings)} /><AnalyticsMetric label="Primera actividad" value={displayDate(analytics.activity.firstActivityAt)} /><AnalyticsMetric label="Última actividad" value={displayDate(analytics.activity.lastActivityAt)} /></dl></AnalyticsBlock>
+    <AnalyticsBlock title="Fuentes"><div className="mt-2 grid gap-2 sm:grid-cols-2"><AnalyticsMetric label="MCP / EAP" value={`${displayCount(analytics.origin.counts.MCP_EAP)} reservas`} /><AnalyticsMetric label="OKP" value={`${displayCount(analytics.origin.counts.OKP)} reservas`} /></div><p className="mt-2 text-[10px] text-slate-500">Cobertura: {analytics.origin.sourceCoverage === "CROSS_SOURCE" ? "Cross-source" : analytics.origin.sourceCoverage === "MCP_EAP" ? "MCP / EAP" : "OKP"}</p></AnalyticsBlock>
+    <AnalyticsBlock title="Contactabilidad"><div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5"><p className="text-xs font-medium text-amber-900">Revisión humana requerida</p><p className="mt-1 text-[11px] leading-4 text-amber-800">Los contactos son evidencia observada. No están habilitados para campañas automáticas.</p></div><dl className="mt-3 grid gap-3 sm:grid-cols-2"><div><dt className="text-[11px] text-slate-500">Email candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryEmail?.displayValue ?? "Sin candidato único"}</dd></div><div><dt className="text-[11px] text-slate-500">Teléfono candidato para revisión</dt><dd className="mt-1 break-all text-xs font-medium text-navy">{primaryPhone?.displayValue ?? "Sin candidato único"}</dd></div></dl><ul className="mt-3">{candidates.map((candidate) => <RelatedContactCandidateRow candidate={candidate} key={`${candidate.type}:${candidate.normalizedValue}`} />)}</ul>{candidates.length === 0 ? <p className="mt-3 text-xs text-slate-500">Sin contactos observados válidos.</p> : null}</AnalyticsBlock>
+    <AnalyticsBlock title="Evidencia MCP / EAP"><p className="mt-2 text-xs text-slate-600">{displayCount(analytics.relatedMcpEapEvidence.length)} relación(es) de evidencia con grupos del snapshot activo.</p><p className="mt-1 text-[10px] leading-4 text-slate-500">Las coincidencias se conservan como evidencia y nunca fusionan perfiles ni eligen un grupo automáticamente.</p></AnalyticsBlock>
+  </div>;
+}
+
+function Customer360GlobalReviewIdentityPanel({ detail }: {
+  detail: Customer360GlobalReviewIdentity;
+}) {
+  return <div className="grid gap-4">
+    <section><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-navy">Identidad en revisión</h2><p className="mt-1 text-xs leading-5 text-slate-600">Perfil global estable con links candidate/conflict. Esta vista no modifica identidad.</p></div><ValueBadge tone="warning">Solo lectura</ValueBadge></div></section>
+    <AnalyticsBlock title="Links de reservas"><ul className="mt-2 divide-y divide-[#e4edf4]">{detail.links.map((link) => <li className="flex items-center justify-between gap-3 py-2 text-xs" key={link.bookingLinkId}><span className="text-navy">{link.source} · reserva {link.sourceRowId}</span><ValueBadge tone={link.status === "conflict" ? "warning" : "neutral"}>{link.status}</ValueBadge></li>)}</ul></AnalyticsBlock>
+    <AnalyticsBlock title="Historial de resolución"><ul className="mt-2 space-y-2">{detail.events.map((event) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2" key={event.eventId}><p className="text-xs font-medium text-navy">{identityResolutionReasonLabel(event.reason)}</p><p className="mt-0.5 text-[10px] text-slate-500">{event.eventType} · {event.source ?? "Sin fuente"} · {displayDate(event.createdAt)}</p></li>)}</ul>{detail.events.length === 0 ? <p className="mt-2 text-xs text-slate-500">Sin eventos de resolución disponibles.</p> : null}</AnalyticsBlock>
+    <AnalyticsBlock title="Evidencia Related Review MCP / EAP"><ul className="mt-2 space-y-2">{detail.relatedMcpEapEvidence.map((evidence) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2 text-xs text-slate-600" key={`${evidence.groupId}:${evidence.evidenceSource}:${evidence.relationReason}`}><p className="font-medium text-navy">{evidence.relationReason === "same_phone_history" ? "Teléfono históricamente relacionado" : evidence.relationReason === "same_email_history" ? "Email históricamente relacionado" : "Perfil presente en el grupo"}</p><p className="mt-0.5 font-mono text-[10px]">Grupo {abbreviatedIdentifier(evidence.groupId)}</p></li>)}</ul>{detail.relatedMcpEapEvidence.length === 0 ? <p className="mt-2 text-xs text-slate-500">No existe relación certificada con un grupo MCP/EAP activo.</p> : null}</AnalyticsBlock>
+  </div>;
+}
+
 function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   activeSnapshotId: string | null;
   onClose: () => void;
@@ -1653,11 +1737,13 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   const [bookingsPage, setBookingsPage] = useState(1);
   const [stale, setStale] = useState(false);
   const [identityDetail, setIdentityDetail] = useState<CustomerWindowIdentityResolutionDetailV2 | null>(null);
+  const [globalIdentity, setGlobalIdentity] = useState<Customer360GlobalReviewIdentity | null>(null);
   const [identityDetailLoading, setIdentityDetailLoading] = useState(false);
   const [identityDetailError, setIdentityDetailError] = useState<string | null>(null);
   const [identityDetailStale, setIdentityDetailStale] = useState(false);
   const [analytics, setAnalytics] = useState<Customer360BoletaAnalytics | null>(null);
   const [relatedAnalytics, setRelatedAnalytics] = useState<Customer360RelatedGroupAnalytics | null>(null);
+  const [globalAnalytics, setGlobalAnalytics] = useState<Customer360GlobalReviewAnalytics | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsNotMaterialized, setAnalyticsNotMaterialized] = useState(false);
@@ -1762,11 +1848,13 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     identityDetailController.current = null;
     setActiveView("summary");
     setIdentityDetail(null);
+    setGlobalIdentity(null);
     setIdentityDetailLoading(false);
     setIdentityDetailError(null);
     setIdentityDetailStale(false);
     setAnalytics(null);
     setRelatedAnalytics(null);
+    setGlobalAnalytics(null);
     setAnalyticsLoading(false);
     setAnalyticsError(null);
     setAnalyticsNotMaterialized(false);
@@ -1778,15 +1866,16 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
 
   async function openCustomer360Identity() {
     setActiveView("identity");
-    if (!representation || representation.representationType !== "related_review"
-      || identityDetail || identityDetailLoading || identityDetailController.current) return;
+    if (!representation || representation.representationType === "confirmed_customer"
+      || identityDetail || globalIdentity || identityDetailLoading || identityDetailController.current) return;
     const expectedLocator = customer360LocatorFromRepresentation({
       activeSnapshotId: resolvedAuthoritySnapshotId,
       representationId: representation.representationId,
       representationKey: representation.representationKey,
       representationType: representation.representationType,
     });
-    if (!expectedLocator || !expectedLocator.authoritySnapshotId) {
+    if (!expectedLocator || (representation.representationType === "related_review"
+      && !expectedLocator.authoritySnapshotId)) {
       setIdentityDetailStale(true);
       return;
     }
@@ -1795,14 +1884,26 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     setIdentityDetailLoading(true);
     setIdentityDetailError(null);
     setIdentityDetailStale(false);
-    const params = new URLSearchParams({
-      action: "identity-resolution-detail-v2",
-      relatedGroupId: representation.relatedGroupId,
-      representationType: representation.representationType,
-    });
     try {
-      const body = await getJson(`/api/orquestador/customer-window/customers?${params.toString()}`, controller.signal);
+      const globalReview = representation.representationType === "global_review";
+      const params = globalReview ? customer360RequestParams(expectedLocator) : new URLSearchParams({
+        action: "identity-resolution-detail-v2",
+        relatedGroupId: representation.relatedGroupId,
+        representationType: representation.representationType,
+      });
+      const endpoint = globalReview
+        ? "/api/orquestador/customer-window/360/identity"
+        : "/api/orquestador/customer-window/customers";
+      const body = await getJson(`${endpoint}?${params.toString()}`, controller.signal);
       if (identityDetailController.current !== controller) return;
+      if (globalReview) {
+        const nextIdentity = normalizeCustomer360GlobalReviewIdentity(body);
+        if (!nextIdentity || nextIdentity.locator.representationKey !== representation.representationKey) {
+          throw new Error("Respuesta de identidad global inválida.");
+        }
+        setGlobalIdentity(nextIdentity);
+        return;
+      }
       const nextDetail = normalizeCustomerWindowIdentityResolutionDetailV2(body);
       if (!nextDetail || nextDetail.relatedGroupId !== representation.relatedGroupId) {
         throw new Error("Respuesta de resolución de identidad inválida.");
@@ -1828,7 +1929,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
 
   async function openCustomer360Analytics() {
     setActiveView("analytics");
-    if (!representation || analytics || relatedAnalytics || analyticsLoading
+    if (!representation || analytics || relatedAnalytics || globalAnalytics || analyticsLoading
       || analyticsController.current) return;
     const expectedLocator = customer360LocatorFromRepresentation({
       activeSnapshotId: resolvedAuthoritySnapshotId,
@@ -1851,11 +1952,14 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
       if (analyticsController.current !== controller) return;
       const normalized = representation.representationType === "confirmed_customer"
         ? normalizeCustomer360BoletaAnalytics(body)
-        : normalizeCustomer360RelatedGroupAnalytics(body);
+        : representation.representationType === "global_review"
+          ? normalizeCustomer360GlobalReviewAnalytics(body)
+          : normalizeCustomer360RelatedGroupAnalytics(body);
       if (!normalized || normalized.locator.representationKey !== representation.representationKey) {
         throw new Error("Respuesta de analítica Customer 360 inválida.");
       }
       if (representation.representationType === "confirmed_customer") setAnalytics(normalized as Customer360BoletaAnalytics);
+      else if (representation.representationType === "global_review") setGlobalAnalytics(normalized as Customer360GlobalReviewAnalytics);
       else setRelatedAnalytics(normalized as Customer360RelatedGroupAnalytics);
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
@@ -1870,7 +1974,9 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
       } else {
         setAnalyticsError(representation.representationType === "confirmed_customer"
           ? "No fue posible cargar la analítica BOLETA."
-          : "No fue posible cargar la analítica del grupo relacionado.");
+          : representation.representationType === "global_review"
+            ? "No fue posible cargar la analítica de la representación global."
+            : "No fue posible cargar la analítica del grupo relacionado.");
       }
     } finally {
       if (analyticsController.current === controller) {
@@ -1882,19 +1988,21 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
 
   if (!representation) return null;
   const related = representation.representationType === "related_review";
+  const globalReview = representation.representationType === "global_review";
+  const review = related || globalReview;
   const contacts = overview?.identity.contacts;
   const locator = overview?.locator ?? null;
   const title = contacts?.singleEmail ?? contacts?.singlePhone
     ?? representation.contactSummary.singleEmail ?? representation.contactSummary.singlePhone
-    ?? (related ? "Cliente relacionado" : "Cliente confirmado");
+    ?? (globalReview ? "Representación global en revisión" : related ? "Cliente relacionado" : "Cliente confirmado");
   const subtitle = contacts?.singleEmail ? contacts.singlePhone : null;
   const timelineItems = bookings?.items.map(customer360TimelineItem) ?? [];
   const pageCount = Math.max(1, Math.ceil((bookings?.pagination.total ?? 0) / TIMELINE_PAGE_SIZE));
 
   return (
     <CustomerRepresentationDrawerFrame
-      badge={related ? "Revisión relacionada · Solo lectura" : "Confirmado"}
-      badgeTone={related ? "warning" : "success"}
+      badge={globalReview ? "Revisión global · Solo lectura" : related ? "Revisión relacionada · Solo lectura" : "Confirmado"}
+      badgeTone={review ? "warning" : "success"}
       label="Customer 360"
       onClose={onClose}
       subtitle={subtitle}
@@ -1902,16 +2010,16 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     >
       <div className="grid gap-5">
         {stale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">Representación no vigente</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : null}
-        {!stale ? <div aria-label="Secciones de Customer 360" className="flex gap-1 overflow-x-auto border-b border-[#d6e1ea]" role="tablist">{(related ? ["summary", "history", "analytics", "identity"] as const : ["summary", "history", "analytics"] as const).map((view) => <button aria-selected={activeView === view} className={`whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium ${activeView === view ? "border-sea text-navy" : "border-transparent text-slate-500 hover:text-navy"}`} key={view} onClick={() => view === "identity" ? void openCustomer360Identity() : view === "analytics" ? void openCustomer360Analytics() : setActiveView(view)} role="tab" type="button">{view === "summary" ? "Resumen" : view === "history" ? "Historial" : view === "identity" ? "Identidad" : "Analítica"}</button>)}</div> : null}
+        {!stale ? <div aria-label="Secciones de Customer 360" className="flex gap-1 overflow-x-auto border-b border-[#d6e1ea]" role="tablist">{(review ? ["summary", "history", "analytics", "identity"] as const : ["summary", "history", "analytics"] as const).map((view) => <button aria-selected={activeView === view} className={`whitespace-nowrap border-b-2 px-3 py-2 text-xs font-medium ${activeView === view ? "border-sea text-navy" : "border-transparent text-slate-500 hover:text-navy"}`} key={view} onClick={() => view === "identity" ? void openCustomer360Identity() : view === "analytics" ? void openCustomer360Analytics() : setActiveView(view)} role="tab" type="button">{view === "summary" ? "Resumen" : view === "history" ? "Historial" : view === "identity" ? "Identidad" : "Analítica"}</button>)}</div> : null}
         {!stale && activeView === "summary" && overviewError ? <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700" role="alert">{overviewError}</p> : null}
         {!stale && activeView === "summary" ? <CustomerSummaryMetrics fields={overview ? [
           { label: "Reservas", value: displayCount(overview.summary.totalBookings) },
           { label: "Primera reserva", value: displayDate(overview.summary.firstBookingAt) },
           { label: "Última reserva", value: displayDate(overview.summary.lastBookingAt) },
-          { label: "Identidad", value: <ValueBadge tone={related ? "warning" : "success"}>{related ? "En revisión" : "Confirmada"}</ValueBadge> },
+          { label: "Identidad", value: <ValueBadge tone={review ? "warning" : "success"}>{review ? "En revisión" : "Confirmada"}</ValueBadge> },
         ] : []} loading={overviewLoading} /> : null}
 
-        {!stale && activeView === "summary" && overview ? <section aria-labelledby="customer-360-contacts-title"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-700" id="customer-360-contacts-title">Contacto</h3><ValueBadge tone={related ? "warning" : "success"}>{related ? "Observado" : "Directo"}</ValueBadge></div><div className="mt-2 grid gap-2 sm:grid-cols-2">{overview.identity.contacts.semantics === "observed" && locator ? <><Customer360ObservedContactGroup contactType="email" count={overview.identity.contacts.emailCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.emailPreview} /><Customer360ObservedContactGroup contactType="phone" count={overview.identity.contacts.phoneCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.phonePreview} /></> : <><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Email · {displayCount(overview.identity.contacts.emailCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singleEmail ?? "No disponible"}</p></div><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Teléfono · {displayCount(overview.identity.contacts.phoneCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singlePhone ?? "No disponible"}</p></div></>}</div></section> : null}
+        {!stale && activeView === "summary" && overview ? <section aria-labelledby="customer-360-contacts-title"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-700" id="customer-360-contacts-title">Contacto</h3><ValueBadge tone={review ? "warning" : "success"}>{review ? "Observado" : "Directo"}</ValueBadge></div><div className="mt-2 grid gap-2 sm:grid-cols-2">{overview.identity.contacts.semantics === "observed" && locator ? <><Customer360ObservedContactGroup contactType="email" count={overview.identity.contacts.emailCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.emailPreview} /><Customer360ObservedContactGroup contactType="phone" count={overview.identity.contacts.phoneCount} locator={locator} onStale={() => setStale(true)} preview={overview.identity.contacts.phonePreview} /></> : <><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Email · {displayCount(overview.identity.contacts.emailCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singleEmail ?? "No disponible"}</p></div><div className="rounded-lg border border-[#e4edf4] px-3 py-2.5"><p className="text-[11px] text-slate-500">Teléfono · {displayCount(overview.identity.contacts.phoneCount)}</p><p className="mt-1 break-all text-xs font-medium text-navy">{overview.identity.contacts.singlePhone ?? "No disponible"}</p></div></>}</div></section> : null}
 
         {!stale && activeView === "summary" && overview ? <section aria-labelledby="customer-360-coverage-title"><h3 className="text-sm font-medium text-slate-700" id="customer-360-coverage-title">Cobertura por fuente</h3><div className="mt-2 flex flex-wrap gap-2">{overview.sourceCoverage.map((coverage) => <div className="rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-2" key={coverage.source}><p className="text-[11px] text-slate-500">{coverage.source}</p><p className="text-sm font-medium text-navy">{displayCount(coverage.bookingCount)} reservas</p></div>)}</div></section> : null}
 
@@ -1926,9 +2034,11 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
           pageCount={pageCount}
           total={bookings?.pagination.total ?? 0}
         /> : null}
-        {!stale && !related && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica BOLETA...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">Este cliente confirmado todavía no tiene una lectura BOLETA disponible.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : analytics ? <Customer360BoletaAnalyticsPanel analytics={analytics} /> : null : null}
+        {!stale && !review && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica BOLETA...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">Este cliente confirmado todavía no tiene una lectura BOLETA disponible.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : analytics ? <Customer360BoletaAnalyticsPanel analytics={analytics} /> : null : null}
         {!stale && related && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica del grupo...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">El snapshot vigente todavía no contiene la lectura analítica del grupo.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : relatedAnalytics ? <Customer360RelatedGroupAnalyticsPanel analytics={relatedAnalytics} /> : null : null}
+        {!stale && globalReview && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica de revisión...</p> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : globalAnalytics ? <Customer360GlobalReviewAnalyticsPanel analytics={globalAnalytics} /> : null : null}
         {!stale && related && activeView === "identity" ? identityDetailStale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">stale_representation</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : <CustomerIdentityResolutionPanel detail={identityDetail} detailError={identityDetailError} detailLoading={identityDetailLoading} group={null} loading={false} onBack={() => setActiveView("summary")} onRetry={() => void openCustomer360Identity()} timeline={null} /> : null}
+        {!stale && globalReview && activeView === "identity" ? identityDetailLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando identidad...</p> : identityDetailError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{identityDetailError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Identity()} type="button">Reintentar</button></section> : globalIdentity ? <Customer360GlobalReviewIdentityPanel detail={globalIdentity} /> : null : null}
       </div>
     </CustomerRepresentationDrawerFrame>
   );
@@ -2626,6 +2736,12 @@ export function CustomerWindowView() {
       selectRepresentation({ ...item, authoritySnapshotId: null, customerId: item.customerId, metricScope: "all_confirmed_sources", relatedGroupId: null, representationType: "confirmed_customer" });
     } else if (item.representationType === "related_review" && item.customerId === null && item.relatedGroupId && item.metricScope === "mcp_eap_active_snapshot") {
       selectRepresentation({ ...item, authoritySnapshotId: item.authoritySnapshotId, customerId: null, metricScope: "mcp_eap_active_snapshot", relatedGroupId: item.relatedGroupId, representationType: "related_review" });
+    } else if (item.representationType === "global_review" && item.customerId === null
+      && item.relatedGroupId === null && item.reviewProfileId === item.representationId
+      && item.metricScope === "global_review_profile") {
+      selectRepresentation({ ...item, authoritySnapshotId: null, customerId: null,
+        metricScope: "global_review_profile", relatedGroupId: null,
+        representationType: "global_review", reviewProfileId: item.reviewProfileId });
     }
   }
 

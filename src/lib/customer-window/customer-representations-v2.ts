@@ -1,7 +1,7 @@
 export type CustomerWindowSafeCount = number | string;
-export type CustomerWindowRepresentationTypeV2 = "confirmed_customer" | "related_review";
-export type CustomerWindowMetricScopeV2 = "all_confirmed_sources" | "mcp_eap_active_snapshot";
-export type CustomerWindowIdentityStatusV2 = "confirmed" | "related_review";
+export type CustomerWindowRepresentationTypeV2 = "confirmed_customer" | "global_review" | "related_review";
+export type CustomerWindowMetricScopeV2 = "all_confirmed_sources" | "global_review_profile" | "mcp_eap_active_snapshot";
+export type CustomerWindowIdentityStatusV2 = "confirmed" | "global_review" | "related_review";
 export type CustomerWindowContactabilityV2 = "direct" | "review_required";
 export type CustomerWindowContactSemanticsV2 = "direct" | "observed";
 
@@ -27,6 +27,7 @@ export type CustomerWindowRepresentationV2 = {
   lastBookingAtInPeriod: string | null;
   lastPurchaseAt: string | null;
   metricScope: CustomerWindowMetricScopeV2;
+  reviewProfileId?: string | null;
   relatedGroupId: string | null;
   representationId: string;
   representationKey: string;
@@ -47,6 +48,9 @@ export type CustomerWindowCommercialTrajectoryV2 =
   | "ALTERNATING"
   | "MIGRATED_TO_MCP_EAP"
   | "MIGRATED_TO_OKP"
+  | "ACTIVITY_CROSS_SOURCE"
+  | "ACTIVITY_MCP_EAP"
+  | "ACTIVITY_OKP"
   | "ONLY_MCP_EAP"
   | "ONLY_OKP";
 
@@ -55,22 +59,28 @@ export type CustomerWindowOperationalRepresentationV2 = CustomerWindowRepresenta
   commercialTrajectory: CustomerWindowCommercialTrajectoryV2;
   packReservations: CustomerWindowSafeCount;
   sourceReservations: CustomerWindowSafeCount;
-  trajectoryScope: "confirmed_identity" | "related_group";
+  trajectoryScope: "confirmed_identity" | "related_group" | "review_profile";
 };
 
 export type CustomerWindowOperationalRepresentationListV2 = {
   family: CustomerWindowOperationalFamilyV2;
+  hotPendingReservations: CustomerWindowSafeCount;
   items: CustomerWindowOperationalRepresentationV2[];
   page: number;
   pageSize: number;
+  representedConfirmedReservations: CustomerWindowSafeCount;
+  representedReviewReservations: CustomerWindowSafeCount;
+  stableReservations: CustomerWindowSafeCount;
   total: CustomerWindowSafeCount;
+  unrepresentedStableReservations: CustomerWindowSafeCount;
+  validReservations: CustomerWindowSafeCount;
 };
 
 export type CustomerWindowRepresentationSearchItemV2 = CustomerWindowRepresentationV2 & {
   authoritySnapshotId: string | null;
   displayEmail: string | null;
   displayPhone: string | null;
-  matchSemantics: "direct" | "observed_in_group" | "historically_related" | "booking" | "source_customer";
+  matchSemantics: "direct" | "observed_in_group" | "observed_in_review_profile" | "historically_related" | "booking" | "source_customer";
   matchType: "exact_email" | "exact_phone" | "exact_booking" | "exact_source_row" | "exact_source_customer" | "exact_plate" | "historical_email" | "historical_phone";
   matchValueType: "email" | "phone" | "booking_code" | "source_row_id" | "source_customer_id" | "plate";
 };
@@ -229,7 +239,7 @@ export type CustomerWindowIdentityResolutionDetailV2 = {
 export function isCustomerWindowRepresentationTypeV2(
   value: string | null,
 ): value is CustomerWindowRepresentationTypeV2 {
-  return value === "confirmed_customer" || value === "related_review";
+  return value === "confirmed_customer" || value === "global_review" || value === "related_review";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -311,6 +321,7 @@ function normalizeRepresentation(value: unknown): CustomerWindowRepresentationV2
     lastBookingAtInPeriod,
     lastPurchaseAt,
     metricScope,
+    reviewProfileId,
     relatedGroupId,
     representationId,
     representationKey,
@@ -341,6 +352,10 @@ function normalizeRepresentation(value: unknown): CustomerWindowRepresentationV2
     if (customerId !== null || !isNonEmptyString(relatedGroupId) || representationId !== relatedGroupId) return null;
     if (metricScope !== "mcp_eap_active_snapshot") return null;
     if (normalizedContactSummary.semantics !== "observed") return null;
+  } else if (representationType === "global_review") {
+    if (!isUuid(representationId) || customerId !== null || relatedGroupId !== null
+      || reviewProfileId !== representationId || metricScope !== "global_review_profile"
+      || normalizedContactSummary.semantics !== "observed") return null;
   } else {
     return null;
   }
@@ -364,11 +379,27 @@ export function normalizeCustomerWindowOperationalRepresentationListV2(
 ): CustomerWindowOperationalRepresentationListV2 | null {
   if (!isRecord(value) || (value.family !== "MCP_EAP" && value.family !== "OKP")) return null;
   if (!Array.isArray(value.items) || !isSafeCount(value.total)) return null;
+  if (!isSafeCount(value.validReservations)
+    || !isSafeCount(value.stableReservations)
+    || !isSafeCount(value.representedConfirmedReservations)
+    || !isSafeCount(value.representedReviewReservations)
+    || !isSafeCount(value.hotPendingReservations)
+    || !isSafeCount(value.unrepresentedStableReservations)) return null;
+  if (countAsBigInt(value.validReservations)
+      !== countAsBigInt(value.stableReservations) + countAsBigInt(value.hotPendingReservations)
+    || countAsBigInt(value.stableReservations)
+      !== countAsBigInt(value.representedConfirmedReservations)
+        + countAsBigInt(value.representedReviewReservations)
+        + countAsBigInt(value.unrepresentedStableReservations)
+    || countAsBigInt(value.unrepresentedStableReservations) !== BigInt(0)) return null;
   if (!isSafeInteger(value.page, 1) || !isSafeInteger(value.pageSize, 1) || value.pageSize > 100) return null;
   const trajectories = new Set([
     "ALTERNATING",
     "MIGRATED_TO_MCP_EAP",
     "MIGRATED_TO_OKP",
+    "ACTIVITY_CROSS_SOURCE",
+    "ACTIVITY_MCP_EAP",
+    "ACTIVITY_OKP",
     "ONLY_MCP_EAP",
     "ONLY_OKP",
   ]);
@@ -386,7 +417,12 @@ export function normalizeCustomerWindowOperationalRepresentationListV2(
       if (value.family !== "MCP_EAP" || item.trajectoryScope !== "related_group"
         || item.commercialTrajectory !== "ONLY_MCP_EAP") return null;
     }
-    if (value.family === "OKP" && representation.representationType !== "confirmed_customer") return null;
+    if (representation.representationType === "global_review") {
+      if (item.trajectoryScope !== "review_profile"
+        || !["ACTIVITY_CROSS_SOURCE", "ACTIVITY_MCP_EAP", "ACTIVITY_OKP"].includes(
+          String(item.commercialTrajectory),
+        )) return null;
+    }
     return item as CustomerWindowOperationalRepresentationV2;
   });
   if (items.some((item) => item === null)) return null;
@@ -400,7 +436,7 @@ export function normalizeCustomerWindowRepresentationSearchV2(
   if (!isSafeInteger(value.limit, 1) || value.limit > 20 || value.items.length > value.limit) return null;
   const allowedMatchTypes = new Set(["exact_email", "exact_phone", "exact_booking", "exact_source_row", "exact_source_customer", "exact_plate", "historical_email", "historical_phone"]);
   const allowedValueTypes = new Set(["email", "phone", "booking_code", "source_row_id", "source_customer_id", "plate"]);
-  const allowedSemantics = new Set(["direct", "observed_in_group", "historically_related", "booking", "source_customer"]);
+  const allowedSemantics = new Set(["direct", "observed_in_group", "observed_in_review_profile", "historically_related", "booking", "source_customer"]);
   const items = value.items.map((item) => {
     const representation = normalizeRepresentation(item);
     if (!representation || !isRecord(item)
@@ -413,6 +449,7 @@ export function normalizeCustomerWindowRepresentationSearchV2(
     if (historicalType !== (item.matchSemantics === "historically_related")) return null;
     if (historicalType && representation.representationType !== "related_review") return null;
     if (representation.representationType === "confirmed_customer" && item.authoritySnapshotId !== null) return null;
+    if (representation.representationType === "global_review" && item.authoritySnapshotId !== null) return null;
     if (representation.representationType === "related_review" && !isUuid(item.authoritySnapshotId)) return null;
     return item as CustomerWindowRepresentationSearchItemV2;
   });

@@ -88,6 +88,12 @@ import {
   normalizeCustomer360RelatedGroupAnalytics,
   type Customer360RelatedGroupAnalytics,
 } from "@/lib/customer-window/customer-360-related-group-analytics-v1";
+import {
+  normalizeCustomer360GlobalReviewAnalytics,
+  normalizeCustomer360GlobalReviewIdentity,
+  type Customer360GlobalReviewAnalytics,
+  type Customer360GlobalReviewIdentity,
+} from "@/lib/customer-window/customer-360-global-review-v1";
 
 const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -971,7 +977,7 @@ export async function listCustomerWindowOperationalRepresentationsByPurchasePeri
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
     const { data, error } = await supabase.rpc(
-      "customer_window_v2_list_operational_representations_by_purchase",
+      "customer_window_v2_list_operational_global_v1",
       {
         p_family: input.family,
         p_from: input.from,
@@ -1019,7 +1025,7 @@ export async function searchCustomerWindowV2Representations(input: {
 }) {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = await supabase.rpc("customer_window_v2_search_representations_mcp_eap", {
+    const { data, error } = await supabase.rpc("customer_window_v2_search_global_v1", {
       p_email: input.email,
       p_exact_identifier: input.exactIdentifier,
       p_limit: input.limit,
@@ -1111,7 +1117,10 @@ export async function getCustomerWindow360Overview(
 ): Promise<Customer360ReadResult<Customer360Overview>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = await supabase.rpc("customer_window_360_v1_get_overview", {
+    const rpc = locator.representationType === "global_review"
+      ? "customer_window_360_v1_get_global_review_overview"
+      : "customer_window_360_v1_get_overview";
+    const { data, error } = await supabase.rpc(rpc, {
       p_locator: locator,
     });
     if (error) return { data: null, errorCode: customer360ErrorCode(error) };
@@ -1160,6 +1169,42 @@ export async function getCustomerWindow360RelatedGroupAnalytics(
   }
 }
 
+export async function getCustomerWindow360GlobalReviewAnalytics(
+  locator: Customer360Locator,
+): Promise<Customer360ReadResult<Customer360GlobalReviewAnalytics>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_360_v1_get_global_review_analytics", {
+      p_locator: locator,
+    });
+    if (error) return { data: null, errorCode: customer360ErrorCode(error) };
+    const normalized = normalizeCustomer360GlobalReviewAnalytics(data);
+    return normalized
+      ? { data: normalized, errorCode: null }
+      : { data: null, errorCode: "representation_contract_unavailable" };
+  } catch {
+    return { data: null, errorCode: "representation_contract_unavailable" };
+  }
+}
+
+export async function getCustomerWindow360GlobalReviewIdentity(
+  locator: Customer360Locator,
+): Promise<Customer360ReadResult<Customer360GlobalReviewIdentity>> {
+  try {
+    const supabase = createOrquestadorSupabaseAdminClient();
+    const { data, error } = await supabase.rpc("customer_window_360_v1_get_global_review_identity", {
+      p_locator: locator,
+    });
+    if (error) return { data: null, errorCode: customer360ErrorCode(error) };
+    const normalized = normalizeCustomer360GlobalReviewIdentity(data);
+    return normalized
+      ? { data: normalized, errorCode: null }
+      : { data: null, errorCode: "representation_contract_unavailable" };
+  } catch {
+    return { data: null, errorCode: "representation_contract_unavailable" };
+  }
+}
+
 export async function listCustomerWindow360Bookings(input: {
   locator: Customer360Locator;
   page: number;
@@ -1167,7 +1212,10 @@ export async function listCustomerWindow360Bookings(input: {
 }): Promise<Customer360ReadResult<Customer360Bookings>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = await supabase.rpc("customer_window_360_v1_list_bookings", {
+    const rpc = input.locator.representationType === "global_review"
+      ? "customer_window_360_v1_list_global_review_bookings"
+      : "customer_window_360_v1_list_bookings";
+    const { data, error } = await supabase.rpc(rpc, {
       p_locator: input.locator,
       p_page: input.page,
       p_page_size: input.pageSize,
@@ -1190,7 +1238,10 @@ export async function listCustomerWindow360ObservedContacts(input: {
 }): Promise<Customer360ReadResult<Customer360ObservedContacts>> {
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
-    const { data, error } = await supabase.rpc("customer_window_360_v1_list_observed_contacts", {
+    const rpc = input.locator.representationType === "global_review"
+      ? "customer_window_360_v1_list_global_review_contacts"
+      : "customer_window_360_v1_list_observed_contacts";
+    const { data, error } = await supabase.rpc(rpc, {
       p_contact_type: input.contactType,
       p_locator: input.locator,
       p_page: input.page,

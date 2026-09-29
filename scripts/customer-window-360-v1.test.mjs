@@ -134,7 +134,7 @@ test("bookings preserve the V1 multi-source and snapshot scopes", () => {
   assert.match(migration, /'observedEmail', paged\.observed_email/);
 });
 
-test("observed contacts are related-only, distinct, paginated and lazy", () => {
+test("observed contacts are review-only, distinct, paginated and lazy", () => {
   const contactsRpc = observedContactsMigration.slice(
     observedContactsMigration.indexOf("create or replace function public.customer_window_360_v1_list_observed_contacts"),
   );
@@ -147,7 +147,7 @@ test("observed contacts are related-only, distinct, paginated and lazy", () => {
   assert.match(contract, /new Set\(value\)\.size === value\.length/);
   assert.match(contract, /Math\.min\(value\.emailCount as number, 5\)/);
   assert.match(contract, /value\.items\.length !== expectedItems/);
-  assert.match(contract, /locator\.representationType !== "related_review"/);
+  assert.match(contract, /locator\.representationType === "confirmed_customer"/);
 });
 
 test("observed contact normalizers cover zero one multiple preview and paging", () => {
@@ -177,7 +177,7 @@ test("HTTP routes authenticate, disable caching, and map safe statuses", () => {
     assert.match(route, /customer360LocatorFromRequest/);
   }
   assert.match(bookingsRoute, /pageSize[^\n]*100/);
-  assert.match(contactsRoute, /locator\.representationType !== "related_review"/);
+  assert.match(contactsRoute, /locator\.representationType === "confirmed_customer"/);
   assert.match(contactsRoute, /contactType !== "email" && contactType !== "phone"/);
   assert.match(admin, /customer_window_360_v1_get_overview/);
   assert.match(admin, /customer_window_360_v1_list_bookings/);
@@ -210,13 +210,13 @@ test("related Customer 360 exposes lazy analytics and identity tabs without chan
   const drawer = view.slice(view.indexOf("function Customer360Drawer"), view.indexOf("function RelatedReviewDrawer"));
   assert.match(drawer, /\["summary", "history", "analytics", "identity"\]/);
   for (const label of ["Resumen", "Historial", "Analítica", "Identidad"]) assert.match(drawer, new RegExp(`"${label}"`));
-  assert.match(drawer, /representation\.representationType !== "related_review"[\s\S]*return/);
+  assert.match(drawer, /representation\.representationType === "confirmed_customer"[\s\S]*return/);
   assert.match(drawer, /async function openCustomer360Identity\(\)[\s\S]*action: "identity-resolution-detail-v2"/);
   assert.match(drawer, /relatedGroupId: representation\.relatedGroupId/);
   assert.match(drawer, /nextDetail\.snapshotId !== expectedLocator\.authoritySnapshotId/);
   assert.match(drawer, /setIdentityDetailStale\(true\)/);
   assert.match(drawer, /stale_representation[\s\S]*Esta representación ya no está vigente\. Actualiza Customer Window\./);
-  assert.match(drawer, /identityDetail \|\| identityDetailLoading \|\| identityDetailController\.current/);
+  assert.match(drawer, /identityDetail \|\| globalIdentity \|\| identityDetailLoading \|\| identityDetailController\.current/);
   assert.match(drawer, /identityDetailController\.current\?\.abort\(\)/);
   assert.match(drawer, /setIdentityDetailError\("No fue posible cargar el detalle de identidad\."\)/);
   assert.match(drawer, /<CustomerIdentityResolutionPanel[\s\S]*group=\{null\}[\s\S]*timeline=\{null\}/);

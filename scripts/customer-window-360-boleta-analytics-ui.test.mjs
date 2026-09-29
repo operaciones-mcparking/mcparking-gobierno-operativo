@@ -92,11 +92,13 @@ test("certified Claudia history keeps sixteen valid reservations split into two 
   assert.equal(normalized.dataQuality.excludedPackBookingCount, 14);
 });
 
-test("confirmed tabs lazy-load analytics while related keeps identity", () => {
+test("confirmed BOLETA remains scoped while review representations lazy-load their own analytics", () => {
   const drawer = view.slice(view.indexOf("function Customer360Drawer"), view.indexOf("function RelatedReviewDrawer"));
-  assert.match(drawer, /related \? \["summary", "history", "identity"\][\s\S]*\["summary", "history", "analytics"\]/);
+  assert.match(drawer, /const review = related \|\| globalReview/);
+  assert.match(drawer, /review \? \["summary", "history", "analytics", "identity"\][\s\S]*\["summary", "history", "analytics"\]/);
   assert.match(drawer, /view === "analytics" \? void openCustomer360Analytics\(\)/);
-  assert.match(drawer, /representation\.representationType !== "confirmed_customer"[\s\S]*return/);
+  assert.match(drawer, /representation\.representationType === "confirmed_customer"[\s\S]*normalizeCustomer360BoletaAnalytics/);
+  assert.match(drawer, /representation\.representationType === "confirmed_customer"\) setAnalytics/);
   assert.equal((drawer.match(/customer-window\/360\/analytics/g) ?? []).length, 1);
   assert.match(drawer, /analyticsController\.current\?\.abort\(\)/);
   assert.match(drawer, /boleta_analytics_not_materialized/);
@@ -116,10 +118,12 @@ test("compact panel renders activity value discounts behavior origin and quality
   assert.doesNotMatch(panel, /Trayectoria comercial|migración/);
 });
 
-test("analytics endpoint is admin-only, no-store, confirmed-only and server-side", () => {
+test("analytics endpoint is admin-only, no-store and dispatches each representation server-side", () => {
   assert.match(route, /getActiveAdminUser\(\)/);
   assert.match(route, /Cache-Control": "no-store"/);
-  assert.match(route, /locator\.representationType !== "confirmed_customer"/);
+  assert.match(route, /locator\.representationType === "confirmed_customer"[\s\S]*getCustomerWindow360BoletaAnalytics/);
+  assert.match(route, /locator\.representationType === "global_review"[\s\S]*getCustomerWindow360GlobalReviewAnalytics/);
+  assert.match(route, /getCustomerWindow360RelatedGroupAnalytics/);
   assert.match(admin, /customer_window_360_v1_get_boleta_analytics/);
   assert.doesNotMatch(view + route, /SUPABASE_SERVICE_ROLE_KEY|createClient\(|\.rpc\(/);
 });

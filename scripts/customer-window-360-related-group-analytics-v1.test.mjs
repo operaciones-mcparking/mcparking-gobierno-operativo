@@ -97,7 +97,7 @@ test("related analytics tab is lazy, bounded and leaves confirmed analytics unch
   assert.match(view, /slice\(0, RELATED_ANALYTICS_CONTACT_INITIAL_LIMIT\)/);
   assert.match(view, /Ver todos/);
   assert.match(view, /OKP puede aparecer como evidencia histórica en Identidad, no como reserva del grupo/);
-  assert.match(drawer, /!related && activeView === "analytics"[\s\S]*Customer360BoletaAnalyticsPanel/);
+  assert.match(drawer, /!review && activeView === "analytics"[\s\S]*Customer360BoletaAnalyticsPanel/);
   assert.doesNotMatch(drawer, /Enviar campaña/);
 });
 
