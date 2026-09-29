@@ -971,7 +971,7 @@ export async function listCustomerWindowOperationalRepresentationsByPurchasePeri
   try {
     const supabase = createOrquestadorSupabaseAdminClient();
     const { data, error } = await supabase.rpc(
-      "customer_window_v2_list_operational_representations_by_purchase_period",
+      "customer_window_v2_list_operational_representations_by_purchase",
       {
         p_family: input.family,
         p_from: input.from,

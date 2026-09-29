@@ -99,7 +99,10 @@ test("RPC remains service-role only and keeps temporal fields for future consume
 
 test("server validates one request per family and the UI paginates them independently", () => {
   assert.match(route, /action === "operational-list-v2"[\s\S]*allowedFamilies\.has\(family\)/);
-  assert.match(admin, /customer_window_v2_list_operational_representations_by_purchase_period[\s\S]*normalizeCustomerWindowOperationalRepresentationListV2/);
+  const postgrestRpcName = "customer_window_v2_list_operational_representations_by_purchase";
+  assert.equal(Buffer.byteLength(postgrestRpcName, "utf8") <= 63, true);
+  assert.match(admin, new RegExp(`${postgrestRpcName}[\\s\\S]*normalizeCustomerWindowOperationalRepresentationListV2`));
+  assert.doesNotMatch(admin, /\.rpc\(\s*"customer_window_v2_list_operational_representations_by_purchase_period"/);
   assert.match(view, /title="Clientes OKP"/);
   assert.match(view, /title="MCP \/ EAP"/);
   assert.match(view, /onPageChange=\{setOkpPage\}/);
