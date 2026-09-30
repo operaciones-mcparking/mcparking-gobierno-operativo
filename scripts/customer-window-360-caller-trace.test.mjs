@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { traceCustomer360RpcCall } from "../src/lib/customer-window/customer-360-caller-trace.ts";
+import {
+  traceCustomer360RpcCall,
+  traceCustomer360RpcOutcome,
+} from "../src/lib/customer-window/customer-360-caller-trace.ts";
 
 const admin = readFileSync("src/lib/orquestador/supabase-admin.ts", "utf8");
 const routes = Object.fromEntries(
-  ["analytics", "bookings", "overview"].map((route) => [
+  ["analytics", "bookings", "contacts", "identity", "overview"].map((route) => [
     route,
     readFileSync(`src/app/api/orquestador/customer-window/360/${route}/route.ts`, "utf8"),
   ]),
@@ -14,10 +17,9 @@ const routes = Object.fromEntries(
 
 const environmentKeys = [
   "CUSTOMER360_CALLER_TRACE",
+  "CUSTOMER360_DB_PASSWORD",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "VERCEL_ENV",
   "VERCEL_GIT_COMMIT_SHA",
-  "VERCEL_URL",
 ];
 
 async function withTraceEnvironment(values, callback) {
@@ -41,68 +43,77 @@ async function withTraceEnvironment(values, callback) {
 test("trace off preserves current behavior and emits nothing", async () => {
   await withTraceEnvironment({ CUSTOMER360_CALLER_TRACE: "0" }, (messages) => {
     assert.equal(traceCustomer360RpcCall("overview"), null);
+    traceCustomer360RpcOutcome(null, "customer_window_360_v1_get_overview", 12, "ok", "confirmed");
     assert.deepEqual(messages, []);
   });
 });
 
-test("trace on emits one allowlisted record and a bounded x-client-info marker", async () => {
+test("trace emits only the final allowlisted outcome", async () => {
   await withTraceEnvironment({
     CUSTOMER360_CALLER_TRACE: "1",
-    SUPABASE_SERVICE_ROLE_KEY: "must-not-appear",
-    VERCEL_ENV: "production",
+    CUSTOMER360_DB_PASSWORD: "must-not-appear",
+    SUPABASE_SERVICE_ROLE_KEY: "also-must-not-appear",
     VERCEL_GIT_COMMIT_SHA: "abcdef1234567890abcdef1234567890abcdef12",
-    VERCEL_URL: "red-roles.example.vercel.app",
   }, (messages) => {
     const trace = traceCustomer360RpcCall("analytics");
     assert.ok(trace);
-    assert.equal(trace.clientInfo, "mcparking-cw360/analytics/production/abcdef123456");
+    assert.equal(trace.build, "abcdef123456");
     assert.match(trace.requestId, /^[0-9a-f-]{36}$/);
-    assert.equal(messages.length, 1);
+    assert.deepEqual(messages, []);
 
+    traceCustomer360RpcOutcome(
+      trace,
+      "customer_window_360_v1_get_boleta_analytics",
+      19.9,
+      "ok",
+      "confirmed",
+    );
+    assert.equal(messages.length, 1);
     const payload = JSON.parse(messages[0]);
     assert.deepEqual(Object.keys(payload).sort(), [
       "build",
-      "deploymentHost",
-      "environment",
-      "event",
+      "durationMs",
+      "outcome",
+      "phase",
       "requestId",
       "route",
-      "timestamp",
+      "rpc",
     ]);
-    assert.equal(payload.event, "customer360_rpc_call");
-    assert.equal(payload.route, "analytics");
-    assert.equal(payload.environment, "production");
-    assert.equal(payload.build, "abcdef123456");
-    assert.equal(payload.deploymentHost, "red-roles.example.vercel.app");
-    assert.doesNotMatch(messages[0], /must-not-appear|representationKey|profileId|groupId|locator/i);
+    assert.deepEqual(payload, {
+      build: "abcdef123456",
+      durationMs: 19,
+      outcome: "ok",
+      phase: "confirmed",
+      requestId: trace.requestId,
+      route: "analytics",
+      rpc: "customer_window_360_v1_get_boleta_analytics",
+    });
+    assert.doesNotMatch(messages[0], /must-not-appear|representationKey|profileId|groupId|locator|password|token/i);
   });
 });
 
-test("unsafe deployment metadata is discarded instead of logged", async () => {
+test("unsafe build metadata is discarded", async () => {
   await withTraceEnvironment({
     CUSTOMER360_CALLER_TRACE: "1",
-    VERCEL_ENV: "secret-environment",
-    VERCEL_GIT_COMMIT_SHA: "not-a-commit",
-    VERCEL_URL: "https://host.invalid/path?token=secret",
+    VERCEL_GIT_COMMIT_SHA: "not-a-commit-token=secret",
   }, (messages) => {
     const trace = traceCustomer360RpcCall("bookings");
     assert.ok(trace);
-    assert.equal(trace.clientInfo, "mcparking-cw360/bookings/unknown/unknown");
-    const payload = JSON.parse(messages[0]);
-    assert.equal(payload.environment, "unknown");
-    assert.equal(payload.build, "unknown");
-    assert.equal(payload.deploymentHost, "unknown");
-    assert.doesNotMatch(messages[0], /token=secret|secret-environment|not-a-commit/);
+    assert.equal(trace.build, "unknown");
+    traceCustomer360RpcOutcome(trace, "customer_window_360_v1_list_bookings", 1, "timeout", "all");
+    assert.equal(JSON.parse(messages[0]).build, "unknown");
+    assert.doesNotMatch(messages[0], /token=secret|not-a-commit/);
   });
 });
 
-test("only the three Customer 360 routes pass their trace marker to the existing reads", () => {
-  for (const route of ["overview", "bookings", "analytics"]) {
+test("all Customer 360 routes guard phases and pass trace context to dedicated reads", () => {
+  for (const route of ["overview", "bookings", "contacts", "analytics", "identity"]) {
     assert.match(routes[route], new RegExp(`traceCustomer360RpcCall\\(\"${route}\"\\)`));
-    assert.match(routes[route], /trace\?\.clientInfo/);
+    assert.match(routes[route], /isCustomer360RepresentationEnabled/);
+    assert.match(routes[route], /representation_authority_unavailable/);
     assert.doesNotMatch(routes[route], /representationKey.*console|locator.*console|request\.headers/);
   }
-  assert.match(admin, /"X-Client-Info": clientInfo/);
-  assert.match(admin, /createOrquestadorSupabaseAdminClient\(clientInfo\)/g);
-  assert.doesNotMatch(admin, /CUSTOMER360_CALLER_TRACE|console\.info/);
+  const customer360Section = admin.slice(admin.indexOf("const customer360ErrorCodes"));
+  assert.match(customer360Section, /executeCustomer360Rpc/g);
+  assert.doesNotMatch(customer360Section, /createOrquestadorSupabaseAdminClient|SUPABASE_SERVICE_ROLE_KEY/);
 });

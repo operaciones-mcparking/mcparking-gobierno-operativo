@@ -4,6 +4,7 @@ export const revalidate = 0;
 import { NextResponse, type NextRequest } from "next/server";
 
 import { traceCustomer360RpcCall } from "@/lib/customer-window/customer-360-caller-trace";
+import { isCustomer360RepresentationEnabled } from "@/lib/customer-window/customer-360-db";
 import { customer360ErrorStatus, customer360LocatorFromRequest } from "@/lib/customer-window/customer-360-http";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import {
@@ -30,13 +31,19 @@ export async function GET(request: NextRequest) {
       { headers: noStoreHeaders, status: 400 },
     );
   }
+  if (!isCustomer360RepresentationEnabled(locator.representationType)) {
+    return NextResponse.json(
+      { code: "representation_authority_unavailable", ok: false },
+      { headers: noStoreHeaders, status: 503 },
+    );
+  }
 
   const trace = traceCustomer360RpcCall("analytics");
   const result = locator.representationType === "confirmed_customer"
-    ? await getCustomerWindow360BoletaAnalytics(locator, trace?.clientInfo)
+    ? await getCustomerWindow360BoletaAnalytics(locator, trace)
     : locator.representationType === "global_review"
-      ? await getCustomerWindow360GlobalReviewAnalytics(locator, trace?.clientInfo)
-      : await getCustomerWindow360RelatedGroupAnalytics(locator, trace?.clientInfo);
+      ? await getCustomerWindow360GlobalReviewAnalytics(locator, trace)
+      : await getCustomerWindow360RelatedGroupAnalytics(locator, trace);
   if (result.errorCode) {
     return NextResponse.json(
       { code: result.errorCode, ok: false },

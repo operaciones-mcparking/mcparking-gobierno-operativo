@@ -3,6 +3,8 @@ export const revalidate = 0;
 
 import { NextResponse, type NextRequest } from "next/server";
 
+import { traceCustomer360RpcCall } from "@/lib/customer-window/customer-360-caller-trace";
+import { isCustomer360RepresentationEnabled } from "@/lib/customer-window/customer-360-db";
 import { customer360ErrorStatus, customer360LocatorFromRequest } from "@/lib/customer-window/customer-360-http";
 import { getActiveAdminUser } from "@/lib/orquestador/auth";
 import { listCustomerWindow360ObservedContacts } from "@/lib/orquestador/supabase-admin";
@@ -35,8 +37,15 @@ export async function GET(request: NextRequest) {
       { headers: noStoreHeaders, status: 400 },
     );
   }
+  if (!isCustomer360RepresentationEnabled(locator.representationType)) {
+    return NextResponse.json(
+      { code: "representation_authority_unavailable", ok: false },
+      { headers: noStoreHeaders, status: 503 },
+    );
+  }
 
-  const result = await listCustomerWindow360ObservedContacts({ contactType, locator, page, pageSize });
+  const trace = traceCustomer360RpcCall("contacts");
+  const result = await listCustomerWindow360ObservedContacts({ contactType, locator, page, pageSize }, trace);
   if (result.errorCode) {
     return NextResponse.json(
       { code: result.errorCode, ok: false },

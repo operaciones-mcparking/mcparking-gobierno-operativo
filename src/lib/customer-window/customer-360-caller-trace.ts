@@ -1,29 +1,24 @@
 import { randomUUID } from "node:crypto";
 
-export type Customer360TraceRoute = "analytics" | "bookings" | "overview";
+export type Customer360TraceRoute = "analytics" | "bookings" | "contacts" | "identity" | "overview";
+
+export type Customer360TraceOutcome =
+  | "configuration_error"
+  | "ok"
+  | "phase_blocked"
+  | "rpc_error"
+  | "rpc_rejected"
+  | "timeout";
 
 export type Customer360CallerTrace = {
-  clientInfo: string;
+  build: string;
   requestId: string;
+  route: Customer360TraceRoute;
 };
-
-function traceEnvironment() {
-  const value = process.env.VERCEL_ENV;
-  return value === "production" || value === "preview" || value === "development"
-    ? value
-    : "unknown";
-}
 
 function traceBuild() {
   const value = process.env.VERCEL_GIT_COMMIT_SHA;
   return value && /^[a-f0-9]{7,40}$/i.test(value) ? value.slice(0, 12).toLowerCase() : "unknown";
-}
-
-function traceDeploymentHost() {
-  const value = process.env.VERCEL_URL;
-  return value && value.length <= 253 && /^[a-z0-9.-]+(?::\d+)?$/i.test(value)
-    ? value.toLowerCase()
-    : "unknown";
 }
 
 export function traceCustomer360RpcCall(
@@ -31,22 +26,24 @@ export function traceCustomer360RpcCall(
 ): Customer360CallerTrace | null {
   if (process.env.CUSTOMER360_CALLER_TRACE !== "1") return null;
 
-  const requestId = randomUUID();
-  const environment = traceEnvironment();
-  const build = traceBuild();
-  const deploymentHost = traceDeploymentHost();
-  const timestamp = new Date().toISOString();
-  const clientInfo = `mcparking-cw360/${route}/${environment}/${build}`;
+  return { build: traceBuild(), requestId: randomUUID(), route };
+}
 
+export function traceCustomer360RpcOutcome(
+  trace: Customer360CallerTrace | null,
+  rpc: string,
+  durationMs: number,
+  outcome: Customer360TraceOutcome,
+  phase: "all" | "confirmed" | "confirmed_related" | "off",
+) {
+  if (!trace) return;
   console.info(JSON.stringify({
-    event: "customer360_rpc_call",
-    route,
-    requestId,
-    environment,
-    build,
-    deploymentHost,
-    timestamp,
+    build: trace.build,
+    durationMs: Math.max(0, Math.trunc(durationMs)),
+    outcome,
+    phase,
+    requestId: trace.requestId,
+    route: trace.route,
+    rpc,
   }));
-
-  return { clientInfo, requestId };
 }
