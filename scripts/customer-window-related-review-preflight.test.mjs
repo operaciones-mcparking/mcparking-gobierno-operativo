@@ -13,7 +13,8 @@ const PREVIOUS_SNAPSHOT = "11111111-1111-4111-8111-111111111111";
 const NEW_SNAPSHOT = "22222222-2222-4222-8222-222222222222";
 const RUN_ID = "33333333-3333-4333-8333-333333333333";
 const CAPTURED_AT = "2026-10-01T17:28:21.038917Z";
-const STABILITY_CUTOFF_AT = "2026-10-01T16:58:21.038917Z";
+const STABILITY_CUTOFF_AT = "2026-10-01T16:43:21.038917Z";
+const STABILITY_LAG_MINUTES = 45;
 
 function preflight(overrides = {}) {
   return {
@@ -21,6 +22,8 @@ function preflight(overrides = {}) {
     preflightReasonCode: "ready",
     preflightCapturedAt: CAPTURED_AT,
     preflightStabilityCutoffAt: STABILITY_CUTOFF_AT,
+    stabilityLagMinutes: STABILITY_LAG_MINUTES,
+    stabilityWindowMinutes: STABILITY_LAG_MINUTES,
     stableSourceRowsMcpEap: "406258",
     stableSourceRowsOkp: null,
     stableMissingLinksMcpEap: "0",
@@ -101,14 +104,17 @@ async function runScenario({
   preflightResult = preflight(),
   buildFn,
   operationalFinishes = [],
+  env = {},
 } = {}) {
   const ClientClass = makeClient();
   let buildCalls = 0;
   const result = await runRefresh({
     ClientClass,
+    env,
     parseEnv: () => ({
       connection: {},
       keyBytes: Buffer.alloc(32),
+      stabilityLagMinutes: preflightResult.stabilityLagMinutes,
     }),
     preflightFn: async () => preflightResult,
     buildFn: buildFn ?? (async ({ capturedAt }) => {
@@ -183,12 +189,14 @@ async function runScenario({
   return { result, buildCalls, operationalFinishes };
 }
 
-test("READY preflight invokes the builder with the same captured_at", async () => {
+test("READY preflight invokes the builder with the same captured_at and lag contract", async () => {
   const { result, buildCalls } = await runScenario();
   assert.equal(buildCalls, 1);
   assert.equal(result.ok, true);
   assert.equal(result.preflightStatus, "ready");
   assert.equal(result.preflightCapturedAt, CAPTURED_AT);
+  assert.equal(result.stabilityLagMinutes, STABILITY_LAG_MINUTES);
+  assert.equal(result.stabilityWindowMinutes, STABILITY_LAG_MINUTES);
   assert.equal(result.buildInvoked, true);
   assert.equal(result.newSnapshotId, NEW_SNAPSHOT);
 });
@@ -237,7 +245,23 @@ test("structural preflight ERROR is a real failure and does not invoke the build
 test("race rows after the frozen cutoff are outside the preflight universe", () => {
   assert.match(UPSTREAM_PREFLIGHT_SQL, /<= \$1::timestamptz/);
   assert.match(UPSTREAM_PREFLIGHT_SQL, /transaction_timestamp\(\)::text as captured_at/);
+  assert.match(PREFLIGHT_CLOCK_SQL, /pg_catalog\.make_interval\(mins => \$1::integer\)/);
   assert.match(UPSTREAM_PREFLIGHT_SQL, /stability_cutoff_at/);
+});
+
+test("45 minute lag excludes the 30 to 45 minute moving edge", () => {
+  const capturedAt = Date.parse("2026-10-01T18:58:19Z");
+  const cutoff45 = capturedAt - 45 * 60 * 1000;
+  const movingEdge = Date.parse("2026-10-01T18:20:52Z");
+  assert.equal(movingEdge <= capturedAt - 30 * 60 * 1000, true);
+  assert.equal(movingEdge <= cutoff45, false);
+});
+
+test("45 minute lag still detects debt older than the safety cutoff", () => {
+  const capturedAt = Date.parse("2026-10-01T18:58:19Z");
+  const cutoff45 = capturedAt - 45 * 60 * 1000;
+  const oldDebt = Date.parse("2026-10-01T18:12:00Z");
+  assert.equal(oldDebt <= cutoff45, true);
 });
 
 test("preflight short-circuits structural checks when missing links make it NOT_READY", async () => {
@@ -246,10 +270,12 @@ test("preflight short-circuits structural checks when missing links make it NOT_
     async query(sql, params = []) {
       queries.push({ sql, params });
       if (sql === PREFLIGHT_CLOCK_SQL) {
+        assert.deepEqual(params, [STABILITY_LAG_MINUTES]);
         return {
           rows: [{
             captured_at: CAPTURED_AT,
             stability_cutoff_at: STABILITY_CUTOFF_AT,
+            stability_lag_minutes: STABILITY_LAG_MINUTES,
           }],
         };
       }
@@ -283,10 +309,12 @@ test("preflight runs structural guards only after upstream checks are clear", as
     async query(sql, params = []) {
       queries.push({ sql, params });
       if (sql === PREFLIGHT_CLOCK_SQL) {
+        assert.deepEqual(params, [STABILITY_LAG_MINUTES]);
         return {
           rows: [{
             captured_at: CAPTURED_AT,
             stability_cutoff_at: STABILITY_CUTOFF_AT,
+            stability_lag_minutes: STABILITY_LAG_MINUTES,
           }],
         };
       }

@@ -10,7 +10,9 @@ const RULE = "RELATED_REVIEW_MCP_EAP_V1";
 const LOGIN = "customer_related_review_builder_login";
 const BATCH_SIZE = 1000;
 const MANIFEST_BATCH_SIZE = 5000;
-export const STABILITY_WINDOW_MINUTES = 30;
+export const DEFAULT_STABILITY_LAG_MINUTES = 45;
+export const MIN_STABILITY_LAG_MINUTES = 30;
+export const MAX_STABILITY_LAG_MINUTES = 120;
 const ACTIVATE_WATCHDOG_MS = 10 * 60 * 1000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const errorPhases = new WeakMap();
@@ -79,6 +81,7 @@ export function parseDryRunArgs(args) {
 
 export function parseBuilderEnv(env) {
   const connection = buildClientConfig(env);
+  const stabilityLagMinutes = parseStabilityLagMinutes(env);
   const keyId = env.RELATED_REVIEW_HMAC_KEY_ID;
   check(typeof keyId === "string" && keyId.trim().length > 0 && keyId === keyId.trim(),
     "invalid_hmac_key_id");
@@ -91,7 +94,20 @@ export function parseBuilderEnv(env) {
     keyBytes.fill(0);
     throw new BuildError("invalid_hmac_key");
   }
-  return { connection, keyBytes, keyId };
+  return { connection, keyBytes, keyId, stabilityLagMinutes };
+}
+
+export function parseStabilityLagMinutes(env = process.env) {
+  const raw = env.RELATED_REVIEW_STABILITY_LAG_MINUTES;
+  if (raw == null || raw === "") return DEFAULT_STABILITY_LAG_MINUTES;
+  check(typeof raw === "string" && /^(?:0|[1-9][0-9]*)$/.test(raw),
+    "invalid_stability_lag_minutes");
+  const value = Number(raw);
+  check(Number.isSafeInteger(value)
+    && value >= MIN_STABILITY_LAG_MINUTES
+    && value <= MAX_STABILITY_LAG_MINUTES,
+  "invalid_stability_lag_minutes");
+  return value;
 }
 
 export function frameSegment(value) {
@@ -141,7 +157,7 @@ const CUTOFF_SQL = `
   create temp table rr_cutoff on commit drop as
   select coalesce($1::timestamptz, clock.captured_at) as captured_at,
     coalesce($1::timestamptz, clock.captured_at)
-      - interval '${STABILITY_WINDOW_MINUTES} minutes' as stability_cutoff_at
+      - pg_catalog.make_interval(mins => $2::integer) as stability_cutoff_at
   from (select pg_catalog.transaction_timestamp() as captured_at) clock
 `;
 
@@ -1007,6 +1023,7 @@ export async function runBuild({ mode, env = process.env, ClientClass = pg.Clien
     phase = "env";
     const parsed = parseEnv(env);
     const { connection, keyId } = parsed;
+    const stabilityLagMinutes = parsed.stabilityLagMinutes ?? parseStabilityLagMinutes(env);
     keyBytes = parsed.keyBytes;
     connection.query_timeout = 11 * 60 * 1000;
     phase = "connect";
@@ -1051,7 +1068,7 @@ export async function runBuild({ mode, env = process.env, ClientClass = pg.Clien
 
     const stagingStart = now();
     phase = "cutoff_capture";
-    await client.query(CUTOFF_SQL, [capturedAt]);
+    await client.query(CUTOFF_SQL, [capturedAt, stabilityLagMinutes]);
     phase = "staging_create";
     await client.query(STAGING_SQL);
     phase = "hot_audit";
@@ -1249,7 +1266,8 @@ export async function runBuild({ mode, env = process.env, ClientClass = pg.Clien
       containsPii: false,
       pendingBatches: hmac.batches,
       maxBatchSize: hmac.maxBatchSize,
-      stabilityWindowMinutes: STABILITY_WINDOW_MINUTES,
+      stabilityLagMinutes,
+      stabilityWindowMinutes: stabilityLagMinutes,
       hotValidSourceCount,
       timings,
     };

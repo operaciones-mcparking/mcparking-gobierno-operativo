@@ -4,7 +4,8 @@ import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";
 import {
   formatBuilderError, frameSegment, groupId, manifestPageSql,
-  parseBuilderEnv, parseBuildArgs, parseDryRunArgs, runActivate, runBuild, runDryRun,
+  parseBuilderEnv, parseBuildArgs, parseDryRunArgs, parseStabilityLagMinutes,
+  runActivate, runBuild, runDryRun,
 } from "./customer-window-related-review-mcp-eap-v1-build.mjs";
 import { auditReadySnapshotWithClient } from
   "./customer-window-related-review-mcp-eap-v1-ready-audit-core.mjs";
@@ -40,6 +41,14 @@ test("CLI accepts only explicit build modes and preflights build secrets", () =>
     { code: "invalid_hmac_key" });
   assert.throws(() => parseBuilderEnv({ ...env, RELATED_REVIEW_HMAC_KEY_ID: " " }),
     { code: "invalid_hmac_key_id" });
+  assert.equal(parseBuilderEnv(env).stabilityLagMinutes, 45);
+  assert.equal(parseBuilderEnv({ ...env, RELATED_REVIEW_STABILITY_LAG_MINUTES: "60" })
+    .stabilityLagMinutes, 60);
+  for (const value of ["29", "121", "30.5", "abc", "-45"]) {
+    assert.throws(() => parseStabilityLagMinutes({
+      RELATED_REVIEW_STABILITY_LAG_MINUTES: value,
+    }), { code: "invalid_stability_lag_minutes" });
+  }
 });
 
 test("HMAC vector uses length-framed UTF-8 and lowercase SHA-256", () => {
@@ -95,7 +104,7 @@ test("manifest SQL is keyset paged and excludes raw identity values", () => {
   assert.doesNotMatch(script, /customer_window_bookings_v|customer_identity_links|customer_identity_resolution_events/);
   assert.equal((script.match(/pg_catalog\.transaction_timestamp\(\)/g) || []).length, 1);
   assert.match(script,
-    /coalesce\(\$1::timestamptz, clock\.captured_at\)[\s\S]*- interval '\$\{STABILITY_WINDOW_MINUTES\} minutes'/);
+    /coalesce\(\$1::timestamptz, clock\.captured_at\)[\s\S]*- pg_catalog\.make_interval\(mins => \$2::integer\)/);
   assert.match(script, /greatest\(booking\.created_at, booking\.updated_at,\s*booking\.source_synced_at, link\.created_at, link\.updated_at\)/);
   assert.match(script, /\$\{ACTIVITY_AT_SQL\} > cutoff\.stability_cutoff_at/);
   assert.match(script, /\$\{ACTIVITY_AT_SQL\} <= cutoff\.stability_cutoff_at/);
@@ -288,7 +297,10 @@ test("mock full dry-run streams manifest, audits, and rolls back", async () => {
   assert.equal(state.queries.filter((q) => q.text.startsWith("select count(*)::text as count from public.")).length, 4);
   assert.equal(state.queries.filter((q) => q.text.includes("order by group_id limit")
     && q.values[2] === 5000).length, 4);
-  assert.equal(result.stabilityWindowMinutes, 30);
+  assert.equal(result.stabilityLagMinutes, 45);
+  assert.equal(result.stabilityWindowMinutes, 45);
+  assert.ok(state.queries.some((q) =>
+    q.text.startsWith("create temp table rr_cutoff") && q.values[1] === 45));
   assert.equal(result.hotValidSourceCount, "0");
   assert.equal(state.queries.filter((q) => q.text === "ROLLBACK").length, 1);
   assert.equal(state.queries.some((q) => q.text === "COMMIT"), false);

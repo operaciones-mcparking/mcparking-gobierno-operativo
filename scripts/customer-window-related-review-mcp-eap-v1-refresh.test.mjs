@@ -144,7 +144,9 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
     preflightStatus: "ready",
     preflightReasonCode: "ready",
     preflightCapturedAt: "2026-09-22T12:00:00.000Z",
-    preflightStabilityCutoffAt: "2026-09-22T11:30:00.000Z",
+    preflightStabilityCutoffAt: "2026-09-22T11:15:00.000Z",
+    stabilityLagMinutes: 45,
+    stabilityWindowMinutes: 45,
     stableSourceRowsMcpEap: "403975",
     stableSourceRowsOkp: null,
     stableMissingLinksMcpEap: "0",
@@ -184,7 +186,8 @@ test("manual refresh completes build audit activate and both postchecks", async 
   assert.equal(result.stableAssignedBookings, "403975");
   assert.equal(result.stableMissingBookings, "0");
   assert.equal(result.hotValidBookings, "12");
-  assert.equal(result.stabilityWindowMinutes, 30);
+  assert.equal(result.stabilityLagMinutes, 45);
+  assert.equal(result.stabilityWindowMinutes, 45);
   assert.equal(result.retentionAttempted, true);
   assert.equal(result.retentionDeleted, 0);
   assert.equal(result.retentionRemaining, 0);
@@ -199,7 +202,7 @@ test("manual refresh completes build audit activate and both postchecks", async 
   assert.equal(result.readyAuditAttempts, 1);
   assert.equal(result.readyAuditRetried, false);
   const coverageQuery = state.queries.find(({ text }) => text.includes("as stable_valid_bookings"));
-  assert.deepEqual(coverageQuery?.values, [newSnapshotId, 30]);
+  assert.deepEqual(coverageQuery?.values, [newSnapshotId, 45]);
   for (const name of ["buildMs", "auditMs", "activateMs", "lifecyclePostcheckMs",
     "stableCoveragePostcheckMs", "postcheckMs", "retentionMs", "totalMs"]) {
     assert.equal(typeof result.timings[name], "number");

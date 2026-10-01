@@ -6,10 +6,10 @@ import pg from "pg";
 import {
   formatBuilderError,
   parseBuilderEnv,
+  parseStabilityLagMinutes,
   runActivate,
   runBuild,
   STABLE_COVERAGE_SQL,
-  STABILITY_WINDOW_MINUTES,
 } from "./customer-window-related-review-mcp-eap-v1-build.mjs";
 import {
   assertReadyAuditResult,
@@ -411,7 +411,8 @@ const PREFLIGHT_SQL = `
 export const PREFLIGHT_CLOCK_SQL = `
   select pg_catalog.transaction_timestamp()::text as captured_at,
     (pg_catalog.transaction_timestamp()
-      - interval '${STABILITY_WINDOW_MINUTES} minutes')::text as stability_cutoff_at
+      - pg_catalog.make_interval(mins => $1::integer))::text as stability_cutoff_at,
+    $1::integer as stability_lag_minutes
 `;
 
 export const PREFLIGHT_NOT_READY_SQL = `
@@ -457,6 +458,7 @@ export const UPSTREAM_PREFLIGHT_SQL = `
 function preflightRow({
   capturedAt,
   stabilityCutoffAt,
+  stabilityLagMinutes,
   stableSourceRowsMcpEap = "0",
   stableMissingLinksMcpEap = "0",
   activeWithoutMetrics = "0",
@@ -472,6 +474,7 @@ function preflightRow({
   return {
     captured_at: capturedAt,
     stability_cutoff_at: stabilityCutoffAt,
+    stability_lag_minutes: stabilityLagMinutes,
     stable_source_rows_mcp_eap: stableSourceRowsMcpEap,
     stable_source_rows_okp: null,
     stable_missing_links_mcp_eap: stableMissingLinksMcpEap,
@@ -510,9 +513,14 @@ function normalizeRelatedReviewPreflight(row) {
     "preflight_contract_invalid");
   check(typeof row.stability_cutoff_at === "string"
     && !Number.isNaN(Date.parse(row.stability_cutoff_at)), "preflight_contract_invalid");
+  check(Number.isSafeInteger(row.stability_lag_minutes)
+    && row.stability_lag_minutes >= 30 && row.stability_lag_minutes <= 120,
+  "preflight_contract_invalid");
   const result = {
     preflightCapturedAt: row.captured_at,
     preflightStabilityCutoffAt: row.stability_cutoff_at,
+    stabilityLagMinutes: row.stability_lag_minutes,
+    stabilityWindowMinutes: row.stability_lag_minutes,
     stableSourceRowsMcpEap: countString(row.stable_source_rows_mcp_eap,
       "preflight_contract_invalid"),
     stableSourceRowsOkp: row.stable_source_rows_okp === null ? null
@@ -586,10 +594,12 @@ function normalizeRelatedReviewPreflight(row) {
   };
 }
 
-export async function runRelatedReviewPreflight({ client }) {
-  const clock = (await client.query(PREFLIGHT_CLOCK_SQL)).rows[0];
+export async function runRelatedReviewPreflight({ client, env = process.env } = {}) {
+  const stabilityLagMinutes = parseStabilityLagMinutes(env);
+  const clock = (await client.query(PREFLIGHT_CLOCK_SQL, [stabilityLagMinutes])).rows[0];
   check(clock && typeof clock.captured_at === "string"
-    && typeof clock.stability_cutoff_at === "string", "preflight_contract_invalid");
+    && typeof clock.stability_cutoff_at === "string"
+    && clock.stability_lag_minutes === stabilityLagMinutes, "preflight_contract_invalid");
   const notReady = (await client.query(PREFLIGHT_NOT_READY_SQL,
     [clock.stability_cutoff_at])).rows[0];
   check(notReady && typeof notReady === "object" && !Array.isArray(notReady),
@@ -598,6 +608,7 @@ export async function runRelatedReviewPreflight({ client }) {
     return normalizeRelatedReviewPreflight(preflightRow({
       capturedAt: clock.captured_at,
       stabilityCutoffAt: clock.stability_cutoff_at,
+      stabilityLagMinutes,
       stableMissingLinksMcpEap: "1",
       nullRepresentationCount: "1",
     }));
@@ -606,6 +617,7 @@ export async function runRelatedReviewPreflight({ client }) {
     return normalizeRelatedReviewPreflight(preflightRow({
       capturedAt: clock.captured_at,
       stabilityCutoffAt: clock.stability_cutoff_at,
+      stabilityLagMinutes,
       activeWithoutMetrics: "1",
       nullRepresentationCount: "1",
     }));
@@ -614,6 +626,7 @@ export async function runRelatedReviewPreflight({ client }) {
     return normalizeRelatedReviewPreflight(preflightRow({
       capturedAt: clock.captured_at,
       stabilityCutoffAt: clock.stability_cutoff_at,
+      stabilityLagMinutes,
       changedDistinctRelevant: "1",
     }));
   }
@@ -623,6 +636,7 @@ export async function runRelatedReviewPreflight({ client }) {
   return normalizeRelatedReviewPreflight(preflightRow({
     capturedAt: clock.captured_at,
     stabilityCutoffAt: clock.stability_cutoff_at,
+    stabilityLagMinutes,
     duplicateSourceRows: oneIf(structural.has_duplicate_source_rows),
     duplicateBookingLinks: oneIf(structural.has_duplicate_booking_links),
     multipleLinks: oneIf(structural.has_multiple_links),
@@ -801,7 +815,7 @@ export async function runRefresh({
       phase = "upstream-preflight";
       diagnosticCode = "upstream_preflight_query";
       const upstreamPreflightStarted = now();
-      upstreamPreflight = await preflightFn({ client });
+      upstreamPreflight = await preflightFn({ client, env });
       timings.preflightMs = now() - upstreamPreflightStarted;
       check(upstreamPreflight?.preflightStatus === "ready"
         || upstreamPreflight?.preflightStatus === "not_ready"
@@ -954,8 +968,10 @@ export async function runRefresh({
     postcheckPhaseStarted = "stable_coverage";
     postcheckPhaseFinished = null;
     postcheckPhaseStartedAt = now();
+    const stabilityLagMinutes = upstreamPreflight?.stabilityLagMinutes
+      ?? parseStabilityLagMinutes(env);
     const coverage = (await client.query(STABLE_COVERAGE_SQL,
-      [newSnapshotId, STABILITY_WINDOW_MINUTES])).rows[0];
+      [newSnapshotId, stabilityLagMinutes])).rows[0];
     const stableValidBookings = canonicalCount(coverage?.stable_valid_bookings,
       "stable_coverage_invalid");
     const stableAssignedBookings = canonicalCount(coverage?.stable_assigned_bookings,
@@ -1024,7 +1040,8 @@ export async function runRefresh({
       stableAssignedBookings,
       stableMissingBookings,
       hotValidBookings,
-      stabilityWindowMinutes: STABILITY_WINDOW_MINUTES,
+      stabilityLagMinutes,
+      stabilityWindowMinutes: stabilityLagMinutes,
       retentionAttempted,
       retentionDeleted,
       retentionRemaining,
