@@ -25,8 +25,11 @@ export type GlobalReviewContactCandidate = {
 };
 
 export type GlobalReviewRelatedEvidence = {
+  contactType?: "email" | "phone";
+  displayValue?: string;
   evidenceSource: "contact_match" | "profile_membership";
   groupId: string;
+  normalizedValue?: string;
   relationReason: "profile_membership" | "same_email_history" | "same_phone_history";
   snapshotId: string;
 };
@@ -127,6 +130,16 @@ function normalizeEvidence(value: unknown): GlobalReviewRelatedEvidence | null {
     || !uuidPattern.test(String(value.snapshotId))
     || (value.evidenceSource !== "contact_match" && value.evidenceSource !== "profile_membership")
     || !["profile_membership", "same_email_history", "same_phone_history"].includes(String(value.relationReason))) return null;
+  const hasContactFields = value.contactType !== undefined
+    || value.displayValue !== undefined || value.normalizedValue !== undefined;
+  if (!hasContactFields) return value as GlobalReviewRelatedEvidence;
+  if (value.evidenceSource !== "contact_match"
+    || (value.contactType !== "email" && value.contactType !== "phone")
+    || typeof value.displayValue !== "string" || value.displayValue.length === 0
+    || typeof value.normalizedValue !== "string" || value.normalizedValue.length === 0) return null;
+  if ((value.relationReason === "same_email_history" && value.contactType !== "email")
+    || (value.relationReason === "same_phone_history" && value.contactType !== "phone")
+    || value.relationReason === "profile_membership") return null;
   return value as GlobalReviewRelatedEvidence;
 }
 

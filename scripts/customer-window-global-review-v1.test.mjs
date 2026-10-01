@@ -6,6 +6,10 @@ const migration = readFileSync(
   "supabase/migrations/20260929140000_add_customer_window_global_review_v1.sql",
   "utf8",
 );
+const identityContactEvidenceMigration = readFileSync(
+  "supabase/migrations/20261001190000_extend_customer_window_global_review_identity_contact_evidence.sql",
+  "utf8",
+);
 const representation = readFileSync("src/lib/customer-window/customer-representations-v2.ts", "utf8");
 const customer360 = readFileSync("src/lib/customer-window/customer-360-v1.ts", "utf8");
 const globalContract = readFileSync("src/lib/customer-window/customer-360-global-review-v1.ts", "utf8");
@@ -136,6 +140,50 @@ test("global analytics and identity are lazy, read-only and preserve no-campaign
   assert.match(drawer, /normalizeCustomer360GlobalReviewIdentity/);
   assert.match(view, /No están habilitados para campañas automáticas/);
   assert.doesNotMatch(drawer, /Confirmar misma identidad|Unificar|Fusionar|Campaña/);
+});
+
+test("global review identity evidence preserves contact values for contact matches", () => {
+  assert.match(identityContactEvidenceMigration, /create or replace function public\.customer_window_360_v1_get_global_review_identity\(p_locator jsonb\)/);
+  assert.match(identityContactEvidenceMigration, /contact\.type, contact\.normalized_value, contact\.display_value/);
+  assert.match(identityContactEvidenceMigration, /'phone'::text,[\s\S]*mcp\.phone_raw[\s\S]*okp\.phone_normalized/);
+  assert.match(identityContactEvidenceMigration, /'email'::text,[\s\S]*mcp\.email_raw[\s\S]*okp\.email_normalized/);
+  assert.match(identityContactEvidenceMigration, /'same_phone_history'::text relation_reason,[\s\S]*contact\.type contact_type, contact\.display_value, contact\.normalized_value/);
+  assert.match(identityContactEvidenceMigration, /'same_email_history'::text,[\s\S]*contact\.type, contact\.display_value, contact\.normalized_value/);
+  assert.match(identityContactEvidenceMigration, /'contactType', contact_type/);
+  assert.match(identityContactEvidenceMigration, /'displayValue', display_value/);
+  assert.match(identityContactEvidenceMigration, /'normalizedValue', normalized_value/);
+  assert.match(identityContactEvidenceMigration, /jsonb_strip_nulls/);
+  assert.match(identityContactEvidenceMigration, /null::text contact_type, null::text display_value, null::text normalized_value/);
+  assert.match(identityContactEvidenceMigration, /grant execute on function public\.customer_window_360_v1_get_global_review_identity\(jsonb\) to customer_window_360_reader/);
+  assert.doesNotMatch(identityContactEvidenceMigration, /grant execute on function public\.customer_window_360_v1_get_global_review_identity\(jsonb\) to service_role/);
+});
+
+test("global review identity normalizer accepts contact evidence without breaking legacy payloads", () => {
+  assert.match(globalContract, /contactType\?: "email" \| "phone"/);
+  assert.match(globalContract, /displayValue\?: string/);
+  assert.match(globalContract, /normalizedValue\?: string/);
+  assert.match(globalContract, /const hasContactFields = value\.contactType !== undefined/);
+  assert.match(globalContract, /if \(!hasContactFields\) return value as GlobalReviewRelatedEvidence/);
+  assert.match(globalContract, /value\.evidenceSource !== "contact_match"/);
+  assert.match(globalContract, /value\.relationReason === "same_email_history" && value\.contactType !== "email"/);
+  assert.match(globalContract, /value\.relationReason === "same_phone_history" && value\.contactType !== "phone"/);
+  assert.match(globalContract, /value\.relationReason === "profile_membership"/);
+});
+
+test("global review identity UI shows related email or phone values and keeps read-only policy", () => {
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(panel, /Email históricamente relacionado/);
+  assert.match(panel, /Teléfono históricamente relacionado/);
+  assert.match(panel, /evidence\.displayValue/);
+  assert.match(panel, /break-all text-xs font-medium text-navy/);
+  assert.match(panel, /Grupo \{abbreviatedIdentifier\(evidence\.groupId\)\}/);
+  assert.match(panel, /evidence\.normalizedValue/);
+  assert.doesNotMatch(panel, /Confirmar misma identidad|Unificar|Fusionar|Campaña/);
+  assert.match(view, /relatedContacts/);
+  assert.match(representation, /value: string/);
 });
 
 test("global search and operational list share the same representation authority", () => {
