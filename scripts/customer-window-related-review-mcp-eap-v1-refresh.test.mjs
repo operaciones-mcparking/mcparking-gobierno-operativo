@@ -140,9 +140,29 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
     connect: async () => {},
     end: async () => {},
   });
+  const preflightFn = async () => ({
+    preflightStatus: "ready",
+    preflightReasonCode: "ready",
+    preflightCapturedAt: "2026-09-22T12:00:00.000Z",
+    preflightStabilityCutoffAt: "2026-09-22T11:30:00.000Z",
+    stableSourceRowsMcpEap: "403975",
+    stableSourceRowsOkp: null,
+    stableMissingLinksMcpEap: "0",
+    stableMissingLinksOkp: null,
+    activeWithoutMetrics: "0",
+    changedDistinctRelevant: "0",
+    duplicateSourceRows: "0",
+    duplicateBookingLinks: "0",
+    multipleLinks: "0",
+    invalidProfileCount: "0",
+    invalidResolverCount: "0",
+    sourceCreatedAtMissing: "0",
+    nullRepresentationCount: "0",
+    okpScope: "not_evaluated_related_review_v1",
+  });
   let tick = 0;
   return { state, options: { env: {}, ClientClass: Client, parseEnv, buildFn, auditFn,
-    activateFn, operationalStartFn, operationalFinishFn, heartbeatFactory,
+    activateFn, preflightFn, operationalStartFn, operationalFinishFn, heartbeatFactory,
     operationalClientFactory,
     randomUUIDFn: () => "11111111-1111-4111-8111-111111111111",
     now: () => { tick += 10; return tick; },
@@ -1039,7 +1059,7 @@ test("orchestrator reuses certified modules and emits no PII or secrets", () => 
   assert.match(source, /assertReadyAuditResult\(audit, newSnapshotId\)/);
   assert.match(source, /--resume-ready/);
   assert.match(source, /activateFn = runActivate/);
-  assert.match(source, /buildFn\(\{ mode: "build-ready"/);
+  assert.match(source, /buildFn\(\{[\s\S]*mode: "build-ready"/);
   assert.match(source, /pg_try_advisory_lock/);
   assert.match(STABLE_COVERAGE_SQL, /\$2::integer \* interval '1 minute'/);
   assert.match(STABLE_COVERAGE_SQL, /greatest\(booking\.created_at, booking\.updated_at,[\s\S]*link\.created_at, link\.updated_at\)/);

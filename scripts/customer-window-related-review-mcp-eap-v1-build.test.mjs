@@ -94,7 +94,8 @@ test("manifest SQL is keyset paged and excludes raw identity values", () => {
   assert.equal((script.match(/client\.query\("COMMIT"\)/g) || []).length, 1);
   assert.doesNotMatch(script, /customer_window_bookings_v|customer_identity_links|customer_identity_resolution_events/);
   assert.equal((script.match(/pg_catalog\.transaction_timestamp\(\)/g) || []).length, 1);
-  assert.match(script, /clock\.captured_at - interval '\$\{STABILITY_WINDOW_MINUTES\} minutes'/);
+  assert.match(script,
+    /coalesce\(\$1::timestamptz, clock\.captured_at\)[\s\S]*- interval '\$\{STABILITY_WINDOW_MINUTES\} minutes'/);
   assert.match(script, /greatest\(booking\.created_at, booking\.updated_at,\s*booking\.source_synced_at, link\.created_at, link\.updated_at\)/);
   assert.match(script, /\$\{ACTIVITY_AT_SQL\} > cutoff\.stability_cutoff_at/);
   assert.match(script, /\$\{ACTIVITY_AT_SQL\} <= cutoff\.stability_cutoff_at/);

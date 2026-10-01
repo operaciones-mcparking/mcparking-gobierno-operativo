@@ -1,0 +1,246 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  runRefresh,
+  UPSTREAM_PREFLIGHT_SQL,
+} from "./customer-window-related-review-mcp-eap-v1-refresh.mjs";
+
+const PREVIOUS_SNAPSHOT = "11111111-1111-4111-8111-111111111111";
+const NEW_SNAPSHOT = "22222222-2222-4222-8222-222222222222";
+const RUN_ID = "33333333-3333-4333-8333-333333333333";
+const CAPTURED_AT = "2026-10-01T17:28:21.038917Z";
+const STABILITY_CUTOFF_AT = "2026-10-01T16:58:21.038917Z";
+
+function preflight(overrides = {}) {
+  return {
+    preflightStatus: "ready",
+    preflightReasonCode: "ready",
+    preflightCapturedAt: CAPTURED_AT,
+    preflightStabilityCutoffAt: STABILITY_CUTOFF_AT,
+    stableSourceRowsMcpEap: "406258",
+    stableSourceRowsOkp: null,
+    stableMissingLinksMcpEap: "0",
+    stableMissingLinksOkp: null,
+    activeWithoutMetrics: "0",
+    changedDistinctRelevant: "0",
+    duplicateSourceRows: "0",
+    duplicateBookingLinks: "0",
+    multipleLinks: "0",
+    invalidProfileCount: "0",
+    invalidResolverCount: "0",
+    sourceCreatedAtMissing: "0",
+    nullRepresentationCount: "0",
+    okpScope: "not_evaluated_related_review_v1",
+    ...overrides,
+  };
+}
+
+function makeClient() {
+  const queries = [];
+  return class FakeClient {
+    constructor() {
+      this.queries = queries;
+    }
+
+    async connect() {}
+
+    async end() {}
+
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/pg_try_advisory_lock/.test(sql)) return { rows: [{ acquired: true }] };
+      if (/customer_related_review_snapshots snapshot/.test(sql)
+        && /active_snapshot_id/.test(sql)) {
+        return {
+          rows: [{
+            current_user: "customer_related_review_builder_login",
+            session_user: "customer_related_review_builder_login",
+            inherited_capability: true,
+            snapshots_rls: true,
+            active_count: 1,
+            ready_count: 0,
+            active_snapshot_id: PREVIOUS_SNAPSHOT,
+            ready_snapshot_id: null,
+            active_activated_at: "2026-10-01T16:55:38.912296Z",
+          }],
+        };
+      }
+      if (/LIFECYCLE/.test(sql) || /target_active_count/.test(sql)) {
+        return {
+          rows: [{
+            active_count: 1,
+            ready_count: 0,
+            target_active_count: 1,
+            previous_status: "superseded",
+            previous_activated_at: "2026-10-01T16:55:38.912296Z",
+            previous_superseded_at: "2026-10-01T17:30:00Z",
+          }],
+        };
+      }
+      if (/stable_valid_bookings/.test(sql)) {
+        return {
+          rows: [{
+            stable_valid_bookings: "406258",
+            stable_assigned_bookings: "406258",
+            stable_missing_bookings: "0",
+            hot_valid_bookings: "10",
+          }],
+        };
+      }
+      if (/pg_advisory_unlock/.test(sql)) return { rows: [{}] };
+      throw new Error(`Unexpected query: ${sql.slice(0, 120)}`);
+    }
+  };
+}
+
+async function runScenario({
+  preflightResult = preflight(),
+  buildFn,
+  operationalFinishes = [],
+} = {}) {
+  const ClientClass = makeClient();
+  let buildCalls = 0;
+  const result = await runRefresh({
+    ClientClass,
+    parseEnv: () => ({
+      connection: {},
+      keyBytes: Buffer.alloc(32),
+    }),
+    preflightFn: async () => preflightResult,
+    buildFn: buildFn ?? (async ({ capturedAt }) => {
+      buildCalls++;
+      assert.equal(capturedAt, CAPTURED_AT);
+      return {
+        ok: true,
+        mode: "build-ready",
+        committed: true,
+        snapshotStatus: "ready",
+        postCommitVerificationOk: true,
+        snapshotId: NEW_SNAPSHOT,
+      };
+    }),
+    auditFn: async () => ({
+      ok: true,
+      snapshotId: NEW_SNAPSHOT,
+      status: "ready",
+      manifestMatch: true,
+      countsMatch: true,
+      anomalyCount: 0,
+      effectiveStatementTimeoutMs: 300000,
+      effectiveLockTimeoutMs: 30000,
+    }),
+    activateFn: async () => ({
+      ok: true,
+      mode: "activate",
+      status: "active",
+      committed: true,
+      postCommitVerificationOk: true,
+      previousActiveSnapshotId: PREVIOUS_SNAPSHOT,
+    }),
+    retentionFn: async () => ({
+      ok: true,
+      containsPii: false,
+      deleted: 0,
+      remainingSupersededBeyondRetention: 0,
+      activeSnapshotId: NEW_SNAPSHOT,
+      deletedSnapshotId: null,
+    }),
+    operationalStartFn: async ({ runId }) => ({
+      ok: true,
+      containsPii: false,
+      runId,
+      status: "running",
+    }),
+    operationalHeartbeatFn: async ({ runId }) => ({
+      ok: true,
+      containsPii: false,
+      runId,
+      status: "running",
+    }),
+    operationalFinishFn: async (payload) => {
+      operationalFinishes.push(payload);
+      return {
+        ok: true,
+        containsPii: false,
+        runId: payload.runId,
+        status: payload.success ? "success" : "error",
+      };
+    },
+    heartbeatFactory: () => ({ stop: async () => {} }),
+    operationalClientFactory: ({ ClientClass: OperationalClientClass }) =>
+      new OperationalClientClass({}),
+    randomUUIDFn: () => RUN_ID,
+    now: (() => {
+      let value = 0;
+      return () => ++value;
+    })(),
+    sleepFn: async () => {},
+  });
+  return { result, buildCalls, operationalFinishes };
+}
+
+test("READY preflight invokes the builder with the same captured_at", async () => {
+  const { result, buildCalls } = await runScenario();
+  assert.equal(buildCalls, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.preflightStatus, "ready");
+  assert.equal(result.preflightCapturedAt, CAPTURED_AT);
+  assert.equal(result.buildInvoked, true);
+  assert.equal(result.newSnapshotId, NEW_SNAPSHOT);
+});
+
+for (const [name, overrides, reason] of [
+  ["missing links", { stableMissingLinksMcpEap: "2", preflightStatus: "not_ready",
+    preflightReasonCode: "stable_missing_links_mcp_eap" }, "stable_missing_links_mcp_eap"],
+  ["metrics", { activeWithoutMetrics: "3", preflightStatus: "not_ready",
+    preflightReasonCode: "active_without_metrics" }, "active_without_metrics"],
+  ["changedDistinct", { changedDistinctRelevant: "5", preflightStatus: "not_ready",
+    preflightReasonCode: "changed_distinct_relevant" }, "changed_distinct_relevant"],
+]) {
+  test(`NOT_READY ${name} skips builder and preserves the active snapshot`, async () => {
+    const finishes = [];
+    const { result, buildCalls } = await runScenario({
+      preflightResult: preflight(overrides),
+      operationalFinishes: finishes,
+    });
+    assert.equal(buildCalls, 0);
+    assert.equal(result.ok, true);
+    assert.equal(result.preflightStatus, "not_ready");
+    assert.equal(result.preflightReasonCode, reason);
+    assert.equal(result.activeSnapshotId, PREVIOUS_SNAPSHOT);
+    assert.equal(result.newSnapshotId, undefined);
+    assert.equal(result.buildInvoked, false);
+    assert.equal(finishes.at(-1).success, true);
+  });
+}
+
+test("structural preflight ERROR is a real failure and does not invoke the builder", async () => {
+  const finishes = [];
+  await assert.rejects(() => runScenario({
+    preflightResult: preflight({
+      preflightStatus: "error",
+      preflightReasonCode: "structural_invariant",
+      duplicateBookingLinks: "1",
+    }),
+    buildFn: async () => {
+      throw new Error("builder should not run");
+    },
+    operationalFinishes: finishes,
+  }), /preflight_structural_error/);
+  assert.equal(finishes.at(-1).success, false);
+});
+
+test("race rows after the frozen cutoff are outside the preflight universe", () => {
+  assert.match(UPSTREAM_PREFLIGHT_SQL, /<= params\.stability_cutoff_at/);
+  assert.match(UPSTREAM_PREFLIGHT_SQL, /transaction_timestamp\(\) as captured_at/);
+  assert.match(UPSTREAM_PREFLIGHT_SQL, /stability_cutoff_at/);
+});
+
+test("builder failure after READY remains an ERROR", async () => {
+  await assert.rejects(() => runScenario({
+    buildFn: async ({ capturedAt }) => {
+      assert.equal(capturedAt, CAPTURED_AT);
+      throw new Error("synthetic builder failure");
+    },
+  }), /build_ready_failed/);
+});

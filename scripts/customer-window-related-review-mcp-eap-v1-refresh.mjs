@@ -151,6 +151,9 @@ export function formatRefreshError(error) {
   }
   if (context?.readyAudit) Object.assign(result, context.readyAudit);
   if (context?.buildFailure) Object.assign(result, context.buildFailure);
+  if (context?.preflightResult && context.phase === "upstream-preflight") {
+    Object.assign(result, context.preflightResult);
+  }
   return result;
 }
 
@@ -405,6 +408,208 @@ const PREFLIGHT_SQL = `
   where snapshot.rule_key = 'RELATED_REVIEW_MCP_EAP_V1'
 `;
 
+export const UPSTREAM_PREFLIGHT_SQL = `
+  with params as materialized (
+    select pg_catalog.transaction_timestamp() as captured_at,
+      pg_catalog.transaction_timestamp()
+        - interval '${STABILITY_WINDOW_MINUTES} minutes' as stability_cutoff_at
+  ), stable_bookings as materialized (
+    select booking.source, booking.source_row_id, booking.source_created_at,
+      booking.created_at, booking.updated_at, booking.source_synced_at
+    from public.customer_source_bookings_mcp_eap booking
+    cross join params
+    where booking.source = 'MCP_EAP'
+      and booking.booking_status in (1, 8)
+      and greatest(booking.created_at, booking.updated_at, booking.source_synced_at)
+        <= params.stability_cutoff_at
+  ), link_counts as materialized (
+    select stable.source, stable.source_row_id,
+      count(link.id)::integer as link_count
+    from stable_bookings stable
+    left join public.customer_booking_profile_links link
+      on link.source = stable.source and link.source_row_id = stable.source_row_id
+    group by stable.source, stable.source_row_id
+  ), linked as materialized (
+    select stable.source, stable.source_row_id, stable.source_created_at,
+      link.id as booking_link_id, link.profile_id, link.status as link_status,
+      link.resolver_version, link_counts.link_count,
+      profile.status as profile_status, profile.merged_into_profile_id,
+      (metrics.customer_id is not null) as has_metrics
+    from stable_bookings stable
+    join link_counts using (source, source_row_id)
+    left join public.customer_booking_profile_links link
+      on link.source = stable.source and link.source_row_id = stable.source_row_id
+    left join public.customer_profiles profile on profile.id = link.profile_id
+    left join public.customer_profile_metrics metrics on metrics.customer_id = link.profile_id
+  ), classified as materialized (
+    select linked.*,
+      case
+        when link_count = 1 and link_status = 'active'
+          and profile_status = 'active' and merged_into_profile_id is null
+          and has_metrics then 'confirmed_customer'
+        when link_count = 1 and link_status in ('conflict', 'candidate')
+          and profile_status = 'active' and merged_into_profile_id is null
+          then 'related_review'
+        else null
+      end as representation_type
+    from linked
+  ), duplicate_source as (
+    select count(*)::bigint as duplicate_source_rows
+    from (
+      select source_row_id
+      from public.customer_source_bookings_mcp_eap
+      where source = 'MCP_EAP' and booking_status in (1, 8)
+      group by source_row_id
+      having count(*) > 1
+    ) duplicate_row
+  ), aggregate as (
+    select
+      (select captured_at from params) as captured_at,
+      (select stability_cutoff_at from params) as stability_cutoff_at,
+      count(distinct source_row_id)::bigint as stable_source_rows_mcp_eap,
+      count(distinct source_row_id) filter (where link_count = 0)::bigint
+        as stable_missing_links_mcp_eap,
+      count(distinct source_row_id) filter (where link_status = 'active' and not has_metrics)::bigint
+        as active_without_metrics,
+      0::bigint as changed_distinct_relevant,
+      (select duplicate_source_rows from duplicate_source) as duplicate_source_rows,
+      count(distinct source_row_id) filter (where link_count > 1)::bigint
+        as duplicate_booking_links,
+      count(distinct source_row_id) filter (where link_count > 1)::bigint
+        as multiple_links,
+      count(*) filter (
+        where booking_link_id is not null
+          and (profile_id is null or profile_status <> 'active'
+            or merged_into_profile_id is not null)
+      )::bigint as invalid_profile_count,
+      count(*) filter (
+        where booking_link_id is not null
+          and (resolver_version is null
+            or resolver_version not in ('customer_identity_v1', 'customer_identity_v2'))
+      )::bigint as invalid_resolver_count,
+      count(*) filter (where source_created_at is null)::bigint
+        as source_created_at_missing,
+      count(*) filter (where representation_type is null)::bigint
+        as null_representation_count
+    from classified
+  )
+  select
+    captured_at::text as captured_at,
+    stability_cutoff_at::text as stability_cutoff_at,
+    stable_source_rows_mcp_eap::text as stable_source_rows_mcp_eap,
+    null::text as stable_source_rows_okp,
+    stable_missing_links_mcp_eap::text as stable_missing_links_mcp_eap,
+    null::text as stable_missing_links_okp,
+    active_without_metrics::text as active_without_metrics,
+    changed_distinct_relevant::text as changed_distinct_relevant,
+    duplicate_source_rows::text as duplicate_source_rows,
+    duplicate_booking_links::text as duplicate_booking_links,
+    multiple_links::text as multiple_links,
+    invalid_profile_count::text as invalid_profile_count,
+    invalid_resolver_count::text as invalid_resolver_count,
+    source_created_at_missing::text as source_created_at_missing,
+    null_representation_count::text as null_representation_count
+  from aggregate
+`;
+
+function countString(value, code) {
+  if (value === null) return null;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  if (typeof value === "bigint" && value >= 0n) return value.toString();
+  check(typeof value === "string" && /^(?:0|[1-9][0-9]*)$/.test(value), code);
+  return value;
+}
+
+function countBigInt(value) {
+  return BigInt(value ?? "0");
+}
+
+function normalizeRelatedReviewPreflight(row) {
+  check(row && typeof row === "object" && !Array.isArray(row), "preflight_contract_invalid");
+  check(typeof row.captured_at === "string" && !Number.isNaN(Date.parse(row.captured_at)),
+    "preflight_contract_invalid");
+  check(typeof row.stability_cutoff_at === "string"
+    && !Number.isNaN(Date.parse(row.stability_cutoff_at)), "preflight_contract_invalid");
+  const result = {
+    preflightCapturedAt: row.captured_at,
+    preflightStabilityCutoffAt: row.stability_cutoff_at,
+    stableSourceRowsMcpEap: countString(row.stable_source_rows_mcp_eap,
+      "preflight_contract_invalid"),
+    stableSourceRowsOkp: row.stable_source_rows_okp === null ? null
+      : countString(row.stable_source_rows_okp, "preflight_contract_invalid"),
+    stableMissingLinksMcpEap: countString(row.stable_missing_links_mcp_eap,
+      "preflight_contract_invalid"),
+    stableMissingLinksOkp: row.stable_missing_links_okp === null ? null
+      : countString(row.stable_missing_links_okp, "preflight_contract_invalid"),
+    activeWithoutMetrics: countString(row.active_without_metrics,
+      "preflight_contract_invalid"),
+    changedDistinctRelevant: countString(row.changed_distinct_relevant,
+      "preflight_contract_invalid"),
+    duplicateSourceRows: countString(row.duplicate_source_rows,
+      "preflight_contract_invalid"),
+    duplicateBookingLinks: countString(row.duplicate_booking_links,
+      "preflight_contract_invalid"),
+    multipleLinks: countString(row.multiple_links, "preflight_contract_invalid"),
+    invalidProfileCount: countString(row.invalid_profile_count,
+      "preflight_contract_invalid"),
+    invalidResolverCount: countString(row.invalid_resolver_count,
+      "preflight_contract_invalid"),
+    sourceCreatedAtMissing: countString(row.source_created_at_missing,
+      "preflight_contract_invalid"),
+    nullRepresentationCount: countString(row.null_representation_count,
+      "preflight_contract_invalid"),
+    okpScope: "not_evaluated_related_review_v1",
+  };
+  const structuralNull = countBigInt(result.nullRepresentationCount)
+    - countBigInt(result.stableMissingLinksMcpEap)
+    - countBigInt(result.activeWithoutMetrics);
+  const structural = [
+    result.duplicateSourceRows,
+    result.duplicateBookingLinks,
+    result.multipleLinks,
+    result.invalidProfileCount,
+    result.invalidResolverCount,
+    result.sourceCreatedAtMissing,
+  ].some((value) => countBigInt(value) > 0n) || structuralNull > 0n;
+  if (structural) {
+    return {
+      ...result,
+      preflightStatus: "error",
+      preflightReasonCode: "structural_invariant",
+    };
+  }
+  if (countBigInt(result.stableMissingLinksMcpEap) > 0n) {
+    return {
+      ...result,
+      preflightStatus: "not_ready",
+      preflightReasonCode: "stable_missing_links_mcp_eap",
+    };
+  }
+  if (countBigInt(result.activeWithoutMetrics) > 0n) {
+    return {
+      ...result,
+      preflightStatus: "not_ready",
+      preflightReasonCode: "active_without_metrics",
+    };
+  }
+  if (countBigInt(result.changedDistinctRelevant) > 0n) {
+    return {
+      ...result,
+      preflightStatus: "not_ready",
+      preflightReasonCode: "changed_distinct_relevant",
+    };
+  }
+  return {
+    ...result,
+    preflightStatus: "ready",
+    preflightReasonCode: "ready",
+  };
+}
+
+export async function runRelatedReviewPreflight({ client }) {
+  return normalizeRelatedReviewPreflight((await client.query(UPSTREAM_PREFLIGHT_SQL)).rows[0]);
+}
+
 const LIFECYCLE_POSTCHECK_SQL = `
   select
     count(*) filter (where snapshot.status = 'active')::integer as active_count,
@@ -454,6 +659,7 @@ export async function runRefresh({
   ClientClass = pg.Client,
   parseEnv = parseBuilderEnv,
   buildFn = runBuild,
+  preflightFn = runRelatedReviewPreflight,
   auditFn = runReadyAuditIsolated,
   activateFn = runActivate,
   retentionFn = runSnapshotRetention,
@@ -481,6 +687,7 @@ export async function runRefresh({
   let committed = false;
   let readyAudit = null;
   let buildFailure = null;
+  let upstreamPreflight = null;
   let readyAuditAttempts = 0;
   let readyAuditRetried = false;
   let firstAuditDbCode = null;
@@ -568,11 +775,54 @@ export async function runRefresh({
       newSnapshotId = resumeReadySnapshotId;
       timings.buildMs = 0;
     } else {
+      phase = "upstream-preflight";
+      diagnosticCode = "upstream_preflight_query";
+      const upstreamPreflightStarted = now();
+      upstreamPreflight = await preflightFn({ client });
+      timings.preflightMs = now() - upstreamPreflightStarted;
+      check(upstreamPreflight?.preflightStatus === "ready"
+        || upstreamPreflight?.preflightStatus === "not_ready"
+        || upstreamPreflight?.preflightStatus === "error", "preflight_contract_invalid");
+      if (upstreamPreflight.preflightStatus === "error") {
+        throw new RefreshError("preflight_structural_error");
+      }
+      if (upstreamPreflight.preflightStatus === "not_ready") {
+        timings.totalMs = now() - totalStarted;
+        await heartbeat.stop();
+        heartbeat = null;
+        diagnosticCode = "operational_finish_not_ready";
+        const operationalFinish = await operationalFinishFn({
+          client: operationalClient,
+          runId,
+          success: true,
+          retentionAttempted: false,
+        });
+        check(operationalFinish?.ok === true && operationalFinish.runId === runId
+          && operationalFinish.status === "success", "refresh_operational_finish_failed");
+        operationalFinished = true;
+        return {
+          ok: true,
+          mode: "refresh",
+          previousSnapshotId,
+          activeSnapshotId: previousSnapshotId,
+          buildReadyOk: false,
+          buildInvoked: false,
+          resumedReady: false,
+          containsPii: false,
+          ...upstreamPreflight,
+          timings,
+        };
+      }
       phase = "build-ready";
       const buildStarted = now();
       let build;
       try {
-        build = await buildFn({ mode: "build-ready", env, ClientClass });
+        build = await buildFn({
+          mode: "build-ready",
+          env,
+          ClientClass,
+          capturedAt: upstreamPreflight.preflightCapturedAt,
+        });
       } catch (error) {
         buildFailure = safeBuildFailure(error, buildErrorFormatter);
         throw new RefreshError("build_ready_failed");
@@ -734,8 +984,10 @@ export async function runRefresh({
       mode: "refresh",
       previousSnapshotId,
       newSnapshotId,
+      buildInvoked: true,
       buildReadyOk: true,
       resumedReady: resumeReadySnapshotId !== null,
+      ...(upstreamPreflight ? upstreamPreflight : {}),
       readyAuditOk: true,
       ...auditTelemetry(),
       ...(Number.isSafeInteger(audit.effectiveStatementTimeoutMs)
@@ -808,6 +1060,7 @@ export async function runRefresh({
         retentionDurationMs: phase === "retention" && retentionStartedAt !== null
           ? Math.max(0, now() - retentionStartedAt) : retentionDurationMs,
         retentionLastDeletedSnapshotId,
+        preflightResult: upstreamPreflight,
       });
     }
     throw error;

@@ -790,6 +790,13 @@ if ($serialized -match 'password|postgresql:|source_row|stack|select ') {
 test("logging and latest state use an allowlist and atomic replacement", () => {
   for (const field of ["startedAt", "finishedAt", "previousSnapshotId", "newSnapshotId",
     "stableMissingBookings", "hotValidBookings", "stabilityWindowMinutes", "timings",
+    "preflightStatus", "preflightReasonCode", "preflightCapturedAt",
+    "preflightStabilityCutoffAt", "stableSourceRowsMcpEap", "stableSourceRowsOkp",
+    "stableMissingLinksMcpEap", "stableMissingLinksOkp", "activeWithoutMetrics",
+    "changedDistinctRelevant", "duplicateSourceRows", "duplicateBookingLinks",
+    "multipleLinks", "invalidProfileCount", "invalidResolverCount",
+    "sourceCreatedAtMissing", "nullRepresentationCount", "okpScope",
+    "refreshStatus", "waiting_upstream", "buildInvoked", "preflightMs",
     "readyAuditAttempts", "readyAuditRetried", "firstAuditDbCode", "firstAuditPhase",
     "retryAuditOk", "retryAuditDurationMs", "postcheckPhaseStarted",
     "postcheckPhaseFinished", "postcheckPhaseDurationMs", "lifecyclePostcheckMs",
@@ -811,6 +818,98 @@ test("logging and latest state use an allowlist and atomic replacement", () => {
     assert.match(wrapper, new RegExp(field));
   }
   assert.doesNotMatch(wrapper, /WriteAllText\([^\n]*(?:passwordPlain|hmacPlain|databaseUrl)/i);
+});
+
+test("PowerShell persists NOT_READY as waiting_upstream without replacing active snapshot", {
+  skip: process.platform !== "win32",
+}, () => {
+  const powershell = join(process.env.SystemRoot ?? "C:\\Windows", "System32",
+    "WindowsPowerShell", "v1.0", "powershell.exe");
+  const wrapperPath = join(scriptDirectory, "customer-window-related-review-refresh.ps1")
+    .replaceAll("'", "''");
+  const command = `
+$ErrorActionPreference = 'Stop'
+$tokens = $null
+$errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile(
+  '${wrapperPath}', [ref]$tokens, [ref]$errors)
+if ($errors.Count -ne 0) { throw 'Wrapper parse failure' }
+foreach ($name in @('Throw-Code', 'Test-CountValue', 'Get-OptionalProperty',
+    'Add-SafeAuditWaitFields', 'Get-SafeRefreshRecord', 'Write-AtomicJson',
+    'Publish-OperationalState')) {
+  $function = $ast.Find({
+    param($node)
+    $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+      $node.Name -eq $name
+  }, $true)
+  if ($null -eq $function) { throw "Missing function $name" }
+  Invoke-Expression $function.Extent.Text
+}
+$root = Join-Path ([IO.Path]::GetTempPath()) ('rr-not-ready-' + [guid]::NewGuid().ToString('N'))
+$logDirectory = Join-Path $root 'logs'
+$stateDirectory = Join-Path $root 'state'
+$latestPath = Join-Path $stateDirectory 'latest.json'
+[void][IO.Directory]::CreateDirectory($logDirectory)
+[void][IO.Directory]::CreateDirectory($stateDirectory)
+try {
+  $previousSnapshot = '11111111-1111-4111-8111-111111111111'
+  $previousSuccess = '2026-10-01T16:55:38.9122960+00:00'
+  Write-AtomicJson -Path $latestPath -Value ([ordered]@{
+    lastAttemptAt = $previousSuccess
+    lastSuccessAt = $previousSuccess
+    ok = $true
+    activeSnapshotId = $previousSnapshot
+    capturedAt = '2026-10-01T16:55:38.9122960+00:00'
+    stableMissingBookings = '0'
+    hotValidBookings = '10'
+  })
+  $result = '{"ok":true,"mode":"refresh","previousSnapshotId":"' + $previousSnapshot + '",' +
+    '"activeSnapshotId":"' + $previousSnapshot + '","buildReadyOk":false,' +
+    '"buildInvoked":false,"preflightStatus":"not_ready",' +
+    '"preflightReasonCode":"stable_missing_links_mcp_eap",' +
+    '"preflightCapturedAt":"2026-10-01T17:28:21.038917Z",' +
+    '"preflightStabilityCutoffAt":"2026-10-01T16:58:21.038917Z",' +
+    '"stableSourceRowsMcpEap":"406258","stableMissingLinksMcpEap":"2",' +
+    '"activeWithoutMetrics":"0","changedDistinctRelevant":"0",' +
+    '"duplicateSourceRows":"0","duplicateBookingLinks":"0","multipleLinks":"0",' +
+    '"invalidProfileCount":"0","invalidResolverCount":"0",' +
+    '"sourceCreatedAtMissing":"0","nullRepresentationCount":"2",' +
+    '"okpScope":"not_evaluated_related_review_v1","containsPii":false,' +
+    '"timings":{"preflightMs":25,"totalMs":30}}' | ConvertFrom-Json
+  $started = [DateTimeOffset]::Parse('2026-10-01T17:28:21Z')
+  $finished = [DateTimeOffset]::Parse('2026-10-01T17:28:31Z')
+  $record = Get-SafeRefreshRecord -Result $result -Started $started -Finished $finished -ChildExitCode 0 -DurationMs 10000
+  Publish-OperationalState -Record $record -DurationMs 10000
+  $line = Get-Content -LiteralPath (Get-ChildItem -LiteralPath $logDirectory -File |
+    Select-Object -First 1).FullName -Raw | ConvertFrom-Json
+  $latest = Get-Content -LiteralPath $latestPath -Raw | ConvertFrom-Json
+  if ($line.preflightStatus -ne 'not_ready' -or
+    $line.preflightReasonCode -ne 'stable_missing_links_mcp_eap' -or
+    $line.stableMissingLinksMcpEap -ne '2' -or $line.buildInvoked -ne $false) {
+    throw 'NDJSON NOT_READY preflight mismatch'
+  }
+  if ($latest.refreshStatus -ne 'waiting_upstream' -or
+    $latest.lastSuccessAt -ne $previousSuccess -or
+    $latest.activeSnapshotId -ne $previousSnapshot -or
+    $latest.lastErrorCode -ne $null -or
+    $latest.preflightReasonCode -ne 'stable_missing_links_mcp_eap' -or
+    $latest.stableMissingLinksMcpEap -ne '2') {
+    throw 'latest NOT_READY state mismatch'
+  }
+  $serialized = @($line, $latest) | ConvertTo-Json -Compress
+  if ($serialized -match 'password|postgresql:|source_row_id|email|phone|query') {
+    throw 'Unsafe NOT_READY diagnostic field persisted'
+  }
+} finally {
+  [IO.Directory]::Delete($root, $true)
+}
+`;
+  const environment = { ...process.env };
+  delete environment.PSModulePath;
+  const result = spawnSync(powershell,
+    ["-NoProfile", "-NonInteractive", "-Command", command],
+    { encoding: "utf8", env: environment });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
 test("PowerShell persists safe build diagnostics to NDJSON and latest state", {

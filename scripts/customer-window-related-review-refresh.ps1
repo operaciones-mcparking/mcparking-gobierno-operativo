@@ -364,7 +364,8 @@ function Get-SafeRefreshRecord {
     durationMs = $DurationMs
   }
   foreach ($name in @('code', 'phase', 'diagnosticCode', 'retentionErrorCode',
-      'buildCode', 'buildPhase')) {
+      'buildCode', 'buildPhase', 'preflightStatus', 'preflightReasonCode',
+      'okpScope')) {
     $value = Get-OptionalProperty -Object $Result -Name $name
     if ($null -ne $value) {
       if ($value -isnot [string] -or $value -notmatch '^[A-Za-z0-9_-]{1,80}$') {
@@ -407,10 +408,19 @@ function Get-SafeRefreshRecord {
       $record[$name] = $value
     }
   }
-  foreach ($name in @('activated', 'committed', 'retentionAttempted')) {
+  foreach ($name in @('activated', 'committed', 'retentionAttempted', 'buildInvoked')) {
     $value = Get-OptionalProperty -Object $Result -Name $name
     if ($null -ne $value) {
       if ($value -isnot [bool]) { Throw-Code 'invalid_refresh_output' }
+      $record[$name] = $value
+    }
+  }
+  foreach ($name in @('preflightCapturedAt', 'preflightStabilityCutoffAt')) {
+    $value = Get-OptionalProperty -Object $Result -Name $name
+    if ($null -ne $value) {
+      if ($value -isnot [string] -or $value -notmatch '^\d{4}-\d{2}-\d{2}[T\s]') {
+        Throw-Code 'invalid_refresh_output'
+      }
       $record[$name] = $value
     }
   }
@@ -489,7 +499,11 @@ function Get-SafeRefreshRecord {
   }
   foreach ($name in @('activeCount', 'readyCount', 'supersededCount', 'stableValidBookings',
     'stableAssignedBookings', 'stableMissingBookings', 'hotValidBookings',
-    'stabilityWindowMinutes', 'retentionDeleted', 'retentionRemaining')) {
+    'stabilityWindowMinutes', 'retentionDeleted', 'retentionRemaining',
+    'stableSourceRowsMcpEap', 'stableSourceRowsOkp', 'stableMissingLinksMcpEap',
+    'stableMissingLinksOkp', 'activeWithoutMetrics', 'changedDistinctRelevant',
+    'duplicateSourceRows', 'duplicateBookingLinks', 'multipleLinks', 'invalidProfileCount',
+    'invalidResolverCount', 'sourceCreatedAtMissing', 'nullRepresentationCount')) {
     $value = Get-OptionalProperty -Object $Result -Name $name
     if ($null -ne $value) {
       if (-not (Test-CountValue $value)) { Throw-Code 'invalid_refresh_output' }
@@ -516,7 +530,7 @@ function Get-SafeRefreshRecord {
   $timings = Get-OptionalProperty -Object $Result -Name 'timings'
   if ($null -ne $timings) {
     $safeTimings = [ordered]@{}
-    foreach ($name in @('buildMs', 'auditMs', 'activateMs', 'lifecyclePostcheckMs',
+    foreach ($name in @('preflightMs', 'buildMs', 'auditMs', 'activateMs', 'lifecyclePostcheckMs',
       'stableCoveragePostcheckMs', 'postcheckMs', 'retentionMs', 'totalMs')) {
       $number = Get-OptionalProperty -Object $timings -Name $name
       if ($null -ne $number) {
@@ -615,13 +629,27 @@ function Publish-OperationalState {
   $recordRetentionErrorCode = Get-OptionalProperty -Object $Record -Name 'retentionErrorCode'
   $recordActivated = Get-OptionalProperty -Object $Record -Name 'activated'
   $recordCommitted = Get-OptionalProperty -Object $Record -Name 'committed'
-  $lastSuccessAt = if ($Record.ok) { $Record.finishedAt } else { $previousLastSuccess }
-  $activeSnapshotId = if ($Record.ok -or ($recordActivated -eq $true -and
-      $recordCommitted -eq $true)) { $recordSnapshot } else { $previousActiveSnapshot }
+  $recordPreflightStatus = Get-OptionalProperty -Object $Record -Name 'preflightStatus'
+  $recordPreflightReason = Get-OptionalProperty -Object $Record -Name 'preflightReasonCode'
+  $recordPreflightCapturedAt = Get-OptionalProperty -Object $Record -Name 'preflightCapturedAt'
+  $recordPreflightCutoff = Get-OptionalProperty -Object $Record -Name 'preflightStabilityCutoffAt'
+  $recordOkpScope = Get-OptionalProperty -Object $Record -Name 'okpScope'
+  $isNotReady = $recordPreflightStatus -eq 'not_ready'
+  $lastSuccessAt = if ($Record.ok -and -not $isNotReady) {
+    $Record.finishedAt
+  } else { $previousLastSuccess }
+  $activeSnapshotId = if ($Record.ok -and -not $isNotReady) {
+    if ($null -ne $recordSnapshot) { $recordSnapshot } else { $previousActiveSnapshot }
+  } elseif ($recordActivated -eq $true -and $recordCommitted -eq $true) {
+    $recordSnapshot
+  } else { $previousActiveSnapshot }
   $state = [ordered]@{
     lastAttemptAt = $Record.finishedAt
     lastSuccessAt = $lastSuccessAt
     ok = $Record.ok
+    refreshStatus = if ($isNotReady) { 'waiting_upstream' } elseif ($Record.ok) {
+      'healthy'
+    } else { 'error' }
     activeSnapshotId = $activeSnapshotId
     capturedAt = $previousCapturedAt
     stableMissingBookings = if ($null -ne $recordStableMissing) {
@@ -664,6 +692,24 @@ function Publish-OperationalState {
     retentionDurationMs = $recordRetentionDuration
     retentionLastDeletedSnapshotId = $recordRetentionLastDeleted
     retentionErrorCode = $recordRetentionErrorCode
+    preflightStatus = $recordPreflightStatus
+    preflightReasonCode = $recordPreflightReason
+    preflightCapturedAt = $recordPreflightCapturedAt
+    preflightStabilityCutoffAt = $recordPreflightCutoff
+    okpScope = $recordOkpScope
+    stableSourceRowsMcpEap = Get-OptionalProperty -Object $Record -Name 'stableSourceRowsMcpEap'
+    stableSourceRowsOkp = Get-OptionalProperty -Object $Record -Name 'stableSourceRowsOkp'
+    stableMissingLinksMcpEap = Get-OptionalProperty -Object $Record -Name 'stableMissingLinksMcpEap'
+    stableMissingLinksOkp = Get-OptionalProperty -Object $Record -Name 'stableMissingLinksOkp'
+    activeWithoutMetrics = Get-OptionalProperty -Object $Record -Name 'activeWithoutMetrics'
+    changedDistinctRelevant = Get-OptionalProperty -Object $Record -Name 'changedDistinctRelevant'
+    duplicateSourceRows = Get-OptionalProperty -Object $Record -Name 'duplicateSourceRows'
+    duplicateBookingLinks = Get-OptionalProperty -Object $Record -Name 'duplicateBookingLinks'
+    multipleLinks = Get-OptionalProperty -Object $Record -Name 'multipleLinks'
+    invalidProfileCount = Get-OptionalProperty -Object $Record -Name 'invalidProfileCount'
+    invalidResolverCount = Get-OptionalProperty -Object $Record -Name 'invalidResolverCount'
+    sourceCreatedAtMissing = Get-OptionalProperty -Object $Record -Name 'sourceCreatedAtMissing'
+    nullRepresentationCount = Get-OptionalProperty -Object $Record -Name 'nullRepresentationCount'
     lastChildExitCode = $recordChildExitCode
     durationMs = $DurationMs
   }

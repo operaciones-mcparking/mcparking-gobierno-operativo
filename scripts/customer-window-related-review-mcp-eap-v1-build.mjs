@@ -139,8 +139,9 @@ export const ACTIVITY_AT_SQL = `greatest(booking.created_at, booking.updated_at,
 
 const CUTOFF_SQL = `
   create temp table rr_cutoff on commit drop as
-  select clock.captured_at,
-    clock.captured_at - interval '${STABILITY_WINDOW_MINUTES} minutes' as stability_cutoff_at
+  select coalesce($1::timestamptz, clock.captured_at) as captured_at,
+    coalesce($1::timestamptz, clock.captured_at)
+      - interval '${STABILITY_WINDOW_MINUTES} minutes' as stability_cutoff_at
   from (select pg_catalog.transaction_timestamp() as captured_at) clock
 `;
 
@@ -990,7 +991,7 @@ function assertAudit(audit, stage) {
 }
 
 export async function runBuild({ mode, env = process.env, ClientClass = pg.Client,
-  now = () => Date.now(), parseEnv = parseBuilderEnv } = {}) {
+  now = () => Date.now(), parseEnv = parseBuilderEnv, capturedAt = null } = {}) {
   let phase = "initializing";
   let keyBytes;
   let client;
@@ -1001,6 +1002,8 @@ export async function runBuild({ mode, env = process.env, ClientClass = pg.Clien
   const timings = {};
   try {
     check(["dry-run", "build-ready"].includes(mode), "invalid_build_mode");
+    check(capturedAt === null || (typeof capturedAt === "string"
+      && !Number.isNaN(Date.parse(capturedAt))), "invalid_captured_at");
     phase = "env";
     const parsed = parseEnv(env);
     const { connection, keyId } = parsed;
@@ -1048,7 +1051,7 @@ export async function runBuild({ mode, env = process.env, ClientClass = pg.Clien
 
     const stagingStart = now();
     phase = "cutoff_capture";
-    await client.query(CUTOFF_SQL);
+    await client.query(CUTOFF_SQL, [capturedAt]);
     phase = "staging_create";
     await client.query(STAGING_SQL);
     phase = "hot_audit";
