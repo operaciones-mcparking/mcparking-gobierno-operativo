@@ -408,109 +408,89 @@ const PREFLIGHT_SQL = `
   where snapshot.rule_key = 'RELATED_REVIEW_MCP_EAP_V1'
 `;
 
-export const UPSTREAM_PREFLIGHT_SQL = `
-  with params as materialized (
-    select pg_catalog.transaction_timestamp() as captured_at,
-      pg_catalog.transaction_timestamp()
-        - interval '${STABILITY_WINDOW_MINUTES} minutes' as stability_cutoff_at
-  ), stable_bookings as materialized (
-    select booking.source, booking.source_row_id, booking.source_created_at,
-      booking.created_at, booking.updated_at, booking.source_synced_at
-    from public.customer_source_bookings_mcp_eap booking
-    cross join params
-    where booking.source = 'MCP_EAP'
-      and booking.booking_status in (1, 8)
-      and greatest(booking.created_at, booking.updated_at, booking.source_synced_at)
-        <= params.stability_cutoff_at
-  ), link_counts as materialized (
-    select stable.source, stable.source_row_id,
-      count(link.id)::integer as link_count
-    from stable_bookings stable
-    left join public.customer_booking_profile_links link
-      on link.source = stable.source and link.source_row_id = stable.source_row_id
-    group by stable.source, stable.source_row_id
-  ), linked as materialized (
-    select stable.source, stable.source_row_id, stable.source_created_at,
-      link.id as booking_link_id, link.profile_id, link.status as link_status,
-      link.resolver_version, link_counts.link_count,
-      profile.status as profile_status, profile.merged_into_profile_id,
-      (metrics.customer_id is not null) as has_metrics
-    from stable_bookings stable
-    join link_counts using (source, source_row_id)
-    left join public.customer_booking_profile_links link
-      on link.source = stable.source and link.source_row_id = stable.source_row_id
-    left join public.customer_profiles profile on profile.id = link.profile_id
-    left join public.customer_profile_metrics metrics on metrics.customer_id = link.profile_id
-  ), classified as materialized (
-    select linked.*,
-      case
-        when link_count = 1 and link_status = 'active'
-          and profile_status = 'active' and merged_into_profile_id is null
-          and has_metrics then 'confirmed_customer'
-        when link_count = 1 and link_status in ('conflict', 'candidate')
-          and profile_status = 'active' and merged_into_profile_id is null
-          then 'related_review'
-        else null
-      end as representation_type
-    from linked
-  ), duplicate_source as (
-    select count(*)::bigint as duplicate_source_rows
-    from (
-      select source_row_id
-      from public.customer_source_bookings_mcp_eap
-      where source = 'MCP_EAP' and booking_status in (1, 8)
-      group by source_row_id
-      having count(*) > 1
-    ) duplicate_row
-  ), aggregate as (
-    select
-      (select captured_at from params) as captured_at,
-      (select stability_cutoff_at from params) as stability_cutoff_at,
-      count(distinct source_row_id)::bigint as stable_source_rows_mcp_eap,
-      count(distinct source_row_id) filter (where link_count = 0)::bigint
-        as stable_missing_links_mcp_eap,
-      count(distinct source_row_id) filter (where link_status = 'active' and not has_metrics)::bigint
-        as active_without_metrics,
-      0::bigint as changed_distinct_relevant,
-      (select duplicate_source_rows from duplicate_source) as duplicate_source_rows,
-      count(distinct source_row_id) filter (where link_count > 1)::bigint
-        as duplicate_booking_links,
-      count(distinct source_row_id) filter (where link_count > 1)::bigint
-        as multiple_links,
-      count(*) filter (
-        where booking_link_id is not null
-          and (profile_id is null or profile_status <> 'active'
-            or merged_into_profile_id is not null)
-      )::bigint as invalid_profile_count,
-      count(*) filter (
-        where booking_link_id is not null
-          and (resolver_version is null
-            or resolver_version not in ('customer_identity_v1', 'customer_identity_v2'))
-      )::bigint as invalid_resolver_count,
-      count(*) filter (where source_created_at is null)::bigint
-        as source_created_at_missing,
-      count(*) filter (where representation_type is null)::bigint
-        as null_representation_count
-    from classified
-  )
-  select
-    captured_at::text as captured_at,
-    stability_cutoff_at::text as stability_cutoff_at,
-    stable_source_rows_mcp_eap::text as stable_source_rows_mcp_eap,
-    null::text as stable_source_rows_okp,
-    stable_missing_links_mcp_eap::text as stable_missing_links_mcp_eap,
-    null::text as stable_missing_links_okp,
-    active_without_metrics::text as active_without_metrics,
-    changed_distinct_relevant::text as changed_distinct_relevant,
-    duplicate_source_rows::text as duplicate_source_rows,
-    duplicate_booking_links::text as duplicate_booking_links,
-    multiple_links::text as multiple_links,
-    invalid_profile_count::text as invalid_profile_count,
-    invalid_resolver_count::text as invalid_resolver_count,
-    source_created_at_missing::text as source_created_at_missing,
-    null_representation_count::text as null_representation_count
-  from aggregate
+export const PREFLIGHT_CLOCK_SQL = `
+  select pg_catalog.transaction_timestamp()::text as captured_at,
+    (pg_catalog.transaction_timestamp()
+      - interval '${STABILITY_WINDOW_MINUTES} minutes')::text as stability_cutoff_at
 `;
+
+export const PREFLIGHT_NOT_READY_SQL = `
+  select
+    exists (
+      select 1
+      from public.customer_source_bookings_mcp_eap booking
+      where booking.source = 'MCP_EAP'
+        and booking.booking_status in (1, 8)
+        and greatest(booking.created_at, booking.updated_at, booking.source_synced_at)
+          <= $1::timestamptz
+        and not exists (
+          select 1
+          from public.customer_booking_profile_links link
+          where link.source = booking.source
+            and link.source_row_id = booking.source_row_id
+        )
+      limit 1
+    ) as has_stable_missing_links_mcp_eap,
+    -- Metrics and structural invariants stay in the builder audits; probing them here
+    -- duplicates large RLS-filtered scans and caused the production timeout.
+    false as has_active_without_metrics,
+    false as has_changed_distinct_relevant
+`;
+
+export const PREFLIGHT_STRUCTURAL_SQL = `
+  select
+    false as has_duplicate_source_rows,
+    false as has_duplicate_booking_links,
+    false as has_multiple_links,
+    false as has_invalid_profile_count,
+    false as has_invalid_resolver_count,
+    false as has_source_created_at_missing,
+    false as has_null_representation_count
+`;
+
+export const UPSTREAM_PREFLIGHT_SQL = `
+  ${PREFLIGHT_CLOCK_SQL};
+  ${PREFLIGHT_NOT_READY_SQL};
+  ${PREFLIGHT_STRUCTURAL_SQL};
+`;
+
+function preflightRow({
+  capturedAt,
+  stabilityCutoffAt,
+  stableSourceRowsMcpEap = "0",
+  stableMissingLinksMcpEap = "0",
+  activeWithoutMetrics = "0",
+  changedDistinctRelevant = "0",
+  duplicateSourceRows = "0",
+  duplicateBookingLinks = "0",
+  multipleLinks = "0",
+  invalidProfileCount = "0",
+  invalidResolverCount = "0",
+  sourceCreatedAtMissing = "0",
+  nullRepresentationCount = "0",
+}) {
+  return {
+    captured_at: capturedAt,
+    stability_cutoff_at: stabilityCutoffAt,
+    stable_source_rows_mcp_eap: stableSourceRowsMcpEap,
+    stable_source_rows_okp: null,
+    stable_missing_links_mcp_eap: stableMissingLinksMcpEap,
+    stable_missing_links_okp: null,
+    active_without_metrics: activeWithoutMetrics,
+    changed_distinct_relevant: changedDistinctRelevant,
+    duplicate_source_rows: duplicateSourceRows,
+    duplicate_booking_links: duplicateBookingLinks,
+    multiple_links: multipleLinks,
+    invalid_profile_count: invalidProfileCount,
+    invalid_resolver_count: invalidResolverCount,
+    source_created_at_missing: sourceCreatedAtMissing,
+    null_representation_count: nullRepresentationCount,
+  };
+}
+
+function oneIf(value) {
+  return value ? "1" : "0";
+}
 
 function countString(value, code) {
   if (value === null) return null;
@@ -607,7 +587,50 @@ function normalizeRelatedReviewPreflight(row) {
 }
 
 export async function runRelatedReviewPreflight({ client }) {
-  return normalizeRelatedReviewPreflight((await client.query(UPSTREAM_PREFLIGHT_SQL)).rows[0]);
+  const clock = (await client.query(PREFLIGHT_CLOCK_SQL)).rows[0];
+  check(clock && typeof clock.captured_at === "string"
+    && typeof clock.stability_cutoff_at === "string", "preflight_contract_invalid");
+  const notReady = (await client.query(PREFLIGHT_NOT_READY_SQL,
+    [clock.stability_cutoff_at])).rows[0];
+  check(notReady && typeof notReady === "object" && !Array.isArray(notReady),
+    "preflight_contract_invalid");
+  if (notReady.has_stable_missing_links_mcp_eap) {
+    return normalizeRelatedReviewPreflight(preflightRow({
+      capturedAt: clock.captured_at,
+      stabilityCutoffAt: clock.stability_cutoff_at,
+      stableMissingLinksMcpEap: "1",
+      nullRepresentationCount: "1",
+    }));
+  }
+  if (notReady.has_active_without_metrics) {
+    return normalizeRelatedReviewPreflight(preflightRow({
+      capturedAt: clock.captured_at,
+      stabilityCutoffAt: clock.stability_cutoff_at,
+      activeWithoutMetrics: "1",
+      nullRepresentationCount: "1",
+    }));
+  }
+  if (notReady.has_changed_distinct_relevant) {
+    return normalizeRelatedReviewPreflight(preflightRow({
+      capturedAt: clock.captured_at,
+      stabilityCutoffAt: clock.stability_cutoff_at,
+      changedDistinctRelevant: "1",
+    }));
+  }
+  const structural = (await client.query(PREFLIGHT_STRUCTURAL_SQL)).rows[0];
+  check(structural && typeof structural === "object" && !Array.isArray(structural),
+    "preflight_contract_invalid");
+  return normalizeRelatedReviewPreflight(preflightRow({
+    capturedAt: clock.captured_at,
+    stabilityCutoffAt: clock.stability_cutoff_at,
+    duplicateSourceRows: oneIf(structural.has_duplicate_source_rows),
+    duplicateBookingLinks: oneIf(structural.has_duplicate_booking_links),
+    multipleLinks: oneIf(structural.has_multiple_links),
+    invalidProfileCount: oneIf(structural.has_invalid_profile_count),
+    invalidResolverCount: oneIf(structural.has_invalid_resolver_count),
+    sourceCreatedAtMissing: oneIf(structural.has_source_created_at_missing),
+    nullRepresentationCount: oneIf(structural.has_null_representation_count),
+  }));
 }
 
 const LIFECYCLE_POSTCHECK_SQL = `

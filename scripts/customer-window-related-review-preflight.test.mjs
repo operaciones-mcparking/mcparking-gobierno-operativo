@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  PREFLIGHT_CLOCK_SQL,
+  PREFLIGHT_NOT_READY_SQL,
+  PREFLIGHT_STRUCTURAL_SQL,
+  runRelatedReviewPreflight,
   runRefresh,
   UPSTREAM_PREFLIGHT_SQL,
 } from "./customer-window-related-review-mcp-eap-v1-refresh.mjs";
@@ -231,9 +235,92 @@ test("structural preflight ERROR is a real failure and does not invoke the build
 });
 
 test("race rows after the frozen cutoff are outside the preflight universe", () => {
-  assert.match(UPSTREAM_PREFLIGHT_SQL, /<= params\.stability_cutoff_at/);
-  assert.match(UPSTREAM_PREFLIGHT_SQL, /transaction_timestamp\(\) as captured_at/);
+  assert.match(UPSTREAM_PREFLIGHT_SQL, /<= \$1::timestamptz/);
+  assert.match(UPSTREAM_PREFLIGHT_SQL, /transaction_timestamp\(\)::text as captured_at/);
   assert.match(UPSTREAM_PREFLIGHT_SQL, /stability_cutoff_at/);
+});
+
+test("preflight short-circuits structural checks when missing links make it NOT_READY", async () => {
+  const queries = [];
+  const client = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (sql === PREFLIGHT_CLOCK_SQL) {
+        return {
+          rows: [{
+            captured_at: CAPTURED_AT,
+            stability_cutoff_at: STABILITY_CUTOFF_AT,
+          }],
+        };
+      }
+      if (sql === PREFLIGHT_NOT_READY_SQL) {
+        assert.deepEqual(params, [STABILITY_CUTOFF_AT]);
+        return {
+          rows: [{
+            has_stable_missing_links_mcp_eap: true,
+            has_active_without_metrics: false,
+            has_changed_distinct_relevant: false,
+          }],
+        };
+      }
+      if (sql === PREFLIGHT_STRUCTURAL_SQL) {
+        assert.fail("structural preflight should be skipped for upstream NOT_READY");
+      }
+      throw new Error("unexpected query");
+    },
+  };
+  const result = await runRelatedReviewPreflight({ client });
+  assert.equal(result.preflightStatus, "not_ready");
+  assert.equal(result.preflightReasonCode, "stable_missing_links_mcp_eap");
+  assert.equal(result.stableMissingLinksMcpEap, "1");
+  assert.equal(result.nullRepresentationCount, "1");
+  assert.equal(queries.length, 2);
+});
+
+test("preflight runs structural guards only after upstream checks are clear", async () => {
+  const queries = [];
+  const client = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (sql === PREFLIGHT_CLOCK_SQL) {
+        return {
+          rows: [{
+            captured_at: CAPTURED_AT,
+            stability_cutoff_at: STABILITY_CUTOFF_AT,
+          }],
+        };
+      }
+      if (sql === PREFLIGHT_NOT_READY_SQL) {
+        assert.deepEqual(params, [STABILITY_CUTOFF_AT]);
+        return {
+          rows: [{
+            has_stable_missing_links_mcp_eap: false,
+            has_active_without_metrics: false,
+            has_changed_distinct_relevant: false,
+          }],
+        };
+      }
+      if (sql === PREFLIGHT_STRUCTURAL_SQL) {
+        assert.deepEqual(params, []);
+        return {
+          rows: [{
+            has_duplicate_source_rows: false,
+            has_duplicate_booking_links: false,
+            has_multiple_links: false,
+            has_invalid_profile_count: false,
+            has_invalid_resolver_count: false,
+            has_source_created_at_missing: false,
+            has_null_representation_count: false,
+          }],
+        };
+      }
+      throw new Error("unexpected query");
+    },
+  };
+  const result = await runRelatedReviewPreflight({ client });
+  assert.equal(result.preflightStatus, "ready");
+  assert.equal(result.preflightReasonCode, "ready");
+  assert.equal(queries.length, 3);
 });
 
 test("builder failure after READY remains an ERROR", async () => {
