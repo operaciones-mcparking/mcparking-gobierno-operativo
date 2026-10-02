@@ -10,9 +10,14 @@ const identityContactEvidenceMigration = readFileSync(
   "supabase/migrations/20261001190000_extend_customer_window_global_review_identity_contact_evidence.sql",
   "utf8",
 );
+const consolidatedIdentityMigration = readFileSync(
+  "supabase/migrations/20261002120000_consolidate_customer_window_global_review_identity_contacts.sql",
+  "utf8",
+);
 const representation = readFileSync("src/lib/customer-window/customer-representations-v2.ts", "utf8");
 const customer360 = readFileSync("src/lib/customer-window/customer-360-v1.ts", "utf8");
 const globalContract = readFileSync("src/lib/customer-window/customer-360-global-review-v1.ts", "utf8");
+const identityPreview = readFileSync("src/lib/customer-window/identity-decision-preview.ts", "utf8");
 const admin = readFileSync("src/lib/orquestador/supabase-admin.ts", "utf8");
 const analyticsRoute = readFileSync("src/app/api/orquestador/customer-window/360/analytics/route.ts", "utf8");
 const identityRoute = readFileSync("src/app/api/orquestador/customer-window/360/identity/route.ts", "utf8");
@@ -158,6 +163,21 @@ test("global review identity evidence preserves contact values for contact match
   assert.doesNotMatch(identityContactEvidenceMigration, /grant execute on function public\.customer_window_360_v1_get_global_review_identity\(jsonb\) to service_role/);
 });
 
+test("global review identity exposes consolidated related contacts and canonical email evidence", () => {
+  assert.match(consolidatedIdentityMigration, /create or replace function public\.customer_window_360_v1_get_global_review_identity\(p_locator jsonb\)/);
+  assert.match(consolidatedIdentityMigration, /'relatedContacts', coalesce\(\(select value from related_contacts\)/);
+  assert.match(consolidatedIdentityMigration, /nullif\(pg_catalog\.lower\(pg_catalog\.btrim\(coalesce\(mcp\.email_normalized, okp\.email_normalized\)\)\), ''\)/);
+  assert.match(consolidatedIdentityMigration, /same_phone_contacts as materialized/);
+  assert.match(consolidatedIdentityMigration, /same_email_contacts as materialized/);
+  assert.match(consolidatedIdentityMigration, /partition by contact\.type, contact\.normalized_value/);
+  assert.match(consolidatedIdentityMigration, /reason_code = 'contradictory_phone_email' and normalized_contradiction is false[\s\S]*then 'requires_review'/);
+  assert.match(consolidatedIdentityMigration, /'emailsForPhone', emails_for_phone/);
+  assert.match(consolidatedIdentityMigration, /'phonesForEmail', phones_for_email/);
+  assert.match(consolidatedIdentityMigration, /grant execute on function public\.customer_window_360_v1_get_global_review_identity\(jsonb\) to customer_window_360_reader/);
+  assert.doesNotMatch(consolidatedIdentityMigration, /grant execute on function public\.customer_window_360_v1_get_global_review_identity\(jsonb\) to service_role/);
+  assert.doesNotMatch(consolidatedIdentityMigration, /\b(?:insert|update|delete|merge|truncate)\b/i);
+});
+
 test("global review identity normalizer accepts contact evidence without breaking legacy payloads", () => {
   assert.match(globalContract, /contactType\?: "email" \| "phone"/);
   assert.match(globalContract, /displayValue\?: string/);
@@ -168,6 +188,9 @@ test("global review identity normalizer accepts contact evidence without breakin
   assert.match(globalContract, /value\.relationReason === "same_email_history" && value\.contactType !== "email"/);
   assert.match(globalContract, /value\.relationReason === "same_phone_history" && value\.contactType !== "phone"/);
   assert.match(globalContract, /value\.relationReason === "profile_membership"/);
+  assert.match(globalContract, /relatedContacts: \{/);
+  assert.match(globalContract, /normalizeRelatedContacts\(value\.relatedContacts \?\? \{ emails: \[\], phones: \[\] \}\)/);
+  assert.match(globalContract, /new Set\(contacts\.map\(\(contact\) => contact\.value\.trim\(\)\.toLowerCase\(\)\)\)\.size === contacts\.length/);
 });
 
 test("global review identity UI shows related email or phone values and keeps read-only policy", () => {
@@ -193,14 +216,39 @@ test("global review identity UI shows observed OKP identity without inventing RU
   );
   assert.match(panel, /overview: Customer360Overview \| null/);
   assert.match(panel, /observedIdentity: \{ emails: string\[\] \| null; phones: string\[\] \| null \}/);
-  assert.match(panel, /Identidad observada/);
-  assert.match(panel, /Emails observados/);
-  assert.match(panel, /Teléfonos observados/);
+  assert.match(view, /Identidad observada/);
+  assert.match(view, /label="Emails"/);
+  assert.match(view, /label="Teléfonos"/);
   assert.match(panel, /contacts\.emailPreview/);
   assert.match(panel, /contacts\.phonePreview/);
   assert.match(panel, /uniqueObservedValues/);
-  assert.match(panel, /RUT OKP no está disponible en Customer Window actual/);
+  assert.match(panel, /buildConsolidatedIdentityContacts/);
   assert.doesNotMatch(panel, /RUT:\s*[—-]/);
+});
+
+test("global review observed identity consolidates contacts without visual duplicates", () => {
+  const consolidation = view.slice(
+    view.indexOf("function visualEmailKey"),
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+  );
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(consolidation, /value\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(consolidation, /options\.normalizedValue \|\| value/);
+  assert.match(consolidation, /current\?\.kind === "observed" \|\| options\.kind === "observed" \? "observed" : "related"/);
+  assert.match(consolidation, /for \(const evidence of relatedEvidence \?\? \[\]\)/);
+  assert.match(consolidation, /relatedContacts\?\.emails/);
+  assert.match(consolidation, /relatedContacts\?\.phones/);
+  assert.match(consolidation, /evidence\.contactType === "email"/);
+  assert.match(consolidation, /evidence\.contactType === "phone"/);
+  assert.match(view, /displayValue: string/);
+  assert.match(consolidation, /ValueBadge tone=\{contact\.kind === "observed" \? "warning" : "neutral"\}/);
+  assert.match(consolidation, /contact\.kind === "observed" \? "Observado" : "Relacionado"/);
+  assert.match(panel, /relatedContacts: detail\.relatedContacts/);
+  assert.match(panel, /relatedEvidence: detail\.relatedMcpEapEvidence/);
+  assert.match(panel, /<Customer360ObservedIdentityContacts contacts=\{consolidatedContacts\} \/>/);
 });
 
 test("global review identity UI exposes review reason safely", () => {
@@ -216,6 +264,47 @@ test("global review identity UI exposes review reason safely", () => {
   assert.match(panel, /globalReviewReasonLabel\(reason\)/);
 });
 
+test("global review identity UI explains observed signals using backend contacts and matching counters", () => {
+  const signals = view.slice(
+    view.indexOf("function buildIdentityObservedSignals"),
+    view.indexOf("function identityResolutionEvidenceSignature"),
+  );
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(view, /function CustomerIdentityObservedSignals/);
+  assert.match(signals, /emailsForPhone/);
+  assert.match(signals, /phonesForEmail/);
+  assert.match(signals, /visibleEmailCount/);
+  assert.match(signals, /visiblePhoneCount/);
+  assert.match(signals, /rawEmailsForPhone !== null && counts\.visibleEmailCount !== undefined/);
+  assert.match(signals, /emailBookingCount/);
+  assert.match(signals, /phoneBookingCount/);
+  assert.match(signals, /Reservas involucradas/);
+  assert.match(signals, /Links candidate \/ conflict/);
+  assert.match(panel, /<CustomerIdentityObservedSignals items=\{observedSignals\} \/>/);
+  assert.match(panel, /visibleEmailCount: consolidatedContacts\.filter\(\(contact\) => contact\.type === "email"\)\.length/);
+  assert.match(panel, /visiblePhoneCount: consolidatedContacts\.filter\(\(contact\) => contact\.type === "phone"\)\.length/);
+  assert.doesNotMatch(signals, /displayValue|normalizedValue|contact\.value|emailPreview|phonePreview/);
+});
+
+test("global review identity restores non destructive decision preview buttons", () => {
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(view, /function CustomerIdentityDecisionPreviewOptions/);
+  assert.match(view, /Posibles decisiones · Solo vista previa/);
+  for (const label of ["Confirmar misma identidad", "Mantener relacionados", "Mantener separados", "Cuenta compartida / terceros"]) {
+    assert.match(identityPreview, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(panel, /useState<CustomerIdentityDecision \| null>\(null\)/);
+  assert.match(panel, /<CustomerIdentityDecisionPreviewOptions decisionPreview=\{null\}/);
+  assert.match(view, /Esta ficha no ejecuta cambios ni llama operaciones de escritura\./);
+  assert.doesNotMatch(panel, /fetch\(|getJson\(|postJson\(|rpc\(|confirm_same_identity|merge|campaign/i);
+});
+
 test("global review identity panel reuses loaded overview and remains read-only", () => {
   const drawer = view.slice(view.indexOf("function Customer360Drawer"), view.indexOf("function RelatedReviewDrawer"));
   const panel = view.slice(
@@ -229,7 +318,7 @@ test("global review identity panel reuses loaded overview and remains read-only"
   assert.match(drawer, /normalizeCustomer360ObservedContacts/);
   assert.match(panel, /No existe relación certificada con un grupo MCP\/EAP activo/);
   assert.match(panel, /evidence\.displayValue/);
-  assert.doesNotMatch(panel, /Confirmar misma identidad|Unificar|Fusionar|Campaña|Elegir principal|Principal automático/);
+  assert.doesNotMatch(panel, /Unificar|Fusionar|Campaña|Elegir principal|Principal automático/);
 });
 
 test("global search and operational list share the same representation authority", () => {

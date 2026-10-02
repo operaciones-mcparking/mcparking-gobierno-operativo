@@ -75,6 +75,7 @@ import {
   normalizeCustomer360GlobalReviewIdentity,
   type Customer360GlobalReviewAnalytics,
   type Customer360GlobalReviewIdentity,
+  type GlobalReviewRelatedEvidence,
   type GlobalReviewContactCandidate,
 } from "@/lib/customer-window/customer-360-global-review-v1";
 import {
@@ -971,6 +972,9 @@ function CustomerPurchaseTimeline({ emptyDescription, error, items, loading, onN
 }
 
 type CustomerIdentityReviewSignal = { detail: string; label: string };
+type CustomerIdentityObservedSignalSource = {
+  evidence: Record<string, unknown>;
+};
 type CustomerIdentityResolutionEventV2 = CustomerWindowIdentityResolutionDetailV2["events"][number];
 type CustomerIdentityResolutionEventGroupV2 = {
   events: CustomerIdentityResolutionEventV2[];
@@ -1023,6 +1027,57 @@ function identityResolutionEvidenceText(key: string, value: boolean | CustomerWi
   return `${key}: ${String(value)}`;
 }
 
+function evidenceSafeCount(value: unknown): CustomerWindowSafeCount | null {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value === "string" && /^\d+$/.test(value)) return value;
+  return null;
+}
+
+function maxEvidenceCount(events: CustomerIdentityObservedSignalSource[], key: string) {
+  let maximum: CustomerWindowSafeCount | null = null;
+  for (const event of events) {
+    const value = evidenceSafeCount(event.evidence[key]);
+    if (value === null) continue;
+    if (maximum === null || safeCountAsBigInt(value) > safeCountAsBigInt(maximum)) maximum = value;
+  }
+  return maximum;
+}
+
+function buildIdentityObservedSignals(
+  events: CustomerIdentityObservedSignalSource[],
+  counts: {
+    bookingCount?: CustomerWindowSafeCount;
+    candidateCount?: CustomerWindowSafeCount;
+    conflictCount?: CustomerWindowSafeCount;
+    visibleEmailCount?: CustomerWindowSafeCount;
+    visiblePhoneCount?: CustomerWindowSafeCount;
+  },
+) {
+  const signals: CustomerIdentityReviewSignal[] = [];
+  const rawEmailsForPhone = maxEvidenceCount(events, "emailsForPhone");
+  const rawPhonesForEmail = maxEvidenceCount(events, "phonesForEmail");
+  const emailsForPhone = rawEmailsForPhone !== null && counts.visibleEmailCount !== undefined
+    ? counts.visibleEmailCount
+    : rawEmailsForPhone;
+  const phonesForEmail = rawPhonesForEmail !== null && counts.visiblePhoneCount !== undefined
+    ? counts.visiblePhoneCount
+    : rawPhonesForEmail;
+  const emailBookingCount = maxEvidenceCount(events, "emailBookingCount");
+  const phoneBookingCount = maxEvidenceCount(events, "phoneBookingCount");
+
+  if (emailsForPhone !== null) signals.push({ label: "Emails relacionados con este teléfono", detail: `${displaySafeCount(emailsForPhone)} email(s) aparecen asociados al teléfono observado en la evidencia del resolver.` });
+  if (phonesForEmail !== null) signals.push({ label: "Teléfonos relacionados con este email", detail: `${displaySafeCount(phonesForEmail)} teléfono(s) aparecen asociados al email observado en la evidencia del resolver.` });
+  if (emailBookingCount !== null) signals.push({ label: "Reservas con evidencia de email", detail: `${displaySafeCount(emailBookingCount)} reserva(s) participan en la evidencia del email.` });
+  if (phoneBookingCount !== null) signals.push({ label: "Reservas con evidencia de teléfono", detail: `${displaySafeCount(phoneBookingCount)} reserva(s) participan en la evidencia del teléfono.` });
+  if (counts.bookingCount !== undefined) signals.push({ label: "Reservas involucradas", detail: `${displaySafeCount(counts.bookingCount)} reserva(s) están vinculadas a esta representación en revisión.` });
+  if (counts.conflictCount !== undefined || counts.candidateCount !== undefined) signals.push({
+    label: "Links candidate / conflict",
+    detail: `${displaySafeCount(counts.candidateCount ?? 0)} candidate · ${displaySafeCount(counts.conflictCount ?? 0)} conflict.`,
+  });
+
+  return signals;
+}
+
 function identityResolutionEvidenceSignature(evidence: CustomerIdentityResolutionEventV2["evidence"]) {
   return Object.entries(evidence)
     .sort(([left], [right]) => left.localeCompare(right))
@@ -1068,6 +1123,14 @@ function CustomerIdentityReviewSignals({ emptyLabel, items, tone, title }: {
       <h4 className="text-xs font-medium text-navy">{title}</h4>
       {items.length > 0 ? <ul className="mt-2 space-y-2">{items.map((item) => <li className="flex items-start gap-2" key={item.label}><Icon aria-hidden="true" className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${tone === "support" ? "text-emerald-600" : "text-amber-600"}`} /><div><p className="text-xs font-medium text-slate-700">{item.label}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-500">{item.detail}</p></div></li>)}</ul> : <p className="mt-2 text-xs text-slate-500">{emptyLabel}</p>}
     </section>
+  );
+}
+
+function CustomerIdentityObservedSignals({ items }: { items: CustomerIdentityReviewSignal[] }) {
+  return (
+    <AnalyticsBlock title="Señales observadas">
+      {items.length > 0 ? <ul className="mt-2 grid gap-2 sm:grid-cols-2">{items.map((item) => <li className="rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-2" key={item.label}><p className="text-xs font-medium text-navy">{item.label}</p><p className="mt-0.5 text-[11px] leading-4 text-slate-600">{item.detail}</p></li>)}</ul> : <p className="mt-2 text-xs text-slate-500">No hay contadores adicionales disponibles para esta revisión.</p>}
+    </AnalyticsBlock>
   );
 }
 
@@ -1131,6 +1194,20 @@ function CustomerIdentityDecisionPreviewPanel({ preview }: { preview: CustomerId
   );
 }
 
+function CustomerIdentityDecisionPreviewOptions({ decisionPreview, selectedDecision, setSelectedDecision }: {
+  decisionPreview: CustomerIdentityDecisionPreview | null;
+  selectedDecision: CustomerIdentityDecision | null;
+  setSelectedDecision: (decision: CustomerIdentityDecision) => void;
+}) {
+  return (
+    <section aria-labelledby="identity-decision-preview-title" className="mt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-medium text-slate-700" id="identity-decision-preview-title">Posibles decisiones · Solo vista previa</h4><p className="mt-0.5 text-[11px] text-slate-500">Si eligieras una decisión, esto es lo que podría ocurrir. La vista no recomienda ni ejecuta acciones.</p></div><ValueBadge tone="neutral">Solo vista previa</ValueBadge></div>
+      <div aria-label="Opciones conceptuales de identidad" className="mt-2 grid gap-2 sm:grid-cols-2">{(Object.keys(CUSTOMER_IDENTITY_DECISION_LABELS) as CustomerIdentityDecision[]).map((decision) => <button aria-pressed={selectedDecision === decision} className={`min-h-12 rounded-lg border px-3 py-2 text-left text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sea/30 ${selectedDecision === decision ? "border-sea bg-[#eef7f7] text-navy" : "border-[#d7e3ec] bg-white text-slate-700 hover:border-[#9fb8ca]"}`} key={decision} onClick={() => setSelectedDecision(decision)} type="button">{CUSTOMER_IDENTITY_DECISION_LABELS[decision]}</button>)}</div>
+      {decisionPreview ? <CustomerIdentityDecisionPreviewPanel preview={decisionPreview} /> : selectedDecision ? <p className="mt-2 rounded-lg border border-[#e4edf4] bg-[#fbfcfd] px-3 py-2 text-xs text-slate-600">Opción seleccionada solo para revisión visual. Esta ficha no ejecuta cambios ni llama operaciones de escritura.</p> : <p className="mt-2 text-xs text-slate-500">Selecciona una opción para revisar su impacto conceptual.</p>}
+    </section>
+  );
+}
+
 function CustomerIdentityResolutionPanel({ detail, detailError, detailLoading, group, loading, onBack, onRetry, timeline }: {
   detail: CustomerWindowIdentityResolutionDetailV2 | null;
   detailError: string | null;
@@ -1183,6 +1260,16 @@ function CustomerIdentityResolutionPanel({ detail, detailError, detailLoading, g
   if (candidateCount > BigInt(0)) reviewSignals.push({ label: "Links candidatos", detail: `${displaySafeCount(resolutionSummary?.candidateCount ?? 0)} links tienen estado candidate.` });
   if (contradictoryPhoneEmail) reviewSignals.push({ label: "Señales históricas contradictorias", detail: "El historial relaciona un mismo email con más de un teléfono observado." });
 
+  const consolidatedContacts = buildConsolidatedIdentityContacts({
+    relatedContacts: detail?.relatedContacts ?? null,
+  });
+  const observedSignals = buildIdentityObservedSignals(detail?.events ?? [], {
+    bookingCount: resolutionSummary?.bookingCount,
+    candidateCount: resolutionSummary?.candidateCount,
+    conflictCount: resolutionSummary?.conflictCount,
+    visibleEmailCount: consolidatedContacts.filter((contact) => contact.type === "email").length,
+    visiblePhoneCount: consolidatedContacts.filter((contact) => contact.type === "phone").length,
+  });
   const principalExplanation = emailCount === BigInt(1) && phoneCount > BigInt(1) && exactEmailMembers && contradictoryPhoneEmail
     ? "Las reservas comparten un mismo email exacto, pero el historial registra señales de teléfono contradictorias. Por eso permanecen relacionadas para revisión y no se confirma una única identidad."
     : profileCount === BigInt(1)
@@ -1205,8 +1292,10 @@ function CustomerIdentityResolutionPanel({ detail, detailError, detailLoading, g
         <p className="mt-3 rounded-lg border border-[#d6e4f2] bg-[#f8fbfe] px-3 py-2 text-xs leading-5 text-slate-700">{principalExplanation}</p>
         {showSharedAccountHypothesis ? <p className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">La combinación de un email, varios teléfonos, varios perfiles y múltiples reservas también podría corresponder a una cuenta compradora compartida o a reservas realizadas para terceros. Es una hipótesis contextual, no una conclusión de identidad.</p> : null}
         <div className="mt-4 grid gap-3 sm:grid-cols-2"><CustomerIdentityReviewSignals emptyLabel="No hay corroboraciones explícitas disponibles." items={supportingSignals} title="Señales a favor" tone="support" /><CustomerIdentityReviewSignals emptyLabel="No hay señales adicionales disponibles en este read model." items={reviewSignals} title="Señales de revisión" tone="review" /></div>
+        <div className="mt-5"><CustomerIdentityObservedSignals items={observedSignals} /></div>
+        <Customer360ObservedIdentityContacts contacts={consolidatedContacts} />
         <section className="mt-5" aria-labelledby="identity-review-members-title"><div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-medium text-slate-700" id="identity-review-members-title">Composición de miembros</h4><p className="mt-0.5 text-[11px] text-slate-500">Resumen de links y reglas que forman el grupo actual.</p></div>{detail?.members.length ? <button aria-expanded={showMemberDetails} className="text-xs font-medium text-sea underline underline-offset-2" onClick={() => setShowMemberDetails((current) => !current)} type="button">{showMemberDetails ? "Ocultar detalle" : `Ver detalle (${displayCount(detail.members.length)})`}</button> : null}</div><dl className="mt-2 grid gap-2 rounded-lg border border-[#e4edf4] px-3 py-3 sm:grid-cols-3"><div><dt className="text-[10px] text-slate-500">Relationship type</dt><dd className="mt-0.5 break-words text-xs font-medium text-navy">{memberRelationshipTypes.join(", ") || "No disponible"}</dd></div><div><dt className="text-[10px] text-slate-500">Link status</dt><dd className="mt-0.5 break-words text-xs font-medium text-navy">{memberLinkStatuses.join(", ") || "No disponible"}</dd></div><div><dt className="text-[10px] text-slate-500">Resolver</dt><dd className="mt-0.5 break-words text-xs font-medium text-navy">{memberResolverVersions.join(", ") || "No disponible"}</dd></div></dl>{showMemberDetails ? <div className="mt-2"><ul className="max-h-72 divide-y divide-[#edf2f6] overflow-y-auto rounded-lg border border-[#e4edf4] px-3">{visibleMembers.map((member) => <li className="grid gap-1 py-2 text-[11px] sm:grid-cols-2" key={`${member.source}-${String(member.sourceRowId)}`}><span className="font-medium text-navy">{member.relationshipType}</span><span className="text-slate-500">{member.linkStatus} · {member.resolverVersion}</span></li>)}</ul>{detail && detail.members.length > IDENTITY_MEMBER_INITIAL_LIMIT ? <p className="mt-1 text-[10px] text-slate-500">Mostrando {IDENTITY_MEMBER_INITIAL_LIMIT} de {displayCount(detail.members.length)} miembros. El resumen considera el grupo completo.</p> : null}</div> : null}</section>
-        <section aria-labelledby="identity-decision-preview-title" className="mt-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="text-sm font-medium text-slate-700" id="identity-decision-preview-title">Posibles decisiones</h4><p className="mt-0.5 text-[11px] text-slate-500">Si eligieras una decisión, esto es lo que podría ocurrir. La vista no recomienda ni ejecuta acciones.</p></div><ValueBadge tone="neutral">Solo vista previa</ValueBadge></div><div aria-label="Opciones conceptuales de identidad" className="mt-2 grid gap-2 sm:grid-cols-2">{(Object.keys(CUSTOMER_IDENTITY_DECISION_LABELS) as CustomerIdentityDecision[]).map((decision) => <button aria-pressed={selectedDecision === decision} className={`min-h-12 rounded-lg border px-3 py-2 text-left text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sea/30 ${selectedDecision === decision ? "border-sea bg-[#eef7f7] text-navy" : "border-[#d7e3ec] bg-white text-slate-700 hover:border-[#9fb8ca]"}`} key={decision} onClick={() => setSelectedDecision(decision)} type="button">{CUSTOMER_IDENTITY_DECISION_LABELS[decision]}</button>)}</div>{decisionPreview ? <CustomerIdentityDecisionPreviewPanel preview={decisionPreview} /> : <p className="mt-2 text-xs text-slate-500">Selecciona una opción para revisar su impacto conceptual.</p>}</section>
+        <CustomerIdentityDecisionPreviewOptions decisionPreview={decisionPreview} selectedDecision={selectedDecision} setSelectedDecision={setSelectedDecision} />
         <section className="mt-5" aria-labelledby="identity-review-profiles-title"><div className="flex items-center justify-between gap-3"><h4 className="text-sm font-medium text-slate-700" id="identity-review-profiles-title">Perfiles involucrados</h4>{detail?.profiles.length ? <span className="text-xs text-slate-500">{displayCount(detail.profiles.length)} perfiles</span> : null}</div>{visibleProfiles.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">{visibleProfiles.map((profile) => <article className="min-w-0 rounded-lg border border-[#e4edf4] px-3 py-3" key={profile.profileId}><div className="flex items-start justify-between gap-2"><p className="font-mono text-xs font-medium text-navy" title={profile.profileId}>{abbreviatedIdentifier(profile.profileId)}</p><ValueBadge tone={profile.status === "active" ? "success" : profile.status === "merged" ? "neutral" : "warning"}>{profile.status}</ValueBadge></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1"><div><dt className="text-[10px] text-slate-500">Reservas del grupo</dt><dd className="text-xs font-medium text-navy">{displaySafeCount(profile.bookingCount)}</dd></div><div><dt className="text-[10px] text-slate-500">Resolver</dt><dd className="break-words text-xs font-medium text-navy">{profile.resolverVersions.join(", ")}</dd></div><div><dt className="text-[10px] text-slate-500">Primera reserva</dt><dd className="text-xs font-medium text-navy">{displayDate(profile.firstBookingAt)}</dd></div><div><dt className="text-[10px] text-slate-500">Última reserva</dt><dd className="text-xs font-medium text-navy">{displayDate(profile.lastBookingAt)}</dd></div>{profile.mergedIntoProfileId ? <div className="col-span-2"><dt className="text-[10px] text-slate-500">Fusionado en</dt><dd className="font-mono text-xs font-medium text-navy" title={profile.mergedIntoProfileId}>{abbreviatedIdentifier(profile.mergedIntoProfileId)}</dd></div> : null}</dl></article>)}</div> : !detailLoading ? <p className="mt-1.5 text-xs leading-5 text-slate-500">El detalle de perfiles no está disponible.</p> : null}{detail && detail.profiles.length > IDENTITY_PROFILE_INITIAL_LIMIT ? <button className="mt-2 text-xs font-medium text-sea underline underline-offset-2" onClick={() => setShowAllProfiles((current) => !current)} type="button">{showAllProfiles ? "Mostrar menos perfiles" : `Ver todos los perfiles (${displayCount(detail.profiles.length)})`}</button> : null}</section>
         <CustomerRelatedContacts contacts={detail?.relatedContacts ?? null} />
         <section className="mt-5" aria-labelledby="identity-review-resolver-title"><h4 className="text-sm font-medium text-slate-700" id="identity-review-resolver-title">Historial de resolución</h4><dl className="mt-2 grid gap-2 rounded-lg border border-[#e4edf4] px-3 py-3 sm:grid-cols-2"><div><dt className="text-[11px] text-slate-500">Reservas V1</dt><dd className="mt-0.5 text-sm font-medium text-navy">{displaySafeCount(resolutionSummary.v1BookingCount)}</dd></div><div><dt className="text-[11px] text-slate-500">Reservas V2</dt><dd className="mt-0.5 text-sm font-medium text-navy">{displaySafeCount(resolutionSummary.v2BookingCount)}</dd></div></dl>{visibleEventGroups.length ? <ol className="mt-3 max-h-[32rem] space-y-2 overflow-y-auto overscroll-contain pr-1">{visibleEventGroups.map((eventGroup) => <CustomerIdentityResolutionEventGroup group={eventGroup} key={eventGroup.key} />)}</ol> : !detailLoading ? <p className="mt-2 text-xs leading-5 text-slate-500">No hay eventos históricos disponibles para las reservas de este grupo.</p> : null}{eventGroups.length > IDENTITY_EVENT_GROUP_INITIAL_LIMIT ? <button className="mt-2 text-xs font-medium text-sea underline underline-offset-2" onClick={() => setShowAllEventGroups((current) => !current)} type="button">{showAllEventGroups ? "Mostrar menos motivos" : `Ver todos los motivos (${displayCount(eventGroups.length)})`}</button> : null}</section>
@@ -1726,21 +1815,111 @@ function Customer360GlobalReviewAnalyticsPanel({ analytics }: {
 }
 
 function uniqueObservedValues(values: string[]) {
-  return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+  return Array.from(new Set(values.map((value) => value.trim()).filter((value) => value.length > 0)));
 }
 
-function Customer360ObservedIdentityList({ count, label, values }: {
-  count: number;
-  label: string;
-  values: string[];
+type ConsolidatedIdentityContact = {
+  displayValue: string;
+  kind: "observed" | "related";
+  sources: string[];
+  type: "email" | "phone";
+};
+
+type ConsolidatedIdentityContactDraft = Omit<ConsolidatedIdentityContact, "sources"> & {
+  sources: Set<string>;
+};
+
+function visualEmailKey(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return normalized ? `email:${normalized}` : null;
+}
+
+function visualPhoneKey(value: string) {
+  const normalized = value.trim();
+  return normalized ? `phone:${normalized}` : null;
+}
+
+function sourceLabel(source: "MCP_EAP" | "OKP" | null | undefined) {
+  if (source === "MCP_EAP") return "MCP/EAP";
+  if (source === "OKP") return "OKP";
+  return null;
+}
+
+function addConsolidatedIdentityContact(
+  contacts: Map<string, ConsolidatedIdentityContactDraft>,
+  type: "email" | "phone",
+  value: string | null | undefined,
+  options: { kind: "observed" | "related"; normalizedValue?: string | null; source?: "MCP_EAP" | "OKP" | null },
+) {
+  if (!value || !value.trim()) return;
+  const key = type === "email" ? visualEmailKey(value) : visualPhoneKey(options.normalizedValue || value);
+  if (!key) return;
+  const displayValue = type === "email" ? value.trim().toLowerCase() : value.trim();
+  const current = contacts.get(key);
+  const nextKind = current?.kind === "observed" || options.kind === "observed" ? "observed" : "related";
+  const source = sourceLabel(options.source);
+  if (current) {
+    current.kind = nextKind;
+    if (current.kind === "related" && options.kind === "observed") current.displayValue = displayValue;
+    if (source) current.sources.add(source);
+    return;
+  }
+  contacts.set(key, {
+    displayValue,
+    kind: nextKind,
+    sources: new Set(source ? [source] : []),
+    type,
+  });
+}
+
+function buildConsolidatedIdentityContacts({
+  observedEmails,
+  observedPhones,
+  relatedContacts,
+  relatedEvidence,
+}: {
+  observedEmails?: string[];
+  observedPhones?: string[];
+  relatedContacts?: CustomerWindowIdentityResolutionDetailV2["relatedContacts"] | null;
+  relatedEvidence?: GlobalReviewRelatedEvidence[];
 }) {
-  if (count === 0) return null;
-  const hiddenCount = Math.max(0, count - values.length);
+  const contacts = new Map<string, ConsolidatedIdentityContactDraft>();
+  for (const value of observedEmails ?? []) addConsolidatedIdentityContact(contacts, "email", value, { kind: "observed" });
+  for (const value of observedPhones ?? []) addConsolidatedIdentityContact(contacts, "phone", value, { kind: "observed" });
+  for (const contact of relatedContacts?.emails ?? []) addConsolidatedIdentityContact(contacts, "email", contact.value, { kind: contact.relation === "observed_in_group" ? "observed" : "related", source: contact.source });
+  for (const contact of relatedContacts?.phones ?? []) addConsolidatedIdentityContact(contacts, "phone", contact.value, { kind: contact.relation === "observed_in_group" ? "observed" : "related", source: contact.source });
+  for (const evidence of relatedEvidence ?? []) {
+    if (evidence.contactType === "email") addConsolidatedIdentityContact(contacts, "email", evidence.displayValue, { kind: "related", normalizedValue: evidence.normalizedValue, source: "MCP_EAP" });
+    if (evidence.contactType === "phone") addConsolidatedIdentityContact(contacts, "phone", evidence.displayValue, { kind: "related", normalizedValue: evidence.normalizedValue, source: "MCP_EAP" });
+  }
+  return Array.from(contacts.values())
+    .map((contact) => ({ ...contact, sources: Array.from(contact.sources).sort() }))
+    .sort((left, right) => left.type.localeCompare(right.type) || (left.kind === right.kind ? left.displayValue.localeCompare(right.displayValue) : left.kind === "observed" ? -1 : 1));
+}
+
+function Customer360ObservedIdentityList({ contacts, label }: {
+  contacts: ConsolidatedIdentityContact[];
+  label: string;
+}) {
+  if (contacts.length === 0) return null;
   return <div className="min-w-0 rounded-lg border border-[#e4edf4] px-3 py-2.5">
-    <div className="flex items-center justify-between gap-2"><h4 className="text-xs font-medium text-navy">{label}</h4><span className="text-[11px] text-slate-500">{displayCount(count)}</span></div>
-    <ul className="mt-2 space-y-1.5">{values.map((value) => <li className="break-all text-xs text-slate-700" key={value}>{value}</li>)}</ul>
-    {hiddenCount > 0 ? <p className="mt-2 text-[10px] text-slate-500">{displayCount(hiddenCount)} valor(es) adicional(es) disponibles en el contrato de contactos.</p> : null}
+    <div className="flex items-center justify-between gap-2"><h4 className="text-xs font-medium text-navy">{label}</h4><span className="text-[11px] text-slate-500">{displayCount(contacts.length)}</span></div>
+    <ul className="mt-2 divide-y divide-[#edf2f6]">{contacts.map((contact) => <li className="min-w-0 py-2 first:pt-0 last:pb-0" key={`${contact.type}:${contact.displayValue}`}><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="break-all text-xs font-medium text-navy">{contact.displayValue}</p>{contact.sources.length > 0 ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{contact.sources.join(" · ")}</p> : null}</div><ValueBadge tone={contact.kind === "observed" ? "warning" : "neutral"}>{contact.kind === "observed" ? "Observado" : "Relacionado"}</ValueBadge></div></li>)}</ul>
   </div>;
+}
+
+function Customer360ObservedIdentityContacts({ contacts }: { contacts: ConsolidatedIdentityContact[] }) {
+  const emails = contacts.filter((contact) => contact.type === "email");
+  const phones = contacts.filter((contact) => contact.type === "phone");
+  return (
+    <AnalyticsBlock title="Identidad observada">
+      {(emails.length > 0 || phones.length > 0) ? <div className="mt-2 grid gap-3 sm:grid-cols-2">
+        <Customer360ObservedIdentityList contacts={emails} label="Emails" />
+        <Customer360ObservedIdentityList contacts={phones} label="Teléfonos" />
+      </div> : <p className="mt-2 text-xs text-slate-500">Sin email ni teléfono observado en el contrato actual.</p>}
+      <p className="mt-2 text-[10px] leading-4 text-slate-500">Valores únicos asociados a la representación. Los contactos relacionados son evidencia de revisión y no definen un contacto principal.</p>
+    </AnalyticsBlock>
+  );
 }
 
 function Customer360GlobalReviewIdentityPanel({ detail, observedIdentity, overview }: {
@@ -1748,25 +1927,38 @@ function Customer360GlobalReviewIdentityPanel({ detail, observedIdentity, overvi
   observedIdentity: { emails: string[] | null; phones: string[] | null };
   overview: Customer360Overview | null;
 }) {
+  const [selectedDecision, setSelectedDecision] = useState<CustomerIdentityDecision | null>(null);
   const contacts = overview?.identity.contacts;
   const observedEmails = observedIdentity.emails ?? (contacts?.semantics === "observed" ? uniqueObservedValues(contacts.emailPreview) : []);
   const observedPhones = observedIdentity.phones ?? (contacts?.semantics === "observed" ? uniqueObservedValues(contacts.phonePreview) : []);
-  const observedEmailCount = contacts?.semantics === "observed" ? contacts.emailCount : observedEmails.length;
-  const observedPhoneCount = contacts?.semantics === "observed" ? contacts.phoneCount : observedPhones.length;
   const reviewReasons = uniqueObservedValues(detail.events.map((event) => event.reason));
+  const linkCounts = detail.links.reduce((counts, link) => {
+    if (link.status === "candidate") counts.candidateCount += 1;
+    if (link.status === "conflict") counts.conflictCount += 1;
+    return counts;
+  }, { candidateCount: 0, conflictCount: 0 });
+  const consolidatedContacts = buildConsolidatedIdentityContacts({
+    observedEmails,
+    observedPhones,
+    relatedContacts: detail.relatedContacts,
+    relatedEvidence: detail.relatedMcpEapEvidence,
+  });
+  const observedSignals = buildIdentityObservedSignals(detail.events, {
+    bookingCount: detail.links.length,
+    candidateCount: linkCounts.candidateCount,
+    conflictCount: linkCounts.conflictCount,
+    visibleEmailCount: consolidatedContacts.filter((contact) => contact.type === "email").length,
+    visiblePhoneCount: consolidatedContacts.filter((contact) => contact.type === "phone").length,
+  });
   return <div className="grid gap-4">
     <section><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-navy">Identidad en revisión</h2><p className="mt-1 text-xs leading-5 text-slate-600">Perfil global estable con links candidate/conflict. Esta vista no modifica identidad.</p></div><ValueBadge tone="warning">Solo lectura</ValueBadge></div></section>
     <AnalyticsBlock title="Motivo de revisión">{reviewReasons.length > 0 ? <ul className="mt-2 space-y-2">{reviewReasons.map((reason) => <li className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" key={reason}>{globalReviewReasonLabel(reason)}</li>)}</ul> : <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">Se requieren más señales para confirmar la identidad.</p>}</AnalyticsBlock>
-    <AnalyticsBlock title="Identidad observada">
-      {(observedEmailCount > 0 || observedPhoneCount > 0) ? <div className="mt-2 grid gap-3 sm:grid-cols-2">
-        <Customer360ObservedIdentityList count={observedEmailCount} label="Emails observados" values={observedEmails} />
-        <Customer360ObservedIdentityList count={observedPhoneCount} label="Teléfonos observados" values={observedPhones} />
-      </div> : <p className="mt-2 text-xs text-slate-500">Sin email ni teléfono observado en el contrato actual.</p>}
-      <p className="mt-2 text-[10px] leading-4 text-slate-500">Datos observados en reservas vinculadas al perfil en revisión. RUT OKP no está disponible en Customer Window actual.</p>
-    </AnalyticsBlock>
+    <CustomerIdentityObservedSignals items={observedSignals} />
+    <Customer360ObservedIdentityContacts contacts={consolidatedContacts} />
     <AnalyticsBlock title="Links de reservas"><ul className="mt-2 divide-y divide-[#e4edf4]">{detail.links.map((link) => <li className="flex items-center justify-between gap-3 py-2 text-xs" key={link.bookingLinkId}><span className="text-navy">{link.source} · reserva {link.sourceRowId}</span><ValueBadge tone={link.status === "conflict" ? "warning" : "neutral"}>{link.status}</ValueBadge></li>)}</ul></AnalyticsBlock>
     <AnalyticsBlock title="Historial de resolución"><ul className="mt-2 space-y-2">{detail.events.map((event) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2" key={event.eventId}><p className="text-xs font-medium text-navy">{identityResolutionReasonLabel(event.reason)}</p><p className="mt-0.5 text-[10px] text-slate-500">{event.eventType} · {event.source ?? "Sin fuente"} · {displayDate(event.createdAt)}</p></li>)}</ul>{detail.events.length === 0 ? <p className="mt-2 text-xs text-slate-500">Sin eventos de resolución disponibles.</p> : null}</AnalyticsBlock>
     <AnalyticsBlock title="Evidencia Related Review MCP / EAP"><ul className="mt-2 space-y-2">{detail.relatedMcpEapEvidence.map((evidence) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2 text-xs text-slate-600" key={`${evidence.groupId}:${evidence.evidenceSource}:${evidence.relationReason}:${evidence.contactType ?? "profile"}:${evidence.normalizedValue ?? "none"}`}><p className="font-medium text-navy">{evidence.relationReason === "same_phone_history" ? "Teléfono históricamente relacionado" : evidence.relationReason === "same_email_history" ? "Email históricamente relacionado" : "Perfil presente en el grupo"}</p>{evidence.displayValue ? <p className="mt-0.5 break-all text-xs font-medium text-navy">{evidence.displayValue}</p> : null}<p className="mt-0.5 font-mono text-[10px]">Grupo {abbreviatedIdentifier(evidence.groupId)}</p></li>)}</ul>{detail.relatedMcpEapEvidence.length === 0 ? <p className="mt-2 text-xs text-slate-500">No existe relación certificada con un grupo MCP/EAP activo.</p> : null}</AnalyticsBlock>
+    <CustomerIdentityDecisionPreviewOptions decisionPreview={null} selectedDecision={selectedDecision} setSelectedDecision={setSelectedDecision} />
   </div>;
 }
 

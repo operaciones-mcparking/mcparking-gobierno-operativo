@@ -2,6 +2,7 @@ import {
   normalizeCustomer360Locator,
   type Customer360Locator,
 } from "@/lib/customer-window/customer-360-v1";
+import type { CustomerWindowRelatedContactV2 } from "@/lib/customer-window/customer-representations-v2";
 
 export type GlobalReviewContactCandidate = {
   bookingCount: number;
@@ -102,6 +103,10 @@ export type Customer360GlobalReviewIdentity = {
     resolverVersion: string;
     status: "active";
   };
+  relatedContacts: {
+    emails: CustomerWindowRelatedContactV2[];
+    phones: CustomerWindowRelatedContactV2[];
+  };
   relatedMcpEapEvidence: GlobalReviewRelatedEvidence[];
 };
 
@@ -141,6 +146,32 @@ function normalizeEvidence(value: unknown): GlobalReviewRelatedEvidence | null {
     || (value.relationReason === "same_phone_history" && value.contactType !== "phone")
     || value.relationReason === "profile_membership") return null;
   return value as GlobalReviewRelatedEvidence;
+}
+
+function normalizeRelatedContact(value: unknown, type: "email" | "phone"): CustomerWindowRelatedContactV2 | null {
+  if (!isRecord(value) || value.type !== type
+    || typeof value.value !== "string" || value.value.length === 0
+    || (value.relation !== "observed_in_group" && value.relation !== "historically_related")
+    || (value.relationReason !== null && value.relationReason !== "same_email_history"
+      && value.relationReason !== "same_phone_history" && value.relationReason !== "same_profile_history")
+    || (value.relation === "observed_in_group" ? value.relationReason !== null : value.relationReason === null)
+    || (value.source !== null && value.source !== "MCP_EAP" && value.source !== "OKP")
+    || (value.sourceRowId !== null && !isCount(value.sourceRowId))
+    || (value.profileId !== null && (typeof value.profileId !== "string" || !uuidPattern.test(value.profileId)))
+    || (value.bookingCode !== null && typeof value.bookingCode !== "string")
+    || !isTimestamp(value.observedAt) || !isTimestamp(value.firstSeenAt) || !isTimestamp(value.lastSeenAt)
+    || !isCount(value.sourceCount) || !isCount(value.bookingCount)) return null;
+  return value as CustomerWindowRelatedContactV2;
+}
+
+function normalizeRelatedContacts(value: unknown): Customer360GlobalReviewIdentity["relatedContacts"] | null {
+  if (!isRecord(value) || !Array.isArray(value.emails) || !Array.isArray(value.phones)) return null;
+  const emails = value.emails.map((contact) => normalizeRelatedContact(contact, "email"));
+  const phones = value.phones.map((contact) => normalizeRelatedContact(contact, "phone"));
+  if (emails.some((contact) => contact === null) || phones.some((contact) => contact === null)) return null;
+  const unique = (contacts: CustomerWindowRelatedContactV2[]) => new Set(contacts.map((contact) => contact.value.trim().toLowerCase())).size === contacts.length;
+  if (!unique(emails as CustomerWindowRelatedContactV2[]) || !unique(phones as CustomerWindowRelatedContactV2[])) return null;
+  return { emails, phones } as Customer360GlobalReviewIdentity["relatedContacts"];
 }
 
 function normalizeCandidate(value: unknown): GlobalReviewContactCandidate | null {
@@ -218,6 +249,8 @@ export function normalizeCustomer360GlobalReviewIdentity(
     || value.profile.needsReview !== true || value.profile.mergedIntoProfileId !== null
     || typeof value.profile.resolverVersion !== "string" || !Array.isArray(value.links)
     || !Array.isArray(value.events) || !Array.isArray(value.relatedMcpEapEvidence)) return null;
+  const relatedContacts = normalizeRelatedContacts(value.relatedContacts ?? { emails: [], phones: [] });
+  if (!relatedContacts) return null;
   if (!value.links.every((link) => isRecord(link) && uuidPattern.test(String(link.bookingLinkId))
     && (link.source === "MCP_EAP" || link.source === "OKP") && isCount(link.sourceRowId)
     && (link.status === "candidate" || link.status === "conflict")
@@ -229,5 +262,5 @@ export function normalizeCustomer360GlobalReviewIdentity(
     && typeof event.reason === "string" && isRecord(event.evidence)
     && isTimestamp(event.createdAt) && event.createdAt !== null)) return null;
   if (!value.relatedMcpEapEvidence.every((item) => normalizeEvidence(item) !== null)) return null;
-  return value as Customer360GlobalReviewIdentity;
+  return { ...value, relatedContacts } as Customer360GlobalReviewIdentity;
 }

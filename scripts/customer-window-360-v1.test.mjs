@@ -286,16 +286,40 @@ test("identity detail keeps observed and historical contacts distinct for the co
   assert.match(view, /Reserva:/);
 });
 
+test("identity observed contacts consolidate related review observed and historical values", () => {
+  const consolidation = view.slice(
+    view.indexOf("function buildConsolidatedIdentityContacts"),
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+  );
+  const panel = view.slice(view.indexOf("function CustomerIdentityResolutionPanel"), view.indexOf("function CustomerEconomicsPanel"));
+  assert.match(consolidation, /relatedContacts\?\.emails/);
+  assert.match(consolidation, /relatedContacts\?\.phones/);
+  assert.match(consolidation, /contact\.relation === "observed_in_group" \? "observed" : "related"/);
+  assert.match(view, /current\?\.kind === "observed" \|\| options\.kind === "observed" \? "observed" : "related"/);
+  assert.match(view, /value\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(view, /options\.normalizedValue \|\| value/);
+  assert.match(panel, /relatedContacts: detail\?\.relatedContacts \?\? null/);
+  assert.match(panel, /visibleEmailCount: consolidatedContacts\.filter\(\(contact\) => contact\.type === "email"\)\.length/);
+  assert.match(panel, /visiblePhoneCount: consolidatedContacts\.filter\(\(contact\) => contact\.type === "phone"\)\.length/);
+  assert.match(panel, /<Customer360ObservedIdentityContacts contacts=\{consolidatedContacts\} \/>/);
+  assert.match(view, /contact\.kind === "observed" \? "Observado" : "Relacionado"/);
+  assert.match(view, /Valores únicos asociados a la representación/);
+});
+
 test("identity panel keeps profiles members evidence and conceptual decisions bounded and read only", () => {
   const panel = view.slice(view.indexOf("function CustomerIdentityResolutionPanel"), view.indexOf("function CustomerEconomicsPanel"));
-  for (const label of ["Composición de miembros", "Perfiles involucrados", "Historial de resolución", "Solo vista previa"]) assert.match(panel, new RegExp(label));
+  for (const label of ["Composición de miembros", "Perfiles involucrados", "Historial de resolución"]) assert.match(panel, new RegExp(label));
   for (const label of ["Confirmar misma identidad", "Mantener relacionados", "Mantener separados", "Cuenta compartida / terceros"]) assert.match(identityPreview, new RegExp(label));
   assert.match(panel, /IDENTITY_MEMBER_INITIAL_LIMIT/);
   assert.match(panel, /IDENTITY_PROFILE_INITIAL_LIMIT/);
   assert.match(panel, /IDENTITY_EVENT_GROUP_INITIAL_LIMIT/);
   assert.match(panel, /Relationship type[\s\S]*Link status[\s\S]*Resolver/);
+  assert.match(panel, /buildIdentityObservedSignals\(detail\?\.events \?\? \[\]/);
+  assert.match(view, /Señales observadas/);
+  assert.match(view, /Solo vista previa/);
+  assert.match(view, /Posibles decisiones · Solo vista previa/);
   assert.match(view, /Detalle técnico de evidencia/);
-  assert.doesNotMatch(panel, /fetch\(|getJson\(|confirm_same_identity_simple_v1_m2m/);
+  assert.doesNotMatch(panel, /fetch\(|getJson\(|postJson\(|confirm_same_identity_simple_v1_m2m|customer_window_.*merge|campaign/i);
 });
 
 test("normalizers enforce the canonical locator and booking shape", () => {
