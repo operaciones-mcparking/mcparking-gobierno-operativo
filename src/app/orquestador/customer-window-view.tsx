@@ -29,7 +29,6 @@ import {
   type CustomerIdentityDecisionPreviewStatus,
 } from "@/lib/customer-window/identity-decision-preview";
 import {
-  normalizeCustomerWindowPeriodFacetsV2,
   normalizeCustomerWindowIdentityResolutionDetailV2,
   normalizeCustomerWindowOperationalRepresentationListV2,
   normalizeCustomerWindowRepresentationBookingsResponseV2,
@@ -40,7 +39,6 @@ import {
   type CustomerWindowObservedContactV2,
   type CustomerWindowOperationalFamilyV2,
   type CustomerWindowOperationalRepresentationV2,
-  type CustomerWindowPeriodFacetsV2,
   type CustomerWindowRelatedContactV2,
   type CustomerWindowRepresentationBookingsResponseV2,
   type CustomerWindowRepresentationSearchItemV2,
@@ -634,31 +632,6 @@ function CustomerPeriodSelector({ onApply, preset, range }: {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function CustomerRepresentationFacets({ error, facets, loading }: {
-  error: string | null;
-  facets: CustomerWindowPeriodFacetsV2 | null;
-  loading: boolean;
-}) {
-  const rows = facets ? [
-    { label: "Representaciones", value: facets.totalRepresentations },
-    { label: "Confirmados", value: facets.confirmedRepresentations },
-    { label: "Relacionados / revisión", value: facets.relatedReviewRepresentations },
-    { label: "Reservas del período", value: facets.totalBookingsInPeriod },
-  ] : [];
-
-  return (
-    <section aria-label="Resumen de representaciones del período" className="mt-3 overflow-hidden rounded-xl border border-[#d6e1ea] bg-white shadow-[0_8px_22px_rgba(2,53,116,0.04)]">
-      {loading && !facets ? <><p className="px-4 py-2 text-xs text-slate-600">Actualizando datos...</p><div className="grid animate-pulse gap-px bg-[#e4edf4] sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <div className="h-20 bg-white" key={index} />)}</div></> : null}
-      {error ? <p className="px-4 py-2 text-xs text-red-700" role="alert">No fue posible cargar los conteos de representaciones.</p> : null}
-      {facets ? (
-        <div className="relative"><div aria-live="polite" className="absolute right-4 top-2 text-[11px] text-slate-500">{loading ? "Actualizando..." : ""}</div><div className={`grid divide-y divide-[#e4edf4] transition-opacity sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4 ${loading ? "opacity-60" : "opacity-100"}`}>
-          {rows.map((row) => <div className="px-4 py-2.5" key={row.label}><p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">{row.label}</p><p className="mt-1 text-2xl font-semibold leading-none text-navy">{displaySafeCount(row.value)}</p>{row.label === "Representaciones" ? <p className="mt-1 text-[11px] text-slate-500">Incluye grupos relacionados pendientes de revisión</p> : null}</div>)}
-        </div></div>
-      ) : null}
-    </section>
   );
 }
 
@@ -2804,11 +2777,6 @@ export function CustomerWindowView() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const searchController = useRef<AbortController | null>(null);
-  const facetsController = useRef<AbortController | null>(null);
-  const facetsRequest = useRef<{ key: string; promise: Promise<void> } | null>(null);
-  const [periodFacets, setPeriodFacets] = useState<CustomerWindowPeriodFacetsV2 | null>(null);
-  const [periodFacetsLoading, setPeriodFacetsLoading] = useState(false);
-  const [periodFacetsError, setPeriodFacetsError] = useState<string | null>(null);
   const refreshHealthController = useRef<AbortController | null>(null);
   const [refreshHealth, setRefreshHealth] = useState<CustomerWindowRefreshHealth | null>(null);
   const [refreshHealthLoading, setRefreshHealthLoading] = useState(false);
@@ -2877,42 +2845,6 @@ export function CustomerWindowView() {
     return promise;
   }, [periodRange.from, periodRange.to]);
 
-  const loadPeriodFacets = useCallback(() => {
-    const requestKey = `${periodRange.from}:${periodRange.to}`;
-    if (facetsRequest.current?.key === requestKey) return facetsRequest.current.promise;
-    facetsController.current?.abort();
-    const controller = new AbortController();
-    facetsController.current = controller;
-    const params = new URLSearchParams({
-      action: "period-facets-v2",
-      from: periodRange.from,
-      to: periodRange.to,
-    });
-    const promise = (async () => {
-      setPeriodFacetsLoading(true);
-      setPeriodFacetsError(null);
-      try {
-        const body = await getCustomerWindowJsonWithRetry(`/api/orquestador/customer-window/customers?${params.toString()}`, controller.signal);
-        if (facetsController.current !== controller) return;
-        const nextFacets = normalizeCustomerWindowPeriodFacetsV2(body);
-        if (!nextFacets) throw new Error("Respuesta de facetas inválida.");
-        setPeriodFacets(nextFacets);
-      } catch (cause) {
-        if (cause instanceof DOMException && cause.name === "AbortError") return;
-        if (facetsController.current === controller) {
-          setPeriodFacetsError(cause instanceof Error ? cause.message : "No fue posible cargar los conteos.");
-        }
-      } finally {
-        if (facetsController.current === controller) setPeriodFacetsLoading(false);
-      }
-    })();
-    facetsRequest.current = { key: requestKey, promise };
-    void promise.then(() => {
-      if (facetsRequest.current?.promise === promise) facetsRequest.current = null;
-    });
-    return promise;
-  }, [periodRange.from, periodRange.to]);
-
   const loadRefreshHealth = useCallback(async () => {
     refreshHealthController.current?.abort();
     const controller = new AbortController();
@@ -2932,7 +2864,6 @@ export function CustomerWindowView() {
       setRefreshHealthError(false);
       if (previousStatus === "refreshing" && nextHealth.status === "healthy") {
         void Promise.allSettled([
-          loadPeriodFacets(),
           loadOperationalRepresentations("OKP", okpPage),
           loadOperationalRepresentations("MCP_EAP", mcpEapPage),
         ]);
@@ -2943,7 +2874,7 @@ export function CustomerWindowView() {
     } finally {
       if (refreshHealthController.current === controller) setRefreshHealthLoading(false);
     }
-  }, [loadOperationalRepresentations, loadPeriodFacets, mcpEapPage, okpPage]);
+  }, [loadOperationalRepresentations, mcpEapPage, okpPage]);
 
   const closeCustomerDrawer = useCallback(() => {
     economicsController.current?.abort();
@@ -2967,13 +2898,6 @@ export function CustomerWindowView() {
     const controller = mcpEapController.current;
     return () => controller?.abort();
   }, [loadOperationalRepresentations, mcpEapPage, section]);
-
-  useEffect(() => {
-    if (section !== "clientes") return;
-    void loadPeriodFacets();
-    const controller = facetsController.current;
-    return () => controller?.abort();
-  }, [loadPeriodFacets, section]);
 
   useEffect(() => {
     if (section !== "clientes") return;
@@ -3045,9 +2969,6 @@ export function CustomerWindowView() {
   function abortRepresentationRequests() {
     okpController.current?.abort();
     mcpEapController.current?.abort();
-    facetsController.current?.abort();
-    setPeriodFacets(null);
-    setPeriodFacetsError(null);
   }
 
   function applyPeriod(preset: CustomerPeriodPreset, range: CustomerPeriodRange) {
@@ -3124,7 +3045,6 @@ export function CustomerWindowView() {
             </div>
           </section>
           <CustomerWindowRefreshHealthStrip error={refreshHealthError} health={refreshHealth} loading={refreshHealthLoading} />
-          <CustomerRepresentationFacets error={periodFacetsError} facets={periodFacets} loading={periodFacetsLoading} />
           {safeCountAsBigInt(mcpEapList.hotPendingReservations) > BigInt(0) ? (
             <div className="mb-3 flex items-center text-xs text-slate-500" role="status">
               <MetricLabel description="Estas reservas son válidas, pero todavía están dentro de la ventana de estabilidad de identidad. Aparecerán cuando una actualización posterior las incorpore al universo estable.">

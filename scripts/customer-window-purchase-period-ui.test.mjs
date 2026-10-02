@@ -50,13 +50,20 @@ test("the list uses a nullable discriminated v2 representation type", () => {
   assert.match(representations, /representationKey !== `\$\{representationType\}:\$\{representationId\}`/);
 });
 
-test("the main view loads two source lists and one v2 facets request per period", () => {
-  const listBlock = sourceBlock(view, "const loadOperationalRepresentations", "const loadPeriodFacets");
-  const facetsBlock = sourceBlock(view, "const loadPeriodFacets", "const loadRefreshHealth");
+test("the main view loads two source lists and skips the retired top summary cards", () => {
+  const listBlock = sourceBlock(view, "const loadOperationalRepresentations", "const loadRefreshHealth");
   assert.match(listBlock, /action: "operational-list-v2"[\s\S]*family[\s\S]*from: periodRange\.from[\s\S]*page: String\(page\)[\s\S]*pageSize: String\(PERIOD_PAGE_SIZE\)[\s\S]*to: periodRange\.to/);
-  assert.match(facetsBlock, /action: "period-facets-v2"[\s\S]*from: periodRange\.from[\s\S]*to: periodRange\.to/);
   assert.equal((listBlock.match(/getCustomerWindowJsonWithRetry\(/g) ?? []).length, 1);
-  assert.equal((facetsBlock.match(/getCustomerWindowJsonWithRetry\(/g) ?? []).length, 1);
+  assert.match(view, /CustomerWindowRefreshHealthStrip/);
+  assert.match(view, /title="Clientes OKP"/);
+  assert.match(view, /title="MCP \/ EAP"/);
+  assert.match(view, /title="Criterios de clasificación"/);
+  assert.doesNotMatch(view, /function CustomerRepresentationFacets/);
+  assert.doesNotMatch(view, /Resumen de representaciones del período/);
+  assert.doesNotMatch(view, /Representaciones", value: facets\.totalRepresentations/);
+  assert.doesNotMatch(view, /Confirmados", value: facets\.confirmedRepresentations/);
+  assert.doesNotMatch(view, /Relacionados \/ revisión", value: facets\.relatedReviewRepresentations/);
+  assert.doesNotMatch(view, /Reservas del período", value: facets\.totalBookingsInPeriod/);
   assert.doesNotMatch(view, /action: "list-by-period-v2"/);
   assert.doesNotMatch(view, /action: "period-metrics"/);
   assert.match(route, /No fue posible consultar representaciones por periodo\.\", 500, result\.retryable/);
@@ -81,11 +88,8 @@ test("v2 loading keeps abort stale response error and pagination behavior", () =
   assert.match(view, /controllerRef\.current\?\.abort\(\)/);
   assert.match(view, /okpController\.current\?\.abort\(\)/);
   assert.match(view, /mcpEapController\.current\?\.abort\(\)/);
-  assert.match(view, /facetsController\.current\?\.abort\(\)/);
   assert.match(view, /controllerRef\.current !== controller/);
-  assert.match(view, /facetsController\.current !== controller/);
   assert.match(view, /setOkpError\(message\)[\s\S]*setMcpEapError\(message\)/);
-  assert.match(view, /setPeriodFacetsError\(cause instanceof Error/);
   assert.match(view, /onPageChange=\{setOkpPage\}/);
   assert.match(view, /onPageChange=\{setMcpEapPage\}/);
   assert.match(view, /disabled=\{loading \|\| list\.page <= 1\}/);
@@ -93,18 +97,12 @@ test("v2 loading keeps abort stale response error and pagination behavior", () =
   assert.match(view, /setOkpPage\(1\)/);
   assert.match(view, /setMcpEapPage\(1\)/);
   assert.match(view, /requestRef\.current\?\.key === requestKey/);
-  assert.match(view, /facetsRequest\.current\?\.key === requestKey/);
   assert.match(view, /setOkpList\(nextList\)[\s\S]*setMcpEapList\(nextList\)/);
-  assert.match(view, /setPeriodFacets\(nextFacets\)/);
-  assert.doesNotMatch(sourceBlock(view, "const loadOperationalRepresentations", "const loadPeriodFacets"), /emptyOperationalRepresentationList/);
-  assert.doesNotMatch(sourceBlock(view, "const loadPeriodFacets", "const loadRefreshHealth"), /setPeriodFacets\(null\)/);
+  assert.doesNotMatch(sourceBlock(view, "const loadOperationalRepresentations", "const loadRefreshHealth"), /emptyOperationalRepresentationList/);
 });
 
 test("transient loading preserves rendered data and delays visible errors until retries finish", () => {
-  const facetsBlock = sourceBlock(view, "function CustomerRepresentationFacets", "function CustomerOperationalRepresentationTable");
   const tableBlock = sourceBlock(view, "function CustomerOperationalRepresentationTable", "function searchMatchLabel");
-  assert.match(facetsBlock, /loading && !facets[\s\S]*Actualizando datos/);
-  assert.match(facetsBlock, /facets \?[\s\S]*loading \? "Actualizando\.\.\."/);
   assert.match(tableBlock, /loading && list\.items\.length === 0[\s\S]*Actualizando datos/);
   assert.match(tableBlock, /loading && list\.items\.length > 0[\s\S]*Actualizando\.\.\./);
 });
@@ -112,18 +110,19 @@ test("transient loading preserves rendered data and delays visible errors until 
 test("refreshing to healthy reloads the current period once without coupling every health poll", () => {
   const healthBlock = sourceBlock(view, "const loadRefreshHealth", "const closeCustomerDrawer");
   assert.match(healthBlock, /previousStatus === "refreshing" && nextHealth\.status === "healthy"/);
-  assert.match(healthBlock, /Promise\.allSettled\(\[[\s\S]*loadPeriodFacets\(\)[\s\S]*loadOperationalRepresentations\("OKP", okpPage\)[\s\S]*loadOperationalRepresentations\("MCP_EAP", mcpEapPage\)/);
-  assert.equal((healthBlock.match(/loadPeriodFacets\(\)/g) ?? []).length, 1);
+  assert.match(healthBlock, /Promise\.allSettled\(\[[\s\S]*loadOperationalRepresentations\("OKP", okpPage\)[\s\S]*loadOperationalRepresentations\("MCP_EAP", mcpEapPage\)/);
+  assert.doesNotMatch(healthBlock, /loadPeriodFacets/);
   assert.equal((healthBlock.match(/loadOperationalRepresentations\(/g) ?? []).length, 2);
 });
 
-test("facets expose representations confirmed related and period bookings", () => {
-  const facetsBlock = sourceBlock(view, "function CustomerRepresentationFacets", "function CustomerOperationalRepresentationTable");
-  assert.match(facetsBlock, /"Representaciones", value: facets\.totalRepresentations/);
-  assert.match(facetsBlock, /"Confirmados", value: facets\.confirmedRepresentations/);
-  assert.match(facetsBlock, /"Relacionados \/ revisión", value: facets\.relatedReviewRepresentations/);
-  assert.match(facetsBlock, /"Reservas del período", value: facets\.totalBookingsInPeriod/);
-  assert.match(facetsBlock, /Incluye grupos relacionados pendientes de revisión/);
+test("retired top summary metrics are not rendered between health and source tables", () => {
+  const customerWindowBlock = view.slice(view.indexOf("export function CustomerWindowView"));
+  assert.match(customerWindowBlock, /CustomerWindowRefreshHealthStrip/);
+  assert.match(customerWindowBlock, /safeCountAsBigInt\(mcpEapList\.hotPendingReservations\) > BigInt\(0\)/);
+  assert.match(customerWindowBlock, /title="Clientes OKP"[\s\S]*title="MCP \/ EAP"/);
+  assert.match(customerWindowBlock, /title="Criterios de clasificación"/);
+  assert.doesNotMatch(customerWindowBlock, /REPRESENTACIONES|CONFIRMADOS|RELACIONADOS \/ REVISIÓN|RESERVAS DEL PERÍODO/);
+  assert.doesNotMatch(customerWindowBlock, /totalRepresentations|confirmedRepresentations|relatedReviewRepresentations|totalBookingsInPeriod/);
 });
 
 test("source rows use representationKey with source quantity mix and trajectory", () => {
@@ -458,7 +457,7 @@ test("confirmed selection uses the global Customer 360 locator", () => {
 });
 
 test("list rendering does not introduce N plus one detail requests", () => {
-  const listBlock = sourceBlock(view, "const loadOperationalRepresentations", "const loadPeriodFacets");
+  const listBlock = sourceBlock(view, "const loadOperationalRepresentations", "const loadRefreshHealth");
   const tableBlock = sourceBlock(view, "function CustomerOperationalRepresentationTable", "function SecondaryViewHeader");
   assert.doesNotMatch(listBlock + tableBlock, /action=(?:summary|bookings|economics)/);
   assert.doesNotMatch(tableBlock, /getJson|fetch\(/);

@@ -132,6 +132,7 @@ test("server validates one request per family and the UI paginates them independ
   assert.match(view, /onPageChange=\{setMcpEapPage\}/);
   assert.match(view, /xl:grid-cols-2/);
   assert.match(view, /mcpEapList\.hotPendingReservations[\s\S]*reservas MCP\/EAP recientes pendientes de estabilización[\s\S]*title="Clientes OKP"[\s\S]*title="MCP \/ EAP"/);
+  assert.doesNotMatch(view, /Resumen de representaciones del período|REPRESENTACIONES|CONFIRMADOS|RELACIONADOS \/ REVISIÓN|RESERVAS DEL PERÍODO/);
   const tableBlock = view.slice(view.indexOf("function CustomerOperationalRepresentationTable"), view.indexOf("function searchMatchLabel"));
   assert.doesNotMatch(tableBlock, /hotPendingReservations|pendientes de estabilización/);
   assert.doesNotMatch(view.slice(view.indexOf("function CustomerOperationalRepresentationTable"), view.indexOf("function searchMatchLabel")), /Primera compra|Última compra|Última reserva del período/);
@@ -155,7 +156,7 @@ test("global operational list keeps MCP EAP snapshot stability semantics unchang
 });
 
 test("list rendering is bounded and opens the existing Customer 360 selection path", () => {
-  const loader = view.slice(view.indexOf("const loadOperationalRepresentations"), view.indexOf("const loadPeriodFacets"));
+  const loader = view.slice(view.indexOf("const loadOperationalRepresentations"), view.indexOf("const loadRefreshHealth"));
   assert.equal((loader.match(/getCustomerWindowJsonWithRetry\(/g) ?? []).length, 1);
   assert.doesNotMatch(loader, /items\.map|Promise\.all/);
   assert.match(view, /onSelectRepresentation=\{selectRepresentation\}/);
