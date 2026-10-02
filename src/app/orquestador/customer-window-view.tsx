@@ -156,7 +156,7 @@ type CustomerRepresentationListItemV2 = CustomerRepresentationListItemBaseV2 & (
 );
 type OperationalRepresentationListItemV2 = CustomerRepresentationListItemV2 & Pick<
   CustomerWindowOperationalRepresentationV2,
-  "boletaReservations" | "commercialTrajectory" | "packReservations" | "sourceReservations" | "trajectoryScope"
+  "boletaReservations" | "commercialTrajectory" | "packReservations" | "periodSourceReservations" | "periodBoletaReservations" | "periodPackReservations" | "sourceReservations" | "trajectoryScope"
 >;
 type OperationalRepresentationPeriodListV2 = {
   family: CustomerWindowOperationalFamilyV2;
@@ -296,6 +296,9 @@ function normalizeOperationalRepresentationListForUi(
       boletaReservations: item.boletaReservations,
       commercialTrajectory: item.commercialTrajectory,
       packReservations: item.packReservations,
+      periodSourceReservations: item.periodSourceReservations,
+      periodBoletaReservations: item.periodBoletaReservations,
+      periodPackReservations: item.periodPackReservations,
       sourceReservations: item.sourceReservations,
       trajectoryScope: item.trajectoryScope,
     };
@@ -731,6 +734,17 @@ function representationContactLines(contact: CustomerWindowContactSummaryV2) {
   return { email, phone };
 }
 
+function periodPurchaseLabel(representation: Pick<OperationalRepresentationListItemV2, "periodBoletaReservations" | "periodPackReservations">) {
+  const boletaCount = safeCountAsBigInt(representation.periodBoletaReservations);
+  const packCount = safeCountAsBigInt(representation.periodPackReservations);
+  const parts: string[] = [];
+  if (boletaCount === BigInt(1)) parts.push("BOLETA");
+  if (boletaCount > BigInt(1)) parts.push(`${displaySafeCount(representation.periodBoletaReservations)} BOLETA`);
+  if (packCount === BigInt(1)) parts.push("PACK");
+  if (packCount > BigInt(1)) parts.push(`${displaySafeCount(representation.periodPackReservations)} PACK`);
+  return parts.join(" · ");
+}
+
 function CustomerOperationalRepresentationTable({ error, list, loading, onPageChange, onSelectRepresentation, title }: {
   error: string | null;
   list: OperationalRepresentationPeriodListV2;
@@ -754,7 +768,7 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
               <DataTableHead><tr>{[
                 { label: "Cliente / representación", width: "w-[38%]" },
                 { label: "QTY", width: "w-[18%]" },
-                { label: "BOLETA / PACK", width: "w-[18%]" },
+                { label: "Compra del período", width: "w-[18%]" },
                 { label: "Perfil comercial / trayectoria", width: "w-[26%]" },
               ].map(({ label, width }) => <th className={`${width} border-b border-[#d6e1ea] px-2 py-2 text-left text-[10px] font-medium uppercase leading-4 tracking-[0.08em] text-slate-500`} key={label}>{label}</th>)}</tr></DataTableHead>
               <DataTableBody>
@@ -762,6 +776,7 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
                   const isConfirmed = representation.representationType === "confirmed_customer";
                   const contact = representationContactLines(representation.contactSummary);
                   const statusLabel = isConfirmed ? "Confirmado" : "Relacionado / revisión";
+                  const purchaseInPeriod = periodPurchaseLabel(representation);
                   return (
                     <tr
                       aria-label={isConfirmed ? "Abrir cliente confirmado" : "Seleccionar representación relacionada pendiente de revisión"}
@@ -777,8 +792,8 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
                       tabIndex={0}
                     >
                       <td className="max-w-0 px-2 py-2 align-middle"><div className="flex min-w-0 items-start gap-2"><span aria-label={statusLabel} className={`mt-1 h-2 w-2 shrink-0 rounded-full ${isConfirmed ? "bg-emerald-500" : "bg-amber-400"}`} role="img" title={statusLabel} /><div className="min-w-0"><p className="truncate text-xs font-medium text-navy" title={contact.email}>{contact.email}</p><p className="mt-0.5 truncate text-[11px] text-slate-500" title={contact.phone}>{contact.phone}</p></div></div></td>
-                      <td className="px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p><span className="font-medium text-navy">{displaySafeCount(representation.sourceReservations)}</span> total {list.family === "OKP" ? "OKP" : "MCP/EAP"}</p><p>{displaySafeCount(representation.reservationsInPeriod)} en período</p></td>
-                      <td className="px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p>{displaySafeCount(representation.boletaReservations)} BOLETA</p><p>{displaySafeCount(representation.packReservations)} PACK</p></td>
+                      <td className="px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p className="font-medium text-navy">{displaySafeCount(representation.totalReservations)}</p></td>
+                      <td className="px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p className="font-medium text-navy">{purchaseInPeriod}</p></td>
                       <td className="break-words px-2 py-2 align-middle text-[11px] leading-4 text-slate-700"><p className="font-medium text-navy">{behaviorLabel(representation.commercialTrajectory)}</p>{representation.trajectoryScope === "related_group" ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Alcance: grupo MCP/EAP en revisión</p> : representation.trajectoryScope === "review_profile" ? <p className="mt-0.5 text-[10px] leading-4 text-slate-500">Alcance: perfil global en revisión</p> : null}</td>
                     </tr>
                   );

@@ -128,13 +128,21 @@ test("facets expose representations confirmed related and period bookings", () =
 
 test("source rows use representationKey with source quantity mix and trajectory", () => {
   const tableBlock = sourceBlock(view, "function CustomerOperationalRepresentationTable", "function searchMatchLabel");
+  const formatterBlock = sourceBlock(view, "function periodPurchaseLabel", "function CustomerOperationalRepresentationTable");
   assert.match(tableBlock, /key=\{representation\.representationKey\}/);
-  for (const field of ["sourceReservations", "reservationsInPeriod", "boletaReservations", "packReservations", "commercialTrajectory"]) {
-    assert.match(tableBlock, new RegExp(`representation\\.${field}`));
-  }
-  for (const heading of ["Cliente / representación", "QTY", "BOLETA / PACK", "Perfil comercial / trayectoria"]) {
+  assert.match(tableBlock, /representation\.totalReservations/);
+  assert.match(tableBlock, /representation\.commercialTrajectory/);
+  assert.match(formatterBlock, /representation\.periodBoletaReservations/);
+  assert.match(formatterBlock, /representation\.periodPackReservations/);
+  for (const heading of ["Cliente / representación", "QTY", "Compra del período", "Perfil comercial / trayectoria"]) {
     assert.match(tableBlock, new RegExp(heading));
   }
+  assert.match(tableBlock, /periodPurchaseLabel\(representation\)/);
+  assert.match(tableBlock, /displaySafeCount\(representation\.totalReservations\)/);
+  assert.doesNotMatch(tableBlock, /en período/);
+  assert.doesNotMatch(tableBlock, /displaySafeCount\(representation\.sourceReservations\)[\s\S]*total/);
+  assert.doesNotMatch(tableBlock, /displaySafeCount\(representation\.boletaReservations\)[\s\S]*BOLETA/);
+  assert.doesNotMatch(tableBlock, /displaySafeCount\(representation\.packReservations\)[\s\S]*PACK/);
   assert.doesNotMatch(tableBlock, /\{ label: "Tipo"/);
   assert.doesNotMatch(tableBlock, /Primera compra|Última compra|Última reserva del período/);
   assert.match(tableBlock, /representationContactLines\(representation\.contactSummary\)/);
@@ -143,6 +151,16 @@ test("source rows use representationKey with source quantity mix and trajectory"
   assert.doesNotMatch(tableBlock, /lifecycle|tier|economics/i);
   assert.doesNotMatch(tableBlock, /hotPendingReservations/);
   assert.doesNotMatch(tableBlock, /pendientes de estabilización/);
+});
+
+test("period purchase column renders compact period-only BOLETA and PACK labels", () => {
+  const formatterBlock = sourceBlock(view, "function periodPurchaseLabel", "function CustomerOperationalRepresentationTable");
+  assert.match(formatterBlock, /boletaCount === BigInt\(1\)[\s\S]*parts\.push\("BOLETA"\)/);
+  assert.match(formatterBlock, /packCount === BigInt\(1\)[\s\S]*parts\.push\("PACK"\)/);
+  assert.match(formatterBlock, /boletaCount > BigInt\(1\)[\s\S]*displaySafeCount\(representation\.periodBoletaReservations\)[\s\S]*BOLETA/);
+  assert.match(formatterBlock, /packCount > BigInt\(1\)[\s\S]*displaySafeCount\(representation\.periodPackReservations\)[\s\S]*PACK/);
+  assert.match(formatterBlock, /parts\.join\(" · "\)/);
+  assert.doesNotMatch(formatterBlock, /sourceReservations|boletaReservations|packReservations/);
 });
 
 test("hot pending renders once above both source tables and disappears at zero", () => {

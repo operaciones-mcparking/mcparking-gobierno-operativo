@@ -5,6 +5,7 @@ import ts from "typescript";
 
 const migration = readFileSync("supabase/migrations/20260929130000_add_customer_window_v2_operational_source_lists.sql", "utf8");
 const okpHotStabilityMigration = readFileSync("supabase/migrations/20261002150000_fix_okp_operational_hot_stability.sql", "utf8");
+const periodPurchaseMixMigration = readFileSync("supabase/migrations/20261002170000_add_operational_period_purchase_mix.sql", "utf8");
 const contracts = readFileSync("src/lib/customer-window/customer-representations-v2.ts", "utf8");
 const admin = readFileSync("src/lib/orquestador/supabase-admin.ts", "utf8");
 const route = readFileSync("src/app/api/orquestador/customer-window/customers/route.ts", "utf8");
@@ -29,6 +30,9 @@ const confirmed = {
   lastBookingAtInPeriod: "2026-09-21T10:00:00",
   lastPurchaseAt: "2026-09-21T10:00:00",
   metricScope: "all_confirmed_sources",
+  periodBoletaReservations: 1,
+  periodPackReservations: 1,
+  periodSourceReservations: 2,
   relatedGroupId: null,
   representationId: "11111111-1111-4111-8111-111111111111",
   representationKey: "confirmed_customer:11111111-1111-4111-8111-111111111111",
@@ -50,6 +54,9 @@ const related = {
   lastBookingAtInPeriod: "2026-09-21T11:00:00",
   lastPurchaseAt: "2026-09-21T11:00:00",
   metricScope: "mcp_eap_active_snapshot",
+  periodBoletaReservations: 1,
+  periodPackReservations: 0,
+  periodSourceReservations: 1,
   relatedGroupId: "a".repeat(64),
   representationId: "a".repeat(64),
   representationKey: `related_review:${"a".repeat(64)}`,
@@ -79,6 +86,21 @@ test("quantity and BOLETA PACK are counted from source rows rather than global p
   assert.doesNotMatch(migration, /profile_metrics\.pack_status/);
   assert.match(contracts, /sourceReservations[\s\S]*boletaReservations[\s\S]*packReservations/);
   assert.match(contracts, /sourceReservations\)[\s\S]*boletaReservations\) \+ countAsBigInt\(item\.packReservations\)/);
+});
+
+test("operational list exposes period purchase mix separately from historical totals", () => {
+  assert.match(periodPurchaseMixMigration, /period_counts as materialized/);
+  assert.match(periodPurchaseMixMigration, /count\(\*\)::bigint as period_source_reservations/);
+  assert.match(periodPurchaseMixMigration, /count\(\*\) filter \(where is_pack is false\)::bigint as period_boleta_reservations/);
+  assert.match(periodPurchaseMixMigration, /count\(\*\) filter \(where is_pack is true\)::bigint as period_pack_reservations/);
+  assert.match(periodPurchaseMixMigration, /'periodSourceReservations', period_counts\.period_source_reservations/);
+  assert.match(periodPurchaseMixMigration, /'periodBoletaReservations', period_counts\.period_boleta_reservations/);
+  assert.match(periodPurchaseMixMigration, /'periodPackReservations', period_counts\.period_pack_reservations/);
+  assert.match(periodPurchaseMixMigration, /'totalReservations'[\s\S]*metrics\.total_reservations/);
+  assert.match(periodPurchaseMixMigration, /join period_counts using \(representation_key\)/);
+  assert.doesNotMatch(periodPurchaseMixMigration, /\b(?:insert|update|delete|merge|truncate|alter table|create table)\b/i);
+  assert.match(contracts, /periodSourceReservations[\s\S]*periodBoletaReservations[\s\S]*periodPackReservations/);
+  assert.match(contracts, /reservationsInPeriod\)[\s\S]*periodSourceReservations/);
 });
 
 test("trajectory reuses confirmed metrics and scopes related groups to MCP EAP", () => {
@@ -150,6 +172,9 @@ test("runtime contract accepts source-scoped counts and certified trajectories",
         boletaReservations: 3,
         commercialTrajectory: "MIGRATED_TO_MCP_EAP",
         packReservations: 1,
+        periodBoletaReservations: 1,
+        periodPackReservations: 1,
+        periodSourceReservations: 2,
         sourceReservations: 4,
         trajectoryScope: "confirmed_identity",
       },
@@ -158,6 +183,9 @@ test("runtime contract accepts source-scoped counts and certified trajectories",
         boletaReservations: 1,
         commercialTrajectory: "ONLY_MCP_EAP",
         packReservations: 1,
+        periodBoletaReservations: 1,
+        periodPackReservations: 0,
+        periodSourceReservations: 1,
         sourceReservations: 2,
         trajectoryScope: "related_group",
       },
@@ -184,6 +212,9 @@ test("runtime contract accepts OKP hot pending rows without weakening stable deb
       boletaReservations: 3,
       commercialTrajectory: "ONLY_OKP",
       packReservations: 1,
+      periodBoletaReservations: 1,
+      periodPackReservations: 1,
+      periodSourceReservations: 2,
       sourceReservations: 4,
       trajectoryScope: "confirmed_identity",
     }],
@@ -224,6 +255,9 @@ test("runtime contract rejects cross-source attribution and inconsistent counts"
       boletaReservations: 2,
       commercialTrajectory: "ONLY_MCP_EAP",
       packReservations: 0,
+      periodBoletaReservations: 1,
+      periodPackReservations: 0,
+      periodSourceReservations: 1,
       sourceReservations: 2,
       trajectoryScope: "related_group",
     }],
@@ -246,6 +280,9 @@ test("runtime contract rejects cross-source attribution and inconsistent counts"
       boletaReservations: 2,
       commercialTrajectory: "ONLY_OKP",
       packReservations: 1,
+      periodBoletaReservations: 1,
+      periodPackReservations: 1,
+      periodSourceReservations: 2,
       sourceReservations: 4,
       trajectoryScope: "confirmed_identity",
     }],
@@ -259,4 +296,29 @@ test("runtime contract rejects cross-source attribution and inconsistent counts"
     validReservations: 2,
   });
   assert.equal(mismatchedCounts, null);
+
+  const mismatchedPeriodCounts = contract.normalizeCustomerWindowOperationalRepresentationListV2({
+    family: "OKP",
+    hotPendingReservations: 0,
+    items: [{
+      ...confirmed,
+      boletaReservations: 2,
+      commercialTrajectory: "ONLY_OKP",
+      packReservations: 1,
+      periodBoletaReservations: 1,
+      periodPackReservations: 0,
+      periodSourceReservations: 2,
+      sourceReservations: 3,
+      trajectoryScope: "confirmed_identity",
+    }],
+    page: 1,
+    pageSize: 25,
+    representedConfirmedReservations: 2,
+    representedReviewReservations: 0,
+    stableReservations: 2,
+    total: 1,
+    unrepresentedStableReservations: 0,
+    validReservations: 2,
+  });
+  assert.equal(mismatchedPeriodCounts, null);
 });

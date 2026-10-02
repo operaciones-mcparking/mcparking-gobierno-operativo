@@ -129,8 +129,12 @@ test("Customer 360 supports global review without weakening confirmed or related
 });
 
 test("source tables use the same yellow review semantics and explicit QTY", () => {
-  assert.match(view, /total \{list\.family === "OKP" \? "OKP" : "MCP\/EAP"\}/);
-  assert.match(view, /en período/);
+  assert.match(view, /label: "QTY"/);
+  assert.match(view, /label: "Compra del período"/);
+  assert.match(view, /displaySafeCount\(representation\.totalReservations\)/);
+  assert.match(view, /periodPurchaseLabel\(representation\)/);
+  assert.doesNotMatch(view, /total \{list\.family === "OKP" \? "OKP" : "MCP\/EAP"\}/);
+  assert.doesNotMatch(view, /en período/);
   assert.match(view, /Actividad cross-source/);
   assert.match(view, /Alcance: perfil global en revisión/);
   assert.match(view, /Revisión global · Solo lectura/);

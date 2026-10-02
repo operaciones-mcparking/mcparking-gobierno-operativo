@@ -58,6 +58,9 @@ export type CustomerWindowOperationalRepresentationV2 = CustomerWindowRepresenta
   boletaReservations: CustomerWindowSafeCount;
   commercialTrajectory: CustomerWindowCommercialTrajectoryV2;
   packReservations: CustomerWindowSafeCount;
+  periodSourceReservations: CustomerWindowSafeCount;
+  periodBoletaReservations: CustomerWindowSafeCount;
+  periodPackReservations: CustomerWindowSafeCount;
   sourceReservations: CustomerWindowSafeCount;
   trajectoryScope: "confirmed_identity" | "related_group" | "review_profile";
 };
@@ -409,9 +412,15 @@ export function normalizeCustomerWindowOperationalRepresentationListV2(
     if (!isSafeCount(item.sourceReservations)
       || !isSafeCount(item.boletaReservations)
       || !isSafeCount(item.packReservations)
+      || !isSafeCount(item.periodSourceReservations)
+      || !isSafeCount(item.periodBoletaReservations)
+      || !isSafeCount(item.periodPackReservations)
       || !trajectories.has(String(item.commercialTrajectory))) return null;
     if (countAsBigInt(item.sourceReservations)
       !== countAsBigInt(item.boletaReservations) + countAsBigInt(item.packReservations)) return null;
+    if (countAsBigInt(item.periodSourceReservations)
+      !== countAsBigInt(item.periodBoletaReservations) + countAsBigInt(item.periodPackReservations)) return null;
+    if (countAsBigInt(representation.reservationsInPeriod) !== countAsBigInt(item.periodSourceReservations)) return null;
     if (representation.representationType === "confirmed_customer" && item.trajectoryScope !== "confirmed_identity") return null;
     if (representation.representationType === "related_review") {
       if (value.family !== "MCP_EAP" || item.trajectoryScope !== "related_group"
