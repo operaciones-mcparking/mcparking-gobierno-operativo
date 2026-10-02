@@ -57,6 +57,7 @@ import {
   type Customer360Booking,
   type Customer360Bookings,
   type Customer360Locator,
+  type Customer360ObservedContacts,
   type Customer360Overview,
 } from "@/lib/customer-window/customer-360-v1";
 import {
@@ -992,6 +993,19 @@ function identityResolutionReasonLabel(reason: string) {
   return "Motivo histórico sin traducción disponible.";
 }
 
+const GLOBAL_REVIEW_REASON_LABELS: Record<string, string> = {
+  contradictory_phone_email: "El teléfono y el email entregan señales contradictorias de identidad.",
+  insufficient_high_signals: "No había suficientes señales de alta confianza para confirmar la identidad.",
+  requires_review: "Se requieren más señales para confirmar la identidad.",
+  review_profile_reused_exact: "El resolver reutilizó un perfil previamente en revisión al encontrar coincidencias exactas.",
+  review_profile_reused_source_customer_email: "El resolver reutilizó un perfil en revisión al coincidir cliente de origen y email.",
+  signals_link_multiple_profiles: "Las señales observadas se relacionan con más de un perfil.",
+};
+
+function globalReviewReasonLabel(reason: string) {
+  return GLOBAL_REVIEW_REASON_LABELS[reason] ?? "Se requieren más señales para confirmar la identidad.";
+}
+
 function abbreviatedIdentifier(value: string | null) {
   if (!value) return "No disponible";
   return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
@@ -1711,11 +1725,45 @@ function Customer360GlobalReviewAnalyticsPanel({ analytics }: {
   </div>;
 }
 
-function Customer360GlobalReviewIdentityPanel({ detail }: {
-  detail: Customer360GlobalReviewIdentity;
+function uniqueObservedValues(values: string[]) {
+  return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function Customer360ObservedIdentityList({ count, label, values }: {
+  count: number;
+  label: string;
+  values: string[];
 }) {
+  if (count === 0) return null;
+  const hiddenCount = Math.max(0, count - values.length);
+  return <div className="min-w-0 rounded-lg border border-[#e4edf4] px-3 py-2.5">
+    <div className="flex items-center justify-between gap-2"><h4 className="text-xs font-medium text-navy">{label}</h4><span className="text-[11px] text-slate-500">{displayCount(count)}</span></div>
+    <ul className="mt-2 space-y-1.5">{values.map((value) => <li className="break-all text-xs text-slate-700" key={value}>{value}</li>)}</ul>
+    {hiddenCount > 0 ? <p className="mt-2 text-[10px] text-slate-500">{displayCount(hiddenCount)} valor(es) adicional(es) disponibles en el contrato de contactos.</p> : null}
+  </div>;
+}
+
+function Customer360GlobalReviewIdentityPanel({ detail, observedIdentity, overview }: {
+  detail: Customer360GlobalReviewIdentity;
+  observedIdentity: { emails: string[] | null; phones: string[] | null };
+  overview: Customer360Overview | null;
+}) {
+  const contacts = overview?.identity.contacts;
+  const observedEmails = observedIdentity.emails ?? (contacts?.semantics === "observed" ? uniqueObservedValues(contacts.emailPreview) : []);
+  const observedPhones = observedIdentity.phones ?? (contacts?.semantics === "observed" ? uniqueObservedValues(contacts.phonePreview) : []);
+  const observedEmailCount = contacts?.semantics === "observed" ? contacts.emailCount : observedEmails.length;
+  const observedPhoneCount = contacts?.semantics === "observed" ? contacts.phoneCount : observedPhones.length;
+  const reviewReasons = uniqueObservedValues(detail.events.map((event) => event.reason));
   return <div className="grid gap-4">
     <section><div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="text-base font-semibold text-navy">Identidad en revisión</h2><p className="mt-1 text-xs leading-5 text-slate-600">Perfil global estable con links candidate/conflict. Esta vista no modifica identidad.</p></div><ValueBadge tone="warning">Solo lectura</ValueBadge></div></section>
+    <AnalyticsBlock title="Motivo de revisión">{reviewReasons.length > 0 ? <ul className="mt-2 space-y-2">{reviewReasons.map((reason) => <li className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900" key={reason}>{globalReviewReasonLabel(reason)}</li>)}</ul> : <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">Se requieren más señales para confirmar la identidad.</p>}</AnalyticsBlock>
+    <AnalyticsBlock title="Identidad observada">
+      {(observedEmailCount > 0 || observedPhoneCount > 0) ? <div className="mt-2 grid gap-3 sm:grid-cols-2">
+        <Customer360ObservedIdentityList count={observedEmailCount} label="Emails observados" values={observedEmails} />
+        <Customer360ObservedIdentityList count={observedPhoneCount} label="Teléfonos observados" values={observedPhones} />
+      </div> : <p className="mt-2 text-xs text-slate-500">Sin email ni teléfono observado en el contrato actual.</p>}
+      <p className="mt-2 text-[10px] leading-4 text-slate-500">Datos observados en reservas vinculadas al perfil en revisión. RUT OKP no está disponible en Customer Window actual.</p>
+    </AnalyticsBlock>
     <AnalyticsBlock title="Links de reservas"><ul className="mt-2 divide-y divide-[#e4edf4]">{detail.links.map((link) => <li className="flex items-center justify-between gap-3 py-2 text-xs" key={link.bookingLinkId}><span className="text-navy">{link.source} · reserva {link.sourceRowId}</span><ValueBadge tone={link.status === "conflict" ? "warning" : "neutral"}>{link.status}</ValueBadge></li>)}</ul></AnalyticsBlock>
     <AnalyticsBlock title="Historial de resolución"><ul className="mt-2 space-y-2">{detail.events.map((event) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2" key={event.eventId}><p className="text-xs font-medium text-navy">{identityResolutionReasonLabel(event.reason)}</p><p className="mt-0.5 text-[10px] text-slate-500">{event.eventType} · {event.source ?? "Sin fuente"} · {displayDate(event.createdAt)}</p></li>)}</ul>{detail.events.length === 0 ? <p className="mt-2 text-xs text-slate-500">Sin eventos de resolución disponibles.</p> : null}</AnalyticsBlock>
     <AnalyticsBlock title="Evidencia Related Review MCP / EAP"><ul className="mt-2 space-y-2">{detail.relatedMcpEapEvidence.map((evidence) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2 text-xs text-slate-600" key={`${evidence.groupId}:${evidence.evidenceSource}:${evidence.relationReason}:${evidence.contactType ?? "profile"}:${evidence.normalizedValue ?? "none"}`}><p className="font-medium text-navy">{evidence.relationReason === "same_phone_history" ? "Teléfono históricamente relacionado" : evidence.relationReason === "same_email_history" ? "Email históricamente relacionado" : "Perfil presente en el grupo"}</p>{evidence.displayValue ? <p className="mt-0.5 break-all text-xs font-medium text-navy">{evidence.displayValue}</p> : null}<p className="mt-0.5 font-mono text-[10px]">Grupo {abbreviatedIdentifier(evidence.groupId)}</p></li>)}</ul>{detail.relatedMcpEapEvidence.length === 0 ? <p className="mt-2 text-xs text-slate-500">No existe relación certificada con un grupo MCP/EAP activo.</p> : null}</AnalyticsBlock>
@@ -1738,6 +1786,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
   const [stale, setStale] = useState(false);
   const [identityDetail, setIdentityDetail] = useState<CustomerWindowIdentityResolutionDetailV2 | null>(null);
   const [globalIdentity, setGlobalIdentity] = useState<Customer360GlobalReviewIdentity | null>(null);
+  const [globalObservedIdentity, setGlobalObservedIdentity] = useState<{ emails: string[] | null; phones: string[] | null }>({ emails: null, phones: null });
   const [identityDetailLoading, setIdentityDetailLoading] = useState(false);
   const [identityDetailError, setIdentityDetailError] = useState<string | null>(null);
   const [identityDetailStale, setIdentityDetailStale] = useState(false);
@@ -1849,6 +1898,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
     setActiveView("summary");
     setIdentityDetail(null);
     setGlobalIdentity(null);
+    setGlobalObservedIdentity({ emails: null, phones: null });
     setIdentityDetailLoading(false);
     setIdentityDetailError(null);
     setIdentityDetailStale(false);
@@ -1863,6 +1913,29 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
       analyticsController.current?.abort();
     };
   }, [representation, resolvedAuthoritySnapshotId]);
+
+  async function loadCompleteGlobalObservedIdentity(locator: Customer360Locator, signal: AbortSignal) {
+    const contacts = overview?.identity.contacts;
+    if (contacts?.semantics !== "observed") return { emails: null, phones: null };
+    const next: { emails: string[] | null; phones: string[] | null } = {
+      emails: contacts.emailCount <= contacts.emailPreview.length ? uniqueObservedValues(contacts.emailPreview) : null,
+      phones: contacts.phoneCount <= contacts.phonePreview.length ? uniqueObservedValues(contacts.phonePreview) : null,
+    };
+    for (const contactType of ["email", "phone"] as const) {
+      const key = contactType === "email" ? "emails" : "phones";
+      if (next[key] !== null) continue;
+      const params = customer360RequestParams(locator);
+      params.set("contactType", contactType);
+      params.set("page", "1");
+      params.set("pageSize", "100");
+      const body = await getJson(`/api/orquestador/customer-window/360/contacts?${params.toString()}`, signal);
+      const normalized = normalizeCustomer360ObservedContacts(body);
+      if (!normalized || normalized.locator.representationKey !== locator.representationKey
+        || normalized.contactType !== contactType) throw new Error("Respuesta de contactos Customer 360 inválida.");
+      next[key] = uniqueObservedValues(normalized.items);
+    }
+    return next;
+  }
 
   async function openCustomer360Identity() {
     setActiveView("identity");
@@ -1902,6 +1975,13 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
           throw new Error("Respuesta de identidad global inválida.");
         }
         setGlobalIdentity(nextIdentity);
+        void loadCompleteGlobalObservedIdentity(expectedLocator, controller.signal)
+          .then((observed) => {
+            if (identityDetailController.current === controller) setGlobalObservedIdentity(observed);
+          })
+          .catch((cause) => {
+            if (cause instanceof DOMException && cause.name === "AbortError") return;
+          });
         return;
       }
       const nextDetail = normalizeCustomerWindowIdentityResolutionDetailV2(body);
@@ -2038,7 +2118,7 @@ function Customer360Drawer({ activeSnapshotId, onClose, representation }: {
         {!stale && related && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica del grupo...</p> : analyticsNotMaterialized ? <section className="rounded-lg border border-[#d6e1ea] bg-[#fbfcfd] px-4 py-4"><h3 className="text-sm font-medium text-navy">Analítica aún no materializada</h3><p className="mt-1 text-xs leading-5 text-slate-600">El snapshot vigente todavía no contiene la lectura analítica del grupo.</p></section> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : relatedAnalytics ? <Customer360RelatedGroupAnalyticsPanel analytics={relatedAnalytics} /> : null : null}
         {!stale && globalReview && activeView === "analytics" ? analyticsLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando analítica de revisión...</p> : analyticsError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{analyticsError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Analytics()} type="button">Reintentar</button></section> : globalAnalytics ? <Customer360GlobalReviewAnalyticsPanel analytics={globalAnalytics} /> : null : null}
         {!stale && related && activeView === "identity" ? identityDetailStale ? <section className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3" role="alert"><h3 className="text-sm font-medium text-amber-900">stale_representation</h3><p className="mt-1 text-xs leading-5 text-amber-800">Esta representación ya no está vigente. Actualiza Customer Window.</p></section> : <CustomerIdentityResolutionPanel detail={identityDetail} detailError={identityDetailError} detailLoading={identityDetailLoading} group={null} loading={false} onBack={() => setActiveView("summary")} onRetry={() => void openCustomer360Identity()} timeline={null} /> : null}
-        {!stale && globalReview && activeView === "identity" ? identityDetailLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando identidad...</p> : identityDetailError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{identityDetailError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Identity()} type="button">Reintentar</button></section> : globalIdentity ? <Customer360GlobalReviewIdentityPanel detail={globalIdentity} /> : null : null}
+        {!stale && globalReview && activeView === "identity" ? identityDetailLoading ? <p className="py-8 text-center text-xs text-slate-500">Cargando identidad...</p> : identityDetailError ? <section className="rounded-lg border border-red-100 bg-red-50 px-4 py-3" role="alert"><p className="text-xs text-red-700">{identityDetailError}</p><button className="mt-2 text-xs font-medium text-red-800 underline underline-offset-2" onClick={() => void openCustomer360Identity()} type="button">Reintentar</button></section> : globalIdentity ? <Customer360GlobalReviewIdentityPanel detail={globalIdentity} observedIdentity={globalObservedIdentity} overview={overview} /> : null : null}
       </div>
     </CustomerRepresentationDrawerFrame>
   );

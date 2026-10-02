@@ -186,6 +186,52 @@ test("global review identity UI shows related email or phone values and keeps re
   assert.match(representation, /value: string/);
 });
 
+test("global review identity UI shows observed OKP identity without inventing RUT", () => {
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(panel, /overview: Customer360Overview \| null/);
+  assert.match(panel, /observedIdentity: \{ emails: string\[\] \| null; phones: string\[\] \| null \}/);
+  assert.match(panel, /Identidad observada/);
+  assert.match(panel, /Emails observados/);
+  assert.match(panel, /Teléfonos observados/);
+  assert.match(panel, /contacts\.emailPreview/);
+  assert.match(panel, /contacts\.phonePreview/);
+  assert.match(panel, /uniqueObservedValues/);
+  assert.match(panel, /RUT OKP no está disponible en Customer Window actual/);
+  assert.doesNotMatch(panel, /RUT:\s*[—-]/);
+});
+
+test("global review identity UI exposes review reason safely", () => {
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(view, /contradictory_phone_email: "El teléfono y el email entregan señales contradictorias de identidad."/);
+  assert.match(view, /function globalReviewReasonLabel\(reason: string\)/);
+  assert.match(view, /GLOBAL_REVIEW_REASON_LABELS\[reason\] \?\? "Se requieren más señales para confirmar la identidad."/);
+  assert.match(panel, /Motivo de revisión/);
+  assert.match(panel, /detail\.events\.map\(\(event\) => event\.reason\)/);
+  assert.match(panel, /globalReviewReasonLabel\(reason\)/);
+});
+
+test("global review identity panel reuses loaded overview and remains read-only", () => {
+  const drawer = view.slice(view.indexOf("function Customer360Drawer"), view.indexOf("function RelatedReviewDrawer"));
+  const panel = view.slice(
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360Drawer"),
+  );
+  assert.match(drawer, /<Customer360GlobalReviewIdentityPanel detail=\{globalIdentity\} observedIdentity=\{globalObservedIdentity\} overview=\{overview\} \/>/);
+  assert.match(drawer, /loadCompleteGlobalObservedIdentity/);
+  assert.match(drawer, /contacts\.emailCount <= contacts\.emailPreview\.length/);
+  assert.match(drawer, /customer-window\/360\/contacts/);
+  assert.match(drawer, /normalizeCustomer360ObservedContacts/);
+  assert.match(panel, /No existe relación certificada con un grupo MCP\/EAP activo/);
+  assert.match(panel, /evidence\.displayValue/);
+  assert.doesNotMatch(panel, /Confirmar misma identidad|Unificar|Fusionar|Campaña|Elegir principal|Principal automático/);
+});
+
 test("global search and operational list share the same representation authority", () => {
   assert.match(admin, /customer_window_v2_list_operational_global_v1/);
   assert.match(admin, /customer_window_v2_search_global_v1/);
