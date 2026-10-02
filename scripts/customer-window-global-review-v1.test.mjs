@@ -14,6 +14,10 @@ const consolidatedIdentityMigration = readFileSync(
   "supabase/migrations/20261002120000_consolidate_customer_window_global_review_identity_contacts.sql",
   "utf8",
 );
+const optimizedIdentityMigration = readFileSync(
+  "supabase/migrations/20261002160000_optimize_global_review_identity_mcp_eap_contacts.sql",
+  "utf8",
+);
 const representation = readFileSync("src/lib/customer-window/customer-representations-v2.ts", "utf8");
 const customer360 = readFileSync("src/lib/customer-window/customer-360-v1.ts", "utf8");
 const globalContract = readFileSync("src/lib/customer-window/customer-360-global-review-v1.ts", "utf8");
@@ -178,6 +182,21 @@ test("global review identity exposes consolidated related contacts and canonical
   assert.doesNotMatch(consolidatedIdentityMigration, /\b(?:insert|update|delete|merge|truncate)\b/i);
 });
 
+test("global review identity optimization keeps MCP EAP evidence while avoiding slow contact scans", () => {
+  assert.match(optimizedIdentityMigration, /create or replace function public\.customer_window_360_v1_get_global_review_identity\(p_locator jsonb\)/);
+  assert.match(optimizedIdentityMigration, /customer_window_global_review_v1_resolve_locator\(p_locator\)/);
+  assert.match(optimizedIdentityMigration, /'relatedContacts', coalesce\(\(select value from related_contacts\)/);
+  assert.match(optimizedIdentityMigration, /'relatedMcpEapEvidence'/);
+  assert.match(optimizedIdentityMigration, /contact_phone_related_evidence as materialized/);
+  assert.match(optimizedIdentityMigration, /contact_email_related_evidence as materialized/);
+  assert.match(optimizedIdentityMigration, /on contact\.type = 'phone' and booking\.phone_normalized = contact\.normalized_value/);
+  assert.match(optimizedIdentityMigration, /on contact\.type = 'email' and booking\.email_normalized = contact\.normalized_value/);
+  assert.doesNotMatch(optimizedIdentityMigration, /nullif\(pg_catalog\.lower\(pg_catalog\.btrim\((?:okp|mcp|booking)\.email_normalized\)\), ''\) =/);
+  assert.doesNotMatch(optimizedIdentityMigration, /join public\.customer_source_bookings_mcp_eap booking[\s\S]{0,260}\bor\b[\s\S]{0,260}customer_analytical_booking_assignments/);
+  assert.match(optimizedIdentityMigration, /grant execute on function public\.customer_window_360_v1_get_global_review_identity\(jsonb\) to customer_window_360_reader/);
+  assert.doesNotMatch(optimizedIdentityMigration, /\b(insert|update|delete|merge|truncate|create index|alter table)\b/i);
+});
+
 test("global review identity normalizer accepts contact evidence without breaking legacy payloads", () => {
   assert.match(globalContract, /contactType\?: "email" \| "phone"/);
   assert.match(globalContract, /displayValue\?: string/);
@@ -195,23 +214,50 @@ test("global review identity normalizer accepts contact evidence without breakin
 
 test("global review identity UI shows related email or phone values and keeps read-only policy", () => {
   const panel = view.slice(
-    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360RelatedReviewEvidenceGroups"),
     view.indexOf("function Customer360Drawer"),
   );
-  assert.match(panel, /Email históricamente relacionado/);
-  assert.match(panel, /Teléfono históricamente relacionado/);
-  assert.match(panel, /evidence\.displayValue/);
+  assert.match(panel, /Evidencia de revisión/);
+  assert.match(panel, /Grupos históricos relacionados utilizados como evidencia/);
+  assert.match(panel, /Email relacionado/);
+  assert.match(panel, /Teléfono relacionado/);
+  assert.match(panel, /item\.displayValue/);
   assert.match(panel, /break-all text-xs font-medium text-navy/);
-  assert.match(panel, /Grupo \{abbreviatedIdentifier\(evidence\.groupId\)\}/);
-  assert.match(panel, /evidence\.normalizedValue/);
+  assert.match(panel, /Grupo \{abbreviatedIdentifier\(group\.groupId\)\}/);
+  assert.match(panel, /buildRelatedReviewEvidenceGroups\(evidence\)/);
+  assert.match(panel, /group\.hasProfileMembership/);
   assert.doesNotMatch(panel, /Confirmar misma identidad|Unificar|Fusionar|Campaña/);
   assert.match(view, /relatedContacts/);
   assert.match(representation, /value: string/);
 });
 
+test("global review related review evidence is grouped by group with visual dedupe", () => {
+  const grouping = view.slice(
+    view.indexOf("type RelatedReviewEvidenceGroup"),
+    view.indexOf("function identityResolutionEvidenceText"),
+  );
+  const panel = view.slice(
+    view.indexOf("function Customer360RelatedReviewEvidenceGroups"),
+    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+  );
+  assert.match(grouping, /emails: GlobalReviewRelatedEvidence\[\]/);
+  assert.match(grouping, /phones: GlobalReviewRelatedEvidence\[\]/);
+  assert.match(grouping, /hasProfileMembership: boolean/);
+  assert.match(grouping, /evidence\.normalizedValue \|\| evidence\.displayValue \|\| ""\)\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(grouping, /evidence\.normalizedValue \|\| evidence\.displayValue/);
+  assert.match(grouping, /emailKeys: new Set<string>\(\)/);
+  assert.match(grouping, /phoneKeys: new Set<string>\(\)/);
+  assert.match(grouping, /item\.relationReason === "profile_membership"/);
+  assert.match(grouping, /left\.groupId\.localeCompare\(right\.groupId\)/);
+  assert.match(panel, /relatedReviewEvidenceCountLabel\(group\.emails\.length, "email relacionado", "emails relacionados"\)/);
+  assert.match(panel, /relatedReviewEvidenceCountLabel\(group\.phones\.length, "teléfono relacionado", "teléfonos relacionados"\)/);
+  assert.match(panel, /Perfil presente en el grupo/);
+  assert.doesNotMatch(panel, /Confirmar misma identidad|Unificar|Fusionar|Campaña/);
+});
+
 test("global review identity UI shows observed OKP identity without inventing RUT", () => {
   const panel = view.slice(
-    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360RelatedReviewEvidenceGroups"),
     view.indexOf("function Customer360Drawer"),
   );
   assert.match(panel, /overview: Customer360Overview \| null/);
@@ -232,7 +278,7 @@ test("global review observed identity consolidates contacts without visual dupli
     view.indexOf("function Customer360GlobalReviewIdentityPanel"),
   );
   const panel = view.slice(
-    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360RelatedReviewEvidenceGroups"),
     view.indexOf("function Customer360Drawer"),
   );
   assert.match(consolidation, /value\.trim\(\)\.toLowerCase\(\)/);
@@ -308,7 +354,7 @@ test("global review identity restores non destructive decision preview buttons",
 test("global review identity panel reuses loaded overview and remains read-only", () => {
   const drawer = view.slice(view.indexOf("function Customer360Drawer"), view.indexOf("function RelatedReviewDrawer"));
   const panel = view.slice(
-    view.indexOf("function Customer360GlobalReviewIdentityPanel"),
+    view.indexOf("function Customer360RelatedReviewEvidenceGroups"),
     view.indexOf("function Customer360Drawer"),
   );
   assert.match(drawer, /<Customer360GlobalReviewIdentityPanel detail=\{globalIdentity\} observedIdentity=\{globalObservedIdentity\} overview=\{overview\} \/>/);
@@ -317,7 +363,7 @@ test("global review identity panel reuses loaded overview and remains read-only"
   assert.match(drawer, /customer-window\/360\/contacts/);
   assert.match(drawer, /normalizeCustomer360ObservedContacts/);
   assert.match(panel, /No existe relación certificada con un grupo MCP\/EAP activo/);
-  assert.match(panel, /evidence\.displayValue/);
+  assert.match(panel, /item\.displayValue/);
   assert.doesNotMatch(panel, /Unificar|Fusionar|Campaña|Elegir principal|Principal automático/);
 });
 

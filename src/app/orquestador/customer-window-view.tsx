@@ -983,6 +983,12 @@ type CustomerIdentityResolutionEventGroupV2 = {
   reason: string;
   resolverVersion: string;
 };
+type RelatedReviewEvidenceGroup = {
+  emails: GlobalReviewRelatedEvidence[];
+  groupId: string;
+  hasProfileMembership: boolean;
+  phones: GlobalReviewRelatedEvidence[];
+};
 
 const IDENTITY_PROFILE_INITIAL_LIMIT = 8;
 const IDENTITY_EVENT_GROUP_INITIAL_LIMIT = 8;
@@ -1013,6 +1019,49 @@ function globalReviewReasonLabel(reason: string) {
 function abbreviatedIdentifier(value: string | null) {
   if (!value) return "No disponible";
   return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+}
+
+function relatedReviewEvidenceKey(evidence: GlobalReviewRelatedEvidence) {
+  if (evidence.contactType === "email") return (evidence.normalizedValue || evidence.displayValue || "").trim().toLowerCase();
+  if (evidence.contactType === "phone") return (evidence.normalizedValue || evidence.displayValue || "").trim();
+  return evidence.relationReason;
+}
+
+function buildRelatedReviewEvidenceGroups(evidence: GlobalReviewRelatedEvidence[]) {
+  const groups = new Map<string, RelatedReviewEvidenceGroup & { emailKeys: Set<string>; phoneKeys: Set<string> }>();
+  for (const item of evidence) {
+    const group = groups.get(item.groupId) ?? {
+      emailKeys: new Set<string>(),
+      emails: [],
+      groupId: item.groupId,
+      hasProfileMembership: false,
+      phoneKeys: new Set<string>(),
+      phones: [],
+    };
+    if (item.relationReason === "profile_membership") group.hasProfileMembership = true;
+    if (item.contactType === "email" && item.displayValue) {
+      const key = relatedReviewEvidenceKey(item);
+      if (key && !group.emailKeys.has(key)) {
+        group.emailKeys.add(key);
+        group.emails.push(item);
+      }
+    }
+    if (item.contactType === "phone" && item.displayValue) {
+      const key = relatedReviewEvidenceKey(item);
+      if (key && !group.phoneKeys.has(key)) {
+        group.phoneKeys.add(key);
+        group.phones.push(item);
+      }
+    }
+    groups.set(item.groupId, group);
+  }
+  return Array.from(groups.values())
+    .map(({ emailKeys: _emailKeys, phoneKeys: _phoneKeys, ...group }) => group)
+    .sort((left, right) => left.groupId.localeCompare(right.groupId));
+}
+
+function relatedReviewEvidenceCountLabel(count: number, singular: string, plural: string) {
+  return `${displayCount(count)} ${count === 1 ? singular : plural}`;
 }
 
 function identityResolutionEvidenceText(key: string, value: boolean | CustomerWindowSafeCount) {
@@ -1922,6 +1971,28 @@ function Customer360ObservedIdentityContacts({ contacts }: { contacts: Consolida
   );
 }
 
+function Customer360RelatedReviewEvidenceGroups({ evidence }: { evidence: GlobalReviewRelatedEvidence[] }) {
+  const groups = buildRelatedReviewEvidenceGroups(evidence);
+  return (
+    <AnalyticsBlock title="Evidencia de revisión">
+      <p className="mt-2 text-xs leading-5 text-slate-600">Grupos históricos relacionados utilizados como evidencia. No modifican identidad automáticamente.</p>
+      {groups.length > 0 ? <ul className="mt-3 space-y-2">{groups.map((group) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2.5 text-xs text-slate-600" key={group.groupId}>
+        <p className="font-mono text-[10px] font-medium text-navy">Grupo {abbreviatedIdentifier(group.groupId)}</p>
+        <ul className="mt-2 space-y-1 text-xs text-slate-600">
+          {group.emails.length > 0 ? <li>{relatedReviewEvidenceCountLabel(group.emails.length, "email relacionado", "emails relacionados")}</li> : null}
+          {group.phones.length > 0 ? <li>{relatedReviewEvidenceCountLabel(group.phones.length, "teléfono relacionado", "teléfonos relacionados")}</li> : null}
+          {group.hasProfileMembership ? <li>Perfil presente en el grupo</li> : null}
+        </ul>
+        <ul className="mt-2 divide-y divide-[#edf2f6] border-t border-[#edf2f6] pt-1">
+          {group.emails.map((item) => <li className="py-1.5" key={`email:${relatedReviewEvidenceKey(item)}`}><p className="text-[10px] uppercase tracking-[0.08em] text-slate-500">Email relacionado</p><p className="break-all text-xs font-medium text-navy">{item.displayValue}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.relationReason}</p></li>)}
+          {group.phones.map((item) => <li className="py-1.5" key={`phone:${relatedReviewEvidenceKey(item)}`}><p className="text-[10px] uppercase tracking-[0.08em] text-slate-500">Teléfono relacionado</p><p className="break-all text-xs font-medium text-navy">{item.displayValue}</p><p className="mt-0.5 text-[10px] text-slate-500">{item.relationReason}</p></li>)}
+          {group.hasProfileMembership ? <li className="py-1.5" key="profile_membership"><p className="text-[10px] uppercase tracking-[0.08em] text-slate-500">Profile membership</p><p className="text-xs font-medium text-navy">Perfil presente en el grupo</p><p className="mt-0.5 text-[10px] text-slate-500">profile_membership</p></li> : null}
+        </ul>
+      </li>)}</ul> : <p className="mt-2 text-xs text-slate-500">No existe relación certificada con un grupo MCP/EAP activo.</p>}
+    </AnalyticsBlock>
+  );
+}
+
 function Customer360GlobalReviewIdentityPanel({ detail, observedIdentity, overview }: {
   detail: Customer360GlobalReviewIdentity;
   observedIdentity: { emails: string[] | null; phones: string[] | null };
@@ -1957,7 +2028,7 @@ function Customer360GlobalReviewIdentityPanel({ detail, observedIdentity, overvi
     <Customer360ObservedIdentityContacts contacts={consolidatedContacts} />
     <AnalyticsBlock title="Links de reservas"><ul className="mt-2 divide-y divide-[#e4edf4]">{detail.links.map((link) => <li className="flex items-center justify-between gap-3 py-2 text-xs" key={link.bookingLinkId}><span className="text-navy">{link.source} · reserva {link.sourceRowId}</span><ValueBadge tone={link.status === "conflict" ? "warning" : "neutral"}>{link.status}</ValueBadge></li>)}</ul></AnalyticsBlock>
     <AnalyticsBlock title="Historial de resolución"><ul className="mt-2 space-y-2">{detail.events.map((event) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2" key={event.eventId}><p className="text-xs font-medium text-navy">{identityResolutionReasonLabel(event.reason)}</p><p className="mt-0.5 text-[10px] text-slate-500">{event.eventType} · {event.source ?? "Sin fuente"} · {displayDate(event.createdAt)}</p></li>)}</ul>{detail.events.length === 0 ? <p className="mt-2 text-xs text-slate-500">Sin eventos de resolución disponibles.</p> : null}</AnalyticsBlock>
-    <AnalyticsBlock title="Evidencia Related Review MCP / EAP"><ul className="mt-2 space-y-2">{detail.relatedMcpEapEvidence.map((evidence) => <li className="rounded-lg border border-[#e4edf4] px-3 py-2 text-xs text-slate-600" key={`${evidence.groupId}:${evidence.evidenceSource}:${evidence.relationReason}:${evidence.contactType ?? "profile"}:${evidence.normalizedValue ?? "none"}`}><p className="font-medium text-navy">{evidence.relationReason === "same_phone_history" ? "Teléfono históricamente relacionado" : evidence.relationReason === "same_email_history" ? "Email históricamente relacionado" : "Perfil presente en el grupo"}</p>{evidence.displayValue ? <p className="mt-0.5 break-all text-xs font-medium text-navy">{evidence.displayValue}</p> : null}<p className="mt-0.5 font-mono text-[10px]">Grupo {abbreviatedIdentifier(evidence.groupId)}</p></li>)}</ul>{detail.relatedMcpEapEvidence.length === 0 ? <p className="mt-2 text-xs text-slate-500">No existe relación certificada con un grupo MCP/EAP activo.</p> : null}</AnalyticsBlock>
+    <Customer360RelatedReviewEvidenceGroups evidence={detail.relatedMcpEapEvidence} />
     <CustomerIdentityDecisionPreviewOptions decisionPreview={null} selectedDecision={selectedDecision} setSelectedDecision={setSelectedDecision} />
   </div>;
 }
