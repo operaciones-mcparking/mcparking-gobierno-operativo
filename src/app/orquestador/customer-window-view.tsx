@@ -743,11 +743,6 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
 
   return (
     <Panel count={`${displaySafeCount(list.total)} registros`} title={title}>
-      {safeCountAsBigInt(list.hotPendingReservations) > BigInt(0) ? (
-        <p className="mt-3 text-xs text-slate-500" role="status">
-          {displaySafeCount(list.hotPendingReservations)} reservas recientes pendientes de estabilizar identidad
-        </p>
-      ) : null}
       {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
       {loading && list.items.length === 0 ? <p className="mt-4 text-sm text-slate-600">Actualizando datos...</p> : null}
       {loading && list.items.length > 0 ? <p aria-live="polite" className="mt-4 text-xs text-slate-500">Actualizando...</p> : null}
@@ -3115,6 +3110,13 @@ export function CustomerWindowView() {
           </section>
           <CustomerWindowRefreshHealthStrip error={refreshHealthError} health={refreshHealth} loading={refreshHealthLoading} />
           <CustomerRepresentationFacets error={periodFacetsError} facets={periodFacets} loading={periodFacetsLoading} />
+          {safeCountAsBigInt(mcpEapList.hotPendingReservations) > BigInt(0) ? (
+            <div className="mb-3 flex items-center text-xs text-slate-500" role="status">
+              <MetricLabel description="Estas reservas son válidas, pero todavía están dentro de la ventana de estabilidad de identidad. Aparecerán cuando una actualización posterior las incorpore al universo estable.">
+                {`${displaySafeCount(mcpEapList.hotPendingReservations)} reservas MCP/EAP recientes pendientes de estabilización`}
+              </MetricLabel>
+            </div>
+          ) : null}
           <div className="grid items-start gap-4 xl:grid-cols-2">
             <CustomerOperationalRepresentationTable error={okpError} list={okpList} loading={okpLoading} onPageChange={setOkpPage} onSelectRepresentation={selectRepresentation} title="Clientes OKP" />
             <CustomerOperationalRepresentationTable error={mcpEapError} list={mcpEapList} loading={mcpEapLoading} onPageChange={setMcpEapPage} onSelectRepresentation={selectRepresentation} title="MCP / EAP" />

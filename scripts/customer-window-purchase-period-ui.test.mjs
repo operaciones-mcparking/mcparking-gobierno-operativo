@@ -141,8 +141,18 @@ test("source rows use representationKey with source quantity mix and trajectory"
   assert.match(tableBlock, /contact\.email/);
   assert.match(tableBlock, /contact\.phone/);
   assert.doesNotMatch(tableBlock, /lifecycle|tier|economics/i);
-  assert.match(tableBlock, /list\.hotPendingReservations/);
-  assert.match(tableBlock, /reservas recientes pendientes de estabilizar identidad/);
+  assert.doesNotMatch(tableBlock, /hotPendingReservations/);
+  assert.doesNotMatch(tableBlock, /pendientes de estabilización/);
+});
+
+test("hot pending renders once above both source tables and disappears at zero", () => {
+  const customerWindowBlock = view.slice(view.indexOf("export function CustomerWindowView"));
+  assert.match(customerWindowBlock, /safeCountAsBigInt\(mcpEapList\.hotPendingReservations\) > BigInt\(0\)/);
+  assert.match(customerWindowBlock, /reservas MCP\/EAP recientes pendientes de estabilización/);
+  assert.match(customerWindowBlock, /Estas reservas son válidas, pero todavía están dentro de la ventana de estabilidad de identidad\./);
+  assert.match(customerWindowBlock, /al universo estable\.[\s\S]*<div className="grid items-start gap-4 xl:grid-cols-2">/);
+  assert.match(customerWindowBlock, /\) : null\}/);
+  assert.equal((view.match(/reservas MCP\/EAP recientes pendientes de estabilización/g) ?? []).length, 1);
 });
 
 test("confirmed and related rows use compact accessible status indicators", () => {
@@ -402,12 +412,14 @@ test("identity resolution limits large profile and event collections initially",
 
 test("identity decision controls are preview-only and expose no write action", () => {
   const panelBlock = sourceBlock(view, "function CustomerIdentityResolutionPanel", "function CustomerEconomicsPanel");
-  assert.match(panelBlock, /Posibles decisiones/);
-  assert.match(panelBlock, /Solo vista previa/);
-  assert.match(panelBlock, /CUSTOMER_IDENTITY_DECISION_LABELS/);
-  assert.match(panelBlock, /aria-pressed=\{selectedDecision === decision\}/);
+  const previewOptionsBlock = sourceBlock(view, "function CustomerIdentityDecisionPreviewOptions", "function CustomerIdentityResolutionPanel");
+  assert.match(panelBlock, /<CustomerIdentityDecisionPreviewOptions/);
+  assert.match(previewOptionsBlock, /Posibles decisiones/);
+  assert.match(previewOptionsBlock, /Solo vista previa/);
+  assert.match(previewOptionsBlock, /CUSTOMER_IDENTITY_DECISION_LABELS/);
+  assert.match(previewOptionsBlock, /aria-pressed=\{selectedDecision === decision\}/);
   assert.match(panelBlock, /deriveCustomerIdentityDecisionPreview\(selectedDecision, detail, group\)/);
-  assert.doesNotMatch(panelBlock, /Guardar|Aplicar|Confirmar cambios|method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
+  assert.doesNotMatch(`${panelBlock}\n${previewOptionsBlock}`, /Guardar|Aplicar|Confirmar cambios|method:\s*"(?:POST|PUT|PATCH|DELETE)"/);
 });
 
 test("related identity review remains explanatory and read-only", () => {

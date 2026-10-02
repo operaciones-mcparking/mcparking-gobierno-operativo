@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 
 const migration = readFileSync("supabase/migrations/20260929130000_add_customer_window_v2_operational_source_lists.sql", "utf8");
+const okpHotStabilityMigration = readFileSync("supabase/migrations/20261002150000_fix_okp_operational_hot_stability.sql", "utf8");
 const contracts = readFileSync("src/lib/customer-window/customer-representations-v2.ts", "utf8");
 const admin = readFileSync("src/lib/orquestador/supabase-admin.ts", "utf8");
 const route = readFileSync("src/app/api/orquestador/customer-window/customers/route.ts", "utf8");
@@ -108,7 +109,27 @@ test("server validates one request per family and the UI paginates them independ
   assert.match(view, /onPageChange=\{setOkpPage\}/);
   assert.match(view, /onPageChange=\{setMcpEapPage\}/);
   assert.match(view, /xl:grid-cols-2/);
+  assert.match(view, /mcpEapList\.hotPendingReservations[\s\S]*reservas MCP\/EAP recientes pendientes de estabilización[\s\S]*title="Clientes OKP"[\s\S]*title="MCP \/ EAP"/);
+  const tableBlock = view.slice(view.indexOf("function CustomerOperationalRepresentationTable"), view.indexOf("function searchMatchLabel"));
+  assert.doesNotMatch(tableBlock, /hotPendingReservations|pendientes de estabilización/);
   assert.doesNotMatch(view.slice(view.indexOf("function CustomerOperationalRepresentationTable"), view.indexOf("function searchMatchLabel")), /Primera compra|Última compra|Última reserva del período/);
+});
+
+test("global operational list classifies recent OKP rows as hot pending before link stabilization", () => {
+  assert.match(okpHotStabilityMigration, /create or replace function public\.customer_window_v2_list_operational_global_v1/);
+  assert.match(okpHotStabilityMigration, /join public\.customer_source_bookings_okp b on guard\.valid and p_family = 'OKP'/);
+  assert.match(okpHotStabilityMigration, /greatest\(\s*b\.created_at,\s*b\.updated_at,\s*b\.source_synced_at,\s*coalesce\(l\.created_at, '-infinity'::timestamptz\),\s*coalesce\(l\.updated_at, '-infinity'::timestamptz\)\s*\)\s*<= pg_catalog\.now\(\) - interval '30 minutes' as is_stable/);
+  assert.match(okpHotStabilityMigration, /count\(\*\) filter \(where not is_stable\)::bigint as hot_pending_reservations/);
+  assert.match(okpHotStabilityMigration, /'hotPendingReservations', reconciliation\.hot_pending_reservations/);
+  assert.doesNotMatch(okpHotStabilityMigration, /true as is_stable/);
+  assert.doesNotMatch(okpHotStabilityMigration, /\b(?:insert|update|delete|merge|truncate|alter table|create table)\b/i);
+});
+
+test("global operational list keeps MCP EAP snapshot stability semantics unchanged", () => {
+  assert.match(okpHotStabilityMigration, /join public\.customer_source_bookings_mcp_eap b on guard\.valid and p_family = 'MCP_EAP'/);
+  assert.match(okpHotStabilityMigration, /cross join active_snapshot snapshot/);
+  assert.match(okpHotStabilityMigration, /<= snapshot\.captured_at - interval '30 minutes' as is_stable/);
+  assert.match(okpHotStabilityMigration, /when p_family = 'MCP_EAP'[\s\S]*snapshot_authority/);
 });
 
 test("list rendering is bounded and opens the existing Customer 360 selection path", () => {
@@ -152,6 +173,46 @@ test("runtime contract accepts source-scoped counts and certified trajectories",
   });
   assert.ok(normalized);
   assert.equal(normalized.items.length, 2);
+});
+
+test("runtime contract accepts OKP hot pending rows without weakening stable debt guard", () => {
+  const hotPendingOkp = contract.normalizeCustomerWindowOperationalRepresentationListV2({
+    family: "OKP",
+    hotPendingReservations: 18,
+    items: [{
+      ...confirmed,
+      boletaReservations: 3,
+      commercialTrajectory: "ONLY_OKP",
+      packReservations: 1,
+      sourceReservations: 4,
+      trajectoryScope: "confirmed_identity",
+    }],
+    page: 1,
+    pageSize: 25,
+    representedConfirmedReservations: 76,
+    representedReviewReservations: 0,
+    stableReservations: 76,
+    total: 1,
+    unrepresentedStableReservations: 0,
+    validReservations: 94,
+  });
+  assert.ok(hotPendingOkp);
+  assert.equal(hotPendingOkp.hotPendingReservations, 18);
+
+  const stableDebtOkp = contract.normalizeCustomerWindowOperationalRepresentationListV2({
+    family: "OKP",
+    hotPendingReservations: 0,
+    items: [],
+    page: 1,
+    pageSize: 25,
+    representedConfirmedReservations: 76,
+    representedReviewReservations: 0,
+    stableReservations: 94,
+    total: 0,
+    unrepresentedStableReservations: 18,
+    validReservations: 94,
+  });
+  assert.equal(stableDebtOkp, null);
 });
 
 test("runtime contract rejects cross-source attribution and inconsistent counts", () => {

@@ -70,7 +70,7 @@ test("operational reconciliation separates stable authority from hot pending row
   assert.match(migration, /'unrepresentedStableReservations', reconciliation\.stable_reservations/);
   assert.match(representation, /validReservations[\s\S]*stableReservations[\s\S]*hotPendingReservations/);
   assert.match(representation, /unrepresentedStableReservations\) !== BigInt\(0\)/);
-  assert.match(view, /reservas recientes pendientes de estabilizar identidad/);
+  assert.match(view, /reservas (?:MCP\/EAP )?recientes pendientes de (?:estabilizar identidad|estabilización)/);
 });
 
 test("MCP related groups remain evidence and never become merge authority", () => {
