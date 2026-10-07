@@ -1668,10 +1668,10 @@ export async function getRecoveryAttributionKpis() {
     { data: attributionCases, error: attributionError },
   ] = await Promise.all([
     supabase
-      .from("recovery_incomplete_bookings_import")
+      .from("v_recovery_incomplete_bookings_current_compat")
       .select("id", { count: "exact", head: true }),
     supabase
-      .from("v_recovery_attribution_cases")
+      .from("v_recovery_attribution_cases_v2_compat")
       .select("recovered_24h,recovered_48h,recovered_7d,purchase_amount,confidence"),
   ]);
 
@@ -1725,10 +1725,10 @@ export async function getRecoveryAttributionBreakdown() {
     { data: cartSegments, error: cartSegmentsError },
   ] = await Promise.all([
     supabase
-      .from("v_recovery_attribution_cases")
+      .from("v_recovery_attribution_cases_v2_compat")
       .select("cart_type,parking_code,purchase_amount,confidence"),
     supabase
-      .from("recovery_incomplete_bookings_import")
+      .from("v_recovery_incomplete_bookings_current_compat")
       .select("type,parking_code"),
   ]);
 
@@ -1821,7 +1821,7 @@ export async function getRecentRecoveryAttributionCases(limit = 20) {
 
   const supabase = await createSupabaseAuthServerClient();
   const { data, error } = await supabase
-    .from("v_recovery_attribution_cases")
+    .from("v_recovery_attribution_cases_v2_compat")
     .select(
       "cart_id,purchase_id,cart_type,parking_code,message_sent,cart_form_datetime,purchase_created_at,purchase_amount,hours_to_purchase,confidence,match_type,recovered_24h,recovered_48h,recovered_7d",
     )
@@ -1839,7 +1839,7 @@ export async function getRecentRecoveryAttributionCases(limit = 20) {
   const [cartContactsResult, purchaseContactsResult] = await Promise.all([
     cartIds.length > 0
       ? supabase
-          .from("recovery_incomplete_bookings_import")
+          .from("v_recovery_incomplete_bookings_current_compat")
           .select("id,email_normalized,phone_normalized")
           .in("id", cartIds)
       : Promise.resolve({ data: [] as ContactRow[], error: null }),
@@ -1895,7 +1895,7 @@ export async function getRecoveryAttributionDashboardData(recentLimit = 20) {
   const [cartsResult, purchasesResult] = await Promise.all([
     fetchPagedRecoveryRows<CartSegmentRow>(() =>
       supabase
-        .from("recovery_incomplete_bookings_import")
+        .from("v_recovery_incomplete_bookings_current_compat")
         .select("id,type,parking_code,form_datetime,intended_arrival_at,message_sent,email_normalized,phone_normalized")
         .gte("form_datetime", recentCartsStart)
         .lt("form_datetime", recentCartsEnd)
@@ -2041,7 +2041,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
     for (let index = 0; index < messageIds.length; index += chunkSize) {
       const chunk = messageIds.slice(index, index + chunkSize);
       const { data, error } = await supabase
-        .from("recovery_whatsapp_tracking_import")
+        .from("v_recovery_whatsapp_tracking_current_compat")
         .select("message_id,tracking_status,created_at")
         .in("message_id", chunk)
         .order("created_at", { ascending: false });
@@ -2068,7 +2068,7 @@ export async function getRecoveryCartAuditRows(limit = 2000) {
   const purchaseWindowEnd = addIsoDays(auditDayEnd, 7);
   const cartsResult = await fetchPagedRecoveryRows<CartAuditSourceRow>(() =>
     supabase
-      .from("recovery_incomplete_bookings_import")
+      .from("v_recovery_incomplete_bookings_current_compat")
       .select(
         "id,batch_id,type,email_normalized,phone_normalized,parking_code,message_sent,message_id,form_datetime,intended_arrival_at,intended_arrival_date,intended_departure_date,quoted_amount,row_hash",
       )
@@ -2226,13 +2226,13 @@ export async function getRecoveryCartStatusSummary() {
     await Promise.all([
       fetchAllRows<CartStatusSourceRow>(() =>
         supabase
-          .from("recovery_incomplete_bookings_import")
+          .from("v_recovery_incomplete_bookings_current_compat")
           .select("id,intended_departure_date")
           .order("id", { ascending: true }),
       ),
       fetchAllRows<AttributionStatusRow>(() =>
         supabase
-          .from("v_recovery_attribution_cases")
+          .from("v_recovery_attribution_cases_v2_compat")
           .select("cart_id,purchase_amount")
           .order("cart_id", { ascending: true }),
       ),
@@ -2378,13 +2378,13 @@ export async function getRecoveryConversationSummary() {
     await Promise.all([
       fetchAllRows<ConversationCartRow>(() =>
         supabase
-          .from("recovery_incomplete_bookings_import")
+          .from("v_recovery_incomplete_bookings_current_compat")
           .select("id,phone_normalized,form_datetime,intended_departure_date")
           .order("id", { ascending: true }),
       ),
       fetchAllRows<AttributionStatusRow>(() =>
         supabase
-          .from("v_recovery_attribution_cases")
+          .from("v_recovery_attribution_cases_v2_compat")
           .select("cart_id,purchase_amount")
           .order("cart_id", { ascending: true }),
       ),
@@ -2438,7 +2438,7 @@ export async function getRecoveryConversationSummary() {
   for (let index = 0; index < phoneValues.length; index += phoneChunkSize) {
     const chunk = phoneValues.slice(index, index + phoneChunkSize);
     const { data, error } = await supabase
-      .from("recovery_whatsapp_message_memory_import")
+      .from("v_recovery_whatsapp_message_memory_current_compat")
       .select("id,wa_id_normalized,message_at,message_bound_type,message_sentiment,chat_state,intent_category")
       .in("wa_id_normalized", chunk)
       .gte("message_at", minDate.toISOString())

@@ -18,6 +18,7 @@ type RouteContext = {
 };
 
 type CartTemplateSendDryRunRow = {
+  booking_id: string | null;
   email_normalized: string | null;
   id: string;
   parking_code: string | null;
@@ -171,8 +172,8 @@ function maskPhone(value: string | null) {
 
 async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>, cartId: string) {
   const { data, error } = await supabase
-    .from("recovery_incomplete_bookings_import")
-    .select("id,phone_normalized,email_normalized,type,parking_code")
+    .from("v_recovery_incomplete_bookings_current_compat")
+    .select("id,booking_id,phone_normalized,email_normalized,type,parking_code")
     .eq("id", cartId)
     .maybeSingle();
 
@@ -180,6 +181,29 @@ async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthSe
   if (!data) return { error: jsonError("Carrito no encontrado.", 404, "cart_not_found"), ok: false as const };
 
   return { cart: data as CartTemplateSendDryRunRow, ok: true as const };
+}
+
+async function resolveLegacyCartIdByBookingId(
+  supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>,
+  bookingId: string | null,
+) {
+  if (!bookingId) return { legacyCartId: null, ok: true as const };
+
+  const { data, error } = await supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id")
+    .eq("booking_id", bookingId)
+    .limit(2);
+
+  if (error) {
+    return { error: jsonError("No se pudo resolver la identidad legacy del carrito.", 500, "cart_identity_failed"), ok: false as const };
+  }
+
+  if ((data ?? []).length > 1) {
+    return { error: jsonError("Identidad legacy ambigua para el carrito.", 409, "cart_identity_conflict"), ok: false as const };
+  }
+
+  return { legacyCartId: data?.[0]?.id ?? null, ok: true as const };
 }
 
 function templateHasUnsupportedVariables(template: SafeMetaWhatsappTemplate) {
@@ -322,6 +346,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return cartResult.error;
   }
 
+  const legacyIdentity = await resolveLegacyCartIdByBookingId(admin.supabase, cartResult.cart.booking_id);
+
+  if (!legacyIdentity.ok) {
+    return legacyIdentity.error;
+  }
+
   if (!cartResult.cart.phone_normalized) {
     return jsonError("El carrito no tiene telefono normalizado.", 409, "business_key_unverifiable");
   }
@@ -428,7 +458,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const { data: insertedMessage, error: insertError } = await serviceSupabase
     .from("recovery_whatsapp_live_messages")
     .insert({
-      cart_id: cartResult.cart.id,
+      cart_id: legacyIdentity.legacyCartId,
+      cart_v2_id: cartResult.cart.id,
       direction: "outbound",
       email_normalized: cartResult.cart.email_normalized,
       message_at: sentAt,

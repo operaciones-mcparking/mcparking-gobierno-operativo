@@ -6,7 +6,7 @@ import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } fr
 
 const MAX_CHAT_MESSAGES = 100;
 
-const LIVE_MESSAGE_SELECT = "direction,message_at,message_text,source,whatsapp_status";
+const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status";
 
 type RouteContext = {
   params: Promise<{
@@ -15,6 +15,7 @@ type RouteContext = {
 };
 
 type CartChatSourceRow = {
+  booking_id: string | null;
   cms_url: string | null;
   email_normalized: string | null;
   form_datetime: string | null;
@@ -48,6 +49,7 @@ type RawMessageMemoryChatRow = {
 
 type LiveMessageChatRow = {
   direction: "inbound" | "outbound";
+  id: string;
   message_at: string;
   message_text: string;
   source: string;
@@ -208,7 +210,7 @@ function dedupeLiveMessages(messages: LiveMessageChatRow[]) {
   const uniqueMessages: LiveMessageChatRow[] = [];
 
   for (const message of messages) {
-    const key = [message.direction, message.message_at, message.source, message.whatsapp_status, message.message_text].join("|");
+    const key = message.id;
 
     if (seen.has(key)) continue;
 
@@ -221,19 +223,37 @@ function dedupeLiveMessages(messages: LiveMessageChatRow[]) {
 
 async function loadLiveMessages(params: {
   cartId: string;
+  legacyCartId: string | null;
   phoneNormalized: string;
   supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>;
   windowEnd: string;
   windowStart: string;
 }) {
-  const { data: cartLiveMessages } = await params.supabase
-    .from("recovery_whatsapp_live_messages")
-    .select(LIVE_MESSAGE_SELECT)
-    .eq("cart_id", params.cartId)
-    .order("message_at", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(MAX_CHAT_MESSAGES);
+  const cartLiveQueries = [
+    params.supabase
+      .from("recovery_whatsapp_live_messages")
+      .select(LIVE_MESSAGE_SELECT)
+      .eq("cart_v2_id", params.cartId)
+      .order("message_at", { ascending: true })
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(MAX_CHAT_MESSAGES),
+  ];
+
+  if (params.legacyCartId) {
+    cartLiveQueries.push(
+      params.supabase
+        .from("recovery_whatsapp_live_messages")
+        .select(LIVE_MESSAGE_SELECT)
+        .eq("cart_id", params.legacyCartId)
+        .order("message_at", { ascending: true })
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(MAX_CHAT_MESSAGES),
+    );
+  }
+
+  const cartLiveResults = await Promise.all(cartLiveQueries);
 
   const { data: phoneLiveMessages } = await params.supabase
     .from("recovery_whatsapp_live_messages")
@@ -247,9 +267,32 @@ async function loadLiveMessages(params: {
     .limit(MAX_CHAT_MESSAGES);
 
   return dedupeLiveMessages([
-    ...((cartLiveMessages ?? []) as LiveMessageChatRow[]),
+    ...cartLiveResults.flatMap((result) => (result.data ?? []) as LiveMessageChatRow[]),
     ...((phoneLiveMessages ?? []) as LiveMessageChatRow[]),
   ]).slice(0, MAX_CHAT_MESSAGES);
+}
+
+async function resolveLegacyCartIdByBookingId(
+  supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>,
+  bookingId: string | null,
+) {
+  if (!bookingId) return { legacyCartId: null, ok: true as const };
+
+  const { data, error } = await supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id")
+    .eq("booking_id", bookingId)
+    .limit(2);
+
+  if (error) {
+    return { failed: true, legacyCartId: null, ok: false as const };
+  }
+
+  if ((data ?? []).length > 1) {
+    return { failed: true, legacyCartId: null, ok: false as const };
+  }
+
+  return { legacyCartId: data?.[0]?.id ?? null, ok: true as const };
 }
 
 async function detectNewerCartForPhone(params: {
@@ -259,7 +302,7 @@ async function detectNewerCartForPhone(params: {
   supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>;
 }) {
   const { data, error } = await params.supabase
-    .from("recovery_incomplete_bookings_import")
+    .from("v_recovery_incomplete_bookings_current_compat")
     .select("id")
     .eq("phone_normalized", params.phoneNormalized)
     .gt("form_datetime", params.formDatetime)
@@ -289,8 +332,8 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   const { data: cartData, error: cartError } = await admin.supabase
-    .from("recovery_incomplete_bookings_import")
-    .select("id,cms_url,email_normalized,phone_normalized,form_datetime,intended_departure_date,type,parking_code")
+    .from("v_recovery_incomplete_bookings_current_compat")
+    .select("id,booking_id,cms_url,email_normalized,phone_normalized,form_datetime,intended_departure_date,type,parking_code")
     .eq("id", cartId)
     .maybeSingle();
 
@@ -303,6 +346,12 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   const cart = cartData as CartChatSourceRow;
+  const legacyIdentity = await resolveLegacyCartIdByBookingId(admin.supabase, cart.booking_id);
+
+  if (!legacyIdentity.ok) {
+    return jsonError("No se pudo resolver la identidad del carrito.", 500);
+  }
+
   const windowStart = cart.form_datetime;
   const windowEndDate = cart.form_datetime ? addDays(cart.form_datetime, 7) : null;
   const windowEnd = windowEndDate ? windowEndDate.toISOString() : null;
@@ -333,6 +382,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   const liveMessages = await loadLiveMessages({
     cartId,
+    legacyCartId: legacyIdentity.legacyCartId,
     phoneNormalized: cart.phone_normalized,
     supabase: admin.supabase,
     windowEnd,
@@ -354,7 +404,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   });
 
   const { data: rawMessagesData, error: rawMessagesError } = await admin.supabase
-    .from("recovery_whatsapp_message_memory_raw_import")
+    .from("v_recovery_whatsapp_message_memory_raw_current_compat")
     .select("message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text")
     .eq("wa_id_normalized", cart.phone_normalized)
     .gte("message_at", chatReadStart)
@@ -384,7 +434,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   const { data: messagesData, error: messagesError } = await admin.supabase
-    .from("recovery_whatsapp_message_memory_import")
+    .from("v_recovery_whatsapp_message_memory_current_compat")
     .select("message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week")
     .eq("wa_id_normalized", cart.phone_normalized)
     .gte("message_at", chatReadStart)

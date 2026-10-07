@@ -27,7 +27,7 @@ test("2. invalid admin paths return 401 or 403", () => {
 });
 
 test("3. missing cart returns 404", () => {
-  assert.match(route, /\.from\("recovery_incomplete_bookings_import"\)[\s\S]*\.select\("id,phone_normalized,parking_code"\)[\s\S]*\.eq\("id", cartId\)[\s\S]*\.maybeSingle\(\)/);
+  assert.match(route, /\.from\("v_recovery_incomplete_bookings_current_compat"\)[\s\S]*\.select\("id,phone_normalized,parking_code"\)[\s\S]*\.eq\("id", cartId\)[\s\S]*\.maybeSingle\(\)/);
   assert.match(route, /jsonError\("Carrito no encontrado\.", 404, "cart_not_found"\)/);
 });
 
@@ -84,7 +84,7 @@ test("10. endpoint does not call n8n or send messages", () => {
 test("11. endpoint does not write Supabase", () => {
   assert.doesNotMatch(route, /\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);
   assert.match(route, /\.from\("user_profiles"\)/);
-  assert.match(route, /\.from\("recovery_incomplete_bookings_import"\)/);
+  assert.match(route, /\.from\("v_recovery_incomplete_bookings_current_compat"\)/);
 });
 
 test("12. endpoint returns the expected public DTO shape", () => {

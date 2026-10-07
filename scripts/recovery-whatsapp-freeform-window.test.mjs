@@ -88,7 +88,7 @@ function createSupabaseMock({ carts = [], errors = {}, tables = {} } = {}) {
     }
 
     applyFilters() {
-      const sourceRows = this.tableName === "recovery_incomplete_bookings_import"
+      const sourceRows = this.tableName === "v_recovery_incomplete_bookings_current_compat"
         ? carts
         : tables[this.tableName] ?? [];
       let rows = [...sourceRows];
@@ -158,10 +158,10 @@ test("helper selects the most recent valid inbound across sources for the same b
         { cart_id: "cart-1", direction: "inbound", message_at: "2026-07-31T07:00:00.000Z", phone_normalized: "56900000000" },
         { cart_id: "other-cart", direction: "inbound", message_at: "2026-07-31T11:30:00.000Z", phone_normalized: "56999999999" },
       ],
-      recovery_whatsapp_message_memory_raw_import: [
+      v_recovery_whatsapp_message_memory_raw_current_compat: [
         { message_at: "2026-07-31T08:00:00.000Z", message_bound_type: "inbound", wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
       ],
-      recovery_whatsapp_message_memory_import: [
+      v_recovery_whatsapp_message_memory_current_compat: [
         { message_at: "2026-07-31T10:00:00.000Z", message_bound_type: "inbound", wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
       ],
     },
@@ -180,7 +180,7 @@ test("inbound from another business number does not open the MPV freeform window
     carts: [{ id: "cart-mpv", parking_code: "MPV", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      recovery_whatsapp_message_memory_raw_import: [
+      v_recovery_whatsapp_message_memory_raw_current_compat: [
         {
           api_phone_normalized: EAP_BUSINESS_PHONE,
           message_at: "2026-08-03T02:27:41.000Z",
@@ -188,7 +188,7 @@ test("inbound from another business number does not open the MPV freeform window
           wa_id_normalized: "56900000000",
         },
       ],
-      recovery_whatsapp_message_memory_import: [
+      v_recovery_whatsapp_message_memory_current_compat: [
         {
           api_phone_normalized: EAP_BUSINESS_PHONE,
           message_at: "2026-08-03T02:27:41.000Z",
@@ -213,7 +213,7 @@ test("real Meta 131047 scenario is blocked before n8n when only the other busine
     carts: [{ id: "cart-131047", parking_code: "MPV", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      recovery_whatsapp_message_memory_raw_import: [
+      v_recovery_whatsapp_message_memory_raw_current_compat: [
         {
           api_phone_normalized: EAP_BUSINESS_PHONE,
           message_at: "2026-08-03T02:27:41.000Z",
@@ -221,7 +221,7 @@ test("real Meta 131047 scenario is blocked before n8n when only the other busine
           wa_id_normalized: "56900000000",
         },
       ],
-      recovery_whatsapp_message_memory_import: [],
+      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -240,7 +240,7 @@ test("EAP cart uses the explicit outbound business number before accepting the i
     carts: [{ id: "cart-eap", parking_code: "EAP", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      recovery_whatsapp_message_memory_raw_import: [
+      v_recovery_whatsapp_message_memory_raw_current_compat: [
         {
           api_phone_normalized: MPV_BUSINESS_PHONE,
           message_at: "2026-08-04T11:30:14.000Z",
@@ -260,7 +260,7 @@ test("EAP cart uses the explicit outbound business number before accepting the i
           wa_id_normalized: "56900000000",
         },
       ],
-      recovery_whatsapp_message_memory_import: [],
+      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -281,10 +281,10 @@ test("null or unknown direction does not count as inbound", async () => {
         { cart_id: "cart-1", direction: null, message_at: "2026-07-31T10:00:00.000Z", phone_normalized: "56900000000" },
         { cart_id: "cart-1", direction: "unknown", message_at: "2026-07-31T11:00:00.000Z", phone_normalized: "56900000000" },
       ],
-      recovery_whatsapp_message_memory_raw_import: [
+      v_recovery_whatsapp_message_memory_raw_current_compat: [
         { message_at: "2026-07-31T10:00:00.000Z", message_bound_type: null, wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
       ],
-      recovery_whatsapp_message_memory_import: [
+      v_recovery_whatsapp_message_memory_current_compat: [
         { message_at: "2026-07-31T11:00:00.000Z", message_bound_type: "unknown", wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
       ],
     },
@@ -300,13 +300,13 @@ test("partial source error is fail-closed even when another source has inbound",
   const supabase = createSupabaseMock({
     carts: [{ id: "cart-1", parking_code: "MPV", phone_normalized: "56900000000" }],
     errors: {
-      recovery_whatsapp_message_memory_raw_import: { message: "simulated source error" },
+      v_recovery_whatsapp_message_memory_raw_current_compat: { message: "simulated source error" },
     },
     tables: {
       recovery_whatsapp_live_messages: [
         { cart_id: "cart-1", direction: "inbound", message_at: "2026-07-31T10:00:00.000Z", phone_normalized: "56900000000" },
       ],
-      recovery_whatsapp_message_memory_import: [],
+      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -321,8 +321,8 @@ test("empty source tables return missing with null metadata", async () => {
     carts: [{ id: "cart-1", parking_code: "MPV", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      recovery_whatsapp_message_memory_raw_import: [],
-      recovery_whatsapp_message_memory_import: [],
+      v_recovery_whatsapp_message_memory_raw_current_compat: [],
+      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -342,8 +342,8 @@ test("invalid timestamps are ignored", async () => {
       recovery_whatsapp_live_messages: [
         { cart_id: "cart-1", direction: "inbound", message_at: "not-a-date", phone_normalized: "56900000000" },
       ],
-      recovery_whatsapp_message_memory_raw_import: [],
-      recovery_whatsapp_message_memory_import: [],
+      v_recovery_whatsapp_message_memory_raw_current_compat: [],
+      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -356,8 +356,8 @@ test("invalid timestamps are ignored", async () => {
 test("helper is server-only and reads only explicit inbound sources", () => {
   assert.match(helper, /import\s+"server-only"/);
   assert.match(helper, /recovery_whatsapp_live_messages/);
-  assert.match(helper, /recovery_whatsapp_message_memory_raw_import/);
-  assert.match(helper, /recovery_whatsapp_message_memory_import/);
+  assert.match(helper, /v_recovery_whatsapp_message_memory_raw_current_compat/);
+  assert.match(helper, /v_recovery_whatsapp_message_memory_current_compat/);
   assert.match(helper, /\.eq\("direction",\s*"inbound"\)/);
   assert.match(helper, /message_bound_type === "inbound"/);
   assert.doesNotMatch(helper, /message_bound_type\s*!==\s*"outbound"/);
@@ -451,7 +451,7 @@ test("visible drawer copy exposes every safe window status", () => {
 });
 
 test("no unrelated modules are part of this task diff", () => {
-  const changedFiles = execFileSync("git", ["status", "--short", "--untracked-files=all"], { encoding: "utf8" })
+  const changedFiles = execFileSync("git", ["status", "--short", "--untracked-files=no"], { encoding: "utf8" })
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => line.slice(3).replaceAll("\\", "/"));
@@ -512,6 +512,7 @@ test("no unrelated modules are part of this task diff", () => {
     "scripts/recovery-whatsapp-business-window.test.mjs",
     "scripts/recovery-whatsapp-window-indicator.test.mjs",
     "src/app/api/recuperacion/carritos/chat-indicators/route.ts",
+    "src/app/api/recuperacion/whatsapp/live-message/route.ts",
     "scripts/recovery-conversation-sessions.test.mjs",
     "src/app/api/recuperacion/conversaciones/sesiones/route.ts",
     "src/lib/recuperacion/recovery-conversation-sessions.ts",

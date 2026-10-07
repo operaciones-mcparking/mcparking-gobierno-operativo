@@ -80,7 +80,10 @@ test("endpoint uses batch processing without the individual loader", () => {
   assert.match(indicatorRoute, /normalizeIdsFromSearchParams/);
   assert.match(indicatorRoute, /\.in\("id", ids\)/);
   assert.match(indicatorRoute, /\.in\("wa_id_normalized", phones\)/);
-  assert.match(indicatorRoute, /\.in\("cart_id", cartIds\)/);
+  assert.match(indicatorRoute, /\.in\("cart_v2_id", cartIds\)/);
+  assert.match(indicatorRoute, /\.in\("cart_id", legacyCartIds\)/);
+  assert.match(indicatorRoute, /legacyCartIdentityByV2CartId/);
+  assert.match(indicatorRoute, /dedupeLiveRows/);
   assert.doesNotMatch(indicatorRoute, /getWhatsappFreeformWindowForCart/);
 });
 

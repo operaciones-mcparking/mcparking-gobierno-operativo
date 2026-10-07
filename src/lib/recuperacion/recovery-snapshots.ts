@@ -301,7 +301,7 @@ export async function createRecoveryWeeklySnapshot(
   const [cartsResult, purchasesResult] = await Promise.all([
     fetchSnapshotRowsInPages<CartSnapshotSourceRow>(() =>
       supabase
-        .from("recovery_incomplete_bookings_import")
+        .from("v_recovery_incomplete_bookings_current_compat")
         .select(
           "id,batch_id,email_normalized,phone_normalized,type,parking_code,form_datetime,message_sent,intended_arrival_at,row_hash,updated_at_source",
         )

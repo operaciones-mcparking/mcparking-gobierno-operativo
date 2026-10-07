@@ -25,7 +25,9 @@ type LiveMessagePayload = {
 };
 
 type CartContactRow = {
+  booking_id: string | null;
   email_normalized: string | null;
+  id: string;
   phone_normalized: string | null;
 };
 
@@ -93,6 +95,29 @@ function isValidSecret(incomingSecret: string | null) {
   return timingSafeEqual(incomingBuffer, expectedBuffer);
 }
 
+async function resolveLegacyCartIdByBookingId(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  bookingId: string | null,
+) {
+  if (!bookingId) return { legacyCartId: null, ok: true as const };
+
+  const { data, error } = await supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id")
+    .eq("booking_id", bookingId)
+    .limit(2);
+
+  if (error) {
+    return { error: jsonError("No se pudo resolver la identidad legacy del carrito.", 500), ok: false as const };
+  }
+
+  if ((data ?? []).length > 1) {
+    return { error: jsonError("Identidad legacy ambigua para el carrito.", 409), ok: false as const };
+  }
+
+  return { legacyCartId: data?.[0]?.id ?? null, ok: true as const };
+}
+
 export async function POST(request: NextRequest) {
   if (!isValidSecret(request.headers.get("x-mcparking-recovery-secret"))) {
     return jsonError("No autorizado.", 401);
@@ -126,11 +151,12 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceRoleClient();
   let cartContact: CartContactRow | null = null;
+  let legacyCartId: string | null = null;
 
   if (safeCartId) {
     const { data, error } = await supabase
-      .from("recovery_incomplete_bookings_import")
-      .select("phone_normalized,email_normalized")
+      .from("v_recovery_incomplete_bookings_current_compat")
+      .select("id,booking_id,phone_normalized,email_normalized")
       .eq("id", safeCartId)
       .maybeSingle();
 
@@ -139,6 +165,18 @@ export async function POST(request: NextRequest) {
     }
 
     cartContact = data as CartContactRow | null;
+
+    if (!cartContact) {
+      return jsonError("Carrito no encontrado.", 404);
+    }
+
+    const legacyIdentity = await resolveLegacyCartIdByBookingId(supabase, cartContact?.booking_id ?? null);
+
+    if (!legacyIdentity.ok) {
+      return legacyIdentity.error;
+    }
+
+    legacyCartId = legacyIdentity.legacyCartId;
   }
 
   const phoneNormalized = cartContact?.phone_normalized ?? normalizePhone(payload.phone);
@@ -153,7 +191,8 @@ export async function POST(request: NextRequest) {
   const safeWhatsappStatus = whatsappStatus && ALLOWED_STATUSES.has(whatsappStatus) ? whatsappStatus : null;
 
   const row = {
-    cart_id: safeCartId,
+    cart_id: legacyCartId,
+    cart_v2_id: cartContact?.id ?? null,
     direction,
     email_normalized: emailNormalized,
     error_message: normalizeOptionalText(payload.errorMessage, 1000),

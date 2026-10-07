@@ -85,7 +85,7 @@ export async function getRecoveryConversationSessionPage(
   input: { page: number; pageSize: number },
 ): Promise<RecoveryConversationSessionPage> {
   const pagination = normalizeRecoveryConversationSessionPagination(input.page, input.pageSize);
-  const { data, error } = await supabase.rpc("recovery_list_conversation_sessions", {
+  const { data, error } = await supabase.rpc("recovery_list_conversation_sessions_v2_compat", {
     p_eap_api_phone: recoveryWhatsappBusinessPhoneForKey("EAP"),
     p_mcp_api_phone: recoveryWhatsappBusinessPhoneForKey("MPV"),
     p_page: pagination.page,

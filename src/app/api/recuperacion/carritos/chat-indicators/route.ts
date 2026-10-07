@@ -22,6 +22,7 @@ const UNVERIFIABLE_WHATSAPP_WINDOW: ChatIndicatorWhatsappWindow = {
 };
 
 type CartIndicatorSourceRow = {
+  booking_id: string | null;
   form_datetime: string | null;
   id: string;
   parking_code: string | null;
@@ -37,7 +38,9 @@ type MessageMemoryIndicatorRow = WhatsappMemoryConversationRow & {
 
 type LiveWindowRow = {
   cart_id: string | null;
+  cart_v2_id: string | null;
   direction: string | null;
+  id: string;
   message_at: string | null;
   whatsapp_message_id?: string | null;
 };
@@ -179,6 +182,52 @@ function rowsByKey<T>(rows: T[], keyForRow: (row: T) => string | null | undefine
   return map;
 }
 
+async function legacyCartIdentityByV2CartId(
+  supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>,
+  carts: CartIndicatorSourceRow[],
+) {
+  const bookingIds = Array.from(new Set(carts.map((cart) => cart.booking_id).filter((id): id is string => Boolean(id))));
+
+  if (bookingIds.length === 0) {
+    return { legacyByV2CartId: new Map<string, string>(), ok: true as const };
+  }
+
+  const { data, error } = await supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id,booking_id")
+    .in("booking_id", bookingIds);
+
+  if (error) {
+    return { legacyByV2CartId: new Map<string, string>(), ok: false as const };
+  }
+
+  const legacyRowsByBookingId = rowsByKey((data ?? []) as { booking_id: string | null; id: string }[], (row) => row.booking_id);
+  const legacyByV2CartId = new Map<string, string>();
+
+  for (const cart of carts) {
+    const legacyRows = cart.booking_id ? legacyRowsByBookingId.get(cart.booking_id) ?? [] : [];
+
+    if (legacyRows.length === 1) {
+      legacyByV2CartId.set(cart.id, legacyRows[0].id);
+    }
+  }
+
+  return { legacyByV2CartId, ok: true as const };
+}
+
+function dedupeLiveRows(rows: LiveWindowRow[]) {
+  const seen = new Set<string>();
+  const uniqueRows: LiveWindowRow[] = [];
+
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    uniqueRows.push(row);
+  }
+
+  return uniqueRows;
+}
+
 function chatIndicatorFromMemoryRows(cart: CartIndicatorSourceRow, rows: MessageMemoryIndicatorRow[]) {
   if (!cart.form_datetime) return emptyIndicator(cart.id);
 
@@ -258,8 +307,8 @@ export async function GET(request: NextRequest) {
   }
 
   const { data: cartsData, error: cartsError } = await admin.supabase
-    .from("recovery_incomplete_bookings_import")
-    .select("id,phone_normalized,parking_code,form_datetime")
+    .from("v_recovery_incomplete_bookings_current_compat")
+    .select("id,booking_id,phone_normalized,parking_code,form_datetime")
     .in("id", ids);
 
   if (cartsError) {
@@ -276,33 +325,60 @@ export async function GET(request: NextRequest) {
 
   const phones = Array.from(new Set(cartsWithPhone.map((cart) => cart.phone_normalized as string)));
   const cartIds = carts.map((cart) => cart.id);
+  const legacyIdentity = await legacyCartIdentityByV2CartId(admin.supabase, carts);
 
-  const [memoryRowsResult, rawRowsResult, liveRowsResult] = await Promise.all([
+  if (!legacyIdentity.ok) {
+    return NextResponse.json({
+      indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnverifiableWindow(indicator)])),
+      ok: true,
+    });
+  }
+
+  const legacyCartIds = Array.from(new Set(legacyIdentity.legacyByV2CartId.values()));
+
+  const liveQueries = [
+    fetchRowsInPages<LiveWindowRow>(() =>
+      admin.supabase
+        .from("recovery_whatsapp_live_messages")
+        .select("id,cart_id,cart_v2_id,message_at,direction,whatsapp_message_id")
+        .in("cart_v2_id", cartIds)
+        .eq("direction", "inbound")
+        .order("message_at", { ascending: false }),
+    ),
+  ];
+
+  if (legacyCartIds.length > 0) {
+    liveQueries.push(
+      fetchRowsInPages<LiveWindowRow>(() =>
+        admin.supabase
+          .from("recovery_whatsapp_live_messages")
+          .select("id,cart_id,cart_v2_id,message_at,direction,whatsapp_message_id")
+          .in("cart_id", legacyCartIds)
+          .eq("direction", "inbound")
+          .order("message_at", { ascending: false }),
+      ),
+    );
+  }
+
+  const [memoryRowsResult, rawRowsResult, ...liveRowsResults] = await Promise.all([
     fetchRowsInPages<MessageMemoryIndicatorRow>(() =>
       admin.supabase
-        .from("recovery_whatsapp_message_memory_import")
+        .from("v_recovery_whatsapp_message_memory_current_compat")
         .select("wa_id_normalized,message_at,message_bound_type,intent_category,message_sentiment,chat_state,api_phone_normalized")
         .in("wa_id_normalized", phones)
         .order("message_at", { ascending: false }),
     ),
     fetchRowsInPages<MessageMemoryIndicatorRow>(() =>
       admin.supabase
-        .from("recovery_whatsapp_message_memory_raw_import")
+        .from("v_recovery_whatsapp_message_memory_raw_current_compat")
         .select("wa_id_normalized,message_at,message_bound_type,api_phone_normalized")
         .in("wa_id_normalized", phones)
         .order("message_at", { ascending: false }),
     ),
-    fetchRowsInPages<LiveWindowRow>(() =>
-      admin.supabase
-        .from("recovery_whatsapp_live_messages")
-        .select("cart_id,message_at,direction,whatsapp_message_id")
-        .in("cart_id", cartIds)
-        .eq("direction", "inbound")
-        .order("message_at", { ascending: false }),
-    ),
+    ...liveQueries,
   ]);
 
-  if (memoryRowsResult.error || rawRowsResult.error || liveRowsResult.error) {
+  if (memoryRowsResult.error || rawRowsResult.error || liveRowsResults.some((result) => result.error)) {
     return NextResponse.json({
       indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnverifiableWindow(indicator)])),
       ok: true,
@@ -311,7 +387,9 @@ export async function GET(request: NextRequest) {
 
   const normalMemoryRowsByPhone = rowsByKey(memoryRowsResult.rows, (row) => row.wa_id_normalized);
   const allMemoryRowsByPhone = rowsByKey([...memoryRowsResult.rows, ...rawRowsResult.rows], (row) => row.wa_id_normalized);
-  const liveRowsByCartId = rowsByKey(liveRowsResult.rows, (row) => row.cart_id);
+  const liveRows = dedupeLiveRows(liveRowsResults.flatMap((result) => result.rows));
+  const legacyCartIdToV2CartId = new Map(Array.from(legacyIdentity.legacyByV2CartId.entries()).map(([v2CartId, legacyCartId]) => [legacyCartId, v2CartId]));
+  const liveRowsByCartId = rowsByKey(liveRows, (row) => row.cart_v2_id ?? (row.cart_id ? legacyCartIdToV2CartId.get(row.cart_id) : null));
   const nowMs = Date.now();
 
   for (const cart of cartsWithPhone) {

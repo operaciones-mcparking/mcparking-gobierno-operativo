@@ -65,7 +65,7 @@ async function resolveBusiness(
   cartId: string,
 ) {
   const { data: cart, error } = await supabase
-    .from("recovery_incomplete_bookings_import")
+    .from("v_recovery_incomplete_bookings_current_compat")
     .select("id,phone_normalized")
     .eq("id", cartId)
     .maybeSingle();

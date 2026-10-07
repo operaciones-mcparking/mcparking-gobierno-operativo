@@ -58,7 +58,7 @@ function isSupportedBusinessKey(value: unknown): value is RecoveryWhatsappBusine
 
 async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>, cartId: string) {
   const { data, error } = await supabase
-    .from("recovery_incomplete_bookings_import")
+    .from("v_recovery_incomplete_bookings_current_compat")
     .select("id,phone_normalized,parking_code")
     .eq("id", cartId)
     .maybeSingle();

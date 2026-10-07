@@ -31,6 +31,7 @@ export function recoveryWhatsappBusinessPhoneForKey(key: RecoveryWhatsappBusines
 }
 
 type CartContactRow = {
+  booking_id: string | null;
   parking_code: string | null;
   phone_normalized: string | null;
 };
@@ -44,6 +45,7 @@ export type WhatsappInboundCandidate = {
 
 type LiveInboundRow = {
   direction: string | null;
+  id: string;
   message_at: string | null;
   whatsapp_message_id?: string | null;
 };
@@ -146,19 +148,44 @@ export function classifyWhatsappFreeformWindow(
 async function liveInboundCandidates(
   supabase: SupabaseClient,
   cartId: string,
+  legacyCartId: string | null,
   businessKey: RecoveryWhatsappBusinessKey,
 ) {
-  const { data, error } = await supabase
-    .from("recovery_whatsapp_live_messages")
-    .select("message_at,direction,whatsapp_message_id")
-    .eq("cart_id", cartId)
-    .eq("direction", "inbound")
-    .order("message_at", { ascending: false })
-    .limit(20);
+  const queries = [
+    supabase
+      .from("recovery_whatsapp_live_messages")
+      .select("id,message_at,direction,whatsapp_message_id")
+      .eq("cart_v2_id", cartId)
+      .eq("direction", "inbound")
+      .order("message_at", { ascending: false })
+      .limit(20),
+  ];
 
-  if (error) return { candidates: [] as WhatsappInboundCandidate[], error: true as const };
+  if (legacyCartId) {
+    queries.push(
+      supabase
+        .from("recovery_whatsapp_live_messages")
+        .select("id,message_at,direction,whatsapp_message_id")
+        .eq("cart_id", legacyCartId)
+        .eq("direction", "inbound")
+        .order("message_at", { ascending: false })
+        .limit(20),
+    );
+  }
 
-  const candidates = ((data ?? []) as LiveInboundRow[])
+  const results = await Promise.all(queries);
+
+  if (results.some((result) => result.error)) return { candidates: [] as WhatsappInboundCandidate[], error: true as const };
+
+  const seen = new Set<string>();
+  const rows = results
+    .flatMap((result) => (result.data ?? []) as LiveInboundRow[])
+    .filter((row) => {
+      if (seen.has(row.id)) return false;
+      seen.add(row.id);
+      return true;
+    });
+  const candidates = rows
     .filter((row) => row.direction === "inbound")
     .map((row) => ({
       businessKey,
@@ -170,9 +197,27 @@ async function liveInboundCandidates(
   return { candidates, error: false as const };
 }
 
+async function resolveLegacyCartIdByBookingId(supabase: SupabaseClient, bookingId: string | null) {
+  if (!bookingId) return { legacyCartId: null, ok: true as const };
+
+  const { data, error } = await supabase
+    .from("recovery_incomplete_bookings_import")
+    .select("id")
+    .eq("booking_id", bookingId)
+    .limit(2);
+
+  if (error || (data ?? []).length > 1) {
+    return { legacyCartId: null, ok: false as const };
+  }
+
+  return { legacyCartId: data?.[0]?.id ?? null, ok: true as const };
+}
+
 async function memoryConversationRows(
   supabase: SupabaseClient,
-  tableName: "recovery_whatsapp_message_memory_raw_import" | "recovery_whatsapp_message_memory_import",
+  tableName:
+    | "v_recovery_whatsapp_message_memory_raw_current_compat"
+    | "v_recovery_whatsapp_message_memory_current_compat",
   phoneNormalized: string,
 ) {
   const { data, error } = await supabase
@@ -332,8 +377,8 @@ export async function getWhatsappFreeformWindowForCart(
   nowMs = Date.now(),
 ): Promise<WhatsappFreeformWindowState> {
   const { data: cartData, error: cartError } = await supabase
-    .from("recovery_incomplete_bookings_import")
-    .select("phone_normalized,parking_code")
+    .from("v_recovery_incomplete_bookings_current_compat")
+    .select("booking_id,phone_normalized,parking_code")
     .eq("id", cartId)
     .maybeSingle();
 
@@ -349,8 +394,8 @@ export async function getWhatsappFreeformWindowForCart(
   }
 
   const memoryResults = await Promise.all([
-    memoryConversationRows(supabase, "recovery_whatsapp_message_memory_raw_import", cart.phone_normalized),
-    memoryConversationRows(supabase, "recovery_whatsapp_message_memory_import", cart.phone_normalized),
+    memoryConversationRows(supabase, "v_recovery_whatsapp_message_memory_raw_current_compat", cart.phone_normalized),
+    memoryConversationRows(supabase, "v_recovery_whatsapp_message_memory_current_compat", cart.phone_normalized),
   ]);
 
   if (memoryResults.some((result) => result.error)) {
@@ -367,7 +412,13 @@ export async function getWhatsappFreeformWindowForCart(
     return emptyState("unverifiable", parkingBusinessKey);
   }
 
-  const liveResult = await liveInboundCandidates(supabase, cartId, businessKey);
+  const legacyIdentity = await resolveLegacyCartIdByBookingId(supabase, cart.booking_id);
+
+  if (!legacyIdentity.ok) {
+    return emptyState("unverifiable", businessKey);
+  }
+
+  const liveResult = await liveInboundCandidates(supabase, cartId, legacyIdentity.legacyCartId, businessKey);
 
   if (liveResult.error) {
     return emptyState("unverifiable", businessKey);

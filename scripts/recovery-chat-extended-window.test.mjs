@@ -117,16 +117,19 @@ test("public cart DTO keeps the original historical windowStart and windowEnd", 
   assert.match(routeSource, /windowEndDate = cart\.form_datetime \? addDays\(cart\.form_datetime,\s*7\) : null/);
 });
 
-test("live messages explicitly associated to the cart keep their existing query and limit", () => {
-  assert.match(routeSource, /\.from\("recovery_whatsapp_live_messages"\)[\s\S]*?\.eq\("cart_id",\s*params\.cartId\)[\s\S]*?\.limit\(MAX_CHAT_MESSAGES\)/);
+test("live messages explicitly associated to the cart use dual V2 and legacy identity with the existing limit", () => {
+  assert.match(routeSource, /\.eq\("cart_v2_id",\s*params\.cartId\)[\s\S]*?\.limit\(MAX_CHAT_MESSAGES\)/);
+  assert.match(routeSource, /\.eq\("cart_id",\s*params\.legacyCartId\)[\s\S]*?\.limit\(MAX_CHAT_MESSAGES\)/);
+  assert.match(routeSource, /function dedupeLiveMessages/);
+  assert.match(routeSource, /const key = message\.id/);
   assert.match(routeSource, /\.from\("recovery_whatsapp_live_messages"\)[\s\S]*?\.eq\("phone_normalized",\s*params\.phoneNormalized\)[\s\S]*?\.gte\("message_at",\s*params\.windowStart\)[\s\S]*?\.lt\("message_at",\s*params\.windowEnd\)/);
 });
 
 test("Message Memory queries use the protected chatRead range", () => {
   assert.match(routeSource, /import \{ resolveChatReadRange \} from "@\/lib\/recuperacion\/recovery-chat-read-range"/);
   assert.doesNotMatch(routeSource, /export function resolveChatReadRange/);
-  assert.match(routeSource, /recovery_whatsapp_message_memory_raw_import[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
-  assert.match(routeSource, /recovery_whatsapp_message_memory_import[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
+  assert.match(routeSource, /v_recovery_whatsapp_message_memory_raw_current_compat[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
+  assert.match(routeSource, /v_recovery_whatsapp_message_memory_current_compat[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
 });
 
 test("MAX_CHAT_MESSAGES remains 100", () => {
@@ -136,9 +139,9 @@ test("MAX_CHAT_MESSAGES remains 100", () => {
 });
 
 test("raw Message Memory keeps priority over normal metadata", () => {
-  const rawQueryIndex = routeSource.indexOf('from("recovery_whatsapp_message_memory_raw_import")');
+  const rawQueryIndex = routeSource.indexOf('from("v_recovery_whatsapp_message_memory_raw_current_compat")');
   const rawReturnIndex = routeSource.indexOf('summary: buildSummary(messages, "raw")');
-  const normalQueryIndex = routeSource.indexOf('from("recovery_whatsapp_message_memory_import")');
+  const normalQueryIndex = routeSource.indexOf('from("v_recovery_whatsapp_message_memory_current_compat")');
 
   assert.ok(rawQueryIndex > 0, "raw query exists");
   assert.ok(rawReturnIndex > rawQueryIndex, "raw return exists after raw query");
