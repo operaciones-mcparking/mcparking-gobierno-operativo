@@ -54,7 +54,7 @@ type ChatIndicatorWhatsappWindow = {
 type ChatIndicatorPayload = {
   cartId: string;
   chatMessageCount: number;
-  hasChat: boolean;
+  hasChat: boolean | null;
   hasInbound: boolean;
   lastInboundChatState: string | null;
   lastInboundIntentCategory: string | null;
@@ -142,9 +142,10 @@ function emptyIndicator(cartId: string): ChatIndicatorPayload {
   };
 }
 
-function indicatorWithUnverifiableWindow(indicator: ChatIndicatorPayload): ChatIndicatorPayload {
+function indicatorWithUnknownChat(indicator: ChatIndicatorPayload): ChatIndicatorPayload {
   return {
     ...indicator,
+    hasChat: null,
     whatsappWindow: UNVERIFIABLE_WHATSAPP_WINDOW,
   };
 }
@@ -329,7 +330,7 @@ export async function GET(request: NextRequest) {
 
   if (!legacyIdentity.ok) {
     return NextResponse.json({
-      indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnverifiableWindow(indicator)])),
+      indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnknownChat(indicator)])),
       ok: true,
     });
   }
@@ -380,7 +381,7 @@ export async function GET(request: NextRequest) {
 
   if (memoryRowsResult.error || rawRowsResult.error || liveRowsResults.some((result) => result.error)) {
     return NextResponse.json({
-      indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnverifiableWindow(indicator)])),
+      indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnknownChat(indicator)])),
       ok: true,
     });
   }

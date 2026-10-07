@@ -106,6 +106,55 @@ test("D. sin intended_arrival_at usa ventana de 7 dias", () => {
   assert.equal(result.status, "recovered_with_amount");
 });
 
+test("D2. intended_arrival_at igual a form_datetime se usa como limite cerrado", () => {
+  const exact = onlyResult(
+    [cart({ intended_arrival_at: "2026-07-20T10:00:00.000Z" })],
+    [purchase({ booking_created_at: "2026-07-20T10:00:00.000Z" })],
+  );
+  const after = onlyResult(
+    [cart({ intended_arrival_at: "2026-07-20T10:00:00.000Z" })],
+    [purchase({ booking_created_at: "2026-07-20T10:00:01.000Z" })],
+  );
+
+  assert.equal(exact.status, "recovered_with_amount");
+  assert.equal(after.status, "unrecovered");
+});
+
+test("D3. intended_arrival_at anterior a form_datetime usa ventana de 7 dias", () => {
+  const result = onlyResult(
+    [cart({ intended_arrival_at: "2026-07-20T09:00:00.000Z" })],
+    [purchase({ booking_created_at: "2026-07-20T10:00:26.000Z" })],
+  );
+
+  assert.equal(result.status, "recovered_with_amount");
+  assert.equal(result.attributedPurchaseId, "purchase-1");
+});
+
+test("D4. intended_arrival_at anterior a form_datetime no recupera fuera de 7 dias", () => {
+  const result = onlyResult(
+    [cart({ intended_arrival_at: "2026-07-20T09:00:00.000Z" })],
+    [purchase({ booking_created_at: "2026-07-27T10:00:00.000Z" })],
+  );
+
+  assert.equal(result.status, "unrecovered");
+});
+
+test("D5. caso real equivalente recupera con intended_arrival_at anterior al carrito", () => {
+  const result = onlyResult(
+    [
+      cart({
+        form_datetime: "2026-10-07T09:18:33.000Z",
+        intended_arrival_at: "2026-10-07T09:00:00.000Z",
+      }),
+    ],
+    [purchase({ booking_created_at: "2026-10-07T09:18:59.000Z", price: 25673 })],
+  );
+
+  assert.equal(result.status, "recovered_with_amount");
+  assert.equal(result.attributedAmount, 25673);
+  assert.equal(result.matchType, "email_phone");
+});
+
 test("E. sin intended_arrival_at compra fuera de 7 dias no recupera", () => {
   const result = onlyResult(
     [cart({ intended_arrival_at: null })],

@@ -111,6 +111,16 @@ function isValidDate(date: Date) {
   return !Number.isNaN(date.getTime());
 }
 
+function attributionWindowEnd(cartDate: Date, intendedArrivalDate: Date | null) {
+  if (intendedArrivalDate && isValidDate(intendedArrivalDate) && intendedArrivalDate >= cartDate) {
+    return { date: intendedArrivalDate, inclusive: true };
+  }
+
+  const recoveryWindowEnd = new Date(cartDate);
+  recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
+  return { date: recoveryWindowEnd, inclusive: false };
+}
+
 export function isRecoveryPaymentReviewPurchase(purchase: RecoveryAttributionPurchaseInput) {
   return (
     purchase.is_valid_purchase !== true &&
@@ -132,14 +142,9 @@ function buildCandidate(
   if (purchaseDate < cartDate) return null;
 
   const intendedArrivalDate = cart.intended_arrival_at ? new Date(cart.intended_arrival_at) : null;
+  const windowEnd = attributionWindowEnd(cartDate, intendedArrivalDate);
 
-  if (intendedArrivalDate && isValidDate(intendedArrivalDate)) {
-    if (purchaseDate > intendedArrivalDate) return null;
-  } else {
-    const recoveryWindowEnd = new Date(cartDate);
-    recoveryWindowEnd.setUTCDate(recoveryWindowEnd.getUTCDate() + 7);
-    if (purchaseDate >= recoveryWindowEnd) return null;
-  }
+  if (windowEnd.inclusive ? purchaseDate > windowEnd.date : purchaseDate >= windowEnd.date) return null;
 
   const cartEmail = comparableEmail(cart.email_normalized);
   const purchaseEmail = comparableEmail(purchase.email_normalized);

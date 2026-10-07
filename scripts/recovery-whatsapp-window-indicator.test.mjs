@@ -290,7 +290,40 @@ test("visual state transitions from open to closing_soon and closed locally", ()
 
 test("batch errors degrade safely to unverifiable", () => {
   assert.match(table, /status: "unverifiable"/);
-  assert.match(indicatorRoute, /indicatorWithUnverifiableWindow/);
+  assert.match(indicatorRoute, /indicatorWithUnknownChat/);
+  assert.match(indicatorRoute, /hasChat:\s*null/);
+});
+
+test("indicator normal with chat preserves hasChat true", () => {
+  assert.match(indicatorRoute, /hasChat:\s*messageCount > 0/);
+});
+
+test("indicator normal without chat preserves hasChat false", () => {
+  assert.match(indicatorRoute, /function emptyIndicator\(cartId: string\)[\s\S]*hasChat:\s*false/);
+});
+
+test("metadata timeout keeps chat clickable with unknown chat state", () => {
+  assert.match(indicatorRoute, /memoryRowsResult\.error/);
+  assert.match(indicatorRoute, /indicatorWithUnknownChat\(indicator\)/);
+});
+
+test("raw timeout keeps chat clickable with unknown chat state", () => {
+  assert.match(indicatorRoute, /rawRowsResult\.error/);
+  assert.match(indicatorRoute, /indicatorWithUnknownChat\(indicator\)/);
+});
+
+test("live indicator source error keeps chat clickable with unknown chat state", () => {
+  assert.match(indicatorRoute, /liveRowsResults\.some\(\(result\) => result\.error\)/);
+  assert.match(indicatorRoute, /indicatorWithUnknownChat\(indicator\)/);
+});
+
+test("error fallback keeps WhatsApp window unverifiable", () => {
+  assert.match(indicatorRoute, /whatsappWindow:\s*UNVERIFIABLE_WHATSAPP_WINDOW/);
+});
+
+test("cart row remains clickable after indicator fallback", () => {
+  assert.match(table, /const canOpenChat = displayRow\.hasChat !== false/);
+  assert.doesNotMatch(table, /const canOpenChat = displayRow\.hasChat === true/);
 });
 
 test("footer legend explains chat and WhatsApp window indicators", () => {

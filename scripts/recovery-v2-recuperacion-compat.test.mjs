@@ -17,6 +17,9 @@ const messageMemoryNormalizationMigration = readFileSync(
   messageMemoryNormalizationMigrationPath,
   "utf8",
 );
+const attributionWindowFixMigrationPath =
+  "supabase/migrations/20261007190000_fix_recovery_v2_attribution_invalid_arrival_window.sql";
+const attributionWindowFixMigration = readFileSync(attributionWindowFixMigrationPath, "utf8");
 
 test("creates the expected V2 compatibility read contracts", () => {
   for (const objectName of [
@@ -95,6 +98,33 @@ test("recreates attribution from V2 cart compat with current matching window and
   assert.doesNotMatch(migration, /booking\.booking_code/);
   assert.doesNotMatch(migration, /booking\.amount/);
   assert.doesNotMatch(migration, /booking\.currency/);
+});
+
+test("attribution invalid arrival window migration only replaces V2 compat attribution view", () => {
+  assert.match(
+    attributionWindowFixMigration,
+    /create or replace view public\.v_recovery_attribution_cases_v2_compat as/i,
+  );
+  assert.doesNotMatch(attributionWindowFixMigration, /\binsert\s+into\b/i);
+  assert.doesNotMatch(attributionWindowFixMigration, /\bupdate\s+public\./i);
+  assert.doesNotMatch(attributionWindowFixMigration, /\bdelete\s+from\b/i);
+  assert.doesNotMatch(attributionWindowFixMigration, /\btruncate\b/i);
+  assert.doesNotMatch(attributionWindowFixMigration, /\bdrop\s+(table|view|function)\b/i);
+  assert.doesNotMatch(attributionWindowFixMigration, /\bcreate\s+table\b/i);
+  assert.doesNotMatch(attributionWindowFixMigration, /recovery_sync_state[\s\S]*(insert|update|delete)/i);
+});
+
+test("attribution invalid arrival window falls back to 7 days only when arrival is before form_datetime", () => {
+  assert.match(
+    attributionWindowFixMigration,
+    /case\s+when cart\.intended_arrival_at is not null\s+and cart\.intended_arrival_at >= cart\.form_datetime\s+then cart\.intended_arrival_at\s+else cart\.form_datetime \+ interval '7 days'\s+end/i,
+  );
+  assert.doesNotMatch(
+    attributionWindowFixMigration,
+    /booking\.booking_created_at <= coalesce\(cart\.intended_arrival_at, cart\.form_datetime \+ interval '7 days'\)/i,
+  );
+  assert.match(attributionWindowFixMigration, /booking\.booking_created_at >= cart\.form_datetime/i);
+  assert.match(attributionWindowFixMigration, /booking\.is_valid_purchase = true/i);
 });
 
 test("conversation sessions V2 compat uses only V2 compat messages and carts", () => {
