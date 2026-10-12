@@ -727,9 +727,10 @@ function CustomerOperationalRepresentationTable({ error, list, loading, onPageCh
   title: string;
 }) {
   const pageCount = representationPageCount(list.total, list.pageSize);
+  const countLabel = loading && list.items.length === 0 ? "Cargando..." : `${displaySafeCount(list.total)} registros`;
 
   return (
-    <Panel count={`${displaySafeCount(list.total)} registros`} title={title}>
+    <Panel count={countLabel} title={title}>
       {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
       {loading && list.items.length === 0 ? <p className="mt-4 text-sm text-slate-600">Actualizando datos...</p> : null}
       {loading && list.items.length > 0 ? <p aria-live="polite" className="mt-4 text-xs text-slate-500">Actualizando...</p> : null}
@@ -2762,13 +2763,13 @@ export function CustomerWindowView() {
   const [periodRange, setPeriodRange] = useState<CustomerPeriodRange>(initialRange.current);
   const [okpPage, setOkpPage] = useState(1);
   const [okpList, setOkpList] = useState<OperationalRepresentationPeriodListV2>(() => emptyOperationalRepresentationList("OKP"));
-  const [okpLoading, setOkpLoading] = useState(false);
+  const [okpLoading, setOkpLoading] = useState(true);
   const [okpError, setOkpError] = useState<string | null>(null);
   const okpController = useRef<AbortController | null>(null);
   const okpRequest = useRef<{ key: string; promise: Promise<void> } | null>(null);
   const [mcpEapPage, setMcpEapPage] = useState(1);
   const [mcpEapList, setMcpEapList] = useState<OperationalRepresentationPeriodListV2>(() => emptyOperationalRepresentationList("MCP_EAP"));
-  const [mcpEapLoading, setMcpEapLoading] = useState(false);
+  const [mcpEapLoading, setMcpEapLoading] = useState(true);
   const [mcpEapError, setMcpEapError] = useState<string | null>(null);
   const mcpEapController = useRef<AbortController | null>(null);
   const mcpEapRequest = useRef<{ key: string; promise: Promise<void> } | null>(null);
@@ -2802,7 +2803,8 @@ export function CustomerWindowView() {
     const requestRef = family === "OKP" ? okpRequest : mcpEapRequest;
     const controllerRef = family === "OKP" ? okpController : mcpEapController;
     const requestKey = `${family}:${periodRange.from}:${periodRange.to}:${page}`;
-    if (requestRef.current?.key === requestKey) return requestRef.current.promise;
+    if (requestRef.current?.key === requestKey && !controllerRef.current?.signal.aborted) return requestRef.current.promise;
+    if (controllerRef.current?.signal.aborted) requestRef.current = null;
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -2889,14 +2891,26 @@ export function CustomerWindowView() {
     if (section !== "clientes") return;
     void loadOperationalRepresentations("OKP", okpPage);
     const controller = okpController.current;
-    return () => controller?.abort();
+    return () => {
+      controller?.abort();
+      if (okpController.current === controller) {
+        okpController.current = null;
+        okpRequest.current = null;
+      }
+    };
   }, [loadOperationalRepresentations, okpPage, section]);
 
   useEffect(() => {
     if (section !== "clientes") return;
     void loadOperationalRepresentations("MCP_EAP", mcpEapPage);
     const controller = mcpEapController.current;
-    return () => controller?.abort();
+    return () => {
+      controller?.abort();
+      if (mcpEapController.current === controller) {
+        mcpEapController.current = null;
+        mcpEapRequest.current = null;
+      }
+    };
   }, [loadOperationalRepresentations, mcpEapPage, section]);
 
   useEffect(() => {

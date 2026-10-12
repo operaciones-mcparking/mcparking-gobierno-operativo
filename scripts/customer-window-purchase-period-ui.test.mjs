@@ -101,6 +101,24 @@ test("v2 loading keeps abort stale response error and pagination behavior", () =
   assert.doesNotMatch(sourceBlock(view, "const loadOperationalRepresentations", "const loadRefreshHealth"), /emptyOperationalRepresentationList/);
 });
 
+test("first Customer Window entry loads today's operational lists without rendering false zeroes", () => {
+  assert.match(view, /const initialRange = useRef\(getCustomerPeriodRange\("today", getSantiagoDateKey\(\)\)\)/);
+  assert.match(view, /useState<CustomerPeriodPreset>\("today"\)/);
+  assert.match(view, /useState<CustomerPeriodRange>\(initialRange\.current\)/);
+  assert.match(view, /const \[okpLoading, setOkpLoading\] = useState\(true\)/);
+  assert.match(view, /const \[mcpEapLoading, setMcpEapLoading\] = useState\(true\)/);
+  assert.match(view, /const countLabel = loading && list\.items\.length === 0 \? "Cargando\.\.\." : `\$\{displaySafeCount\(list\.total\)\} registros`/);
+  assert.match(view, /<Panel count=\{countLabel\} title=\{title\}>/);
+});
+
+test("aborted initial operational requests are not reused on remount or navigation", () => {
+  const listBlock = sourceBlock(view, "const loadOperationalRepresentations", "const loadRefreshHealth");
+  assert.match(listBlock, /requestRef\.current\?\.key === requestKey && !controllerRef\.current\?\.signal\.aborted/);
+  assert.match(listBlock, /if \(controllerRef\.current\?\.signal\.aborted\) requestRef\.current = null/);
+  assert.match(view, /if \(okpController\.current === controller\) \{[\s\S]*okpController\.current = null;[\s\S]*okpRequest\.current = null/);
+  assert.match(view, /if \(mcpEapController\.current === controller\) \{[\s\S]*mcpEapController\.current = null;[\s\S]*mcpEapRequest\.current = null/);
+});
+
 test("transient loading preserves rendered data and delays visible errors until retries finish", () => {
   const tableBlock = sourceBlock(view, "function CustomerOperationalRepresentationTable", "function searchMatchLabel");
   assert.match(tableBlock, /loading && list\.items\.length === 0[\s\S]*Actualizando datos/);
