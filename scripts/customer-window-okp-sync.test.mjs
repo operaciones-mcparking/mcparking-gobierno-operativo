@@ -34,13 +34,48 @@ test("uses the existing M2M secret contract and an exact middleware bypass", () 
   assert.doesNotMatch(middleware, /pathname\.startsWith\(okpBookingsSyncPath/);
 });
 
-test("calls one service-role RPC and returns all convergence counters", () => {
+test("calls service-role import RPC and returns all convergence counters", () => {
   assert.match(route, /createSupabaseAdminClient\(\)/);
   assert.match(route, /\.rpc\("import_customer_source_bookings_okp_m2m"/);
   for (const counter of ["rowsReceived", "insertedRows", "updatedRows", "unchangedRows", "invalidRows", "conflictRows"]) {
     assert.match(route, new RegExp(counter));
   }
   assert.doesNotMatch(route, /SUPABASE_SERVICE_ROLE_KEY/);
+});
+
+test("runs bounded OKP identity reconciliation after a successful import", () => {
+  assert.match(route, /const IDENTITY_RESOLVER_BATCH_SIZE = 500/);
+  assert.match(route, /const IDENTITY_RESOLVER_MAX_BATCHES = 10/);
+  assert.match(route, /const IDENTITY_STABILITY_DELAY_MS = 30 \* 60 \* 1000/);
+  assert.match(route, /new Date\(Date\.now\(\) - IDENTITY_STABILITY_DELAY_MS\)\.toISOString\(\)/);
+  assert.match(route, /\.rpc\("customer_window_resolve_identity_batch_v2"/);
+  assert.match(route, /p_source: "OKP"/);
+  assert.match(route, /p_stable_before: stableBefore/);
+  assert.match(route, /p_limit: IDENTITY_RESOLVER_BATCH_SIZE/);
+  assert.match(route, /for \(let batch = 0; batch < IDENTITY_RESOLVER_MAX_BATCHES; batch \+= 1\)/);
+  assert.match(route, /if \(processedRows < IDENTITY_RESOLVER_BATCH_SIZE\)/);
+});
+
+test("fails closed when OKP identity reconciliation errors or saturates the bounded batch", () => {
+  assert.match(route, /if \(error\) throw new Error\("identity_resolver_failed"\)/);
+  assert.match(route, /identity_resolver_invalid_summary/);
+  assert.match(route, /catch \{[\s\S]*return jsonError\("No se pudo conciliar identidad OKP\.", 500\)/);
+  assert.match(route, /saturated: true/);
+  assert.match(route, /IDENTITY_RESOLVER_BATCH_SIZE \* IDENTITY_RESOLVER_MAX_BATCHES/);
+  assert.match(route, /La conciliacion de identidad OKP quedo pendiente\.", 503/);
+});
+
+test("returns OKP identity reconciliation counters without exposing source rows", () => {
+  for (const counter of [
+    "identityProcessedRows",
+    "identityHighLinkedRows",
+    "identityReusedReviewRows",
+    "identityCandidateRows",
+    "identityConflictRows",
+  ]) {
+    assert.match(route, new RegExp(counter));
+  }
+  assert.doesNotMatch(route, /NextResponse\.json\([^)]*uniqueRows/);
 });
 
 test("sanitizes errors without returning source rows or SQL details", () => {

@@ -5,6 +5,9 @@ import { mapOkpBookingSourceRow, type CustomerSourceBookingOkpInsert } from "@/l
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const MAX_ROWS_PER_REQUEST = 500;
+const IDENTITY_RESOLVER_BATCH_SIZE = 500;
+const IDENTITY_RESOLVER_MAX_BATCHES = 10;
+const IDENTITY_STABILITY_DELAY_MS = 30 * 60 * 1000;
 const SOURCE = "BOOKINGS_LOGS_OKP";
 const NORMALIZED_INPUT_FIELDS = [
   "actual_checkin_at",
@@ -58,6 +61,22 @@ type ImportRpcResult = {
   updatedRows?: number;
 };
 
+type IdentityResolverRpcResult = {
+  candidateRows?: number;
+  conflictRows?: number;
+  highLinkedRows?: number;
+  processedRows?: number;
+  reusedReviewRows?: number;
+};
+
+type IdentityResolverSummary = {
+  candidateRows: number;
+  conflictRows: number;
+  highLinkedRows: number;
+  processedRows: number;
+  reusedReviewRows: number;
+};
+
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message, ok: false }, { status });
 }
@@ -68,6 +87,43 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function hasNormalizedInput(row: Record<string, unknown>) {
   return NORMALIZED_INPUT_FIELDS.some((field) => Object.hasOwn(row, field));
+}
+
+async function resolveStableOkpIdentities(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  stableBefore: string,
+): Promise<{ saturated: boolean; summary: IdentityResolverSummary }> {
+  const summary: IdentityResolverSummary = {
+    candidateRows: 0,
+    conflictRows: 0,
+    highLinkedRows: 0,
+    processedRows: 0,
+    reusedReviewRows: 0,
+  };
+
+  for (let batch = 0; batch < IDENTITY_RESOLVER_MAX_BATCHES; batch += 1) {
+    const { data, error } = await supabase.rpc("customer_window_resolve_identity_batch_v2", {
+      p_limit: IDENTITY_RESOLVER_BATCH_SIZE,
+      p_source: "OKP",
+      p_stable_before: stableBefore,
+    });
+    if (error) throw new Error("identity_resolver_failed");
+    if (!data || typeof data !== "object") throw new Error("identity_resolver_invalid_summary");
+
+    const result = data as IdentityResolverRpcResult;
+    const processedRows = result.processedRows ?? 0;
+    summary.candidateRows += result.candidateRows ?? 0;
+    summary.conflictRows += result.conflictRows ?? 0;
+    summary.highLinkedRows += result.highLinkedRows ?? 0;
+    summary.processedRows += processedRows;
+    summary.reusedReviewRows += result.reusedReviewRows ?? 0;
+
+    if (processedRows < IDENTITY_RESOLVER_BATCH_SIZE) {
+      return { saturated: false, summary };
+    }
+  }
+
+  return { saturated: true, summary };
 }
 
 export async function POST(request: NextRequest) {
@@ -138,13 +194,33 @@ export async function POST(request: NextRequest) {
   if (!data || typeof data !== "object") return jsonError("La importacion OKP no devolvio un resumen valido.", 500);
 
   const result = data as ImportRpcResult;
-  return NextResponse.json({
-    conflictRows: localConflictRows + (result.conflictRows ?? 0),
-    insertedRows: result.insertedRows ?? 0,
-    invalidRows,
-    ok: true,
-    rowsReceived: payload.rows.length,
-    unchangedRows: result.unchangedRows ?? 0,
-    updatedRows: result.updatedRows ?? 0,
-  });
+  let identitySummary: IdentityResolverSummary;
+  try {
+    const stableBefore = new Date(Date.now() - IDENTITY_STABILITY_DELAY_MS).toISOString();
+    const identityResolution = await resolveStableOkpIdentities(supabase, stableBefore);
+    identitySummary = identityResolution.summary;
+    if (!identityResolution.saturated) {
+      return NextResponse.json({
+        conflictRows: localConflictRows + (result.conflictRows ?? 0),
+        identityCandidateRows: identitySummary.candidateRows,
+        identityConflictRows: identitySummary.conflictRows,
+        identityHighLinkedRows: identitySummary.highLinkedRows,
+        identityProcessedRows: identitySummary.processedRows,
+        identityReusedReviewRows: identitySummary.reusedReviewRows,
+        insertedRows: result.insertedRows ?? 0,
+        invalidRows,
+        ok: true,
+        rowsReceived: payload.rows.length,
+        unchangedRows: result.unchangedRows ?? 0,
+        updatedRows: result.updatedRows ?? 0,
+      });
+    }
+  } catch {
+    return jsonError("No se pudo conciliar identidad OKP.", 500);
+  }
+
+  if (identitySummary.processedRows >= IDENTITY_RESOLVER_BATCH_SIZE * IDENTITY_RESOLVER_MAX_BATCHES) {
+    return jsonError("La conciliacion de identidad OKP quedo pendiente.", 503);
+  }
+  return jsonError("La conciliacion de identidad OKP quedo pendiente.", 503);
 }
