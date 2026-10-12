@@ -43,6 +43,7 @@ const READY_AUDIT_SCRIPT = fileURLToPath(new URL(
   "./customer-window-related-review-mcp-eap-v1-ready-audit.mjs", import.meta.url));
 const READY_AUDIT_OUTPUT_LIMIT = 64 * 1024;
 const READY_AUDIT_RETRY_DELAY_MS = 10_000;
+const BUILD_READY_RETRY_DELAY_MS = 5_000;
 const SAFE_ENV_CODES = new Set([
   "missing_database_url", "invalid_database_url", "incomplete_database_url",
   "tls_verify_full_required", "unsupported_connection_option", "ambiguous_ca",
@@ -178,6 +179,10 @@ function safeBuildFailure(error, formatter = formatBuilderError) {
     }
   }
   return result;
+}
+
+function isRetryableBuildSerializationFailure(buildFailure) {
+  return buildFailure?.dbCode === "40001" && buildFailure.committed === false;
 }
 
 export async function runSnapshotRetention({ client }) {
@@ -689,6 +694,23 @@ const READY_RETRY_CONTRACT_SQL = `
   where snapshot.rule_key = 'RELATED_REVIEW_MCP_EAP_V1'
 `;
 
+const BUILD_READY_RETRY_CONTRACT_SQL = `
+  select
+    count(*) filter (where snapshot.status = 'active')::integer as active_count,
+    count(*) filter (where snapshot.status = 'ready')::integer as ready_count,
+    count(*) filter (where snapshot.status = 'building')::integer as building_count,
+    exists (
+      select 1
+      from pg_catalog.pg_locks lock
+      where lock.pid = pg_catalog.pg_backend_pid()
+        and lock.locktype = 'advisory'
+        and lock.classid::bigint = $1::bigint
+        and lock.objid::bigint = $2::bigint
+    ) as refresh_lock_held
+  from public.customer_related_review_snapshots snapshot
+  where snapshot.rule_key = 'RELATED_REVIEW_MCP_EAP_V1'
+`;
+
 export { STABLE_COVERAGE_SQL };
 
 export async function runRefresh({
@@ -712,6 +734,7 @@ export async function runRefresh({
   now = () => Date.now(),
   sleepFn = (delayMs) => new Promise((resolveSleep) => setTimeout(resolveSleep, delayMs)),
   readyAuditRetryDelayMs = READY_AUDIT_RETRY_DELAY_MS,
+  buildReadyRetryDelayMs = BUILD_READY_RETRY_DELAY_MS,
 } = {}) {
   const totalStarted = now();
   const timings = {};
@@ -760,6 +783,8 @@ export async function runRefresh({
     "invalid_resume_ready_snapshot_id");
     check(Number.isInteger(readyAuditRetryDelayMs) && readyAuditRetryDelayMs >= 0,
       "invalid_ready_audit_retry_delay");
+    check(Number.isInteger(buildReadyRetryDelayMs) && buildReadyRetryDelayMs >= 0,
+      "invalid_build_ready_retry_delay");
     check(typeof runId === "string" && UUID.test(runId), "invalid_refresh_run_id");
     if (resumeReadySnapshotId) resumeReadySnapshotId = resumeReadySnapshotId.toLowerCase();
     diagnosticCode = "environment";
@@ -853,16 +878,38 @@ export async function runRefresh({
       phase = "build-ready";
       const buildStarted = now();
       let build;
+      const runBuildReady = () => buildFn({
+        mode: "build-ready",
+        env,
+        ClientClass,
+        capturedAt: upstreamPreflight.preflightCapturedAt,
+      });
       try {
-        build = await buildFn({
-          mode: "build-ready",
-          env,
-          ClientClass,
-          capturedAt: upstreamPreflight.preflightCapturedAt,
-        });
+        build = await runBuildReady();
       } catch (error) {
         buildFailure = safeBuildFailure(error, buildErrorFormatter);
-        throw new RefreshError("build_ready_failed");
+        if (!isRetryableBuildSerializationFailure(buildFailure)) {
+          throw new RefreshError("build_ready_failed");
+        }
+
+        await sleepFn(buildReadyRetryDelayMs);
+        diagnosticCode = "build_ready_retry_contract_query";
+        const retryContract = (await client.query(BUILD_READY_RETRY_CONTRACT_SQL,
+          [REFRESH_LOCK_CLASS, REFRESH_LOCK_KEY])).rows[0];
+        diagnosticCode = "build_ready_retry_contract_validation";
+        check(retryContract?.refresh_lock_held === true
+          && retryContract.active_count === 1
+          && retryContract.ready_count === 0
+          && retryContract.building_count === 0,
+        "build_ready_retry_contract_invalid");
+
+        try {
+          build = await runBuildReady();
+          buildFailure = null;
+        } catch (retryError) {
+          buildFailure = safeBuildFailure(retryError, buildErrorFormatter);
+          throw new RefreshError("build_ready_failed");
+        }
       }
       timings.buildMs = now() - buildStarted;
       check(build?.ok === true && build.mode === "build-ready" && build.committed === true

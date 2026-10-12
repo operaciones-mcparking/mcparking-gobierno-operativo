@@ -28,6 +28,7 @@ const postcheckCandidate = readFileSync(new URL(
 
 function fixture({ lock = true, activeCount = 1, readyCount = 0,
   readySnapshotId = newSnapshotId, stableMissing = "0", buildError = null,
+  buildErrors = null, buildRetryContract = null,
   auditError = null, auditResult = null, activateError = null, connectError = null,
   lockQueryError = null, preflightQueryError = null,
   retryContract = null, lifecycleInvalid = false, retentionError = null,
@@ -71,6 +72,12 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
         target_activated_at: null,
         target_superseded_at: null,
       }] };
+      if (text.includes("as refresh_lock_held")) return { rows: [buildRetryContract ?? {
+        active_count: activeCount,
+        ready_count: 0,
+        building_count: 0,
+        refresh_lock_held: state.lockHeld,
+      }] };
       if (text.includes("as target_active_count")) return { rows: [{
         active_count: lifecycleInvalid ? 0 : 1, ready_count: 0, target_active_count: 1,
         previous_status: "superseded",
@@ -105,9 +112,13 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
     }
   }
   const parseEnv = () => ({ connection: {}, keyBytes: state.keyBytes, keyId: "test-key" });
+  let buildAttempts = 0;
   const buildFn = async () => {
     state.calls.push("build");
-    if (buildError) throw buildError;
+    const nextBuildError = Array.isArray(buildErrors)
+      ? buildErrors[buildAttempts] : buildError;
+    buildAttempts++;
+    if (nextBuildError) throw nextBuildError;
     return { ok: true, mode: "build-ready", committed: true, snapshotStatus: "ready",
       postCommitVerificationOk: true, snapshotId: newSnapshotId };
   };
@@ -169,6 +180,29 @@ function fixture({ lock = true, activeCount = 1, readyCount = 0,
     randomUUIDFn: () => "11111111-1111-4111-8111-111111111111",
     now: () => { tick += 10; return tick; },
     sleepFn: async (delayMs) => { state.calls.push(`sleep:${delayMs}`); } } };
+}
+
+function buildErrorWithSafe({ dbCode = "40001", phase = "members_insert",
+  committed = false } = {}) {
+  const error = Object.assign(new Error(`build ${dbCode}`), { code: dbCode });
+  error.safe = {
+    ok: false,
+    code: "builder_failed",
+    phase,
+    committed,
+    dbCode,
+  };
+  return error;
+}
+
+function safeBuildErrorFormatter(error) {
+  return error.safe ?? {
+    ok: false,
+    code: "builder_failed",
+    phase: "initializing",
+    committed: false,
+    ...(typeof error?.code === "string" ? { dbCode: error.code } : {}),
+  };
 }
 
 test("manual refresh completes build audit activate and both postchecks", async () => {
@@ -288,6 +322,124 @@ test("BuildError metadata remains causal while the public refresh code stays com
   assert.deepEqual(state.calls, ["connect", "build", "end"]);
   assert.equal(state.operationalFinishes.length, 1);
   assert.equal(state.operationalFinishes[0].errorCode, "build_ready_failed");
+});
+
+test("pre-commit 40001 during build-ready retries the whole build once without duplicate snapshots", async () => {
+  const serializationError = buildErrorWithSafe();
+  const { state, options } = fixture({ buildErrors: [serializationError, null] });
+  options.buildErrorFormatter = safeBuildErrorFormatter;
+  const result = await runRefresh(options);
+
+  assert.equal(result.ok, true);
+  assert.equal(state.calls.filter((call) => call === "build").length, 2);
+  assert.deepEqual(state.calls,
+    ["connect", "build", "sleep:5000", "build", "audit", "activate", "end"]);
+  assert.equal(state.queries.filter(({ text }) => text.includes("as refresh_lock_held")).length,
+    1);
+  assert.equal(state.calls.indexOf("audit") > state.calls.lastIndexOf("build"), true);
+  assert.equal(state.calls.filter((call) => call === "activate").length, 1);
+  assert.equal(result.newSnapshotId, newSnapshotId);
+});
+
+test("a second pre-commit 40001 during build-ready stops fail-closed", async () => {
+  const serializationError = buildErrorWithSafe();
+  const { state, options } = fixture({
+    buildErrors: [serializationError, serializationError],
+  });
+  options.buildErrorFormatter = safeBuildErrorFormatter;
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+
+  assert.deepEqual(formatRefreshError(failure), {
+    ok: false,
+    code: "build_ready_failed",
+    phase: "build-ready",
+    activated: false,
+    buildCode: "builder_failed",
+    buildPhase: "members_insert",
+    committed: false,
+    dbCode: "40001",
+  });
+  assert.deepEqual(state.calls, ["connect", "build", "sleep:5000", "build", "end"]);
+  assert.equal(state.calls.includes("audit"), false);
+  assert.equal(state.calls.includes("activate"), false);
+});
+
+test("non-40001 build-ready failures do not retry", async () => {
+  const databaseError = buildErrorWithSafe({ dbCode: "23514", phase: "members_insert" });
+  const { state, options } = fixture({ buildError: databaseError });
+  options.buildErrorFormatter = safeBuildErrorFormatter;
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+
+  assert.equal(formatRefreshError(failure).dbCode, "23514");
+  assert.deepEqual(state.calls, ["connect", "build", "end"]);
+  assert.equal(state.queries.some(({ text }) => text.includes("as refresh_lock_held")), false);
+});
+
+test("post-commit build-ready failures do not retry", async () => {
+  const postCommitError = buildErrorWithSafe({ dbCode: "40001", committed: true });
+  const { state, options } = fixture({ buildError: postCommitError });
+  options.buildErrorFormatter = safeBuildErrorFormatter;
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+
+  const formatted = formatRefreshError(failure);
+  assert.equal(formatted.dbCode, "40001");
+  assert.equal(formatted.committed, true);
+  assert.deepEqual(state.calls, ["connect", "build", "end"]);
+  assert.equal(state.queries.some(({ text }) => text.includes("as refresh_lock_held")), false);
+});
+
+test("existing READY snapshot blocks build-ready 40001 retry", async () => {
+  const serializationError = buildErrorWithSafe();
+  const { state, options } = fixture({
+    buildError: serializationError,
+    buildRetryContract: {
+      active_count: 1,
+      ready_count: 1,
+      building_count: 0,
+      refresh_lock_held: true,
+    },
+  });
+  options.buildErrorFormatter = safeBuildErrorFormatter;
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+
+  assert.deepEqual(formatRefreshError(failure), {
+    ok: false,
+    code: "build_ready_retry_contract_invalid",
+    phase: "build-ready",
+    activated: false,
+    buildCode: "builder_failed",
+    buildPhase: "members_insert",
+    committed: false,
+    dbCode: "40001",
+  });
+  assert.deepEqual(state.calls, ["connect", "build", "sleep:5000", "end"]);
+  assert.equal(state.calls.filter((call) => call === "build").length, 1);
+  assert.equal(state.calls.includes("activate"), false);
+});
+
+test("lost operational lock blocks build-ready 40001 retry", async () => {
+  const serializationError = buildErrorWithSafe();
+  const { state, options } = fixture({
+    buildError: serializationError,
+    buildRetryContract: {
+      active_count: 1,
+      ready_count: 0,
+      building_count: 0,
+      refresh_lock_held: false,
+    },
+  });
+  options.buildErrorFormatter = safeBuildErrorFormatter;
+  let failure;
+  try { await runRefresh(options); } catch (error) { failure = error; }
+
+  assert.equal(formatRefreshError(failure).code, "build_ready_retry_contract_invalid");
+  assert.deepEqual(state.calls, ["connect", "build", "sleep:5000", "end"]);
+  assert.equal(state.calls.filter((call) => call === "build").length, 1);
+  assert.equal(state.calls.includes("activate"), false);
 });
 
 test("operational heartbeat emits one pulse at a time and cleans its timer", async () => {
