@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 import { fetchMetaWhatsappTemplatesForBusiness } from "@/lib/recuperacion/meta-whatsapp-templates";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { decorateRecoveryTemplateForBusiness } from "@/lib/recuperacion/whatsapp-recovery-template-catalog";
@@ -12,6 +13,8 @@ type RouteContext = {
 };
 
 type CartTemplateSourceRow = {
+  booking_id: string | null;
+  cms_url: string | null;
   id: string;
   parking_code: string | null;
   phone_normalized: string | null;
@@ -59,14 +62,26 @@ function isSupportedBusinessKey(value: unknown): value is RecoveryWhatsappBusine
 async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>, cartId: string) {
   const { data, error } = await supabase
     .from("v_recovery_incomplete_bookings_current_compat")
-    .select("id,phone_normalized,parking_code")
+    .select("id,booking_id,phone_normalized,parking_code,cms_url")
     .eq("id", cartId)
     .maybeSingle();
 
   if (error) return { error: jsonError("No se pudo cargar el carrito solicitado.", 500, "cart_load_failed"), ok: false as const };
   if (!data) return { error: jsonError("Carrito no encontrado.", 404, "cart_not_found"), ok: false as const };
 
-  return { cart: data as CartTemplateSourceRow, ok: true as const };
+  const cart = data as CartTemplateSourceRow;
+  const commercialParking = resolveRecoveryCommercialParking({
+    cmsUrl: cart.cms_url,
+    parkingCode: cart.parking_code,
+  });
+
+  return {
+    cart: {
+      ...cart,
+      parking_code: commercialParking.parkingCode,
+    },
+    ok: true as const,
+  };
 }
 
 export async function GET(_request: NextRequest, context: RouteContext) {
@@ -93,7 +108,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     return jsonError("El carrito no tiene telefono normalizado.", 409, "business_key_unverifiable");
   }
 
-  const windowState = await getWhatsappFreeformWindowForCart(admin.supabase, cartResult.cart.id);
+  const windowState = await getWhatsappFreeformWindowForCart(admin.supabase, cartResult.cart.id, Date.now(), {
+    bookingId: cartResult.cart.booking_id,
+    parkingBusinessKey: isSupportedBusinessKey(cartResult.cart.parking_code) ? cartResult.cart.parking_code : null,
+    phoneNormalized: cartResult.cart.phone_normalized,
+  });
 
   if (windowState.status === "unverifiable" || !isSupportedBusinessKey(windowState.businessKey)) {
     return jsonError("No fue posible verificar el negocio de la conversacion de WhatsApp.", 409, "business_key_unverifiable");

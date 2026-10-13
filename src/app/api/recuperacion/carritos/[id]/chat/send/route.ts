@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
@@ -19,6 +20,7 @@ type SendChatPayload = {
 
 type CartSendSourceRow = {
   booking_id: string | null;
+  cms_url: string | null;
   email_normalized: string | null;
   id: string;
   parking_code: string | null;
@@ -50,7 +52,9 @@ type SafeSentMessage = {
   source: "live";
   messageText: string;
   messageType: string;
+  sourceMessageId: string | null;
   timeOfDay: string | null;
+  whatsappMessageId: string | null;
   whatsappStatus: string | null;
 };
 
@@ -172,8 +176,10 @@ function safeString(value: unknown) {
 }
 
 function safeMessagePayload(message: {
+  id: string | null;
   message_at: string;
   message_text: string;
+  whatsapp_message_id?: string | null;
   whatsapp_status: string | null;
 }): SafeSentMessage {
   return {
@@ -189,7 +195,9 @@ function safeMessagePayload(message: {
     source: "live",
     messageText: message.message_text,
     messageType: "text",
+    sourceMessageId: message.id,
     timeOfDay: null,
+    whatsappMessageId: message.whatsapp_message_id ?? null,
     whatsappStatus: message.whatsapp_status,
   };
 }
@@ -354,7 +362,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   const { data: cartData, error: cartError } = await admin.supabase
     .from("v_recovery_incomplete_bookings_current_compat")
-    .select("id,booking_id,email_normalized,phone_normalized,type,parking_code")
+    .select("id,booking_id,email_normalized,phone_normalized,type,parking_code,cms_url")
     .eq("id", cartId)
     .maybeSingle();
 
@@ -366,7 +374,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("Carrito no encontrado.", 404, "cart");
   }
 
-  const cart = cartData as CartSendSourceRow;
+  const cartDataRow = cartData as CartSendSourceRow;
+  const commercialParking = resolveRecoveryCommercialParking({
+    cmsUrl: cartDataRow.cms_url,
+    parkingCode: cartDataRow.parking_code,
+  });
+  const cart = {
+    ...cartDataRow,
+    parking_code: commercialParking.parkingCode,
+  };
   const legacyIdentity = await resolveLegacyCartIdByBookingId(admin.supabase, cart.booking_id);
 
   if (!legacyIdentity.ok) {
@@ -377,7 +393,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("El carrito no tiene telefono normalizado.", 400, "cart");
   }
 
-  const whatsappWindow = await getWhatsappFreeformWindowForCart(admin.supabase, cart.id);
+  const whatsappWindow = await getWhatsappFreeformWindowForCart(admin.supabase, cart.id, Date.now(), {
+    bookingId: cart.booking_id,
+    parkingBusinessKey: cart.parking_code,
+    phoneNormalized: cart.phone_normalized,
+  });
 
   if (!whatsappWindow.canSendFreeform) {
     return whatsappWindowError(whatsappWindow);
@@ -423,14 +443,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       source: "web_operator",
       whatsapp_status: "pending",
     })
-    .select("id,message_at,message_text,whatsapp_status")
+    .select("id,message_at,message_text,whatsapp_message_id,whatsapp_status")
     .single();
 
   if (insertError) {
     return jsonSupabaseTechnicalError("No se pudo registrar el mensaje para envio.", 500, "insert", insertError);
   }
 
-  const pendingMessage = safeMessagePayload(insertedMessage as { message_at: string; message_text: string; whatsapp_status: string | null });
+  const pendingMessage = safeMessagePayload(insertedMessage as { id: string; message_at: string; message_text: string; whatsapp_message_id: string | null; whatsapp_status: string | null });
 
   try {
     const n8nResult = await callN8nWebhook({ cart, messageText, operatorEmail, sentAt });
@@ -447,7 +467,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
         .eq("id", insertedMessage.id);
 
-      const safeFailedMessage = safeMessagePayload({ ...insertedMessage, whatsapp_status: failedStatus } as { message_at: string; message_text: string; whatsapp_status: string | null });
+      const safeFailedMessage = safeMessagePayload({ ...insertedMessage, whatsapp_status: failedStatus } as { id: string; message_at: string; message_text: string; whatsapp_message_id: string | null; whatsapp_status: string | null });
 
       if (n8nResult.metaWindowClosed) {
         return NextResponse.json(
@@ -479,7 +499,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         whatsapp_status: n8nResult.whatsappStatus,
       })
       .eq("id", insertedMessage.id)
-      .select("message_at,message_text,whatsapp_status")
+      .select("id,message_at,message_text,whatsapp_message_id,whatsapp_status")
       .single();
 
     if (updateError) {
@@ -491,7 +511,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     return NextResponse.json({
-      message: safeMessagePayload(updatedMessage as { message_at: string; message_text: string; whatsapp_status: string | null }),
+      message: safeMessagePayload(updatedMessage as { id: string; message_at: string; message_text: string; whatsapp_message_id: string | null; whatsapp_status: string | null }),
       ok: true,
     });
   } catch (error) {
@@ -510,7 +530,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       "Mensaje guardado localmente, pero no se pudo conectar con n8n.",
       502,
       "n8n",
-      safeMessagePayload({ ...insertedMessage, whatsapp_status: failedStatus } as { message_at: string; message_text: string; whatsapp_status: string | null }),
+      safeMessagePayload({ ...insertedMessage, whatsapp_status: failedStatus } as { id: string; message_at: string; message_text: string; whatsapp_message_id: string | null; whatsapp_status: string | null }),
     );
   }
 }

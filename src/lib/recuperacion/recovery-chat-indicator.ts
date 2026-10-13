@@ -1,8 +1,10 @@
 import "server-only";
 
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 import { businessKeyForBusinessPhone, businessKeyForParking } from "@/lib/recuperacion/whatsapp-freeform-window";
 
 export type ChatIndicatorSourceCart = {
+  cms_url?: string | null;
   form_datetime: string | null;
   id: string;
   parking_code: string | null;
@@ -36,37 +38,20 @@ function validMessageTime(value: string | null | undefined) {
   return Number.isNaN(time) ? null : time;
 }
 
-function addDays(dateValue: string, days: number) {
-  const date = new Date(dateValue);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  date.setDate(date.getDate() + days);
-
-  return date;
-}
-
 function rowBelongsToCartBusiness(cart: ChatIndicatorSourceCart, row: ChatIndicatorMemoryRow) {
-  const cartBusinessKey = businessKeyForParking(cart.parking_code);
+  const cartBusinessKey = businessKeyForParking(
+    resolveRecoveryCommercialParking({
+      cmsUrl: cart.cms_url ?? null,
+      parkingCode: cart.parking_code,
+    }).parkingCode,
+  );
   const messageBusinessKey = businessKeyForBusinessPhone(row.api_phone_normalized);
 
   return !cartBusinessKey || !messageBusinessKey || cartBusinessKey === messageBusinessKey;
 }
 
-function rowBelongsToCartTimeWindow(cart: ChatIndicatorSourceCart, row: ChatIndicatorMemoryRow) {
-  if (!cart.form_datetime) return false;
-
-  const fromDate = new Date(cart.form_datetime);
-  const toDate = addDays(cart.form_datetime, 7);
-  const messageTime = validMessageTime(row.message_at);
-
-  if (!toDate || Number.isNaN(fromDate.getTime()) || messageTime === null) return false;
-
-  return messageTime >= fromDate.getTime() && messageTime < toDate.getTime();
-}
-
 export function chatConversationIndicatorFromMemoryRows(cart: ChatIndicatorSourceCart, rows: ChatIndicatorMemoryRow[]): ChatConversationIndicator {
-  const relevantRows = rows.filter((row) => rowBelongsToCartBusiness(cart, row) && rowBelongsToCartTimeWindow(cart, row));
+  const relevantRows = rows.filter((row) => rowBelongsToCartBusiness(cart, row));
   let latestInbound: ChatIndicatorMemoryRow | null = null;
   let latestInboundTime: number | null = null;
 

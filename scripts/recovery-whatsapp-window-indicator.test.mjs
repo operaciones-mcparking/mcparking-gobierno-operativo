@@ -31,6 +31,18 @@ function loadHelperExports() {
     module,
     require(name) {
       if (name === "server-only") return {};
+      if (name === "@/lib/recuperacion/commercial-parking") {
+        return {
+          resolveRecoveryCommercialParking({ parkingCode }) {
+            const normalized = String(parkingCode ?? "").trim().toUpperCase();
+            return {
+              parkingCode: normalized === "EAP" || normalized === "MPV" ? normalized : null,
+              reason: "parking_code",
+              status: normalized === "EAP" || normalized === "MPV" ? "resolved" : "unknown",
+            };
+          },
+        };
+      }
       throw new Error(`Unexpected require in helper test: ${name}`);
     },
   });
@@ -60,6 +72,21 @@ function loadChatIndicatorHelperExports() {
     module,
     require(name) {
       if (name === "server-only") return {};
+      if (name === "@/lib/recuperacion/commercial-parking") {
+        return {
+          resolveRecoveryCommercialParking({ cmsUrl, parkingCode }) {
+            const host = String(cmsUrl ?? "").toLowerCase();
+            if (host.includes("estacionamientoaeropuerto.cl")) return { parkingCode: "EAP", reason: "cms_url_host", status: "resolved" };
+            if (host.includes("mcparking.cl")) return { parkingCode: "MPV", reason: "cms_url_host", status: "resolved" };
+            const normalized = String(parkingCode ?? "").trim().toUpperCase();
+            return {
+              parkingCode: normalized === "MPV" || normalized === "EAP" ? normalized : null,
+              reason: "parking_code",
+              status: normalized === "MPV" || normalized === "EAP" ? "resolved" : "unknown",
+            };
+          },
+        };
+      }
       if (name === "@/lib/recuperacion/whatsapp-freeform-window") {
         return {
           businessKeyForBusinessPhone(value) {
@@ -111,12 +138,13 @@ test("endpoint is GET-only for chat indicators", () => {
   assert.doesNotMatch(indicatorRoute, /export async function POST/);
 });
 
-test("endpoint does not write or call RPCs", () => {
+test("endpoint does not write and uses only scoped read RPCs", () => {
   assert.doesNotMatch(indicatorRoute, /\.insert\(/);
   assert.doesNotMatch(indicatorRoute, /\.update\(/);
   assert.doesNotMatch(indicatorRoute, /\.delete\(/);
   assert.doesNotMatch(indicatorRoute, /\.upsert\(/);
-  assert.doesNotMatch(indicatorRoute, /\.rpc\(/);
+  assert.match(indicatorRoute, /\.rpc\("recovery_whatsapp_conversation_indicators_v2"/);
+  assert.doesNotMatch(indicatorRoute, /\.rpc\("(?!recovery_whatsapp_conversation_indicators_v2)/);
 });
 
 test("endpoint uses batch processing without the individual loader", () => {
@@ -255,7 +283,7 @@ test("public DTO excludes internal fields", () => {
 });
 
 test("endpoint source does not expose private WhatsApp fields in JSON DTO", () => {
-  const publicDtoBlock = indicatorRoute.slice(indicatorRoute.indexOf("type ChatIndicatorWhatsappWindow"), indicatorRoute.indexOf("type ChatIndicatorPayload"));
+  const publicDtoBlock = indicatorRoute.slice(indicatorRoute.indexOf("type ChatIndicatorPayload"), indicatorRoute.indexOf("type PagedRowsResult"));
   assert.doesNotMatch(publicDtoBlock, /businessKey|phone_number_id|lastInboundAt|source|wa_id|wamid|hash|email|phone/i);
 });
 
@@ -326,10 +354,11 @@ test("chat indicator does not count a different known business conversation as a
 });
 
 test("endpoint uses normalized phone keys from compat views for chat association", () => {
-  assert.match(indicatorRoute, /\.select\("id,booking_id,phone_normalized,parking_code,form_datetime"\)/);
+  assert.match(indicatorRoute, /\.select\("id,booking_id,phone_normalized,parking_code,cms_url,form_datetime"\)/);
   assert.match(indicatorRoute, /\.in\("wa_id_normalized", phones\)/);
-  assert.match(indicatorRoute, /\.gte\("message_at", memoryBounds\.from\)/);
-  assert.match(indicatorRoute, /\.lt\("message_at", memoryBounds\.to\)/);
+  assert.doesNotMatch(indicatorRoute, /memoryBoundsForCarts/);
+  assert.doesNotMatch(indicatorRoute, /\.gte\("message_at", memoryBounds\.from\)/);
+  assert.doesNotMatch(indicatorRoute, /\.lt\("message_at", memoryBounds\.to\)/);
   assert.match(indicatorRoute, /normalMemoryRowsByPhone/);
   assert.match(chatIndicatorHelper, /businessKeyForBusinessPhone\(row\.api_phone_normalized\)/);
 });
@@ -337,14 +366,15 @@ test("endpoint uses normalized phone keys from compat views for chat association
 test("endpoint does not open the WhatsApp window from a different known business", () => {
   assert.match(indicatorRoute, /businessKeyForBusinessPhone/);
   assert.match(indicatorRoute, /function memoryRowsForCartBusiness/);
-  assert.match(indicatorRoute, /const parkingBusinessKey = businessKeyForParking\(cart\.parking_code\)/);
+  assert.match(indicatorRoute, /resolveRecoveryCommercialParking/);
+  assert.match(indicatorRoute, /cmsUrl:\s*cart\.cms_url/);
   assert.match(indicatorRoute, /const rowBusinessKey = businessKeyForBusinessPhone\(row\.api_phone_normalized\)/);
   assert.match(indicatorRoute, /return !rowBusinessKey \|\| rowBusinessKey === parkingBusinessKey/);
   assert.match(indicatorRoute, /const cartWindowMemoryRows = memoryRowsForCartBusiness/);
   assert.match(indicatorRoute, /memoryRows: cartWindowMemoryRows/);
 });
 
-test("chat indicator rejects messages outside the cart relation window", () => {
+test("chat indicator follows the conversation by phone and sender instead of the cart relation window", () => {
   const indicator = chatConversationIndicatorFromMemoryRows(
     { form_datetime: "2026-08-20T08:00:00.000Z", id: "cart-1", parking_code: "MPV" },
     [
@@ -354,7 +384,9 @@ test("chat indicator rejects messages outside the cart relation window", () => {
   );
 
   assert.equal(indicator.hasChat, true);
-  assert.equal(indicator.hasInbound, false);
+  assert.equal(indicator.hasInbound, true);
+  assert.equal(indicator.chatMessageCount, 2);
+  assert.equal(indicator.lastInboundMessageAt, "2026-08-19T10:00:00.000Z");
 });
 
 test("responded and no-response rows render distinct visual states", () => {
@@ -453,7 +485,8 @@ test("silent chat polling refreshes only the opened cart indicator when new mess
   const drawer = readFileSync("src/app/recuperacion/recovery-cart-chat-drawer.tsx", "utf8");
 
   assert.match(drawer, /CHAT_POLL_INTERVAL_MS = 5_000/);
-  assert.match(drawer, /params\.mode === "initial" \? nextMessageCount > 0 : nextMessageCount > previousMessageCountRef\.current/);
+  assert.match(drawer, /knownMessageIdentitiesRef/);
+  assert.match(drawer, /params\.mode === "initial" \? nextMessageCount > 0 : hasUnseenMessages/);
   assert.match(drawer, /onChatIndicatorRefreshNeeded\?\.\(params\.activeCartId\)/);
 });
 

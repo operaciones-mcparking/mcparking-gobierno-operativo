@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
-import { resolveChatReadRange } from "@/lib/recuperacion/recovery-chat-read-range";
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 import {
   businessKeyForParking,
   getWhatsappFreeformWindowForCart,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/recuperacion/whatsapp-freeform-window";
 
 const MAX_CHAT_MESSAGES = 100;
+const MAX_CHAT_PAGE_SIZE = 100;
 
 const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status,whatsapp_message_id";
 
@@ -36,6 +37,7 @@ type MessageMemoryChatRow = {
   chat_state: string | null;
   conversation_id: string | null;
   day_of_week: string | null;
+  id: string | null;
   intent_category: string | null;
   message_at: string;
   message_bound_type: string | null;
@@ -48,12 +50,17 @@ type RawMessageMemoryChatRow = {
   api_phone_normalized: string | null;
   chat_state: string | null;
   conversation_id: string | null;
+  id: string | null;
   intent_category: string | null;
   message_at: string;
   message_bound_type: string | null;
   message_sentiment: string | null;
   message_text: string | null;
   message_type: string | null;
+};
+
+type ScopedConversationMessageRow = RawMessageMemoryChatRow & {
+  source_id_raw: number | null;
 };
 
 type LiveMessageChatRow = {
@@ -79,11 +86,17 @@ type SafeChatMessagePayload = {
   source: "live" | "message_memory";
   messageText: string | null;
   messageType: string | null;
+  sourceMessageId: string | null;
   timeOfDay: string | null;
   whatsappMessageId: string | null;
   whatsappStatus: string | null;
 };
 
+type ChatPaginationPayload = {
+  hasMore: boolean;
+  nextBefore: string | null;
+  nextBeforeSourceId?: number | null;
+};
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message, ok: false }, { status });
@@ -141,13 +154,18 @@ function normalizedWhatsappMessageId(value: string | null | undefined) {
 }
 
 function safeCartPayload(cart: CartChatSourceRow, windowStart: string | null, windowEnd: string | null) {
+  const effectiveParking = resolveRecoveryCommercialParking({
+    cmsUrl: cart.cms_url,
+    parkingCode: cart.parking_code,
+  }).parkingCode;
+
   return {
     cmsUrl: cart.cms_url,
     email: cart.email_normalized,
     formDatetime: cart.form_datetime,
     id: cart.id,
     intendedDepartureDate: cart.intended_departure_date,
-    parkingCode: cart.parking_code,
+    parkingCode: effectiveParking,
     phone: cart.phone_normalized,
     type: cart.type,
     windowEnd,
@@ -171,6 +189,7 @@ function safeMessagePayload(message: MessageMemoryChatRow | RawMessageMemoryChat
     source: "message_memory",
     messageText: "message_text" in message ? message.message_text : null,
     messageType: message.message_type,
+    sourceMessageId: message.id,
     timeOfDay: "time_of_day" in message ? message.time_of_day : null,
     whatsappMessageId: normalizedWhatsappMessageId(message.conversation_id),
     whatsappStatus: null,
@@ -191,6 +210,7 @@ function safeLiveMessagePayload(message: LiveMessageChatRow): SafeChatMessagePay
     source: "live",
     messageText: message.message_text,
     messageType: "text",
+    sourceMessageId: message.id,
     timeOfDay: null,
     whatsappMessageId: normalizedWhatsappMessageId(message.whatsapp_message_id),
     whatsappStatus: message.whatsapp_status,
@@ -219,6 +239,11 @@ function sortSafeMessages(messages: SafeChatMessagePayload[]) {
 
     if (leftTime !== rightTime) return leftTime - rightTime;
     if (left.direction !== right.direction) return left.direction === "inbound" ? -1 : 1;
+    if (left.source !== right.source) return left.source.localeCompare(right.source);
+    const leftId = normalizedWhatsappMessageId(left.whatsappMessageId) ?? left.sourceMessageId ?? left.messageSource ?? "";
+    const rightId = normalizedWhatsappMessageId(right.whatsappMessageId) ?? right.sourceMessageId ?? right.messageSource ?? "";
+
+    if (leftId !== rightId) return leftId.localeCompare(rightId);
 
     return 0;
   });
@@ -260,10 +285,7 @@ function dedupeLiveMessagesAgainstCanonical(
 async function loadLiveMessages(params: {
   cartId: string;
   legacyCartId: string | null;
-  phoneNormalized: string;
   supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>;
-  windowEnd: string;
-  windowStart: string;
 }) {
   const cartLiveQueries = [
     params.supabase
@@ -291,20 +313,8 @@ async function loadLiveMessages(params: {
 
   const cartLiveResults = await Promise.all(cartLiveQueries);
 
-  const { data: phoneLiveMessages } = await params.supabase
-    .from("recovery_whatsapp_live_messages")
-    .select(LIVE_MESSAGE_SELECT)
-    .eq("phone_normalized", params.phoneNormalized)
-    .gte("message_at", params.windowStart)
-    .lt("message_at", params.windowEnd)
-    .order("message_at", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(MAX_CHAT_MESSAGES);
-
   return dedupeLiveMessages([
     ...cartLiveResults.flatMap((result) => (result.data ?? []) as LiveMessageChatRow[]),
-    ...((phoneLiveMessages ?? []) as LiveMessageChatRow[]),
   ]).slice(0, MAX_CHAT_MESSAGES);
 }
 
@@ -331,29 +341,87 @@ async function resolveLegacyCartIdByBookingId(
   return { legacyCartId: data?.[0]?.id ?? null, ok: true as const };
 }
 
-async function detectNewerCartForPhone(params: {
-  cartId: string;
-  formDatetime: string;
+function normalizedPageSize(value: string | null) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) return MAX_CHAT_PAGE_SIZE;
+
+  return Math.min(parsed, MAX_CHAT_PAGE_SIZE);
+}
+
+function normalizedBeforeCursor(value: string | null) {
+  if (!value) return null;
+
+  const time = new Date(value).getTime();
+
+  return Number.isNaN(time) ? null : new Date(time).toISOString();
+}
+
+function normalizedBeforeSourceId(value: string | null) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function isMissingConversationReadRpcError(error: unknown) {
+  const candidate = error as { code?: string | null; details?: string | null; message?: string | null } | null;
+  const text = [candidate?.code, candidate?.message, candidate?.details]
+    .filter(Boolean)
+    .join(" ");
+
+  return /\b(PGRST202|42883)\b/i.test(text)
+    || /recovery_whatsapp_conversation_messages_v2.*(not found|does not exist|could not find|unknown)/i.test(text)
+    || /(not found|does not exist|could not find|unknown).*recovery_whatsapp_conversation_messages_v2/i.test(text);
+}
+
+function paginationForMessages(messages: SafeChatMessagePayload[], requestedLimit: number, fetchedCanonicalCount: number): ChatPaginationPayload {
+  const sorted = sortSafeMessages(messages);
+  const oldest = sorted[0]?.messageAt ?? null;
+  const hasMore = fetchedCanonicalCount > requestedLimit;
+
+  return {
+    hasMore,
+    nextBefore: hasMore ? oldest : null,
+    nextBeforeSourceId: null,
+  };
+}
+
+function paginationForScopedRows(rows: ScopedConversationMessageRow[], requestedLimit: number): ChatPaginationPayload {
+  const canonicalRows = rows.slice(0, requestedLimit);
+  const oldest = canonicalRows[canonicalRows.length - 1] ?? null;
+  const hasMore = rows.length > requestedLimit;
+
+  return {
+    hasMore,
+    nextBefore: hasMore ? oldest?.message_at ?? null : null,
+    nextBeforeSourceId: hasMore ? oldest?.source_id_raw ?? null : null,
+  };
+}
+
+async function loadScopedConversationMessages(params: {
+  beforeCursor: string | null;
+  beforeSourceId: number | null;
+  businessPhone: string;
+  pageSize: number;
   phoneNormalized: string;
   supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>;
 }) {
-  const { data, error } = await params.supabase
-    .from("v_recovery_incomplete_bookings_current_compat")
-    .select("id")
-    .eq("phone_normalized", params.phoneNormalized)
-    .gt("form_datetime", params.formDatetime)
-    .neq("id", params.cartId)
-    .order("form_datetime", { ascending: true })
-    .limit(1);
+  const { data, error } = await params.supabase.rpc("recovery_whatsapp_conversation_messages_v2", {
+    p_api_phone_normalized: params.businessPhone,
+    p_before: params.beforeCursor,
+    p_before_source_id: params.beforeSourceId,
+    p_limit: params.pageSize + 1,
+    p_wa_id_normalized: params.phoneNormalized,
+  });
 
   if (error) {
-    return { failed: true, hasNewerCartForPhone: false };
+    return { error, rows: [] as ScopedConversationMessageRow[] };
   }
 
-  return { failed: false, hasNewerCartForPhone: (data ?? []).length > 0 };
+  return { error: null, rows: (data ?? []) as ScopedConversationMessageRow[] };
 }
 
-export async function GET(_request: NextRequest, context: RouteContext) {
+export async function GET(request: NextRequest, context: RouteContext) {
   const admin = await requireAdminForApi();
 
   if (!admin.ok) {
@@ -391,8 +459,20 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const windowStart = cart.form_datetime;
   const windowEndDate = cart.form_datetime ? addDays(cart.form_datetime, 7) : null;
   const windowEnd = windowEndDate ? windowEndDate.toISOString() : null;
+  const pageSize = normalizedPageSize(request.nextUrl.searchParams.get("limit"));
+  const beforeCursor = normalizedBeforeCursor(request.nextUrl.searchParams.get("before"));
+  const beforeSourceId = normalizedBeforeSourceId(request.nextUrl.searchParams.get("beforeSourceId"));
 
-  const whatsappWindow = await getWhatsappFreeformWindowForCart(admin.supabase, cartId);
+  const commercialParking = resolveRecoveryCommercialParking({
+    cmsUrl: cart.cms_url,
+    parkingCode: cart.parking_code,
+  });
+  const cartBusinessKey = businessKeyForParking(commercialParking.parkingCode);
+  const whatsappWindow = await getWhatsappFreeformWindowForCart(admin.supabase, cartId, Date.now(), {
+    bookingId: cart.booking_id,
+    parkingBusinessKey: cartBusinessKey,
+    phoneNormalized: cart.phone_normalized,
+  });
 
   if (!cart.phone_normalized) {
     return NextResponse.json({
@@ -405,77 +485,84 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
   }
 
-  if (!windowStart || !windowEnd) {
-    return NextResponse.json({
-      cart: safeCartPayload(cart, windowStart, windowEnd),
-      messages: [],
-      ok: true,
-      reason: "El carrito no tiene fecha form_datetime valida para construir la ventana de chat.",
-      summary: buildSummary([], "metadata"),
-      whatsappWindow,
-    });
-  }
-
   const liveMessages = await loadLiveMessages({
     cartId,
     legacyCartId: legacyIdentity.legacyCartId,
-    phoneNormalized: cart.phone_normalized,
     supabase: admin.supabase,
-    windowEnd,
-    windowStart,
   });
   const safeLiveMessages = liveMessages.map(safeLiveMessagePayload);
-  const newerCartResult = await detectNewerCartForPhone({
-    cartId,
-    formDatetime: windowStart,
-    phoneNormalized: cart.phone_normalized,
-    supabase: admin.supabase,
-  });
-  const { chatReadEnd, chatReadStart } = resolveChatReadRange({
-    hasNewerCartForPhone: newerCartResult.hasNewerCartForPhone,
-    newerCartLookupFailed: newerCartResult.failed,
-    nowIso: new Date().toISOString(),
-    windowEnd,
-    windowStart,
-  });
-  const cartBusinessKey = businessKeyForParking(cart.parking_code);
   const cartBusinessPhone = cartBusinessKey ? recoveryWhatsappBusinessPhoneForKey(cartBusinessKey) : null;
+
+  if (cartBusinessPhone) {
+    const scopedMessages = await loadScopedConversationMessages({
+      beforeCursor,
+      beforeSourceId,
+      businessPhone: cartBusinessPhone,
+      pageSize,
+      phoneNormalized: cart.phone_normalized,
+      supabase: admin.supabase,
+    });
+
+    if (!scopedMessages.error) {
+      const canonicalRows = scopedMessages.rows.slice(0, pageSize);
+      const safeCanonicalMessages = canonicalRows.map(safeMessagePayload);
+      const messages = sortSafeMessages([
+        ...safeCanonicalMessages,
+        ...(beforeCursor ? [] : dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeCanonicalMessages)),
+      ]).slice(-pageSize);
+
+      return NextResponse.json({
+        cart: safeCartPayload(cart, windowStart, windowEnd),
+        messages,
+        ok: true,
+        pagination: paginationForScopedRows(scopedMessages.rows, pageSize),
+        summary: buildSummary(messages, canonicalRows.length > 0 ? "raw" : "live"),
+        whatsappWindow,
+      });
+    }
+
+    if (!isMissingConversationReadRpcError(scopedMessages.error)) {
+      return jsonError("No se pudo cargar el chat real del carrito.", 500);
+    }
+  }
 
   let rawMessagesQuery = admin.supabase
     .from("v_recovery_whatsapp_message_memory_raw_current_compat")
-    .select("conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text")
+    .select("id,conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text")
     .eq("wa_id_normalized", cart.phone_normalized)
-    .gte("message_at", chatReadStart)
-    .lt("message_at", chatReadEnd);
+    .order("message_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(pageSize + 1);
+
+  if (beforeCursor) {
+    rawMessagesQuery = rawMessagesQuery.lt("message_at", beforeCursor);
+  }
 
   if (cartBusinessPhone) {
     rawMessagesQuery = rawMessagesQuery.eq("api_phone_normalized", cartBusinessPhone);
   }
 
-  const { data: rawMessagesData, error: rawMessagesError } = await rawMessagesQuery
-    .order("message_at", { ascending: true })
-    .order("message_bound_type", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(MAX_CHAT_MESSAGES);
+  const { data: rawMessagesData, error: rawMessagesError } = await rawMessagesQuery;
 
   if (rawMessagesError) {
     return jsonError("No se pudo cargar el chat real del carrito.", 500);
   }
 
-  const rawMessages = (rawMessagesData ?? []) as RawMessageMemoryChatRow[];
+  const rawMessages = ((rawMessagesData ?? []) as RawMessageMemoryChatRow[]).slice(0, pageSize);
 
   if (rawMessages.length > 0) {
     const safeRawMessages = rawMessages.map(safeMessagePayload);
     const messages = sortSafeMessages([
       ...safeRawMessages,
-      ...dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeRawMessages),
-    ]).slice(0, MAX_CHAT_MESSAGES);
+      ...(beforeCursor ? [] : dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeRawMessages)),
+    ]).slice(-pageSize);
 
     return NextResponse.json({
       cart: safeCartPayload(cart, windowStart, windowEnd),
       messages,
       ok: true,
+      pagination: paginationForMessages(messages, pageSize, (rawMessagesData ?? []).length),
       summary: buildSummary(messages, "raw"),
       whatsappWindow,
     });
@@ -483,37 +570,39 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
   let messagesQuery = admin.supabase
     .from("v_recovery_whatsapp_message_memory_current_compat")
-    .select("conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week")
+    .select("id,conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week")
     .eq("wa_id_normalized", cart.phone_normalized)
-    .gte("message_at", chatReadStart)
-    .lt("message_at", chatReadEnd);
+    .order("message_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(pageSize + 1);
+
+  if (beforeCursor) {
+    messagesQuery = messagesQuery.lt("message_at", beforeCursor);
+  }
 
   if (cartBusinessPhone) {
     messagesQuery = messagesQuery.eq("api_phone_normalized", cartBusinessPhone);
   }
 
-  const { data: messagesData, error: messagesError } = await messagesQuery
-    .order("message_at", { ascending: true })
-    .order("message_bound_type", { ascending: true })
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(MAX_CHAT_MESSAGES);
+  const { data: messagesData, error: messagesError } = await messagesQuery;
 
   if (messagesError) {
     return jsonError("No se pudo cargar el chat metadata-only del carrito.", 500);
   }
 
-  const messages = (messagesData ?? []) as MessageMemoryChatRow[];
+  const messages = ((messagesData ?? []) as MessageMemoryChatRow[]).slice(0, pageSize);
   const safeCanonicalMessages = messages.map(safeMessagePayload);
   const safeMessages = sortSafeMessages([
     ...safeCanonicalMessages,
-    ...dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeCanonicalMessages),
-  ]).slice(0, MAX_CHAT_MESSAGES);
+    ...(beforeCursor ? [] : dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeCanonicalMessages)),
+  ]).slice(-pageSize);
 
   return NextResponse.json({
     cart: safeCartPayload(cart, windowStart, windowEnd),
     messages: safeMessages,
     ok: true,
+    pagination: paginationForMessages(safeMessages, pageSize, (messagesData ?? []).length),
     summary: buildSummary(safeMessages, messages.length > 0 ? "metadata" : "live"),
     whatsappWindow,
   });

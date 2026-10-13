@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { fetchMetaWhatsappTemplatesForBusiness, type SafeMetaWhatsappTemplate } from "@/lib/recuperacion/meta-whatsapp-templates";
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 import {
   buildRecoveryWhatsappTemplateN8nPayload,
   buildRecoveryWhatsappTemplateN8nPayloadPreview,
@@ -19,6 +20,7 @@ type RouteContext = {
 
 type CartTemplateSendDryRunRow = {
   booking_id: string | null;
+  cms_url: string | null;
   email_normalized: string | null;
   id: string;
   parking_code: string | null;
@@ -39,7 +41,9 @@ type SafeSentTemplateMessage = {
   messageText: string;
   messageType: string;
   source: "live";
+  sourceMessageId: string | null;
   timeOfDay: string | null;
+  whatsappMessageId: string | null;
   whatsappStatus: string | null;
 };
 
@@ -136,8 +140,10 @@ function createServiceRoleClient() {
 }
 
 function safeMessagePayload(message: {
+  id: string | null;
   message_at: string;
   message_text: string;
+  whatsapp_message_id?: string | null;
   whatsapp_status: string | null;
 }): SafeSentTemplateMessage {
   return {
@@ -153,7 +159,9 @@ function safeMessagePayload(message: {
     messageText: message.message_text,
     messageType: "template",
     source: "live",
+    sourceMessageId: message.id,
     timeOfDay: null,
+    whatsappMessageId: message.whatsapp_message_id ?? null,
     whatsappStatus: message.whatsapp_status,
   };
 }
@@ -173,14 +181,26 @@ function maskPhone(value: string | null) {
 async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>, cartId: string) {
   const { data, error } = await supabase
     .from("v_recovery_incomplete_bookings_current_compat")
-    .select("id,booking_id,phone_normalized,email_normalized,type,parking_code")
+    .select("id,booking_id,phone_normalized,email_normalized,type,parking_code,cms_url")
     .eq("id", cartId)
     .maybeSingle();
 
   if (error) return { error: jsonError("No se pudo cargar el carrito solicitado.", 500, "cart_load_failed"), ok: false as const };
   if (!data) return { error: jsonError("Carrito no encontrado.", 404, "cart_not_found"), ok: false as const };
 
-  return { cart: data as CartTemplateSendDryRunRow, ok: true as const };
+  const cart = data as CartTemplateSendDryRunRow;
+  const commercialParking = resolveRecoveryCommercialParking({
+    cmsUrl: cart.cms_url,
+    parkingCode: cart.parking_code,
+  });
+
+  return {
+    cart: {
+      ...cart,
+      parking_code: commercialParking.parkingCode,
+    },
+    ok: true as const,
+  };
 }
 
 async function resolveLegacyCartIdByBookingId(
@@ -356,7 +376,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("El carrito no tiene telefono normalizado.", 409, "business_key_unverifiable");
   }
 
-  const windowState = await getWhatsappFreeformWindowForCart(admin.supabase, cartResult.cart.id);
+  const windowState = await getWhatsappFreeformWindowForCart(admin.supabase, cartResult.cart.id, Date.now(), {
+    bookingId: cartResult.cart.booking_id,
+    parkingBusinessKey: isSupportedBusinessKey(cartResult.cart.parking_code) ? cartResult.cart.parking_code : null,
+    phoneNormalized: cartResult.cart.phone_normalized,
+  });
 
   if (windowState.status === "unverifiable" || !isSupportedBusinessKey(windowState.businessKey)) {
     return jsonError("No fue posible verificar el negocio de la conversacion de WhatsApp.", 409, "business_key_unverifiable");
@@ -470,7 +494,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       source: "web_operator",
       whatsapp_status: "pending",
     })
-    .select("id,message_at,message_text,whatsapp_status")
+    .select("id,message_at,message_text,whatsapp_message_id,whatsapp_status")
     .single();
 
   if (insertError || !insertedMessage) {
@@ -501,13 +525,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       whatsapp_status: finalStatus,
     })
     .eq("id", insertedMessage.id)
-    .select("message_at,message_text,whatsapp_status")
+    .select("id,message_at,message_text,whatsapp_message_id,whatsapp_status")
     .single();
 
   const safeMessage = safeMessagePayload(
     (updateError || !updatedMessage ? { ...insertedMessage, whatsapp_status: finalStatus } : updatedMessage) as {
+      id: string;
       message_at: string;
       message_text: string;
+      whatsapp_message_id: string | null;
       whatsapp_status: string | null;
     },
   );

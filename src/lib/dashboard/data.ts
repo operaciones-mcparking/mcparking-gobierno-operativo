@@ -12,6 +12,7 @@ import {
   type RecoveryAttributionMatch,
   type RecoveryAttributionPurchaseInput,
 } from "@/lib/recuperacion/recovery-attribution";
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 
 export type DashboardContext = {
   countryId?: string | null;
@@ -2103,8 +2104,10 @@ export async function getRecoveryCartAuditRows(limit?: number | null, selectedCa
   };
 
   type CartRawIdentityRow = {
+    cms_url: string | null;
     id: string;
     message_id: string | null;
+    parking_code: string | null;
   };
 
   type CartStatusReadModelRow = {
@@ -2276,7 +2279,7 @@ export async function getRecoveryCartAuditRows(limit?: number | null, selectedCa
           (chunk) =>
             supabase
               .from("v_recovery_incomplete_bookings_current_compat")
-              .select("id,message_id")
+              .select("id,message_id,parking_code,cms_url")
               .in("id", chunk),
         )
       : Promise.resolve({ data: [] as CartRawIdentityRow[], error: null }),
@@ -2291,6 +2294,7 @@ export async function getRecoveryCartAuditRows(limit?: number | null, selectedCa
   }
 
   const statusByCartId = new Map((statusResult.data ?? []).map((item) => [item.cart_id, item]));
+  const rawIdentityByCartId = new Map((rawIdentityResult.data ?? []).map((item) => [item.id, item]));
   const messageIdByCartId = new Map((rawIdentityResult.data ?? []).map((item) => [item.id, item.message_id]));
   const purchaseIds = Array.from(
     new Set(
@@ -2356,6 +2360,11 @@ export async function getRecoveryCartAuditRows(limit?: number | null, selectedCa
     const purchase = status?.direct_purchase_id ? purchasesById.get(status.direct_purchase_id) : undefined;
     const reviewAttribution = status?.recovery_relation_status === "review" ? reviewAttributionByCartId.get(cart.cart_id) : undefined;
     const auditStatus = auditStatusFromReadModel(cart, status, purchase);
+    const rawIdentity = rawIdentityByCartId.get(cart.cart_id);
+    const commercialParking = resolveRecoveryCommercialParking({
+      cmsUrl: rawIdentity?.cms_url ?? null,
+      parkingCode: rawIdentity?.parking_code ?? cart.parking_code,
+    });
     const messageId = messageIdByCartId.get(cart.cart_id) ?? null;
     const tracking = messageId ? trackingByMessageId.get(messageId) : undefined;
     const purchaseCreatedAt = status?.recovery_relation_status === "review"
@@ -2391,7 +2400,7 @@ export async function getRecoveryCartAuditRows(limit?: number | null, selectedCa
       lastInboundMessageAt: null,
       lastInboundSentiment: null,
       message_sent: cart.message_sent ?? null,
-      parking_code: cart.parking_code ?? null,
+      parking_code: commercialParking.parkingCode,
       phone: cart.phone_normalized,
       purchase_amount: purchaseAmount,
       purchase_created_at: purchaseCreatedAt,

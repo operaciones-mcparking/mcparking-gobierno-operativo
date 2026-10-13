@@ -2,10 +2,12 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 import {
   businessKeyForBusinessPhone,
   businessKeyForParking,
   publicWhatsappFreeformWindow,
+  recoveryWhatsappBusinessPhoneForKey,
   resolveWhatsappConversationBusinessKey,
   resolveWhatsappFreeformWindowFromLoadedSources,
   type WhatsappFreeformWindowStatus,
@@ -28,6 +30,7 @@ const UNVERIFIABLE_WHATSAPP_WINDOW: ChatIndicatorWhatsappWindow = {
 
 type CartIndicatorSourceRow = {
   booking_id: string | null;
+  cms_url: string | null;
   form_datetime: string | null;
   id: string;
   parking_code: string | null;
@@ -49,6 +52,16 @@ type ChatIndicatorWhatsappWindow = {
   closesAt: string | null;
   remainingSeconds: number | null;
   status: WhatsappFreeformWindowStatus;
+};
+
+type ConversationIndicatorRpcRow = {
+  api_phone_normalized: string | null;
+  chat_message_count: number | null;
+  latest_inbound_at: string | null;
+  latest_inbound_chat_state: string | null;
+  latest_inbound_intent_category: string | null;
+  latest_inbound_sentiment: string | null;
+  wa_id_normalized: string | null;
 };
 
 type ChatIndicatorPayload = {
@@ -112,40 +125,6 @@ function normalizeIdsFromSearchParams(searchParams: URLSearchParams) {
         .filter((item) => item.length > 0),
     ),
   ).slice(0, MAX_CART_IDS);
-}
-
-function addDays(dateValue: string, days: number) {
-  const date = new Date(dateValue);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  date.setDate(date.getDate() + days);
-
-  return date;
-}
-
-function memoryBoundsForCarts(carts: CartIndicatorSourceRow[]) {
-  const fromTimes: number[] = [];
-  const toTimes: number[] = [];
-
-  for (const cart of carts) {
-    if (!cart.form_datetime) continue;
-
-    const fromDate = new Date(cart.form_datetime);
-    const toDate = addDays(cart.form_datetime, 7);
-
-    if (Number.isNaN(fromDate.getTime()) || !toDate) continue;
-
-    fromTimes.push(fromDate.getTime());
-    toTimes.push(toDate.getTime());
-  }
-
-  if (fromTimes.length === 0 || toTimes.length === 0) return null;
-
-  return {
-    from: new Date(Math.min(...fromTimes)).toISOString(),
-    to: new Date(Math.max(...toTimes)).toISOString(),
-  };
 }
 
 function emptyIndicator(cartId: string): ChatIndicatorPayload {
@@ -259,7 +238,12 @@ function whatsappWindowForCart(params: {
   memoryRows: WhatsappMemoryConversationRow[];
   nowMs: number;
 }) {
-  const parkingBusinessKey = businessKeyForParking(params.cart.parking_code);
+  const parkingBusinessKey = businessKeyForParking(
+    resolveRecoveryCommercialParking({
+      cmsUrl: params.cart.cms_url,
+      parkingCode: params.cart.parking_code,
+    }).parkingCode,
+  );
   const businessKey = resolveWhatsappConversationBusinessKey({
     memoryRows: params.memoryRows,
     parkingBusinessKey,
@@ -284,7 +268,12 @@ function whatsappWindowForCart(params: {
 }
 
 function memoryRowsForCartBusiness(cart: CartIndicatorSourceRow, rows: WhatsappMemoryConversationRow[]) {
-  const parkingBusinessKey = businessKeyForParking(cart.parking_code);
+  const parkingBusinessKey = businessKeyForParking(
+    resolveRecoveryCommercialParking({
+      cmsUrl: cart.cms_url,
+      parkingCode: cart.parking_code,
+    }).parkingCode,
+  );
 
   if (!parkingBusinessKey) return rows;
 
@@ -293,6 +282,76 @@ function memoryRowsForCartBusiness(cart: CartIndicatorSourceRow, rows: WhatsappM
 
     return !rowBusinessKey || rowBusinessKey === parkingBusinessKey;
   });
+}
+
+function conversationPairForCart(cart: CartIndicatorSourceRow) {
+  if (!cart.phone_normalized) return null;
+
+  const parkingBusinessKey = businessKeyForParking(
+    resolveRecoveryCommercialParking({
+      cmsUrl: cart.cms_url,
+      parkingCode: cart.parking_code,
+    }).parkingCode,
+  );
+
+  if (!parkingBusinessKey) return null;
+
+  return {
+    api_phone_normalized: recoveryWhatsappBusinessPhoneForKey(parkingBusinessKey),
+    wa_id_normalized: cart.phone_normalized,
+  };
+}
+
+function conversationSummaryKey(phoneNormalized: string | null | undefined, businessPhone: string | null | undefined) {
+  if (!phoneNormalized || !businessPhone) return null;
+
+  return `${phoneNormalized}:${businessPhone}`;
+}
+
+function isMissingConversationIndicatorsRpcError(error: unknown) {
+  const candidate = error as { code?: string | null; details?: string | null; message?: string | null } | null;
+  const text = [candidate?.code, candidate?.message, candidate?.details]
+    .filter(Boolean)
+    .join(" ");
+
+  return /\b(PGRST202|42883)\b/i.test(text)
+    || /recovery_whatsapp_conversation_indicators_v2.*(not found|does not exist|could not find|unknown)/i.test(text)
+    || /(not found|does not exist|could not find|unknown).*recovery_whatsapp_conversation_indicators_v2/i.test(text);
+}
+
+async function loadConversationIndicatorSummaries(
+  supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>,
+  carts: CartIndicatorSourceRow[],
+) {
+  const pairs = Array.from(
+    new Map(
+      carts
+        .map(conversationPairForCart)
+        .filter((pair): pair is { api_phone_normalized: string; wa_id_normalized: string } => pair !== null)
+        .map((pair) => [`${pair.wa_id_normalized}:${pair.api_phone_normalized}`, pair]),
+    ).values(),
+  );
+
+  if (pairs.length === 0) {
+    return { error: null, summariesByConversation: new Map<string, ConversationIndicatorRpcRow>() };
+  }
+
+  const { data, error } = await supabase.rpc("recovery_whatsapp_conversation_indicators_v2", {
+    p_pairs: pairs,
+  });
+
+  if (error) {
+    return { error, summariesByConversation: new Map<string, ConversationIndicatorRpcRow>() };
+  }
+
+  return {
+    error: null,
+    summariesByConversation: new Map(
+      ((data ?? []) as ConversationIndicatorRpcRow[])
+        .map((row) => [conversationSummaryKey(row.wa_id_normalized, row.api_phone_normalized), row] as const)
+        .filter((entry): entry is readonly [string, ConversationIndicatorRpcRow] => entry[0] !== null),
+    ),
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -310,7 +369,7 @@ export async function GET(request: NextRequest) {
 
   const { data: cartsData, error: cartsError } = await admin.supabase
     .from("v_recovery_incomplete_bookings_current_compat")
-    .select("id,booking_id,phone_normalized,parking_code,form_datetime")
+    .select("id,booking_id,phone_normalized,parking_code,cms_url,form_datetime")
     .in("id", ids);
 
   if (cartsError) {
@@ -327,11 +386,6 @@ export async function GET(request: NextRequest) {
 
   const phones = Array.from(new Set(cartsWithPhone.map((cart) => cart.phone_normalized as string)));
   const cartIds = carts.map((cart) => cart.id);
-  const memoryBounds = memoryBoundsForCarts(cartsWithPhone);
-
-  if (!memoryBounds) {
-    return NextResponse.json({ indicators: Object.fromEntries(indicators), ok: true });
-  }
 
   const legacyIdentity = await legacyCartIdentityByV2CartId(admin.supabase, carts);
 
@@ -368,14 +422,67 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  const [conversationSummariesResult, ...scopedLiveRowsResults] = await Promise.all([
+    loadConversationIndicatorSummaries(admin.supabase, cartsWithPhone),
+    ...liveQueries,
+  ]);
+
+  if (!conversationSummariesResult.error && !scopedLiveRowsResults.some((result) => result.error)) {
+    const liveRows = dedupeLiveRows(scopedLiveRowsResults.flatMap((result) => result.rows));
+    const legacyCartIdToV2CartId = new Map(Array.from(legacyIdentity.legacyByV2CartId.entries()).map(([v2CartId, legacyCartId]) => [legacyCartId, v2CartId]));
+    const liveRowsByCartId = rowsByKey(liveRows, (row) => row.cart_v2_id ?? (row.cart_id ? legacyCartIdToV2CartId.get(row.cart_id) : null));
+    const nowMs = Date.now();
+
+    for (const cart of cartsWithPhone) {
+      const pair = conversationPairForCart(cart);
+      const pairKey = pair ? conversationSummaryKey(pair.wa_id_normalized, pair.api_phone_normalized) : null;
+      const summary = pairKey ? conversationSummariesResult.summariesByConversation.get(pairKey) : null;
+      const latestInboundMemoryRows: MessageMemoryIndicatorRow[] = summary?.latest_inbound_at && pair
+        ? [{
+            api_phone_normalized: pair.api_phone_normalized,
+            chat_state: summary.latest_inbound_chat_state,
+            intent_category: summary.latest_inbound_intent_category,
+            message_at: summary.latest_inbound_at,
+            message_bound_type: "inbound",
+            message_sentiment: summary.latest_inbound_sentiment,
+            wa_id_normalized: pair.wa_id_normalized,
+          }]
+        : [];
+
+      indicators.set(cart.id, {
+        ...emptyIndicator(cart.id),
+        chatMessageCount: summary?.chat_message_count ?? 0,
+        hasChat: (summary?.chat_message_count ?? 0) > 0,
+        hasInbound: Boolean(summary?.latest_inbound_at),
+        lastInboundChatState: summary?.latest_inbound_chat_state ?? null,
+        lastInboundIntentCategory: summary?.latest_inbound_intent_category ?? null,
+        lastInboundMessageAt: summary?.latest_inbound_at ?? null,
+        lastInboundSentiment: summary?.latest_inbound_sentiment ?? null,
+        whatsappWindow: whatsappWindowForCart({
+          cart,
+          liveRows: liveRowsByCartId.get(cart.id) ?? [],
+          memoryRows: latestInboundMemoryRows,
+          nowMs,
+        }),
+      });
+    }
+
+    return NextResponse.json({ indicators: Object.fromEntries(indicators), ok: true });
+  }
+
+  if (conversationSummariesResult.error && !isMissingConversationIndicatorsRpcError(conversationSummariesResult.error)) {
+    return NextResponse.json({
+      indicators: Object.fromEntries(Array.from(indicators.entries()).map(([id, indicator]) => [id, indicatorWithUnknownChat(indicator)])),
+      ok: true,
+    });
+  }
+
   const [memoryRowsResult, rawRowsResult, ...liveRowsResults] = await Promise.all([
     fetchRowsInPages<MessageMemoryIndicatorRow>(() =>
       admin.supabase
         .from("v_recovery_whatsapp_message_memory_current_compat")
         .select("wa_id_normalized,message_at,message_bound_type,intent_category,message_sentiment,chat_state,api_phone_normalized")
         .in("wa_id_normalized", phones)
-        .gte("message_at", memoryBounds.from)
-        .lt("message_at", memoryBounds.to)
         .order("message_at", { ascending: false }),
     ),
     fetchRowsInPages<MessageMemoryIndicatorRow>(() =>
@@ -383,8 +490,6 @@ export async function GET(request: NextRequest) {
         .from("v_recovery_whatsapp_message_memory_raw_current_compat")
         .select("wa_id_normalized,message_at,message_bound_type,api_phone_normalized")
         .in("wa_id_normalized", phones)
-        .gte("message_at", memoryBounds.from)
-        .lt("message_at", memoryBounds.to)
         .order("message_at", { ascending: false }),
     ),
     ...liveQueries,

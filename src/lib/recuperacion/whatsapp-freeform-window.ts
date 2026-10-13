@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { resolveRecoveryCommercialParking } from "@/lib/recuperacion/commercial-parking";
 
 export type RecoveryWhatsappBusinessKey = "MPV" | "EAP";
 export type WhatsappFreeformWindowStatus = "open" | "closing_soon" | "closed" | "missing" | "unverifiable";
@@ -32,6 +33,7 @@ export function recoveryWhatsappBusinessPhoneForKey(key: RecoveryWhatsappBusines
 
 type CartContactRow = {
   booking_id: string | null;
+  cms_url?: string | null;
   parking_code: string | null;
   phone_normalized: string | null;
 };
@@ -63,6 +65,12 @@ type WhatsappFreeformWindowRpcRow = {
   source: WhatsappFreeformWindowSource;
 };
 
+type WhatsappConversationWindowRpcRow = {
+  error_code: string | null;
+  last_inbound_at: string | null;
+  source: WhatsappFreeformWindowSource;
+};
+
 function emptyState(
   status: "missing" | "unverifiable",
   businessKey: RecoveryWhatsappBusinessKey | null = null,
@@ -88,13 +96,19 @@ function validTimestamp(value: string | null | undefined) {
   return Number.isNaN(time) ? null : time;
 }
 
+function isMissingConversationWindowRpcError(error: unknown) {
+  const candidate = error as { code?: string | null; details?: string | null; message?: string | null } | null;
+  const text = [candidate?.code, candidate?.message, candidate?.details]
+    .filter(Boolean)
+    .join(" ");
+
+  return /\b(PGRST202|42883)\b/i.test(text)
+    || /recovery_whatsapp_conversation_window_v2.*(not found|does not exist|could not find|unknown)/i.test(text)
+    || /(not found|does not exist|could not find|unknown).*recovery_whatsapp_conversation_window_v2/i.test(text);
+}
+
 export function businessKeyForParking(parkingCode: string | null | undefined): RecoveryWhatsappBusinessKey | null {
-  const normalized = String(parkingCode ?? "").trim().toUpperCase();
-
-  if (normalized === "MPV") return "MPV";
-  if (normalized === "EAP") return "EAP";
-
-  return null;
+  return resolveRecoveryCommercialParking({ parkingCode }).parkingCode;
 }
 
 export function businessKeyForBusinessPhone(value: string | null | undefined): RecoveryWhatsappBusinessKey | null {
@@ -382,7 +396,79 @@ export async function getWhatsappFreeformWindowForCart(
   supabase: SupabaseClient,
   cartId: string,
   nowMs = Date.now(),
+  options?: {
+    bookingId?: string | null;
+    parkingBusinessKey?: RecoveryWhatsappBusinessKey | null;
+    phoneNormalized?: string | null;
+  },
 ): Promise<WhatsappFreeformWindowState> {
+  if (options) {
+    if (!options.parkingBusinessKey) {
+      return emptyState("unverifiable");
+    }
+
+    if (!options.phoneNormalized) {
+      return emptyState("missing", options.parkingBusinessKey);
+    }
+
+    const legacyIdentity = await resolveLegacyCartIdByBookingId(supabase, options.bookingId ?? null);
+
+    if (!legacyIdentity.ok) {
+      return emptyState("unverifiable", options.parkingBusinessKey);
+    }
+
+    const businessPhone = recoveryWhatsappBusinessPhoneForKey(options.parkingBusinessKey);
+    const { data: conversationWindowData, error: conversationWindowError } = await supabase.rpc(
+      "recovery_whatsapp_conversation_window_v2",
+      {
+        p_api_phone_normalized: businessPhone,
+        p_cart_id: cartId,
+        p_legacy_cart_id: legacyIdentity.legacyCartId,
+        p_wa_id_normalized: options.phoneNormalized,
+      },
+    );
+
+    if (!conversationWindowError) {
+      const row = (Array.isArray(conversationWindowData) ? conversationWindowData[0] : conversationWindowData) as WhatsappConversationWindowRpcRow | null;
+
+      if (!row || row.error_code) {
+        return emptyState(row?.error_code ? "unverifiable" : "missing", options.parkingBusinessKey);
+      }
+
+      if (!row.last_inbound_at) {
+        return emptyState("missing", options.parkingBusinessKey);
+      }
+
+      return classifyWhatsappFreeformWindow(
+        row.last_inbound_at,
+        nowMs,
+        options.parkingBusinessKey,
+        row.source,
+      );
+    }
+
+    if (!isMissingConversationWindowRpcError(conversationWindowError)) {
+      return emptyState("unverifiable", options.parkingBusinessKey);
+    }
+
+    const [currentMemoryRows, rawMemoryRows, liveCandidatesResult] = await Promise.all([
+      memoryConversationRows(supabase, "v_recovery_whatsapp_message_memory_current_compat", options.phoneNormalized),
+      memoryConversationRows(supabase, "v_recovery_whatsapp_message_memory_raw_current_compat", options.phoneNormalized),
+      liveInboundCandidates(supabase, cartId, legacyIdentity.legacyCartId, options.parkingBusinessKey),
+    ]);
+
+    if (currentMemoryRows.error || rawMemoryRows.error || liveCandidatesResult.error) {
+      return emptyState("unverifiable", options.parkingBusinessKey);
+    }
+
+    return resolveWhatsappFreeformWindowFromLoadedSources({
+      liveCandidates: liveCandidatesResult.candidates,
+      memoryRows: [...currentMemoryRows.rows, ...rawMemoryRows.rows],
+      nowMs,
+      parkingBusinessKey: options.parkingBusinessKey,
+    });
+  }
+
   const { data, error } = await supabase.rpc("recovery_whatsapp_freeform_window_v2", {
     p_cart_id: cartId,
   });

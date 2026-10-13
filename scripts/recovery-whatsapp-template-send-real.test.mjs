@@ -288,7 +288,7 @@ test("23. transport stays write-free while the authenticated route records the o
 });
 
 test("24. transport does not call Graph messages directly", () => {
-  assert.doesNotMatch(transport + route, /graph\.facebook\.com|\/messages|whatsappMessageId/);
+  assert.doesNotMatch(transport + route, /graph\.facebook\.com|\/messages/);
 });
 
 test("25. route does not expose webhook URL or secret in public response", () => {

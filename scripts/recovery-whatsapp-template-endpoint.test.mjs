@@ -29,12 +29,13 @@ test("2. invalid admin paths return 401 or 403", () => {
 });
 
 test("3. missing cart returns 404", () => {
-  assert.match(route, /\.from\("v_recovery_incomplete_bookings_current_compat"\)[\s\S]*\.select\("id,phone_normalized,parking_code"\)[\s\S]*\.eq\("id", cartId\)[\s\S]*\.maybeSingle\(\)/);
+  assert.match(route, /\.from\("v_recovery_incomplete_bookings_current_compat"\)[\s\S]*\.select\("id,booking_id,phone_normalized,parking_code,cms_url"\)[\s\S]*\.eq\("id", cartId\)[\s\S]*\.maybeSingle\(\)/);
   assert.match(route, /jsonError\("Carrito no encontrado\.", 404, "cart_not_found"\)/);
 });
 
 test("4. endpoint uses deterministic business resolution without requiring an open freeform window", () => {
-  assert.match(route, /getWhatsappFreeformWindowForCart\(admin\.supabase, cartResult\.cart\.id\)/);
+  assert.match(route, /resolveRecoveryCommercialParking/);
+  assert.match(route, /getWhatsappFreeformWindowForCart\(admin\.supabase, cartResult\.cart\.id/);
   assert.match(route, /windowState\.businessKey/);
   assert.match(route, /windowState\.status === "unverifiable"/);
   assert.doesNotMatch(route, /windowState\.canSendFreeform|windowState\.status === "closed"|windowState\.status === "missing"/);

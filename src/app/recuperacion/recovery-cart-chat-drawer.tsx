@@ -23,7 +23,9 @@ type CartChatMessage = {
   source: "live" | "message_memory";
   messageText: string | null;
   messageType: string | null;
+  sourceMessageId: string | null;
   timeOfDay: string | null;
+  whatsappMessageId: string | null;
   whatsappStatus: string | null;
 };
 
@@ -42,6 +44,11 @@ type CartChatResponse = {
   error?: string;
   messages?: CartChatMessage[];
   ok: boolean;
+  pagination?: {
+    hasMore: boolean;
+    nextBefore: string | null;
+    nextBeforeSourceId?: number | null;
+  };
   reason?: string;
   whatsappWindow?: WhatsappFreeformWindowPayload;
   summary?: {
@@ -290,6 +297,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
   const [error, setError] = useState<string | null>(null);
   const [isContactActionsOpen, setIsContactActionsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [messageDraft, setMessageDraft] = useState("");
   const [messageSourceFilter, setMessageSourceFilter] = useState<"all" | "live" | "message_memory">("all");
@@ -311,9 +319,12 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
   const chatRequestSeqRef = useRef(0);
   const initialChatControllerRef = useRef<AbortController | null>(null);
   const isChatFetchInFlightRef = useRef(false);
+  const knownMessageIdentitiesRef = useRef<Set<string>>(new Set());
   const localMessagesVersionRef = useRef(0);
   const previousMessageCountRef = useRef(0);
   const shouldScrollToBottomRef = useRef(false);
+  const olderMessagesScrollHeightRef = useRef<number | null>(null);
+  const olderMessagesControllerRef = useRef<AbortController | null>(null);
   const silentChatControllerRef = useRef<AbortController | null>(null);
   const templateSendControllerRef = useRef<AbortController | null>(null);
 
@@ -352,9 +363,11 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
         return;
       }
 
-      const nextMessageCount = payload.messages?.length ?? 0;
+      const nextMessages = payload.messages ?? [];
+      const nextMessageCount = nextMessages.length;
+      const hasUnseenMessages = nextMessages.some((message) => !knownMessageIdentitiesRef.current.has(messageIdentity(message)));
 
-      if (params.mode === "initial" ? nextMessageCount > 0 : nextMessageCount > previousMessageCountRef.current) {
+      if (params.mode === "initial" ? nextMessageCount > 0 : hasUnseenMessages) {
         onChatIndicatorRefreshNeeded?.(params.activeCartId);
       }
 
@@ -368,6 +381,8 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
 
           return {
             ...payload,
+            messages: mergeMessages(current?.messages ?? [], payload.messages ?? []),
+            pagination: current?.pagination ?? payload.pagination,
             whatsappWindow: current?.whatsappWindow ?? payload.whatsappWindow,
           };
         });
@@ -384,6 +399,104 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
       if (params.mode === "initial") {
         setError("No se pudo conectar con el endpoint de chat.");
       }
+    }
+  }
+
+  function messageIdentity(message: CartChatMessage) {
+    if (message.whatsappMessageId) return `wamid:${message.whatsappMessageId}`;
+    if (message.sourceMessageId) return `source:${message.source}:${message.sourceMessageId}`;
+
+    return [
+      "fallback",
+      message.source,
+      message.direction,
+      message.messageAt,
+      message.messageText ?? "",
+      message.messageSource ?? "",
+    ].join(":");
+  }
+
+  function mergeMessages(existing: CartChatMessage[], incoming: CartChatMessage[]) {
+    const seen = new Set<string>();
+    const merged: CartChatMessage[] = [];
+
+    for (const message of [...existing, ...incoming]) {
+      const key = messageIdentity(message);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(message);
+    }
+
+    return merged.sort((left, right) => {
+      const leftTime = new Date(left.messageAt).getTime();
+      const rightTime = new Date(right.messageAt).getTime();
+
+      if (leftTime !== rightTime) return leftTime - rightTime;
+      if (left.direction !== right.direction) return left.direction === "inbound" ? -1 : 1;
+
+      return messageIdentity(left).localeCompare(messageIdentity(right));
+    });
+  }
+
+  async function loadOlderMessages() {
+    if (!cartId || !data?.pagination?.hasMore || !data.pagination.nextBefore || isLoadingOlder || isChatFetchInFlightRef.current) return;
+
+    const activeCartId = cartId;
+    const before = data.pagination.nextBefore;
+    const container = messagesScrollRef.current;
+    const controller = new AbortController();
+
+    olderMessagesControllerRef.current?.abort();
+    olderMessagesControllerRef.current = controller;
+    olderMessagesScrollHeightRef.current = container?.scrollHeight ?? null;
+    isChatFetchInFlightRef.current = true;
+    setIsLoadingOlder(true);
+
+    try {
+      const params = new URLSearchParams({ before });
+
+      if (data.pagination.nextBeforeSourceId) {
+        params.set("beforeSourceId", String(data.pagination.nextBeforeSourceId));
+      }
+      const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(activeCartId)}/chat?${params.toString()}`, {
+        cache: "no-store",
+        method: "GET",
+        signal: controller.signal,
+      });
+      const payload = (await response.json()) as CartChatResponse;
+
+      if (controller.signal.aborted) return;
+
+      if (!response.ok || !payload.ok) {
+        setError(payload.error ?? "No se pudieron cargar mensajes anteriores.");
+        return;
+      }
+
+      if (payload.cart?.id !== activeCartId) return;
+
+      setData((current) => {
+        if (!current || current.cart?.id !== activeCartId) return current;
+
+        return {
+          ...current,
+          messages: mergeMessages(payload.messages ?? [], current.messages ?? []),
+          pagination: payload.pagination,
+          summary: current.summary,
+          whatsappWindow: current.whatsappWindow ?? payload.whatsappWindow,
+        };
+      });
+    } catch (fetchError) {
+      if (fetchError instanceof DOMException && fetchError.name === "AbortError") return;
+
+      setError("No se pudo conectar para cargar mensajes anteriores.");
+    } finally {
+      if (olderMessagesControllerRef.current === controller) {
+        olderMessagesControllerRef.current = null;
+      }
+      if (olderMessagesControllerRef.current === null) {
+        isChatFetchInFlightRef.current = false;
+      }
+      setIsLoadingOlder(false);
     }
   }
 
@@ -429,12 +542,14 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
     const activeCartId = cartId;
     initialChatControllerRef.current?.abort();
     silentChatControllerRef.current?.abort();
+    olderMessagesControllerRef.current?.abort();
     const controller = new AbortController();
     const requestSeq = chatRequestSeqRef.current + 1;
 
     chatRequestSeqRef.current = requestSeq;
     initialChatControllerRef.current = controller;
     isChatFetchInFlightRef.current = true;
+    knownMessageIdentitiesRef.current = new Set();
     localMessagesVersionRef.current = 0;
     setData(null);
     setIsContactActionsOpen(false);
@@ -480,6 +595,8 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
         initialChatControllerRef.current = null;
       }
       controller.abort();
+      olderMessagesControllerRef.current?.abort();
+      olderMessagesControllerRef.current = null;
       if (chatRequestSeqRef.current === requestSeq) {
         isChatFetchInFlightRef.current = false;
       }
@@ -573,6 +690,21 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
     const shouldScroll = shouldScrollToBottomRef.current || isInitialLoad || hasNewMessages;
 
     previousMessageCountRef.current = messageCount;
+    knownMessageIdentitiesRef.current = new Set((data.messages ?? []).map(messageIdentity));
+
+    if (olderMessagesScrollHeightRef.current !== null) {
+      const previousScrollHeight = olderMessagesScrollHeightRef.current;
+      olderMessagesScrollHeightRef.current = null;
+
+      const animationFrame = window.requestAnimationFrame(() => {
+        const container = messagesScrollRef.current;
+        if (!container) return;
+
+        container.scrollTop = container.scrollHeight - previousScrollHeight + container.scrollTop;
+      });
+
+      return () => window.cancelAnimationFrame(animationFrame);
+    }
 
     if (!shouldScroll) {
       return;
@@ -751,9 +883,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
     setData((current) => {
       if (!current) return current;
 
-      const nextMessages = [...(current.messages ?? []), message].sort(
-        (left, right) => new Date(left.messageAt).getTime() - new Date(right.messageAt).getTime(),
-      );
+      const nextMessages = mergeMessages(current.messages ?? [], [message]);
       const nextSummary = current.summary
         ? {
             ...current.summary,
@@ -1103,7 +1233,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
             <ValueBadge tone={freeformWindow.tone}>{freeformWindow.label}</ValueBadge>
             {summary ? <ValueBadge tone="success">{formatNumber(summary.totalMessages)} mensajes</ValueBadge> : null}
             {summary?.liveMessages ? <ValueBadge tone="info">{formatNumber(summary.liveMessages)} live</ValueBadge> : null}
-            <span>Historial mostrado: {formatDateTime(cart?.windowStart ?? null)} - {formatDateTime(cart?.windowEnd ?? null)}</span>
+            <span>Ventana carrito: {formatDateTime(cart?.windowStart ?? null)} - {formatDateTime(cart?.windowEnd ?? null)}</span>
             {serverWhatsappWindow?.lastInboundAt ? (
               <span>Último inbound: {formatDateTime(serverWhatsappWindow.lastInboundAt)}</span>
             ) : null}
@@ -1162,12 +1292,24 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
 
           {!isLoading && !error && !data?.reason && visibleMessages.length === 0 ? (
             <p className="rounded-lg border border-[#d6e1ea] bg-white px-3 py-3 text-sm text-slate-600">
-              No hay mensajes asociados en la ventana del carrito.
+              No hay mensajes disponibles para este teléfono y emisor.
             </p>
           ) : null}
 
           {!isLoading && !error && visibleMessages.length > 0 ? (
             <div className="space-y-2 sm:space-y-3">
+              {messageSourceFilter === "all" && data?.pagination?.hasMore ? (
+                <div className="flex justify-center pb-2">
+                  <button
+                    className="rounded-full border border-[#d6e1ea] bg-white px-3 py-1.5 text-xs font-semibold text-teal-800 shadow-sm transition hover:border-teal-300 hover:bg-teal-50 disabled:cursor-wait disabled:text-slate-500"
+                    disabled={isLoadingOlder}
+                    onClick={() => void loadOlderMessages()}
+                    type="button"
+                  >
+                    {isLoadingOlder ? "Cargando anteriores..." : "Cargar mensajes anteriores"}
+                  </button>
+                </div>
+              ) : null}
               {visibleMessages.map((message, index) => {
                 const isInbound = message.direction === "inbound";
 

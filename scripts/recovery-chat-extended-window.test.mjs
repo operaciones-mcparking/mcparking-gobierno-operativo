@@ -83,10 +83,10 @@ test("older cart keeps historical windowEnd when a newer cart exists for the sam
   assert.equal(isInHalfOpenRange(laterMessageAt, range.chatReadStart, range.chatReadEnd), false);
 });
 
-test("newer cart with a different phone does not block extension", () => {
-  assert.match(routeSource, /\.eq\("phone_normalized",\s*params\.phoneNormalized\)/);
-  assert.match(routeSource, /\.gt\("form_datetime",\s*params\.formDatetime\)/);
-  assert.match(routeSource, /\.neq\("id",\s*params\.cartId\)/);
+test("chat GET no longer blocks full conversation history because a newer cart exists", () => {
+  assert.doesNotMatch(routeSource, /detectNewerCartForPhone/);
+  assert.doesNotMatch(routeSource, /\.gt\("form_datetime",\s*params\.formDatetime\)/);
+  assert.doesNotMatch(routeSource, /\.neq\("id",\s*params\.cartId\)/);
 
   const range = resolveChatReadRange({
     hasNewerCartForPhone: false,
@@ -122,14 +122,29 @@ test("live messages explicitly associated to the cart use dual V2 and legacy ide
   assert.match(routeSource, /\.eq\("cart_id",\s*params\.legacyCartId\)[\s\S]*?\.limit\(MAX_CHAT_MESSAGES\)/);
   assert.match(routeSource, /function dedupeLiveMessages/);
   assert.match(routeSource, /const key = message\.id/);
-  assert.match(routeSource, /\.from\("recovery_whatsapp_live_messages"\)[\s\S]*?\.eq\("phone_normalized",\s*params\.phoneNormalized\)[\s\S]*?\.gte\("message_at",\s*params\.windowStart\)[\s\S]*?\.lt\("message_at",\s*params\.windowEnd\)/);
+  assert.doesNotMatch(routeSource, /\.from\("recovery_whatsapp_live_messages"\)[\s\S]*?\.eq\("phone_normalized",\s*params\.phoneNormalized\)/);
+  assert.doesNotMatch(routeSource, /\.from\("recovery_whatsapp_live_messages"\)[\s\S]*?\.gte\("message_at",\s*params\.windowStart\)/);
 });
 
-test("Message Memory queries use the protected chatRead range", () => {
-  assert.match(routeSource, /import \{ resolveChatReadRange \} from "@\/lib\/recuperacion\/recovery-chat-read-range"/);
+test("Message Memory queries use the full phone and business conversation with cursor pagination", () => {
+  assert.doesNotMatch(routeSource, /import \{ resolveChatReadRange \} from "@\/lib\/recuperacion\/recovery-chat-read-range"/);
   assert.doesNotMatch(routeSource, /export function resolveChatReadRange/);
-  assert.match(routeSource, /v_recovery_whatsapp_message_memory_raw_current_compat[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
-  assert.match(routeSource, /v_recovery_whatsapp_message_memory_current_compat[\s\S]*?\.gte\("message_at",\s*chatReadStart\)[\s\S]*?\.lt\("message_at",\s*chatReadEnd\)/);
+  assert.match(routeSource, /\.rpc\("recovery_whatsapp_conversation_messages_v2"/);
+  assert.match(routeSource, /p_wa_id_normalized:\s*params\.phoneNormalized/);
+  assert.match(routeSource, /p_api_phone_normalized:\s*params\.businessPhone/);
+  assert.match(routeSource, /p_before:\s*params\.beforeCursor/);
+  assert.match(routeSource, /p_before_source_id:\s*params\.beforeSourceId/);
+  assert.match(routeSource, /p_limit:\s*params\.pageSize \+ 1/);
+  assert.match(routeSource, /nextBeforeSourceId/);
+  assert.match(drawerSource, /beforeSourceId/);
+  assert.match(routeSource, /isMissingConversationReadRpcError/);
+  assert.match(routeSource, /return jsonError\("No se pudo cargar el chat real del carrito\.", 500\)/);
+  assert.match(routeSource, /v_recovery_whatsapp_message_memory_raw_current_compat[\s\S]*?\.eq\("wa_id_normalized",\s*cart\.phone_normalized\)[\s\S]*?\.limit\(pageSize \+ 1\)/);
+  assert.match(routeSource, /v_recovery_whatsapp_message_memory_current_compat[\s\S]*?\.eq\("wa_id_normalized",\s*cart\.phone_normalized\)[\s\S]*?\.limit\(pageSize \+ 1\)/);
+  assert.match(routeSource, /rawMessagesQuery = rawMessagesQuery\.lt\("message_at",\s*beforeCursor\)/);
+  assert.match(routeSource, /messagesQuery = messagesQuery\.lt\("message_at",\s*beforeCursor\)/);
+  assert.doesNotMatch(routeSource, /\.gte\("message_at",\s*chatReadStart\)/);
+  assert.doesNotMatch(routeSource, /\.lt\("message_at",\s*chatReadEnd\)/);
 });
 
 test("MAX_CHAT_MESSAGES remains 100", () => {
@@ -139,12 +154,15 @@ test("MAX_CHAT_MESSAGES remains 100", () => {
 });
 
 test("raw Message Memory keeps priority over normal metadata", () => {
+  const rpcQueryIndex = routeSource.indexOf('rpc("recovery_whatsapp_conversation_messages_v2"');
   const rawQueryIndex = routeSource.indexOf('from("v_recovery_whatsapp_message_memory_raw_current_compat")');
   const rawReturnIndex = routeSource.indexOf('summary: buildSummary(messages, "raw")');
   const normalQueryIndex = routeSource.indexOf('from("v_recovery_whatsapp_message_memory_current_compat")');
 
+  assert.ok(rpcQueryIndex > 0, "scoped RPC query exists");
   assert.ok(rawQueryIndex > 0, "raw query exists");
-  assert.ok(rawReturnIndex > rawQueryIndex, "raw return exists after raw query");
+  assert.ok(rawQueryIndex > rpcQueryIndex, "compat raw fallback happens after scoped RPC");
+  assert.ok(rawReturnIndex > rpcQueryIndex, "raw return exists after scoped RPC");
   assert.ok(normalQueryIndex > rawReturnIndex, "normal query happens only after raw priority branch");
 });
 
@@ -154,6 +172,8 @@ test("chat GET carries WAMID identity for canonical/live cross-dedupe", () => {
   assert.match(routeSource, /conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week/);
   assert.match(routeSource, /whatsappMessageId:\s*normalizedWhatsappMessageId\(message\.conversation_id\)/);
   assert.match(routeSource, /whatsappMessageId:\s*normalizedWhatsappMessageId\(message\.whatsapp_message_id\)/);
+  assert.match(routeSource, /sourceMessageId:\s*message\.id/);
+  assert.match(drawerSource, /if \(message\.sourceMessageId\) return `source:\$\{message\.source\}:\$\{message\.sourceMessageId\}`/);
 });
 
 test("live versus canonical dedupe uses WAMID only and keeps pending live messages", () => {
@@ -170,16 +190,17 @@ test("live versus canonical dedupe uses WAMID only and keeps pending live messag
 });
 
 test("canonical chat queries stay scoped to the cart business phone when parking is known", () => {
-  assert.match(routeSource, /businessKeyForParking\(cart\.parking_code\)/);
+  assert.match(routeSource, /resolveRecoveryCommercialParking/);
+  assert.match(routeSource, /businessKeyForParking\(commercialParking\.parkingCode\)/);
   assert.match(routeSource, /recoveryWhatsappBusinessPhoneForKey\(cartBusinessKey\)/);
   assert.match(routeSource, /rawMessagesQuery = rawMessagesQuery\.eq\("api_phone_normalized",\s*cartBusinessPhone\)/);
   assert.match(routeSource, /messagesQuery = messagesQuery\.eq\("api_phone_normalized",\s*cartBusinessPhone\)/);
 });
 
 test("WhatsApp 24-hour authorization helper and POST send route are not part of this change", () => {
-  assert.match(routeSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cartId\)/);
+  assert.match(routeSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cartId/);
   assert.match(whatsappWindowSource, /classifyWhatsappFreeformWindow/);
-  assert.match(sendRouteSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cart\.id\)/);
+  assert.match(sendRouteSource, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cart\.id/);
   assert.match(sendRouteSource, /callN8nWebhook\(\{ cart, messageText, operatorEmail, sentAt \}\)/);
   assert.match(sendRouteSource, /whatsapp_window_unverifiable/);
   assert.doesNotMatch(routeSource, /callN8nWebhook/);

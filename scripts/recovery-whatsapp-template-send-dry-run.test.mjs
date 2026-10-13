@@ -52,7 +52,7 @@ test("5. cart without normalized phone returns 409", () => {
 });
 
 test("6. unverifiable business key returns 409", () => {
-  assert.match(route, /getWhatsappFreeformWindowForCart\(admin\.supabase, cartResult\.cart\.id\)/);
+  assert.match(route, /getWhatsappFreeformWindowForCart\(admin\.supabase, cartResult\.cart\.id/);
   assert.match(route, /windowState\.status === "unverifiable"/);
   assert.match(route, /!isSupportedBusinessKey\(windowState\.businessKey\)/);
 });
@@ -173,7 +173,7 @@ test("26. real send persists and updates only the live outbound", () => {
 });
 
 test("27. route does not send Meta messages", () => {
-  assert.doesNotMatch(route, /\/messages|messages\?access_token|whatsappMessageId/);
+  assert.doesNotMatch(route, /\/messages|messages\?access_token/);
   assert.match(route, /fetchMetaWhatsappTemplatesForBusiness\(businessKey\)/);
 });
 

@@ -33,6 +33,18 @@ function loadHelperExports() {
     module,
     require(name) {
       if (name === "server-only") return {};
+      if (name === "@/lib/recuperacion/commercial-parking") {
+        return {
+          resolveRecoveryCommercialParking({ parkingCode }) {
+            const normalized = String(parkingCode ?? "").trim().toUpperCase();
+            return {
+              parkingCode: normalized === "MPV" || normalized === "EAP" ? normalized : null,
+              reason: normalized === "MPV" || normalized === "EAP" ? "parking_code" : "unknown_origin",
+              status: normalized === "MPV" || normalized === "EAP" ? "resolved" : "unknown",
+            };
+          },
+        };
+      }
       throw new Error(`Unexpected require in helper test: ${name}`);
     },
   });
@@ -320,7 +332,7 @@ test("real Meta 131047 scenario is blocked before n8n when only the other busine
 
   assert.equal(state.status, "missing");
   assert.equal(state.canSendFreeform, false);
-  assert.equal(sendRoute.indexOf("getWhatsappFreeformWindowForCart(admin.supabase, cart.id)") < sendRoute.indexOf("callN8nWebhook({ cart, messageText, operatorEmail, sentAt })"), true);
+  assert.equal(sendRoute.indexOf("getWhatsappFreeformWindowForCart(admin.supabase, cart.id") < sendRoute.indexOf("callN8nWebhook({ cart, messageText, operatorEmail, sentAt })"), true);
   assert.match(sendRoute, /whatsapp_window_missing/);
 });
 
@@ -431,9 +443,11 @@ test("helper is server-only and reads only explicit inbound sources", () => {
   assert.match(helper, /import\s+"server-only"/);
   const getWindowBlock = helper.slice(helper.indexOf("export async function getWhatsappFreeformWindowForCart"));
 
-  assert.match(getWindowBlock, /\.rpc\("recovery_whatsapp_freeform_window_v2"/);
-  assert.doesNotMatch(getWindowBlock, /v_recovery_whatsapp_message_memory_raw_current_compat/);
-  assert.doesNotMatch(getWindowBlock, /v_recovery_whatsapp_message_memory_current_compat/);
+  assert.match(getWindowBlock, /\.rpc\(\s*"recovery_whatsapp_conversation_window_v2"/);
+  assert.match(getWindowBlock, /p_api_phone_normalized:\s*businessPhone/);
+  assert.match(getWindowBlock, /p_wa_id_normalized:\s*options\.phoneNormalized/);
+  assert.match(getWindowBlock, /v_recovery_whatsapp_message_memory_raw_current_compat/);
+  assert.match(getWindowBlock, /v_recovery_whatsapp_message_memory_current_compat/);
   assert.doesNotMatch(getWindowBlock, /recovery_whatsapp_messages_v2/);
   assert.doesNotMatch(getWindowBlock, /recovery_whatsapp_live_messages/);
   assert.match(helper, /message_bound_type === "inbound"/);
@@ -454,15 +468,54 @@ test("fast resolver RPC is security-definer and avoids compat view scans", () =>
   assert.match(migration, /grant execute on function public\.recovery_whatsapp_freeform_window_v2\(uuid\) to authenticated, service_role/i);
 });
 
+test("conversation reader migration adds scoped chat and window RPCs", () => {
+  const conversationMigration = readFileSync("supabase/migrations/20261013120000_add_recovery_whatsapp_conversation_read_rpc.sql", "utf8");
+
+  assert.match(conversationMigration, /create index concurrently if not exists recovery_whatsapp_messages_v2_conversation_lookup_idx/i);
+  assert.match(conversationMigration, /create or replace function public\.recovery_whatsapp_conversation_messages_v2\(/i);
+  assert.match(conversationMigration, /create or replace function public\.recovery_whatsapp_conversation_window_v2\(/i);
+  assert.match(conversationMigration, /security definer/i);
+  assert.match(conversationMigration, /set search_path = ''/i);
+  assert.match(conversationMigration, /public\.recovery_whatsapp_messages_v2/i);
+  assert.match(conversationMigration, /public\.recovery_whatsapp_live_messages/i);
+  assert.match(conversationMigration, /create index concurrently if not exists recovery_whatsapp_messages_v2_conversation_lookup_idx/i);
+  assert.match(conversationMigration, /auth\.uid\(\)/i);
+  assert.match(conversationMigration, /profile\.app_role = 'admin'::public\.app_role/i);
+  assert.match(conversationMigration, /current_setting\('request\.jwt\.claim\.role'/i);
+  assert.match(conversationMigration, /p_before_source_id bigint default null/i);
+  assert.match(conversationMigration, /grant execute on function public\.recovery_whatsapp_conversation_messages_v2\(text, text, timestamp with time zone, bigint, integer\)\s+to authenticated, service_role/i);
+  assert.match(conversationMigration, /grant execute on function public\.recovery_whatsapp_conversation_window_v2\(text, text, uuid, uuid\)\s+to authenticated, service_role/i);
+  assert.doesNotMatch(conversationMigration, /v_recovery_whatsapp_message_memory_raw_current_compat|v_recovery_whatsapp_message_memory_current_compat/i);
+  assert.doesNotMatch(conversationMigration, /\b(insert\s+into|update|delete\s+from|drop\s+table|truncate)\b/i);
+});
+
+test("conversation reader auth fix recognizes service_role from PostgREST claims", () => {
+  const authFix = readFileSync("supabase/migrations/20261013130000_fix_recovery_whatsapp_conversation_rpc_auth.sql", "utf8");
+
+  assert.match(authFix, /create or replace function public\.recovery_whatsapp_conversation_messages_v2\(/i);
+  assert.match(authFix, /create or replace function public\.recovery_whatsapp_conversation_window_v2\(/i);
+  assert.match(authFix, /create or replace function public\.recovery_whatsapp_conversation_indicators_v2\(/i);
+  assert.match(authFix, /current_setting\('request\.jwt\.claim\.role'/i);
+  assert.match(authFix, /current_setting\('request\.jwt\.claims'/i);
+  assert.match(authFix, /->>\s*'role'/i);
+  assert.match(authFix, /auth\.role\(\)::text/i);
+  assert.match(authFix, /profile\.app_role = 'admin'::public\.app_role/i);
+  assert.match(authFix, /profile\.status = 'active'/i);
+  assert.match(authFix, /grant execute on function public\.recovery_whatsapp_conversation_messages_v2\(text, text, timestamp with time zone, bigint, integer\)\s+to authenticated, service_role/i);
+  assert.match(authFix, /grant execute on function public\.recovery_whatsapp_conversation_window_v2\(text, text, uuid, uuid\)\s+to authenticated, service_role/i);
+  assert.match(authFix, /grant execute on function public\.recovery_whatsapp_conversation_indicators_v2\(jsonb\)\s+to authenticated, service_role/i);
+  assert.doesNotMatch(authFix, /\b(insert\s+into|update|delete\s+from|drop\s+table|truncate|create\s+index|alter\s+table)\b/i);
+});
+
 test("GET chat route returns server-calculated whatsappWindow without replacing chat range", () => {
-  assert.match(getRoute, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cartId\)/);
+  assert.match(getRoute, /getWhatsappFreeformWindowForCart\(admin\.supabase,\s*cartId/);
   assert.match(getRoute, /whatsappWindow/);
   assert.match(getRoute, /windowStart/);
   assert.match(getRoute, /windowEnd/);
 });
 
 test("POST send route recalculates the window before local insert, updates, or n8n call", () => {
-  const checkIndex = sendRoute.indexOf("getWhatsappFreeformWindowForCart(admin.supabase, cart.id)");
+  const checkIndex = sendRoute.indexOf("getWhatsappFreeformWindowForCart(admin.supabase, cart.id");
   const rejectIndex = sendRoute.indexOf("return whatsappWindowError(whatsappWindow)");
   const insertIndex = sendRoute.indexOf(".insert(");
   const n8nIndex = sendRoute.indexOf("callN8nWebhook({ cart, messageText, operatorEmail, sentAt })");
@@ -532,7 +585,7 @@ test("drawer relies on server window state and preserves the draft on server rej
 test("visible drawer copy exposes every safe window status", () => {
   assert.match(drawer, /Verificando ventana/);
   assert.match(drawer, /Ventana abierta/);
-  assert.match(drawer, /Historial mostrado/);
+  assert.match(drawer, /Ventana carrito/);
   assert.match(drawer, /Cierre WhatsApp/);
   assert.match(drawer, /Cierra pronto/);
   assert.match(drawer, /Ventana cerrada/);
@@ -579,6 +632,11 @@ test("no unrelated modules are part of this task diff", () => {
     "src/app/recuperacion/recovery-cart-audit-table.tsx",
     "src/app/recuperacion/recovery-snapshot-comparison-drawer.tsx",
     "src/lib/recuperacion/whatsapp-freeform-window.ts",
+    "src/lib/recuperacion/commercial-parking.ts",
+    "src/lib/recuperacion/recovery-chat-indicator.ts",
+    "scripts/recovery-commercial-parking.test.mjs",
+    "supabase/migrations/20261013120000_add_recovery_whatsapp_conversation_read_rpc.sql",
+    "supabase/migrations/20261013130000_fix_recovery_whatsapp_conversation_rpc_auth.sql",
     "scripts/recovery-meta-whatsapp-templates.test.mjs",
     "scripts/recovery-whatsapp-template-catalog.test.mjs",
     "scripts/recovery-whatsapp-template-endpoint.test.mjs",
