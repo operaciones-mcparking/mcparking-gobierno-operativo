@@ -28,5 +28,5 @@ export default async function Home({
   }
 
   const nextQuery = query.toString();
-  redirect(nextQuery ? `/estructura?${nextQuery}` : "/estructura");
+  redirect(nextQuery ? `/orquestador?${nextQuery}` : "/orquestador");
 }

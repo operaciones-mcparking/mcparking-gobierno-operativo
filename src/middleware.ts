@@ -70,7 +70,7 @@ export async function middleware(request: NextRequest) {
   if (restricted !== true) return response;
 
   let requiredPermission: string | null = null;
-  if (pathname === "/" || pathname === "/estructura") requiredPermission = "structure.view";
+  if (pathname === "/estructura") requiredPermission = "structure.view";
   if (pathname === "/api/procesos/export") requiredPermission = "structure.export.excel";
   if (structureProcessDetailPath.test(pathname)) requiredPermission = "structure.view";
   if (pdfPath.test(pathname)) requiredPermission = "structure.export.pdf";
