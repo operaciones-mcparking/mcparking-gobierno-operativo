@@ -192,6 +192,23 @@ test("9. Monto diario respeta filtro", () => {
   assert.equal(summary(weekRows(filterRows("0"), "2026-10-06", "2026-10-08")).recoveredAmount, 0);
 });
 
+test("daily chart titles describe their actual metrics", () => {
+  assert.match(source, />\s*Tasa de recuperación diaria\s*</);
+  assert.match(source, />\s*Monto recuperado por día\s*</);
+  assert.doesNotMatch(source, />\s*Evolución diaria\s*</);
+  assert.doesNotMatch(source, />\s*Monto diario\s*</);
+});
+
+test("daily charts render future dates as gaps instead of zero observations", () => {
+  assert.match(source, /function visibleDailyChartValue\(dateKey: string, value: number, todayKey: string\)/);
+  assert.match(source, /return dateKey > todayKey \? null : value/);
+  assert.match(source, /value: visibleDailyChartValue\(day\.dateKey, day\.recoveryRate, currentSantiagoDateKey\)/);
+  assert.match(source, /value: visibleDailyChartValue\(day\.dateKey, day\.amount, currentSantiagoDateKey\)/);
+  assert.match(source, /type LineChartPoint = \{[\s\S]*value: number \| null/);
+  assert.match(source, /if \(point\.y === null\)[\s\S]*startsNewSegment = true/);
+  assert.match(source, /point\.y !== null \? \(/);
+});
+
 test("10. Por tipo respeta filtro", () => {
   assert.deepEqual(breakdown(filterRows("1"), "cart_type"), {
     abandoned: { amount: 10000, recovered: 1, total: 1 },

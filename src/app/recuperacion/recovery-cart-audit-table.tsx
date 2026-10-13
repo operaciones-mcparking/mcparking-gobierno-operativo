@@ -505,7 +505,7 @@ type LineChartPoint = {
   dateKey: string;
   meta: string;
   tooltipItems: Array<[string, string]>;
-  value: number;
+  value: number | null;
 };
 
 type WeeklyPerformanceSummary = ReturnType<typeof summarizeRowsForWeek>;
@@ -530,6 +530,10 @@ function weekStartKeyForDateKey(dateKey: string) {
 function currentSantiagoWeekStartKey() {
   const todayKey = dateKeyForSantiago(new Date().toISOString()) ?? todayInputValue();
   return weekStartKeyForDateKey(todayKey);
+}
+
+function visibleDailyChartValue(dateKey: string, value: number, todayKey: string) {
+  return dateKey > todayKey ? null : value;
 }
 
 function weekOptionLabel(weekStartKey: string) {
@@ -791,8 +795,22 @@ function roundedMoneyMax(value: number) {
   return rounded * magnitude;
 }
 
-function pathFromPoints(points: Array<{ x: number; y: number }>) {
-  return points.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+function pathFromPoints(points: Array<{ x: number; y: number | null }>) {
+  let startsNewSegment = true;
+
+  return points
+    .flatMap((point) => {
+      if (point.y === null) {
+        startsNewSegment = true;
+        return [];
+      }
+
+      const command = startsNewSegment ? "M" : "L";
+      startsNewSegment = false;
+
+      return [`${command}${point.x.toFixed(1)},${point.y.toFixed(1)}`];
+    })
+    .join(" ");
 }
 
 function deltaPercentPoints(current: number | null, previous: number | null) {
@@ -917,8 +935,8 @@ function PerformanceLineChart({
   const toX = (index: number) =>
     xPointCount <= 1 ? padding.left + innerWidth / 2 : padding.left + (index / (xPointCount - 1)) * innerWidth;
   const toY = (value: number) => padding.top + (1 - Math.min(Math.max(value, 0), safeMax) / safeMax) * innerHeight;
-  const chartPoints = points.map((point, index) => ({ ...point, x: toX(index), y: toY(point.value) }));
-  const previousChartPoints = (previousPoints ?? []).map((point, index) => ({ ...point, x: toX(index), y: toY(point.value) }));
+  const chartPoints = points.map((point, index) => ({ ...point, x: toX(index), y: point.value === null ? null : toY(point.value) }));
+  const previousChartPoints = (previousPoints ?? []).map((point, index) => ({ ...point, x: toX(index), y: point.value === null ? null : toY(point.value) }));
   const shouldShowPrevious = previousChartPoints.length > 0;
   const [hoveredPoint, setHoveredPoint] = useState<null | {
     left: number;
@@ -948,10 +966,10 @@ function PerformanceLineChart({
           <path d={pathFromPoints(previousChartPoints)} fill="none" stroke="#94a3b8" strokeDasharray="4 5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
         ) : null}
         <path d={pathFromPoints(chartPoints)} fill="none" stroke="#0f766e" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />
-        {previousChartPoints.map((point) => (
+        {previousChartPoints.filter((point) => point.y !== null).map((point) => (
           <circle
             cx={point.x}
-            cy={point.y}
+            cy={point.y as number}
             fill="#f8fafc"
             key={`previous-${point.dateKey}`}
             onMouseEnter={() =>
@@ -959,7 +977,7 @@ function PerformanceLineChart({
                 items: point.tooltipItems,
                 left: (point.x / width) * 100,
                 title: `Semana anterior · ${shortDateLabel(point.dateKey)}`,
-                top: (point.y / height) * 100,
+                top: ((point.y as number) / height) * 100,
               })
             }
             onMouseLeave={() => setHoveredPoint(null)}
@@ -970,23 +988,29 @@ function PerformanceLineChart({
         ))}
         {chartPoints.map((point) => (
           <g key={point.dateKey}>
-            <circle
-              cx={point.x}
-              cy={point.y}
-              fill="#ffffff"
-              onMouseEnter={() =>
-                setHoveredPoint({
-                  items: point.tooltipItems,
-                  left: (point.x / width) * 100,
-                  title: shortDateLabel(point.dateKey),
-                  top: (point.y / height) * 100,
-                })
-              }
-              onMouseLeave={() => setHoveredPoint(null)}
-              r="4.5"
-              stroke="#0f766e"
-              strokeWidth="2.5"
-            />
+            {point.y !== null ? (() => {
+              const pointY = point.y;
+
+              return (
+                <circle
+                  cx={point.x}
+                  cy={pointY}
+                  fill="#ffffff"
+                  onMouseEnter={() =>
+                    setHoveredPoint({
+                      items: point.tooltipItems,
+                      left: (point.x / width) * 100,
+                      title: shortDateLabel(point.dateKey),
+                      top: (pointY / height) * 100,
+                    })
+                  }
+                  onMouseLeave={() => setHoveredPoint(null)}
+                  r="4.5"
+                  stroke="#0f766e"
+                  strokeWidth="2.5"
+                />
+              );
+            })() : null}
             <text fill="#64748b" fontSize="10" textAnchor="middle" x={point.x} y={height - 10}>
               {shortDateLabel(point.dateKey)}
             </text>
@@ -1207,6 +1231,7 @@ function WeeklyBreakdownBlock({
     () => summarizeRowsForWeek(messageSentFilteredRows, previousWeekStart),
     [messageSentFilteredRows, previousWeekStart],
   );
+  const currentSantiagoDateKey = dateKeyForSantiago(new Date().toISOString()) ?? todayInputValue();
   const maxDailyAmount = Math.max(
     ...performanceSummary.days.map((day) => day.amount),
     ...previousPerformanceSummary.days.map((day) => day.amount),
@@ -1524,7 +1549,7 @@ function WeeklyBreakdownBlock({
                 <div className="flex min-h-[86px] items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
-                      Evolución diaria
+                      Tasa de recuperación diaria
                     </p>
                     <p className="mt-1 text-2xl font-medium text-navy">
                       {formatPercent(performanceSummary.averageRate)}
@@ -1561,7 +1586,7 @@ function WeeklyBreakdownBlock({
                       ["Entregados", formatNumber(day.delivered)],
                       ["Leídos", formatNumber(day.read)],
                     ],
-                    value: day.recoveryRate,
+                    value: visibleDailyChartValue(day.dateKey, day.recoveryRate, currentSantiagoDateKey),
                   }))}
                   previousPoints={previousPerformanceSummary.days.map((day) => ({
                     dateKey: day.dateKey,
@@ -1586,7 +1611,7 @@ function WeeklyBreakdownBlock({
                 <div className="flex min-h-[86px] items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
-                      Monto diario
+                      Monto recuperado por día
                     </p>
                     <p className="mt-1 text-2xl font-medium text-navy">
                       {formatCurrency(performanceSummary.totalAmount)}
@@ -1607,7 +1632,7 @@ function WeeklyBreakdownBlock({
                       ["Recuperados", formatNumber(day.recovered)],
                       ["Ticket prom.", day.recovered > 0 ? formatCurrency(day.amount / day.recovered) : "-"],
                     ],
-                    value: day.amount,
+                    value: visibleDailyChartValue(day.dateKey, day.amount, currentSantiagoDateKey),
                   }))}
                   previousPoints={previousPerformanceSummary.days.map((day) => ({
                     dateKey: day.dateKey,
