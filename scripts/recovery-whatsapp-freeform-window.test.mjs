@@ -9,11 +9,13 @@ const helperPath = "src/lib/recuperacion/whatsapp-freeform-window.ts";
 const getRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/route.ts";
 const sendRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts";
 const drawerPath = "src/app/recuperacion/recovery-cart-chat-drawer.tsx";
+const migrationPath = "supabase/migrations/20261008120000_add_recovery_whatsapp_freeform_window_v2.sql";
 
 const helper = readFileSync(helperPath, "utf8");
 const getRoute = readFileSync(getRoutePath, "utf8");
 const sendRoute = readFileSync(sendRoutePath, "utf8");
 const drawer = readFileSync(drawerPath, "utf8");
+const migration = readFileSync(migrationPath, "utf8");
 
 function loadHelperExports() {
   const module = { exports: {} };
@@ -49,6 +51,24 @@ const MPV_BUSINESS_PHONE = "56926817602";
 const EAP_BUSINESS_PHONE = "56984533883";
 
 function createSupabaseMock({ carts = [], errors = {}, tables = {} } = {}) {
+  function normalizeBusinessKey(value) {
+    const normalized = String(value ?? "").trim().toUpperCase();
+
+    return normalized === "MPV" || normalized === "EAP" ? normalized : null;
+  }
+
+  function businessPhoneForKey(key) {
+    return key === "MPV" ? MPV_BUSINESS_PHONE : EAP_BUSINESS_PHONE;
+  }
+
+  function latestTimestamp(rows) {
+    return rows
+      .map((row) => row.message_at)
+      .filter(Boolean)
+      .filter((value) => !Number.isNaN(new Date(value).getTime()))
+      .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] ?? null;
+  }
+
   class QueryMock {
     constructor(tableName) {
       this.tableName = tableName;
@@ -56,6 +76,7 @@ function createSupabaseMock({ carts = [], errors = {}, tables = {} } = {}) {
       this.limitCount = null;
       this.orderField = null;
       this.orderAscending = true;
+      this.notNullFields = [];
     }
 
     select() {
@@ -64,6 +85,14 @@ function createSupabaseMock({ carts = [], errors = {}, tables = {} } = {}) {
 
     eq(field, value) {
       this.filters.push({ field, value });
+      return this;
+    }
+
+    not(field, operator, value) {
+      if (operator === "is" && value === null) {
+        this.notNullFields.push(field);
+      }
+
       return this;
     }
 
@@ -97,6 +126,10 @@ function createSupabaseMock({ carts = [], errors = {}, tables = {} } = {}) {
         rows = rows.filter((row) => row[filter.field] === filter.value);
       }
 
+      for (const field of this.notNullFields) {
+        rows = rows.filter((row) => row[field] !== null && row[field] !== undefined);
+      }
+
       if (this.orderField) {
         rows.sort((left, right) => {
           const leftValue = left[this.orderField] ?? "";
@@ -114,6 +147,73 @@ function createSupabaseMock({ carts = [], errors = {}, tables = {} } = {}) {
   return {
     from(tableName) {
       return new QueryMock(tableName);
+    },
+
+    rpc(name, params) {
+      if (name !== "recovery_whatsapp_freeform_window_v2") {
+        return Promise.resolve({ data: null, error: { message: `Unexpected RPC: ${name}` } });
+      }
+
+      if (errors[name]) {
+        return Promise.resolve({ data: null, error: errors[name] });
+      }
+
+      const cart = carts.find((row) => row.id === params.p_cart_id) ?? null;
+
+      if (!cart) {
+        return Promise.resolve({ data: [], error: null });
+      }
+
+      const businessKey = normalizeBusinessKey(cart.parking_code);
+
+      if (!businessKey) {
+        return Promise.resolve({
+          data: [{ business_key: null, error_code: "business_key_unresolved", last_inbound_at: null, source: null }],
+          error: null,
+        });
+      }
+
+      if (!cart.phone_normalized) {
+        return Promise.resolve({
+          data: [{ business_key: businessKey, error_code: null, last_inbound_at: null, source: null }],
+          error: null,
+        });
+      }
+
+      if (errors.recovery_whatsapp_messages_v2) {
+        return Promise.resolve({ data: null, error: errors.recovery_whatsapp_messages_v2 });
+      }
+
+      const businessPhone = businessPhoneForKey(businessKey);
+      const v2Rows = (tables.recovery_whatsapp_messages_v2 ?? []).filter((row) => (
+        row.wa_id === cart.phone_normalized
+        && row.api_phone === businessPhone
+        && row.message_bound_type === "inbound"
+      ));
+      const liveRows = (tables.recovery_whatsapp_live_messages ?? []).filter((row) => (
+        (row.cart_v2_id === cart.id || row.cart_id === cart.id)
+        && row.direction === "inbound"
+      ));
+      const v2Latest = latestTimestamp(v2Rows);
+      const liveLatest = latestTimestamp(liveRows);
+      const latest = latestTimestamp([...v2Rows, ...liveRows]);
+      const source = latest && v2Latest === latest && liveLatest === latest
+        ? "combined"
+        : latest && liveLatest === latest
+          ? "live"
+          : latest && v2Latest === latest
+            ? "message_memory"
+            : null;
+
+      return Promise.resolve({
+        data: [{
+          business_key: businessKey,
+          error_code: null,
+          last_inbound_at: latest,
+          source,
+        }],
+        error: null,
+      });
     },
   };
 }
@@ -158,11 +258,9 @@ test("helper selects the most recent valid inbound across sources for the same b
         { cart_id: "cart-1", direction: "inbound", message_at: "2026-07-31T07:00:00.000Z", phone_normalized: "56900000000" },
         { cart_id: "other-cart", direction: "inbound", message_at: "2026-07-31T11:30:00.000Z", phone_normalized: "56999999999" },
       ],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [
-        { message_at: "2026-07-31T08:00:00.000Z", message_bound_type: "inbound", wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
-      ],
-      v_recovery_whatsapp_message_memory_current_compat: [
-        { message_at: "2026-07-31T10:00:00.000Z", message_bound_type: "inbound", wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
+      recovery_whatsapp_messages_v2: [
+        { api_phone: MPV_BUSINESS_PHONE, message_at: "2026-07-31T08:00:00.000Z", message_bound_type: "inbound", source_id: 10, wa_id: "56900000000" },
+        { api_phone: MPV_BUSINESS_PHONE, message_at: "2026-07-31T10:00:00.000Z", message_bound_type: "inbound", source_id: 11, wa_id: "56900000000" },
       ],
     },
   });
@@ -180,20 +278,13 @@ test("inbound from another business number does not open the MPV freeform window
     carts: [{ id: "cart-mpv", parking_code: "MPV", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [
+      recovery_whatsapp_messages_v2: [
         {
-          api_phone_normalized: EAP_BUSINESS_PHONE,
+          api_phone: EAP_BUSINESS_PHONE,
           message_at: "2026-08-03T02:27:41.000Z",
           message_bound_type: "inbound",
-          wa_id_normalized: "56900000000",
-        },
-      ],
-      v_recovery_whatsapp_message_memory_current_compat: [
-        {
-          api_phone_normalized: EAP_BUSINESS_PHONE,
-          message_at: "2026-08-03T02:27:41.000Z",
-          message_bound_type: "inbound",
-          wa_id_normalized: "56900000000",
+          source_id: 20,
+          wa_id: "56900000000",
         },
       ],
     },
@@ -213,15 +304,15 @@ test("real Meta 131047 scenario is blocked before n8n when only the other busine
     carts: [{ id: "cart-131047", parking_code: "MPV", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [
+      recovery_whatsapp_messages_v2: [
         {
-          api_phone_normalized: EAP_BUSINESS_PHONE,
+          api_phone: EAP_BUSINESS_PHONE,
           message_at: "2026-08-03T02:27:41.000Z",
           message_bound_type: "inbound",
-          wa_id_normalized: "56900000000",
+          source_id: 30,
+          wa_id: "56900000000",
         },
       ],
-      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -234,39 +325,27 @@ test("real Meta 131047 scenario is blocked before n8n when only the other busine
 });
 
 
-test("EAP cart uses the explicit outbound business number before accepting the inbound", async () => {
+test("EAP cart uses parking business before accepting the inbound", async () => {
   const now = Date.parse("2026-08-04T12:15:00.000Z");
   const supabase = createSupabaseMock({
     carts: [{ id: "cart-eap", parking_code: "EAP", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [
+      recovery_whatsapp_messages_v2: [
         {
-          api_phone_normalized: MPV_BUSINESS_PHONE,
-          message_at: "2026-08-04T11:30:14.000Z",
-          message_bound_type: "outbound",
-          wa_id_normalized: "56900000000",
-        },
-        {
-          api_phone_normalized: MPV_BUSINESS_PHONE,
+          api_phone: EAP_BUSINESS_PHONE,
           message_at: "2026-08-04T11:50:44.000Z",
           message_bound_type: "inbound",
-          wa_id_normalized: "56900000000",
-        },
-        {
-          api_phone_normalized: MPV_BUSINESS_PHONE,
-          message_at: "2026-08-04T11:50:44.000Z",
-          message_bound_type: "outbound",
-          wa_id_normalized: "56900000000",
+          source_id: 40,
+          wa_id: "56900000000",
         },
       ],
-      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
   const state = await getWhatsappFreeformWindowForCart(supabase, "cart-eap", now);
 
-  assert.equal(state.businessKey, "MPV");
+  assert.equal(state.businessKey, "EAP");
   assert.equal(state.status, "open");
   assert.equal(state.canSendFreeform, true);
   assert.equal(state.lastInboundAt, "2026-08-04T11:50:44.000Z");
@@ -281,11 +360,9 @@ test("null or unknown direction does not count as inbound", async () => {
         { cart_id: "cart-1", direction: null, message_at: "2026-07-31T10:00:00.000Z", phone_normalized: "56900000000" },
         { cart_id: "cart-1", direction: "unknown", message_at: "2026-07-31T11:00:00.000Z", phone_normalized: "56900000000" },
       ],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [
-        { message_at: "2026-07-31T10:00:00.000Z", message_bound_type: null, wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
-      ],
-      v_recovery_whatsapp_message_memory_current_compat: [
-        { message_at: "2026-07-31T11:00:00.000Z", message_bound_type: "unknown", wa_id_normalized: "56900000000", api_phone_normalized: MPV_BUSINESS_PHONE },
+      recovery_whatsapp_messages_v2: [
+        { api_phone: MPV_BUSINESS_PHONE, message_at: "2026-07-31T10:00:00.000Z", message_bound_type: null, source_id: 50, wa_id: "56900000000" },
+        { api_phone: MPV_BUSINESS_PHONE, message_at: "2026-07-31T11:00:00.000Z", message_bound_type: "unknown", source_id: 51, wa_id: "56900000000" },
       ],
     },
   });
@@ -300,13 +377,12 @@ test("partial source error is fail-closed even when another source has inbound",
   const supabase = createSupabaseMock({
     carts: [{ id: "cart-1", parking_code: "MPV", phone_normalized: "56900000000" }],
     errors: {
-      v_recovery_whatsapp_message_memory_raw_current_compat: { message: "simulated source error" },
+      recovery_whatsapp_messages_v2: { message: "simulated source error" },
     },
     tables: {
       recovery_whatsapp_live_messages: [
         { cart_id: "cart-1", direction: "inbound", message_at: "2026-07-31T10:00:00.000Z", phone_normalized: "56900000000" },
       ],
-      v_recovery_whatsapp_message_memory_current_compat: [],
     },
   });
 
@@ -321,8 +397,7 @@ test("empty source tables return missing with null metadata", async () => {
     carts: [{ id: "cart-1", parking_code: "MPV", phone_normalized: "56900000000" }],
     tables: {
       recovery_whatsapp_live_messages: [],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [],
-      v_recovery_whatsapp_message_memory_current_compat: [],
+      recovery_whatsapp_messages_v2: [],
     },
   });
 
@@ -342,8 +417,7 @@ test("invalid timestamps are ignored", async () => {
       recovery_whatsapp_live_messages: [
         { cart_id: "cart-1", direction: "inbound", message_at: "not-a-date", phone_normalized: "56900000000" },
       ],
-      v_recovery_whatsapp_message_memory_raw_current_compat: [],
-      v_recovery_whatsapp_message_memory_current_compat: [],
+      recovery_whatsapp_messages_v2: [],
     },
   });
 
@@ -355,13 +429,29 @@ test("invalid timestamps are ignored", async () => {
 
 test("helper is server-only and reads only explicit inbound sources", () => {
   assert.match(helper, /import\s+"server-only"/);
-  assert.match(helper, /recovery_whatsapp_live_messages/);
-  assert.match(helper, /v_recovery_whatsapp_message_memory_raw_current_compat/);
-  assert.match(helper, /v_recovery_whatsapp_message_memory_current_compat/);
-  assert.match(helper, /\.eq\("direction",\s*"inbound"\)/);
+  const getWindowBlock = helper.slice(helper.indexOf("export async function getWhatsappFreeformWindowForCart"));
+
+  assert.match(getWindowBlock, /\.rpc\("recovery_whatsapp_freeform_window_v2"/);
+  assert.doesNotMatch(getWindowBlock, /v_recovery_whatsapp_message_memory_raw_current_compat/);
+  assert.doesNotMatch(getWindowBlock, /v_recovery_whatsapp_message_memory_current_compat/);
+  assert.doesNotMatch(getWindowBlock, /recovery_whatsapp_messages_v2/);
+  assert.doesNotMatch(getWindowBlock, /recovery_whatsapp_live_messages/);
   assert.match(helper, /message_bound_type === "inbound"/);
   assert.doesNotMatch(helper, /message_bound_type\s*!==\s*"outbound"/);
   assert.doesNotMatch(helper, /direction\s*!==\s*"outbound"/);
+});
+
+test("fast resolver RPC is security-definer and avoids compat view scans", () => {
+  assert.match(migration, /create or replace function public\.recovery_whatsapp_freeform_window_v2\(p_cart_id uuid\)/i);
+  assert.match(migration, /security definer/i);
+  assert.match(migration, /set search_path = ''/i);
+  assert.match(migration, /recovery_whatsapp_messages_v2_window_lookup_idx/i);
+  assert.match(migration, /recovery_whatsapp_live_messages_cart_v2_inbound_message_at_idx/i);
+  assert.match(migration, /recovery_whatsapp_live_messages_legacy_inbound_message_at_idx/i);
+  assert.match(migration, /public\.recovery_whatsapp_messages_v2/i);
+  assert.match(migration, /public\.recovery_whatsapp_live_messages/i);
+  assert.doesNotMatch(migration, /v_recovery_whatsapp_message_memory_raw_current_compat|v_recovery_whatsapp_message_memory_current_compat/i);
+  assert.match(migration, /grant execute on function public\.recovery_whatsapp_freeform_window_v2\(uuid\) to authenticated, service_role/i);
 });
 
 test("GET chat route returns server-calculated whatsappWindow without replacing chat range", () => {
@@ -512,6 +602,7 @@ test("no unrelated modules are part of this task diff", () => {
     "src/lib/recuperacion/whatsapp-template-n8n-transport.ts",
     "scripts/recovery-whatsapp-business-window.test.mjs",
     "scripts/recovery-whatsapp-window-indicator.test.mjs",
+    "scripts/recovery-live-message-dual-identity.test.mjs",
     "src/app/api/recuperacion/carritos/chat-indicators/route.ts",
     "src/app/api/recuperacion/whatsapp/live-message/route.ts",
     "scripts/recovery-conversation-sessions.test.mjs",

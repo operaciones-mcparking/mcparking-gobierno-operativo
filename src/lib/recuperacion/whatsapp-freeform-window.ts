@@ -56,6 +56,13 @@ export type WhatsappMemoryConversationRow = {
   message_bound_type: string | null;
 };
 
+type WhatsappFreeformWindowRpcRow = {
+  business_key: RecoveryWhatsappBusinessKey | null;
+  error_code: string | null;
+  last_inbound_at: string | null;
+  source: WhatsappFreeformWindowSource;
+};
+
 function emptyState(
   status: "missing" | "unverifiable",
   businessKey: RecoveryWhatsappBusinessKey | null = null,
@@ -376,58 +383,29 @@ export async function getWhatsappFreeformWindowForCart(
   cartId: string,
   nowMs = Date.now(),
 ): Promise<WhatsappFreeformWindowState> {
-  const { data: cartData, error: cartError } = await supabase
-    .from("v_recovery_incomplete_bookings_current_compat")
-    .select("booking_id,phone_normalized,parking_code")
-    .eq("id", cartId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("recovery_whatsapp_freeform_window_v2", {
+    p_cart_id: cartId,
+  });
 
-  if (cartError) {
+  if (error) {
     return emptyState("unverifiable");
   }
 
-  const cart = cartData as CartContactRow | null;
-  const parkingBusinessKey = businessKeyForParking(cart?.parking_code ?? null);
+  const row = (Array.isArray(data) ? data[0] : data) as WhatsappFreeformWindowRpcRow | null;
+  const businessKey = row?.business_key ?? null;
 
-  if (!cart?.phone_normalized) {
-    return emptyState("missing", parkingBusinessKey);
-  }
-
-  const memoryResults = await Promise.all([
-    memoryConversationRows(supabase, "v_recovery_whatsapp_message_memory_raw_current_compat", cart.phone_normalized),
-    memoryConversationRows(supabase, "v_recovery_whatsapp_message_memory_current_compat", cart.phone_normalized),
-  ]);
-
-  if (memoryResults.some((result) => result.error)) {
-    return emptyState("unverifiable", parkingBusinessKey);
-  }
-
-  const memoryRows = memoryResults.flatMap((result) => result.rows);
-  const businessKey = resolveConversationBusinessKey({
-    explicitRows: memoryRows,
-    parkingBusinessKey,
-  });
-
-  if (!businessKey) {
-    return emptyState("unverifiable", parkingBusinessKey);
-  }
-
-  const legacyIdentity = await resolveLegacyCartIdByBookingId(supabase, cart.booking_id);
-
-  if (!legacyIdentity.ok) {
+  if (!row || row.error_code || !businessKey) {
     return emptyState("unverifiable", businessKey);
   }
 
-  const liveResult = await liveInboundCandidates(supabase, cartId, legacyIdentity.legacyCartId, businessKey);
-
-  if (liveResult.error) {
-    return emptyState("unverifiable", businessKey);
+  if (!row.last_inbound_at) {
+    return emptyState("missing", businessKey);
   }
 
-  return resolveWhatsappFreeformWindowFromLoadedSources({
-    liveCandidates: liveResult.candidates,
-    memoryRows,
+  return classifyWhatsappFreeformWindow(
+    row.last_inbound_at,
     nowMs,
-    parkingBusinessKey,
-  });
+    businessKey,
+    row.source,
+  );
 }

@@ -6,11 +6,13 @@ const routePath = "src/app/api/recuperacion/carritos/[id]/chat/templates/route.t
 const catalogPath = "src/lib/recuperacion/whatsapp-recovery-template-catalog.ts";
 const metaPath = "src/lib/recuperacion/meta-whatsapp-templates.ts";
 const windowHelperPath = "src/lib/recuperacion/whatsapp-freeform-window.ts";
+const windowMigrationPath = "supabase/migrations/20261008120000_add_recovery_whatsapp_freeform_window_v2.sql";
 
 const route = readFileSync(routePath, "utf8");
 const catalog = readFileSync(catalogPath, "utf8");
 const meta = readFileSync(metaPath, "utf8");
 const windowHelper = readFileSync(windowHelperPath, "utf8");
+const windowMigration = readFileSync(windowMigrationPath, "utf8");
 
 test("1. endpoint is GET-only and requires active admin", () => {
   assert.match(route, /export async function GET\(_request: NextRequest, context: RouteContext\)/);
@@ -31,13 +33,14 @@ test("3. missing cart returns 404", () => {
   assert.match(route, /jsonError\("Carrito no encontrado\.", 404, "cart_not_found"\)/);
 });
 
-test("4. endpoint uses real conversation window resolution, not parking_code alone", () => {
+test("4. endpoint uses deterministic business resolution without requiring an open freeform window", () => {
   assert.match(route, /getWhatsappFreeformWindowForCart\(admin\.supabase, cartResult\.cart\.id\)/);
   assert.match(route, /windowState\.businessKey/);
   assert.match(route, /windowState\.status === "unverifiable"/);
-  assert.doesNotMatch(route, /businessKeyForParking\(|parking_code\)\s*=>|const businessKey = cartResult\.cart\.parking_code/);
-  assert.match(windowHelper, /resolveConversationBusinessKey/);
-  assert.match(windowHelper, /api_phone_normalized/);
+  assert.doesNotMatch(route, /windowState\.canSendFreeform|windowState\.status === "closed"|windowState\.status === "missing"/);
+  assert.match(windowHelper, /\.rpc\("recovery_whatsapp_freeform_window_v2"/);
+  assert.match(windowMigration, /when 'MPV' then 'MPV'/);
+  assert.match(windowMigration, /when 'EAP' then 'EAP'/);
 });
 
 test("5. unverifiable business key is blocked before Meta lookup", () => {

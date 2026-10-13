@@ -217,7 +217,7 @@ test("40. snapshot comparison is separate from previous-week comparison", () => 
 });
 
 test("41. KPI calculation is not modified by snapshot fetch", () => {
-  assertHas(table, /summarizeRowsForWeek\(rows, activeWeekStart\)/);
+  assertHas(table, /summarizeRowsForWeek\(messageSentFilteredRows, activeWeekStart\)/);
   assertHas(table, /performanceSummary\.averageRate/);
 });
 

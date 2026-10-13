@@ -76,7 +76,7 @@ test("live-message webhook supports V2-only cart writes", () => {
 test("chat reads live messages by V2 and safe legacy identity with id dedupe", () => {
   assert.match(chatRoute, /\.eq\("cart_v2_id", params\.cartId\)/);
   assert.match(chatRoute, /\.eq\("cart_id", params\.legacyCartId\)/);
-  assert.match(chatRoute, /const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status"/);
+  assert.match(chatRoute, /const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status,whatsapp_message_id"/);
   assert.match(chatRoute, /const key = message\.id/);
 });
 

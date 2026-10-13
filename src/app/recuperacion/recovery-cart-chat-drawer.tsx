@@ -7,6 +7,7 @@ import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import { RecoveryWhatsappTemplateLibraryModal, categoryLabel, renderTemplatePreviewText, type RecoveryTemplateOption } from "./recovery-whatsapp-template-library-modal";
 
 const RECOVERY_TIME_ZONE = "America/Santiago";
+const CHAT_POLL_INTERVAL_MS = 5_000;
 const WINDOW_TIMER_INTERVAL_MS = 60 * 1000;
 
 type CartChatMessage = {
@@ -108,6 +109,7 @@ type TemplateSendResponse = {
 };
 type RecoveryCartChatDrawerProps = {
   cartId: string | null;
+  onChatIndicatorRefreshNeeded?: (cartId: string) => void;
   onClose: () => void;
 };
 
@@ -282,7 +284,7 @@ function getWhatsappFreeformWindowView(
     tone: "neutral",
   };
 }
-export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDrawerProps) {
+export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, onClose }: RecoveryCartChatDrawerProps) {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [data, setData] = useState<CartChatResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -306,9 +308,84 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   const [whatsappWindowOverride, setWhatsappWindowOverride] = useState<WhatsappFreeformWindowPayload | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatRequestSeqRef = useRef(0);
+  const initialChatControllerRef = useRef<AbortController | null>(null);
+  const isChatFetchInFlightRef = useRef(false);
+  const localMessagesVersionRef = useRef(0);
   const previousMessageCountRef = useRef(0);
   const shouldScrollToBottomRef = useRef(false);
+  const silentChatControllerRef = useRef<AbortController | null>(null);
   const templateSendControllerRef = useRef<AbortController | null>(null);
+
+  async function loadChatSnapshot(params: {
+    activeCartId: string;
+    localMessagesVersion: number;
+    mode: "initial" | "silent";
+    requestSeq: number;
+    signal: AbortSignal;
+  }) {
+    try {
+      const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(params.activeCartId)}/chat`, {
+        cache: "no-store",
+        method: "GET",
+        signal: params.signal,
+      });
+      const payload = (await response.json()) as CartChatResponse;
+
+      if (params.signal.aborted || params.requestSeq !== chatRequestSeqRef.current) {
+        return;
+      }
+
+      if (!response.ok || !payload.ok) {
+        if (params.mode === "silent") return;
+
+        if (response.status === 401 || response.status === 403) {
+          setError("No tienes permisos para ver el chat metadata-only.");
+          return;
+        }
+
+        setError(payload.error ?? "No se pudo cargar el chat metadata-only.");
+        return;
+      }
+
+      if (payload.cart?.id !== params.activeCartId) {
+        return;
+      }
+
+      const nextMessageCount = payload.messages?.length ?? 0;
+
+      if (params.mode === "initial" ? nextMessageCount > 0 : nextMessageCount > previousMessageCountRef.current) {
+        onChatIndicatorRefreshNeeded?.(params.activeCartId);
+      }
+
+      if (params.mode === "silent") {
+        if (localMessagesVersionRef.current !== params.localMessagesVersion) {
+          return;
+        }
+
+        setData((current) => {
+          if (current?.cart?.id && current.cart.id !== params.activeCartId) return current;
+
+          return {
+            ...payload,
+            whatsappWindow: current?.whatsappWindow ?? payload.whatsappWindow,
+          };
+        });
+        return;
+      }
+
+      shouldScrollToBottomRef.current = true;
+      setData(payload);
+    } catch (fetchError) {
+      if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
+        return;
+      }
+
+      if (params.mode === "initial") {
+        setError("No se pudo conectar con el endpoint de chat.");
+      }
+    }
+  }
 
   useEffect(() => {
     if (!copyFeedback) {
@@ -350,78 +427,107 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
     }
 
     const activeCartId = cartId;
+    initialChatControllerRef.current?.abort();
+    silentChatControllerRef.current?.abort();
     const controller = new AbortController();
-    let isActive = true;
+    const requestSeq = chatRequestSeqRef.current + 1;
 
-    async function loadChat() {
-      setData(null);
-      setIsContactActionsOpen(false);
-      setError(null);
-      setSendError(null);
-      setSendStatus(null);
-      setMessageDraft("");
-      setMessageSourceFilter("all");
-      setIsTemplateLibraryOpen(false);
-      setSelectedTemplate(null);
-      setTemplateVariableValues({});
-      setIsTemplateValidating(false);
-      templateSendControllerRef.current?.abort();
-      templateSendControllerRef.current = null;
-      setTemplateValidationError(null);
-      setTemplateValidationResult(null);
-      setTemplatePreparedSnapshot(null);
-      setTemplateSendError(null);
-      setTemplateSendStatus("idle");
-      setWhatsappWindowOverride(null);
-      previousMessageCountRef.current = 0;
-      shouldScrollToBottomRef.current = true;
-      setIsLoading(true);
+    chatRequestSeqRef.current = requestSeq;
+    initialChatControllerRef.current = controller;
+    isChatFetchInFlightRef.current = true;
+    localMessagesVersionRef.current = 0;
+    setData(null);
+    setIsContactActionsOpen(false);
+    setError(null);
+    setSendError(null);
+    setSendStatus(null);
+    setMessageDraft("");
+    setMessageSourceFilter("all");
+    setIsTemplateLibraryOpen(false);
+    setSelectedTemplate(null);
+    setTemplateVariableValues({});
+    setIsTemplateValidating(false);
+    templateSendControllerRef.current?.abort();
+    templateSendControllerRef.current = null;
+    setTemplateValidationError(null);
+    setTemplateValidationResult(null);
+    setTemplatePreparedSnapshot(null);
+    setTemplateSendError(null);
+    setTemplateSendStatus("idle");
+    setWhatsappWindowOverride(null);
+    previousMessageCountRef.current = 0;
+    shouldScrollToBottomRef.current = true;
+    setIsLoading(true);
 
-      try {
-        const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(activeCartId)}/chat`, {
-          method: "GET",
-          signal: controller.signal,
-        });
-        const payload = (await response.json()) as CartChatResponse;
-
-        if (!response.ok || !payload.ok) {
-          if (response.status === 401 || response.status === 403) {
-            if (isActive) {
-              setError("No tienes permisos para ver el chat metadata-only.");
-            }
-            return;
-          }
-
-          if (isActive) {
-            setError(payload.error ?? "No se pudo cargar el chat metadata-only.");
-          }
-          return;
-        }
-
-        if (isActive) {
-          shouldScrollToBottomRef.current = true;
-          setData(payload);
-        }
-      } catch (fetchError) {
-        if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
-          return;
-        }
-
-        if (isActive) {
-          setError("No se pudo conectar con el endpoint de chat.");
-        }
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
-        }
+    void loadChatSnapshot({
+      activeCartId,
+      localMessagesVersion: localMessagesVersionRef.current,
+      mode: "initial",
+      requestSeq,
+      signal: controller.signal,
+    }).finally(() => {
+      if (initialChatControllerRef.current === controller) {
+        initialChatControllerRef.current = null;
       }
-    }
-
-    void loadChat();
+      if (chatRequestSeqRef.current === requestSeq) {
+        isChatFetchInFlightRef.current = false;
+        setIsLoading(false);
+      }
+    });
 
     return () => {
-      isActive = false;
+      if (initialChatControllerRef.current === controller) {
+        initialChatControllerRef.current = null;
+      }
       controller.abort();
+      if (chatRequestSeqRef.current === requestSeq) {
+        isChatFetchInFlightRef.current = false;
+      }
+    };
+  }, [cartId]);
+
+  useEffect(() => {
+    if (!cartId) {
+      return;
+    }
+
+    const activeCartId = cartId;
+
+    function refreshSilently() {
+      if (document.visibilityState !== "visible" || isChatFetchInFlightRef.current) {
+        return;
+      }
+
+      silentChatControllerRef.current?.abort();
+      const controller = new AbortController();
+      const requestSeq = chatRequestSeqRef.current + 1;
+
+      chatRequestSeqRef.current = requestSeq;
+      silentChatControllerRef.current = controller;
+      isChatFetchInFlightRef.current = true;
+
+      void loadChatSnapshot({
+        activeCartId,
+        localMessagesVersion: localMessagesVersionRef.current,
+        mode: "silent",
+        requestSeq,
+        signal: controller.signal,
+      }).finally(() => {
+        if (silentChatControllerRef.current === controller) {
+          silentChatControllerRef.current = null;
+        }
+        if (chatRequestSeqRef.current === requestSeq) {
+          isChatFetchInFlightRef.current = false;
+        }
+      });
+    }
+
+    const interval = window.setInterval(refreshSilently, CHAT_POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(interval);
+      silentChatControllerRef.current?.abort();
+      silentChatControllerRef.current = null;
     };
   }, [cartId]);
 
@@ -641,6 +747,7 @@ export function RecoveryCartChatDrawer({ cartId, onClose }: RecoveryCartChatDraw
   }
   function appendOutboundMessage(message: CartChatMessage) {
     shouldScrollToBottomRef.current = true;
+    localMessagesVersionRef.current += 1;
     setData((current) => {
       if (!current) return current;
 

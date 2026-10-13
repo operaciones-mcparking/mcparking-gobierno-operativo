@@ -11,6 +11,10 @@ import {
   type WhatsappInboundCandidate,
   type WhatsappMemoryConversationRow,
 } from "@/lib/recuperacion/whatsapp-freeform-window";
+import {
+  chatConversationIndicatorFromMemoryRows,
+  type ChatIndicatorMemoryRow,
+} from "@/lib/recuperacion/recovery-chat-indicator";
 
 const MAX_CART_IDS = 100;
 const PAGE_SIZE = 1000;
@@ -29,12 +33,7 @@ type CartIndicatorSourceRow = {
   phone_normalized: string | null;
 };
 
-type MessageMemoryIndicatorRow = WhatsappMemoryConversationRow & {
-  chat_state: string | null;
-  intent_category: string | null;
-  message_sentiment: string | null;
-  wa_id_normalized: string | null;
-};
+type MessageMemoryIndicatorRow = ChatIndicatorMemoryRow & WhatsappMemoryConversationRow;
 
 type LiveWindowRow = {
   cart_id: string | null;
@@ -99,16 +98,6 @@ async function requireAdminForApi() {
   return { ok: true as const, supabase };
 }
 
-function addDays(dateValue: string, days: number) {
-  const date = new Date(dateValue);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  date.setDate(date.getDate() + days);
-
-  return date;
-}
-
 function normalizeIdsFromSearchParams(searchParams: URLSearchParams) {
   const rawIds = [
     ...searchParams.getAll("cartId"),
@@ -122,6 +111,40 @@ function normalizeIdsFromSearchParams(searchParams: URLSearchParams) {
         .filter((item) => item.length > 0),
     ),
   ).slice(0, MAX_CART_IDS);
+}
+
+function addDays(dateValue: string, days: number) {
+  const date = new Date(dateValue);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  date.setDate(date.getDate() + days);
+
+  return date;
+}
+
+function memoryBoundsForCarts(carts: CartIndicatorSourceRow[]) {
+  const fromTimes: number[] = [];
+  const toTimes: number[] = [];
+
+  for (const cart of carts) {
+    if (!cart.form_datetime) continue;
+
+    const fromDate = new Date(cart.form_datetime);
+    const toDate = addDays(cart.form_datetime, 7);
+
+    if (Number.isNaN(fromDate.getTime()) || !toDate) continue;
+
+    fromTimes.push(fromDate.getTime());
+    toTimes.push(toDate.getTime());
+  }
+
+  if (fromTimes.length === 0 || toTimes.length === 0) return null;
+
+  return {
+    from: new Date(Math.min(...fromTimes)).toISOString(),
+    to: new Date(Math.max(...toTimes)).toISOString(),
+  };
 }
 
 function emptyIndicator(cartId: string): ChatIndicatorPayload {
@@ -229,41 +252,6 @@ function dedupeLiveRows(rows: LiveWindowRow[]) {
   return uniqueRows;
 }
 
-function chatIndicatorFromMemoryRows(cart: CartIndicatorSourceRow, rows: MessageMemoryIndicatorRow[]) {
-  if (!cart.form_datetime) return emptyIndicator(cart.id);
-
-  const fromDate = new Date(cart.form_datetime);
-  const toDate = addDays(cart.form_datetime, 7);
-
-  if (!toDate || Number.isNaN(fromDate.getTime())) return emptyIndicator(cart.id);
-
-  let messageCount = 0;
-  let latestInbound: MessageMemoryIndicatorRow | null = null;
-
-  for (const message of rows) {
-    const messageDate = message.message_at ? new Date(message.message_at) : null;
-
-    if (!messageDate || Number.isNaN(messageDate.getTime()) || messageDate < fromDate || messageDate >= toDate) continue;
-
-    messageCount += 1;
-
-    if (message.message_bound_type === "inbound" && (!latestInbound?.message_at || messageDate > new Date(latestInbound.message_at))) {
-      latestInbound = message;
-    }
-  }
-
-  return {
-    ...emptyIndicator(cart.id),
-    chatMessageCount: messageCount,
-    hasChat: messageCount > 0,
-    hasInbound: Boolean(latestInbound),
-    lastInboundChatState: latestInbound?.chat_state ?? null,
-    lastInboundIntentCategory: latestInbound?.intent_category ?? null,
-    lastInboundMessageAt: latestInbound?.message_at ?? null,
-    lastInboundSentiment: latestInbound?.message_sentiment ?? null,
-  };
-}
-
 function whatsappWindowForCart(params: {
   cart: CartIndicatorSourceRow;
   liveRows: LiveWindowRow[];
@@ -326,6 +314,12 @@ export async function GET(request: NextRequest) {
 
   const phones = Array.from(new Set(cartsWithPhone.map((cart) => cart.phone_normalized as string)));
   const cartIds = carts.map((cart) => cart.id);
+  const memoryBounds = memoryBoundsForCarts(cartsWithPhone);
+
+  if (!memoryBounds) {
+    return NextResponse.json({ indicators: Object.fromEntries(indicators), ok: true });
+  }
+
   const legacyIdentity = await legacyCartIdentityByV2CartId(admin.supabase, carts);
 
   if (!legacyIdentity.ok) {
@@ -367,6 +361,8 @@ export async function GET(request: NextRequest) {
         .from("v_recovery_whatsapp_message_memory_current_compat")
         .select("wa_id_normalized,message_at,message_bound_type,intent_category,message_sentiment,chat_state,api_phone_normalized")
         .in("wa_id_normalized", phones)
+        .gte("message_at", memoryBounds.from)
+        .lt("message_at", memoryBounds.to)
         .order("message_at", { ascending: false }),
     ),
     fetchRowsInPages<MessageMemoryIndicatorRow>(() =>
@@ -374,6 +370,8 @@ export async function GET(request: NextRequest) {
         .from("v_recovery_whatsapp_message_memory_raw_current_compat")
         .select("wa_id_normalized,message_at,message_bound_type,api_phone_normalized")
         .in("wa_id_normalized", phones)
+        .gte("message_at", memoryBounds.from)
+        .lt("message_at", memoryBounds.to)
         .order("message_at", { ascending: false }),
     ),
     ...liveQueries,
@@ -394,7 +392,10 @@ export async function GET(request: NextRequest) {
   const nowMs = Date.now();
 
   for (const cart of cartsWithPhone) {
-    const indicator = chatIndicatorFromMemoryRows(cart, normalMemoryRowsByPhone.get(cart.phone_normalized as string) ?? []);
+    const indicator = {
+      ...emptyIndicator(cart.id),
+      ...chatConversationIndicatorFromMemoryRows(cart, normalMemoryRowsByPhone.get(cart.phone_normalized as string) ?? []),
+    };
 
     indicators.set(cart.id, {
       ...indicator,

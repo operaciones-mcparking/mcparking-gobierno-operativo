@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
 import type {
@@ -49,6 +49,7 @@ type ChatIndicator = Pick<
 type StatusFilter = "all" | RecoveryCartAuditStatus;
 type TypeFilter = "all" | "abandoned" | "canceled";
 type WhatsappFilter = "all" | RecoveryCartWhatsappStatus;
+type MessageSentFilter = "all" | "1" | "0";
 type SortDirection = "asc" | "desc";
 type SortKey =
   | "amount"
@@ -103,10 +104,28 @@ function formatDateOnly(value: string | null) {
   return `${day}/${month}/${year}`;
 }
 
-function formatHours(value: number | null) {
+function formatHoursDurationFromMinutes(totalMinutes: number) {
+  const sign = totalMinutes < 0 ? "-" : "";
+  const absoluteMinutes = Math.abs(totalMinutes);
+  const hours = Math.floor(absoluteMinutes / 60);
+  const minutes = absoluteMinutes % 60;
+
+  return `${sign}${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function formatHours(value: number | null, row?: Pick<RecoveryCartAuditRow, "cart_form_datetime" | "purchase_created_at">) {
+  if (row?.cart_form_datetime && row.purchase_created_at) {
+    const cartTime = new Date(row.cart_form_datetime).getTime();
+    const purchaseTime = new Date(row.purchase_created_at).getTime();
+
+    if (Number.isFinite(cartTime) && Number.isFinite(purchaseTime)) {
+      return formatHoursDurationFromMinutes(Math.round((purchaseTime - cartTime) / 60_000));
+    }
+  }
+
   if (value === null || value === undefined) return "-";
 
-  return `${Number(value).toFixed(1).replace(".", ",")} h`;
+  return formatHoursDurationFromMinutes(Math.round(Number(value) * 60));
 }
 
 function formatNumber(value: number) {
@@ -268,6 +287,34 @@ function intentTooltipTitle(row: RecoveryCartAuditRow) {
   if (items.length === 0) return row.hasChat === false ? "Sin chat asociado" : "Chat disponible bajo demanda";
 
   return items.map(([label, value]) => `${label}: ${value}`).join(" | ");
+}
+
+function chatIndicatorView(row: RecoveryCartAuditRow, chatIndicator: ChatIndicator | undefined) {
+  const className = chatIndicator?.hasInbound
+    ? "bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]"
+    : row.hasChat === true
+      ? "bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.14)]"
+      : row.hasChat === false
+        ? "bg-slate-300/70"
+        : "bg-slate-300/50";
+
+  const label = chatIndicator?.hasInbound
+    ? row.chatMessageCount !== null
+      ? `Chat respondió: ${formatNumber(row.chatMessageCount)} mensajes`
+      : "Chat respondió"
+    : row.hasChat === true
+      ? row.chatMessageCount !== null
+        ? `Chat sin respuesta: ${formatNumber(row.chatMessageCount)} mensajes`
+        : "Chat sin respuesta"
+      : row.hasChat === false
+        ? "Sin chat asociado"
+        : "Chat bajo demanda";
+
+  return { className, label };
+}
+
+function canOpenRecoveryChat(row: RecoveryCartAuditRow) {
+  return Boolean(row.phone?.trim()) && Boolean(row.parking_code?.trim());
 }
 
 function formatWhatsappWindowRemaining(seconds: number | null) {
@@ -446,6 +493,12 @@ function buildPerformanceSummary(rows: RecoveryCartAuditRow[]) {
     totalAmount: days.reduce((total, day) => total + day.amount, 0),
     worstDay,
   };
+}
+
+function matchesMessageSentFilter(row: RecoveryCartAuditRow, filter: MessageSentFilter) {
+  if (filter === "1") return row.message_sent === true;
+  if (filter === "0") return row.message_sent === false;
+  return true;
 }
 
 type LineChartPoint = {
@@ -1022,6 +1075,7 @@ function WeeklyBreakdownBlock({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [whatsappFilter, setWhatsappFilter] = useState<WhatsappFilter>("all");
+  const [messageSentFilter, setMessageSentFilter] = useState<MessageSentFilter>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedChatCartId, setSelectedChatCartId] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -1036,8 +1090,13 @@ function WeeklyBreakdownBlock({
   const [expandedMobileCartIds, setExpandedMobileCartIds] = useState<Record<string, boolean>>({});
   const [whatsappWindowNowMs, setWhatsappWindowNowMs] = useState(() => Date.now());
 
+  const messageSentFilteredRows = useMemo(
+    () => rows.filter((row) => matchesMessageSentFilter(row, messageSentFilter)),
+    [messageSentFilter, rows],
+  );
+
   const visibleRows = useMemo(() => {
-    return [...rows]
+    return [...messageSentFilteredRows]
       .filter((row) => {
         if (statusFilter !== "all" && row.audit_status !== statusFilter) return false;
         if (typeFilter !== "all" && row.cart_type !== typeFilter) return false;
@@ -1061,7 +1120,7 @@ function WeeklyBreakdownBlock({
 
         return sortDirection === "desc" ? comparison * -1 : comparison;
       });
-  }, [dateQuery, rows, sortDirection, sortKey, statusFilter, typeFilter, whatsappFilter]);
+  }, [dateQuery, messageSentFilteredRows, sortDirection, sortKey, statusFilter, typeFilter, whatsappFilter]);
 
   const hasDateFilter = Boolean(dateQuery);
   const totalPages = hasDateFilter ? 1 : Math.max(1, Math.ceil(visibleRows.length / rowsPerPage));
@@ -1136,17 +1195,17 @@ function WeeklyBreakdownBlock({
       value: formatCurrency(auditSummary.recoveredAmount),
     },
   ];
-  const weekOptions = useMemo(() => buildWeekOptions(rows), [rows]);
+  const weekOptions = useMemo(() => buildWeekOptions(messageSentFilteredRows), [messageSentFilteredRows]);
   const activeWeekStart = weekOptions.some((option) => option.value === selectedWeekStart)
     ? selectedWeekStart
     : weekOptions[0]?.value ?? currentSantiagoWeekStartKey();
   const previousWeekStart = addDateKeyDays(activeWeekStart, -7);
-  const selectedWeekRows = useMemo(() => rowsForWeek(rows, activeWeekStart), [activeWeekStart, rows]);
+  const selectedWeekRows = useMemo(() => rowsForWeek(messageSentFilteredRows, activeWeekStart), [activeWeekStart, messageSentFilteredRows]);
   const weeklyBreakdown = useMemo(() => buildWeeklyBreakdown(selectedWeekRows), [selectedWeekRows]);
-  const performanceSummary = useMemo(() => summarizeRowsForWeek(rows, activeWeekStart), [activeWeekStart, rows]);
+  const performanceSummary = useMemo(() => summarizeRowsForWeek(messageSentFilteredRows, activeWeekStart), [activeWeekStart, messageSentFilteredRows]);
   const previousPerformanceSummary = useMemo(
-    () => summarizeRowsForWeek(rows, previousWeekStart),
-    [previousWeekStart, rows],
+    () => summarizeRowsForWeek(messageSentFilteredRows, previousWeekStart),
+    [messageSentFilteredRows, previousWeekStart],
   );
   const maxDailyAmount = Math.max(
     ...performanceSummary.days.map((day) => day.amount),
@@ -1273,7 +1332,7 @@ function WeeklyBreakdownBlock({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [dateQuery, statusFilter, typeFilter, whatsappFilter]);
+  }, [dateQuery, messageSentFilter, statusFilter, typeFilter, whatsappFilter]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -1281,6 +1340,34 @@ function WeeklyBreakdownBlock({
     }, 60_000);
 
     return () => window.clearInterval(intervalId);
+  }, []);
+
+  const loadChatIndicatorsForIds = useCallback(async (ids: string[], signal?: AbortSignal) => {
+    if (ids.length === 0) return;
+
+    try {
+      const params = new URLSearchParams({ cartIds: ids.join(",") });
+      const response = await fetch(`/api/recuperacion/carritos/chat-indicators?${params.toString()}`, {
+        cache: "no-store",
+        signal,
+      });
+
+      if (!response.ok) {
+        setChatIndicators((current) => ({
+          ...current,
+          ...Object.fromEntries(ids.map((id) => [id, { cartId: id, chatMessageCount: 0, hasChat: false, hasInbound: false, lastInboundChatState: null, lastInboundIntentCategory: null, lastInboundMessageAt: null, lastInboundSentiment: null, whatsappWindow: { closesAt: null, remainingSeconds: null, status: "unverifiable" } }])),
+        }));
+        return;
+      }
+
+      const payload = (await response.json()) as { indicators?: Record<string, ChatIndicator> };
+
+      if (!payload.indicators) return;
+
+      setChatIndicators((current) => ({ ...current, ...payload.indicators }));
+    } catch (error) {
+      if ((error as { name?: string }).name === "AbortError") return;
+    }
   }, []);
 
   useEffect(() => {
@@ -1292,36 +1379,10 @@ function WeeklyBreakdownBlock({
 
     const controller = new AbortController();
 
-    async function loadChatIndicators() {
-      try {
-        const params = new URLSearchParams({ cartIds: missingIds.join(",") });
-        const response = await fetch(`/api/recuperacion/carritos/chat-indicators?${params.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          setChatIndicators((current) => ({
-            ...current,
-            ...Object.fromEntries(missingIds.map((id) => [id, { cartId: id, chatMessageCount: 0, hasChat: false, hasInbound: false, lastInboundChatState: null, lastInboundIntentCategory: null, lastInboundMessageAt: null, lastInboundSentiment: null, whatsappWindow: { closesAt: null, remainingSeconds: null, status: "unverifiable" } }])),
-          }));
-          return;
-        }
-
-        const payload = (await response.json()) as { indicators?: Record<string, ChatIndicator> };
-
-        if (!payload.indicators) return;
-
-        setChatIndicators((current) => ({ ...current, ...payload.indicators }));
-      } catch (error) {
-        if ((error as { name?: string }).name === "AbortError") return;
-      }
-    }
-
-    void loadChatIndicators();
+    void loadChatIndicatorsForIds(missingIds, controller.signal);
 
     return () => controller.abort();
-  }, [chatIndicators, pageRowIds, pageRowIdsKey]);
+  }, [chatIndicators, loadChatIndicatorsForIds, pageRowIds, pageRowIdsKey]);
   useEffect(() => {
     if (weekOptions.length === 0) {
       setSelectedWeekStart("");
@@ -1617,7 +1678,7 @@ function WeeklyBreakdownBlock({
       </div>
 
 
-      <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 border-b border-[#edf2f6] px-5 py-4 md:grid-cols-2 xl:grid-cols-5">
         <div className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
           <span>Fecha carrito</span>
           <input
@@ -1698,6 +1759,21 @@ function WeeklyBreakdownBlock({
           </select>
         </label>
 
+        <label className="text-xs font-medium uppercase tracking-[0.08em] text-slate-500">
+          Message_Sent
+          <select
+            className="mt-2 w-full rounded-lg border border-[#d6e1ea] bg-white px-3 py-2 text-sm normal-case tracking-normal text-navy outline-none focus:border-sea"
+            onChange={(event) => {
+              setMessageSentFilter(event.target.value as MessageSentFilter);
+            }}
+            value={messageSentFilter}
+          >
+            <option value="all">Todos</option>
+            <option value="1">1</option>
+            <option value="0">0</option>
+          </select>
+        </label>
+
       </div>
 
       {!error ? (
@@ -1741,21 +1817,9 @@ function WeeklyBreakdownBlock({
             {pageRows.map((row) => {
               const chatIndicator = chatIndicators[row.id];
               const displayRow: RecoveryCartAuditRow = chatIndicator ? { ...row, ...chatIndicator } : row;
-              const canOpenChat = displayRow.hasChat !== false;
+              const canOpenChat = canOpenRecoveryChat(displayRow);
               const isExpanded = Boolean(expandedMobileCartIds[row.id]);
-              const chatDotClass = chatIndicator?.hasInbound
-                ? "bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]"
-                : displayRow.hasChat === true
-                  ? "bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.14)]"
-                  : displayRow.hasChat === false
-                    ? "bg-slate-300/70"
-                    : "bg-slate-300/50";
-              const chatLabel =
-                displayRow.hasChat === true && displayRow.chatMessageCount !== null
-                  ? `${formatNumber(displayRow.chatMessageCount)} mensajes`
-                  : displayRow.hasChat === false
-                    ? "Sin chat"
-                    : "Chat bajo demanda";
+              const chatView = chatIndicatorView(displayRow, chatIndicator);
               const hasPurchase = Boolean(row.purchase_created_at || row.hours_to_purchase !== null || row.purchase_amount !== null || row.confidence);
               const detailItems = intentTooltipItems(displayRow);
 
@@ -1783,7 +1847,7 @@ function WeeklyBreakdownBlock({
 
                   <div className="mt-2 flex min-w-0 items-start gap-2">
                     <p className="min-w-0 flex-1 break-all text-sm font-medium leading-5 text-navy">{row.email ?? "Sin correo"}</p>
-                    <span aria-label={chatLabel} className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${chatDotClass}`} title={chatLabel} />
+                    <span aria-label={chatView.label} className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${chatView.className}`} title={chatView.label} />
                     <WhatsappWindowDot nowMs={whatsappWindowNowMs} state={chatIndicator?.whatsappWindow} />
                   </div>
 
@@ -1807,7 +1871,7 @@ function WeeklyBreakdownBlock({
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-navy">Compra</span>
                         <span>{formatDate(row.purchase_created_at)}</span>
-                        <span>{formatHours(row.hours_to_purchase)}</span>
+                        <span>{formatHours(row.hours_to_purchase, row)}</span>
                         <span className="font-medium text-navy">{primaryAmountLabel(row)}</span>
                       </div>
                     ) : (
@@ -1865,14 +1929,8 @@ function WeeklyBreakdownBlock({
               {pageRows.map((row) => {
                 const chatIndicator = chatIndicators[row.id];
                 const displayRow: RecoveryCartAuditRow = chatIndicator ? { ...row, ...chatIndicator } : row;
-                const canOpenChat = displayRow.hasChat !== false;
-                const chatDotClass = chatIndicator?.hasInbound
-                  ? "bg-sea shadow-[0_0_0_3px_rgba(14,148,136,0.14)]"
-                  : displayRow.hasChat === true
-                    ? "bg-sky-400 shadow-[0_0_0_3px_rgba(56,189,248,0.14)]"
-                    : displayRow.hasChat === false
-                      ? "bg-slate-300/70"
-                      : "bg-slate-300/50";
+                const canOpenChat = canOpenRecoveryChat(displayRow);
+                const chatView = chatIndicatorView(displayRow, chatIndicator);
 
                 return (
                 <tr
@@ -1897,9 +1955,9 @@ function WeeklyBreakdownBlock({
                     <div className="flex items-center gap-1.5 font-medium text-navy">
                       <span className="min-w-0 break-all">{row.email ?? "Sin correo"}</span>
                       <span
-                        aria-label={displayRow.hasChat === true && displayRow.chatMessageCount !== null ? `Chat disponible: ${formatNumber(displayRow.chatMessageCount)} mensajes` : displayRow.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
-                        className={`h-2 w-2 shrink-0 rounded-full transition ${chatDotClass}`}
-                        title={displayRow.hasChat === true && displayRow.chatMessageCount !== null ? `Chat disponible: ${formatNumber(displayRow.chatMessageCount)} mensajes` : displayRow.hasChat === false ? "Sin chat asociado" : "Chat bajo demanda"}
+                        aria-label={chatView.label}
+                        className={`h-2 w-2 shrink-0 rounded-full transition ${chatView.className}`}
+                        title={chatView.label}
                       />
                       <WhatsappWindowDot nowMs={whatsappWindowNowMs} state={chatIndicator?.whatsappWindow} />
                     </div>
@@ -1947,7 +2005,7 @@ function WeeklyBreakdownBlock({
                     {formatDate(row.purchase_created_at)}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3 text-slate-700">
-                    {formatHours(row.hours_to_purchase)}
+                    {formatHours(row.hours_to_purchase, row)}
                   </td>
                   <td className="border-b border-[#edf2f6] px-2 py-3">
                     <div className="font-medium text-navy">{primaryAmountLabel(row)}</div>
@@ -2041,7 +2099,13 @@ function WeeklyBreakdownBlock({
         onOpenChange={setSnapshotComparisonDrawerOpen}
         open={snapshotComparisonDrawerOpen}
       />
-      <RecoveryCartChatDrawer cartId={selectedChatCartId} onClose={() => setSelectedChatCartId(null)} />
+      <RecoveryCartChatDrawer
+        cartId={selectedChatCartId}
+        onChatIndicatorRefreshNeeded={(cartId) => {
+          void loadChatIndicatorsForIds([cartId]);
+        }}
+        onClose={() => setSelectedChatCartId(null)}
+      />
     </>
   );
 }

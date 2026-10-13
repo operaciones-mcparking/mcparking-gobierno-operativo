@@ -2,11 +2,16 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 import { resolveChatReadRange } from "@/lib/recuperacion/recovery-chat-read-range";
-import { getWhatsappFreeformWindowForCart, type WhatsappFreeformWindowState } from "@/lib/recuperacion/whatsapp-freeform-window";
+import {
+  businessKeyForParking,
+  getWhatsappFreeformWindowForCart,
+  recoveryWhatsappBusinessPhoneForKey,
+  type WhatsappFreeformWindowState,
+} from "@/lib/recuperacion/whatsapp-freeform-window";
 
 const MAX_CHAT_MESSAGES = 100;
 
-const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status";
+const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status,whatsapp_message_id";
 
 type RouteContext = {
   params: Promise<{
@@ -27,7 +32,9 @@ type CartChatSourceRow = {
 };
 
 type MessageMemoryChatRow = {
+  api_phone_normalized: string | null;
   chat_state: string | null;
+  conversation_id: string | null;
   day_of_week: string | null;
   intent_category: string | null;
   message_at: string;
@@ -38,7 +45,9 @@ type MessageMemoryChatRow = {
 };
 
 type RawMessageMemoryChatRow = {
+  api_phone_normalized: string | null;
   chat_state: string | null;
+  conversation_id: string | null;
   intent_category: string | null;
   message_at: string;
   message_bound_type: string | null;
@@ -53,6 +62,7 @@ type LiveMessageChatRow = {
   message_at: string;
   message_text: string;
   source: string;
+  whatsapp_message_id: string | null;
   whatsapp_status: string | null;
 };
 
@@ -70,6 +80,7 @@ type SafeChatMessagePayload = {
   messageText: string | null;
   messageType: string | null;
   timeOfDay: string | null;
+  whatsappMessageId: string | null;
   whatsappStatus: string | null;
 };
 
@@ -123,6 +134,12 @@ function labelForDirection(direction: "inbound" | "outbound") {
   return direction === "inbound" ? "Cliente" : "Nosotros / sistema";
 }
 
+function normalizedWhatsappMessageId(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim();
+
+  return normalized.length > 0 ? normalized : null;
+}
+
 function safeCartPayload(cart: CartChatSourceRow, windowStart: string | null, windowEnd: string | null) {
   return {
     cmsUrl: cart.cms_url,
@@ -155,6 +172,7 @@ function safeMessagePayload(message: MessageMemoryChatRow | RawMessageMemoryChat
     messageText: "message_text" in message ? message.message_text : null,
     messageType: message.message_type,
     timeOfDay: "time_of_day" in message ? message.time_of_day : null,
+    whatsappMessageId: normalizedWhatsappMessageId(message.conversation_id),
     whatsappStatus: null,
   };
 }
@@ -174,6 +192,7 @@ function safeLiveMessagePayload(message: LiveMessageChatRow): SafeChatMessagePay
     messageText: message.message_text,
     messageType: "text",
     timeOfDay: null,
+    whatsappMessageId: normalizedWhatsappMessageId(message.whatsapp_message_id),
     whatsappStatus: message.whatsapp_status,
   };
 }
@@ -219,6 +238,23 @@ function dedupeLiveMessages(messages: LiveMessageChatRow[]) {
   }
 
   return uniqueMessages;
+}
+
+function dedupeLiveMessagesAgainstCanonical(
+  liveMessages: SafeChatMessagePayload[],
+  canonicalMessages: SafeChatMessagePayload[],
+) {
+  const canonicalWamids = new Set(
+    canonicalMessages
+      .map((message) => normalizedWhatsappMessageId(message.whatsappMessageId))
+      .filter((wamid): wamid is string => wamid !== null),
+  );
+
+  return liveMessages.filter((message) => {
+    const liveWamid = normalizedWhatsappMessageId(message.whatsappMessageId);
+
+    return liveWamid === null || !canonicalWamids.has(liveWamid);
+  });
 }
 
 async function loadLiveMessages(params: {
@@ -402,13 +438,21 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     windowEnd,
     windowStart,
   });
+  const cartBusinessKey = businessKeyForParking(cart.parking_code);
+  const cartBusinessPhone = cartBusinessKey ? recoveryWhatsappBusinessPhoneForKey(cartBusinessKey) : null;
 
-  const { data: rawMessagesData, error: rawMessagesError } = await admin.supabase
+  let rawMessagesQuery = admin.supabase
     .from("v_recovery_whatsapp_message_memory_raw_current_compat")
-    .select("message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text")
+    .select("conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text")
     .eq("wa_id_normalized", cart.phone_normalized)
     .gte("message_at", chatReadStart)
-    .lt("message_at", chatReadEnd)
+    .lt("message_at", chatReadEnd);
+
+  if (cartBusinessPhone) {
+    rawMessagesQuery = rawMessagesQuery.eq("api_phone_normalized", cartBusinessPhone);
+  }
+
+  const { data: rawMessagesData, error: rawMessagesError } = await rawMessagesQuery
     .order("message_at", { ascending: true })
     .order("message_bound_type", { ascending: true })
     .order("created_at", { ascending: true })
@@ -422,7 +466,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   const rawMessages = (rawMessagesData ?? []) as RawMessageMemoryChatRow[];
 
   if (rawMessages.length > 0) {
-    const messages = sortSafeMessages([...rawMessages.map(safeMessagePayload), ...safeLiveMessages]).slice(0, MAX_CHAT_MESSAGES);
+    const safeRawMessages = rawMessages.map(safeMessagePayload);
+    const messages = sortSafeMessages([
+      ...safeRawMessages,
+      ...dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeRawMessages),
+    ]).slice(0, MAX_CHAT_MESSAGES);
 
     return NextResponse.json({
       cart: safeCartPayload(cart, windowStart, windowEnd),
@@ -433,12 +481,18 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     });
   }
 
-  const { data: messagesData, error: messagesError } = await admin.supabase
+  let messagesQuery = admin.supabase
     .from("v_recovery_whatsapp_message_memory_current_compat")
-    .select("message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week")
+    .select("conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week")
     .eq("wa_id_normalized", cart.phone_normalized)
     .gte("message_at", chatReadStart)
-    .lt("message_at", chatReadEnd)
+    .lt("message_at", chatReadEnd);
+
+  if (cartBusinessPhone) {
+    messagesQuery = messagesQuery.eq("api_phone_normalized", cartBusinessPhone);
+  }
+
+  const { data: messagesData, error: messagesError } = await messagesQuery
     .order("message_at", { ascending: true })
     .order("message_bound_type", { ascending: true })
     .order("created_at", { ascending: true })
@@ -450,7 +504,11 @@ export async function GET(_request: NextRequest, context: RouteContext) {
   }
 
   const messages = (messagesData ?? []) as MessageMemoryChatRow[];
-  const safeMessages = sortSafeMessages([...messages.map(safeMessagePayload), ...safeLiveMessages]).slice(0, MAX_CHAT_MESSAGES);
+  const safeCanonicalMessages = messages.map(safeMessagePayload);
+  const safeMessages = sortSafeMessages([
+    ...safeCanonicalMessages,
+    ...dedupeLiveMessagesAgainstCanonical(safeLiveMessages, safeCanonicalMessages),
+  ]).slice(0, MAX_CHAT_MESSAGES);
 
   return NextResponse.json({
     cart: safeCartPayload(cart, windowStart, windowEnd),

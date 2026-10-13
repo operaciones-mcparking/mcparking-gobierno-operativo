@@ -148,10 +148,32 @@ test("raw Message Memory keeps priority over normal metadata", () => {
   assert.ok(normalQueryIndex > rawReturnIndex, "normal query happens only after raw priority branch");
 });
 
-test("WAMID remains outside the public DTO and Message Memory selects", () => {
-  assert.doesNotMatch(routeSource, /conversation_id/);
-  assert.doesNotMatch(routeSource, /whatsapp_message_id/);
-  assert.doesNotMatch(routeSource, /wamid/i);
+test("chat GET carries WAMID identity for canonical/live cross-dedupe", () => {
+  assert.match(routeSource, /const LIVE_MESSAGE_SELECT = "id,direction,message_at,message_text,source,whatsapp_status,whatsapp_message_id"/);
+  assert.match(routeSource, /conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,message_text/);
+  assert.match(routeSource, /conversation_id,api_phone_normalized,message_at,message_bound_type,message_type,intent_category,message_sentiment,chat_state,time_of_day,day_of_week/);
+  assert.match(routeSource, /whatsappMessageId:\s*normalizedWhatsappMessageId\(message\.conversation_id\)/);
+  assert.match(routeSource, /whatsappMessageId:\s*normalizedWhatsappMessageId\(message\.whatsapp_message_id\)/);
+});
+
+test("live versus canonical dedupe uses WAMID only and keeps pending live messages", () => {
+  const dedupeBlock = routeSource.slice(
+    routeSource.indexOf("function dedupeLiveMessagesAgainstCanonical"),
+    routeSource.indexOf("async function loadLiveMessages"),
+  );
+
+  assert.match(routeSource, /function dedupeLiveMessagesAgainstCanonical/);
+  assert.match(dedupeBlock, /const canonicalWamids = new Set/);
+  assert.match(dedupeBlock, /normalizedWhatsappMessageId\(message\.whatsappMessageId\)/);
+  assert.match(dedupeBlock, /return liveWamid === null \|\| !canonicalWamids\.has\(liveWamid\)/);
+  assert.doesNotMatch(dedupeBlock, /messageText|messageAt|messageSource/);
+});
+
+test("canonical chat queries stay scoped to the cart business phone when parking is known", () => {
+  assert.match(routeSource, /businessKeyForParking\(cart\.parking_code\)/);
+  assert.match(routeSource, /recoveryWhatsappBusinessPhoneForKey\(cartBusinessKey\)/);
+  assert.match(routeSource, /rawMessagesQuery = rawMessagesQuery\.eq\("api_phone_normalized",\s*cartBusinessPhone\)/);
+  assert.match(routeSource, /messagesQuery = messagesQuery\.eq\("api_phone_normalized",\s*cartBusinessPhone\)/);
 });
 
 test("WhatsApp 24-hour authorization helper and POST send route are not part of this change", () => {
@@ -170,6 +192,48 @@ test("open recovery chat keeps the freeform composer behavior", () => {
   assert.match(drawerSource, /disabled=\{isSending \|\| !cart\?\.phone \|\| isFreeformBlocked\}/);
   assert.match(drawerSource, /if \(canSendMessage\) void sendMessage\(\)/);
   assert.match(drawerSource, /\/api\/recuperacion\/carritos\/" \+ encodeURIComponent\(cartId\) \+ "\/chat\/send/);
+});
+
+test("chat drawer silently polls the existing GET endpoint without resetting operator controls", () => {
+  const silentBlock = drawerSource.slice(
+    drawerSource.indexOf('mode === "silent"'),
+    drawerSource.indexOf("shouldScrollToBottomRef.current = true", drawerSource.indexOf('mode === "silent"')),
+  );
+  const pollingEffect = drawerSource.slice(
+    drawerSource.indexOf("function refreshSilently"),
+    drawerSource.indexOf("function handleKeyDown", drawerSource.indexOf("function refreshSilently")),
+  );
+
+  assert.match(drawerSource, /const CHAT_POLL_INTERVAL_MS = 5_000/);
+  assert.match(drawerSource, /fetch\(`\/api\/recuperacion\/carritos\/\$\{encodeURIComponent\(params\.activeCartId\)\}\/chat`, \{/);
+  assert.match(drawerSource, /cache: "no-store"/);
+  assert.match(pollingEffect, /document\.visibilityState !== "visible"/);
+  assert.match(pollingEffect, /isChatFetchInFlightRef\.current/);
+  assert.match(pollingEffect, /new AbortController\(\)/);
+  assert.match(pollingEffect, /window\.setInterval\(refreshSilently,\s*CHAT_POLL_INTERVAL_MS\)/);
+  assert.match(pollingEffect, /window\.clearInterval\(interval\)/);
+  assert.match(pollingEffect, /silentChatControllerRef\.current\?\.abort\(\)/);
+  assert.match(silentBlock, /setData\(\(current\) =>/);
+  assert.match(silentBlock, /current\?\.whatsappWindow \?\? payload\.whatsappWindow/);
+  assert.doesNotMatch(silentBlock, /setMessageDraft|setMessageSourceFilter|setSelectedTemplate|setTemplateVariableValues|setSendError|setSendStatus|setTemplateSendStatus|setWhatsappWindowOverride/);
+});
+
+test("chat polling discards stale cart responses and does not overwrite newer local appends", () => {
+  const snapshotBlock = drawerSource.slice(
+    drawerSource.indexOf("async function loadChatSnapshot"),
+    drawerSource.indexOf("useEffect", drawerSource.indexOf("async function loadChatSnapshot")),
+  );
+  const appendBlock = drawerSource.slice(
+    drawerSource.indexOf("function appendOutboundMessage"),
+    drawerSource.indexOf("function selectedTemplateVariablesPayload"),
+  );
+
+  assert.match(snapshotBlock, /params\.signal\.aborted \|\| params\.requestSeq !== chatRequestSeqRef\.current/);
+  assert.match(snapshotBlock, /payload\.cart\?\.id !== params\.activeCartId/);
+  assert.match(snapshotBlock, /localMessagesVersionRef\.current !== params\.localMessagesVersion/);
+  assert.match(appendBlock, /localMessagesVersionRef\.current \+= 1/);
+  assert.match(drawerSource, /initialChatControllerRef\.current\?\.abort\(\)/);
+  assert.match(drawerSource, /silentChatControllerRef\.current\?\.abort\(\)/);
 });
 
 test("composer template action is available for open closed and missing windows", () => {
