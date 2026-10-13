@@ -81,12 +81,17 @@ type TemplateDryRunResponse = {
     buttons: Array<{ text: string; type: string }>;
     footer: string | null;
     header: string | null;
+    headerMedia: {
+      format: "DOCUMENT" | "IMAGE" | "VIDEO";
+      link: string | null;
+    } | null;
   };
   validation?: {
     businessKey: "MPV" | "EAP";
     cartType: string | null;
     language: string;
     maskedPhone: string | null;
+    parameterCount?: number;
     templateName: string;
     variableCount: number;
   };
@@ -304,7 +309,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<RecoveryTemplateOption | null>(null);
-  const [templateVariableValues, setTemplateVariableValues] = useState<Record<number, string>>({});
+  const [templateVariableValues, setTemplateVariableValues] = useState<Record<string, string>>({});
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [isTemplateValidating, setIsTemplateValidating] = useState(false);
@@ -754,8 +759,12 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
   const isFreeformBlocked = !freeformWindow.canSendFreeform;
   const canSendMessage = !isSending && !isFreeformBlocked && Boolean(cart?.phone) && messageDraft.trim().length > 0;
   const canUseTemplates = Boolean(cart?.phone) && freeformWindow.kind !== "unverifiable";
-  const selectedTemplatePreparationVariables = selectedTemplate ? selectedTemplate.variables : [];
-  const selectedTemplateVariableErrors = selectedTemplatePreparationVariables.filter((variable) => !templateVariableValues[variable.position]?.trim());
+  const selectedTemplateCompatibility = selectedTemplate?.compatibility;
+  const isSelectedTemplateBlocked = selectedTemplateCompatibility?.status === "blocked";
+  const selectedTemplatePreparationVariables = selectedTemplate
+    ? (selectedTemplate.parameters?.filter((parameter) => parameter.needsInput && parameter.required && parameter.supported && parameter.type === "text") ?? selectedTemplate.variables)
+    : [];
+  const selectedTemplateVariableErrors = selectedTemplatePreparationVariables.filter((variable) => !templateVariableValues[templateVariableKey(variable)]?.trim());
   const currentTemplateSnapshot = cartId && selectedTemplate
     ? {
         cartId,
@@ -779,7 +788,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
       && !templateValidationError
       && !error,
   );
-  const canValidateTemplate = Boolean(cartId) && Boolean(selectedTemplate) && selectedTemplateVariableErrors.length === 0 && !isTemplateValidating && !isTemplateSending && !error;
+  const canValidateTemplate = Boolean(cartId) && Boolean(selectedTemplate) && !isSelectedTemplateBlocked && selectedTemplateVariableErrors.length === 0 && !isTemplateValidating && !isTemplateSending && !error;
   const selectedTemplatePreview = selectedTemplate
     ? {
         body: renderTemplatePreviewText(selectedTemplate.preview.body, templateVariableValues),
@@ -789,6 +798,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
         })),
         footer: renderTemplatePreviewText(selectedTemplate.preview.footer, templateVariableValues),
         header: renderTemplatePreviewText(selectedTemplate.preview.header, templateVariableValues),
+        headerMedia: selectedTemplate.preview.headerMedia,
       }
     : null;
   const displayedTemplatePreview = isPreparedTemplateCurrent && templateValidationResult?.preview && selectedTemplatePreview
@@ -920,7 +930,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
 
   function selectedTemplateVariablesPayload() {
     return Object.fromEntries(
-      selectedTemplatePreparationVariables.map((variable) => [String(variable.position), templateVariableValues[variable.position]?.trim() ?? ""]),
+      selectedTemplatePreparationVariables.map((variable) => [templateVariableKey(variable), templateVariableValues[templateVariableKey(variable)]?.trim() ?? ""]),
     );
   }
 
@@ -954,28 +964,36 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
     resetTemplatePreparationState();
   }
 
-  function formatMissingTemplateVariablesMessage(variables: Array<{ position: number }>) {
-    const positions = variables.map((variable) => variable.position).sort((left, right) => left - right);
-
-    if (positions.length === 0) return null;
-
-    if (positions.length === 1) return `Falta completar la variable ${positions[0]}.`;
-
-    const lastPosition = positions[positions.length - 1];
-    const firstPositions = positions.slice(0, -1).join(", ");
-
-    return `Falta completar las variables ${firstPositions} y ${lastPosition}.`;
+  function templateVariableKey(variable: { id?: string; position: number | null }) {
+    return variable.id ?? String(variable.position ?? "");
   }
 
-  function updateTemplateVariable(position: number, value: string) {
+  function templateVariableLabel(variable: { label?: string; placeholder: string }) {
+    return variable.label ?? `Variable ${variable.placeholder}`;
+  }
+
+  function formatMissingTemplateVariablesMessage(variables: Array<{ id?: string; label?: string; placeholder: string; position: number | null }>) {
+    const labels = variables.map((variable) => templateVariableLabel(variable)).sort((left, right) => left.localeCompare(right));
+
+    if (labels.length === 0) return null;
+
+    if (labels.length === 1) return `Falta completar ${labels[0]}.`;
+
+    const lastLabel = labels[labels.length - 1];
+    const firstLabels = labels.slice(0, -1).join(", ");
+
+    return `Falta completar ${firstLabels} y ${lastLabel}.`;
+  }
+
+  function updateTemplateVariable(key: string, value: string) {
     if (isTemplateSending) return;
 
-    setTemplateVariableValues((current) => ({ ...current, [position]: value }));
+    setTemplateVariableValues((current) => ({ ...current, [key]: value }));
     resetTemplatePreparationState();
   }
 
-  function templateVariableInputId(position: number) {
-    return `recovery-template-variable-${position}`;
+  function templateVariableInputId(key: string) {
+    return `recovery-template-variable-${key.replace(/[^a-z0-9_-]+/gi, "-")}`;
   }
 
   function templateValidationErrorMessage(payload: TemplateDryRunResponse | null) {
@@ -1450,6 +1468,19 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
 
               <div className="mt-3 min-w-0 rounded-2xl bg-[#eef7f4] p-2">
                 <div className="grid min-w-0 gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
+                  {displayedTemplatePreview.headerMedia ? (
+                    displayedTemplatePreview.headerMedia.format === "IMAGE" && displayedTemplatePreview.headerMedia.link ? (
+                      <img
+                        alt=""
+                        className="max-h-56 w-full rounded-xl object-cover"
+                        src={displayedTemplatePreview.headerMedia.link}
+                      />
+                    ) : (
+                      <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                        Header {displayedTemplatePreview.headerMedia.format.toLowerCase()} aprobado por Meta
+                      </p>
+                    )
+                  ) : null}
                   {displayedTemplatePreview.header ? <p className="min-w-0 max-w-full break-words font-semibold text-navy [overflow-wrap:anywhere]">{displayedTemplatePreview.header}</p> : null}
                   {displayedTemplatePreview.body ? <p className="min-w-0 max-w-full whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">{displayedTemplatePreview.body}</p> : null}
                   {displayedTemplatePreview.footer ? <p className="min-w-0 max-w-full break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{displayedTemplatePreview.footer}</p> : null}
@@ -1468,22 +1499,23 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
               {selectedTemplatePreparationVariables.length > 0 ? (
                 <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
                   {selectedTemplatePreparationVariables.map((variable) => {
-                    const inputId = templateVariableInputId(variable.position);
-                    const hasError = !templateVariableValues[variable.position]?.trim();
+                    const variableKey = templateVariableKey(variable);
+                    const inputId = templateVariableInputId(variableKey);
+                    const hasError = !templateVariableValues[variableKey]?.trim();
 
                     return (
-                      <label className="grid min-w-0" htmlFor={inputId} key={variable.position}>
-                        <span className="sr-only">Variable {variable.placeholder}</span>
+                      <label className="grid min-w-0 gap-1" htmlFor={inputId} key={variableKey}>
+                        <span className="text-xs font-semibold text-slate-600">{templateVariableLabel(variable)}</span>
                         <input
                           aria-invalid={hasError}
                           className="h-10 w-full min-w-0 rounded-xl border border-[#d8e7e1] bg-white px-3 text-sm font-medium text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                           disabled={isTemplateSending}
                           id={inputId}
                           maxLength={500}
-                          onChange={(event) => updateTemplateVariable(variable.position, event.target.value)}
+                          onChange={(event) => updateTemplateVariable(variableKey, event.target.value)}
                           placeholder={variable.placeholder}
                           type="text"
-                          value={templateVariableValues[variable.position] ?? ""}
+                          value={templateVariableValues[variableKey] ?? ""}
                         />
                       </label>
                     );
@@ -1496,6 +1528,11 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
               )}
 
               <div className="mt-3 grid gap-2">
+                {isSelectedTemplateBlocked ? (
+                  <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]" role="alert">
+                    Esta plantilla no está disponible todavía: {selectedTemplateCompatibility?.reasons[0] ?? "componente no soportado"}.
+                  </p>
+                ) : null}
                 {selectedTemplateVariableErrors.length > 0 ? (
                   <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]" role="alert">
                     {formatMissingTemplateVariablesMessage(selectedTemplateVariableErrors)}

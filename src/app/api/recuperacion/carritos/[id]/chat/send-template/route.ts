@@ -58,12 +58,14 @@ type SendTemplateDryRunRequest = {
 };
 
 type TemplateVariableValue = {
+  component: "BODY" | "HEADER";
+  parameterName: string | null;
+  placeholder: string;
   position: number;
   text: string;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const VARIABLE_KEY_RE = /^(?:\{\{\s*)?(\d+)(?:\s*\}\})?$/;
 const MAX_TEMPLATE_VARIABLE_LENGTH = 500;
 const TEMPLATE_SEND_UNCONFIRMED_STATUS = "unconfirmed";
 const ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set(["dryRun", "language", "templateKey", "variables"]);
@@ -248,39 +250,63 @@ async function resolveLegacyCartIdByBookingId(
   return { legacyCartId: data?.[0]?.id ?? null, ok: true as const };
 }
 
-function templateHasUnsupportedVariables(template: SafeMetaWhatsappTemplate) {
-  const unsupportedText = [
-    template.preview.header,
-    template.preview.footer,
-    ...template.preview.buttons.map((button) => button.text),
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  return /\{\{\s*\d+\s*\}\}/.test(unsupportedText);
-}
-
 function findTemplate(templates: SafeMetaWhatsappTemplate[], templateKey: string, language: string) {
   return templates.find((template) => (template.key === templateKey || template.name === templateKey) && template.language === language) ?? null;
 }
 
-function normalizeVariables(value: unknown) {
+function inputKeysForTemplateParameter(parameter: SafeMetaWhatsappTemplate["parameters"][number]) {
+  const keys = new Set([parameter.id, parameter.placeholder]);
+
+  if (parameter.component === "BODY" && parameter.position) {
+    keys.add(String(parameter.position));
+    keys.add(`{{${parameter.position}}}`);
+  }
+
+  if (parameter.name) {
+    keys.add(parameter.name);
+    keys.add(`{{${parameter.name}}}`);
+  }
+
+  return keys;
+}
+
+function validateTemplateVariables(template: SafeMetaWhatsappTemplate, value: unknown) {
+  const expectedParameters = template.parameters.filter((parameter) => parameter.needsInput && parameter.required);
+
+  if (expectedParameters.length === 0) {
+    if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length > 0) {
+      return { error: jsonError("Esta plantilla no acepta variables.", 400, "unknown_variable"), ok: false as const };
+    }
+
+    return { ok: true as const, variables: [] as TemplateVariableValue[] };
+  }
+
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { error: jsonError("Debes enviar variables como objeto.", 400, "invalid_variables"), ok: false as const };
   }
 
-  const normalized = new Map<number, string>();
+  const expectedByInputKey = new Map<string, SafeMetaWhatsappTemplate["parameters"][number]>();
+
+  for (const parameter of expectedParameters) {
+    if (!parameter.supported || parameter.type !== "text" || (parameter.component !== "BODY" && parameter.component !== "HEADER")) {
+      return { error: jsonError("La plantilla contiene parametros no soportados.", 409, "unsupported_template_parameters"), ok: false as const };
+    }
+
+    for (const key of inputKeysForTemplateParameter(parameter)) {
+      expectedByInputKey.set(key, parameter);
+    }
+  }
+
+  const normalized = new Map<string, string>();
 
   for (const [rawKey, rawValue] of Object.entries(value as Record<string, unknown>)) {
-    const match = rawKey.match(VARIABLE_KEY_RE);
+    const parameter = expectedByInputKey.get(rawKey.trim());
 
-    if (!match) {
+    if (!parameter) {
       return { error: jsonError("La solicitud contiene variables desconocidas.", 400, "unknown_variable"), ok: false as const };
     }
 
-    const position = Number.parseInt(match[1] ?? "", 10);
-
-    if (!Number.isFinite(position) || position <= 0 || normalized.has(position)) {
+    if (normalized.has(parameter.id)) {
       return { error: jsonError("La solicitud contiene variables desconocidas.", 400, "unknown_variable"), ok: false as const };
     }
 
@@ -298,51 +324,46 @@ function normalizeVariables(value: unknown) {
       return { error: jsonError("Una variable supera el largo maximo permitido.", 400, "variable_too_long"), ok: false as const };
     }
 
-    normalized.set(position, text);
+    normalized.set(parameter.id, text);
   }
 
-  return { ok: true as const, variables: normalized };
-}
-
-function validateBodyVariables(template: SafeMetaWhatsappTemplate, value: unknown) {
-  const expectedPositions = template.variables.map((variable) => variable.position).sort((left, right) => left - right);
-
-  if (expectedPositions.length === 0) {
-    if (value && typeof value === "object" && !Array.isArray(value) && Object.keys(value as Record<string, unknown>).length > 0) {
-      return { error: jsonError("Esta plantilla no acepta variables.", 400, "unknown_variable"), ok: false as const };
-    }
-
-    return { ok: true as const, variables: [] as TemplateVariableValue[] };
-  }
-
-  const normalized = normalizeVariables(value);
-
-  if (!normalized.ok) return normalized;
-
-  for (const position of expectedPositions) {
-    if (!normalized.variables.has(position)) {
+  for (const parameter of expectedParameters) {
+    if (!normalized.has(parameter.id)) {
       return { error: jsonError("Faltan variables obligatorias.", 400, "missing_variable"), ok: false as const };
-    }
-  }
-
-  for (const position of normalized.variables.keys()) {
-    if (!expectedPositions.includes(position)) {
-      return { error: jsonError("La solicitud contiene variables desconocidas.", 400, "unknown_variable"), ok: false as const };
     }
   }
 
   return {
     ok: true as const,
-    variables: expectedPositions.map((position) => ({ position, text: normalized.variables.get(position) ?? "" })),
+    variables: expectedParameters
+      .filter((parameter) => parameter.type === "text" && (parameter.component === "BODY" || parameter.component === "HEADER"))
+      .map((parameter, index) => ({
+        component: parameter.component as "BODY" | "HEADER",
+        parameterName: parameter.name,
+        placeholder: parameter.placeholder,
+        position: parameter.position ?? index + 1,
+        text: normalized.get(parameter.id) ?? "",
+      }))
+      .sort((left, right) => {
+        if (left.component !== right.component) return left.component === "HEADER" ? -1 : 1;
+
+        return left.position - right.position;
+      }),
   };
 }
 
 function renderPreviewText(value: string | null, variables: TemplateVariableValue[]) {
   if (!value) return null;
 
-  const valuesByPlaceholder = new Map(variables.map((variable) => [`{{${variable.position}}}`, variable.text]));
+  const valuesByPlaceholder = new Map<string, string>();
 
-  return value.replace(/\{\{\s*(\d+)\s*\}\}/g, (placeholder, position) => valuesByPlaceholder.get(`{{${position}}}`) ?? placeholder);
+  for (const variable of variables) {
+    valuesByPlaceholder.set(`{{${variable.position}}}`, variable.text);
+    valuesByPlaceholder.set(variable.placeholder, variable.text);
+    if (variable.parameterName) valuesByPlaceholder.set(`{{${variable.parameterName}}}`, variable.text);
+  }
+
+  return value.replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*|\d+)\s*\}\}/g, (placeholder, key) => valuesByPlaceholder.get(`{{${key}}}`) ?? placeholder);
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
@@ -427,17 +448,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("La plantilla seleccionada no esta aprobada.", 409, "template_not_approved");
   }
 
-  if (templateHasUnsupportedVariables(template)) {
-    return jsonError("La plantilla contiene variables no soportadas en esta etapa.", 409, "unsupported_template_variables");
+  if (template.compatibility.status !== "supported") {
+    return jsonError("La plantilla contiene componentes no soportados en esta etapa.", 409, "unsupported_template_components");
   }
 
-  const variablesResult = validateBodyVariables(template, payload.variables);
+  const variablesResult = validateTemplateVariables(template, payload.variables);
 
   if (!variablesResult.ok) {
     return variablesResult.error;
   }
 
   const metaPayload = buildRecoveryWhatsappMetaTemplatePayload({
+    headerMedia: template.preview.headerMedia?.link
+      ? {
+          format: template.preview.headerMedia.format,
+          link: template.preview.headerMedia.link,
+        }
+      : null,
     language: template.language,
     templateName: template.name,
     to: cartResult.cart.phone_normalized,
@@ -479,12 +506,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
         buttons: template.preview.buttons,
         footer: template.preview.footer,
         header: template.preview.header,
+        headerMedia: template.preview.headerMedia,
       },
       validation: {
         businessKey,
         cartType: cartResult.cart.type,
         language: template.language,
         maskedPhone: maskPhone(cartResult.cart.phone_normalized),
+        parameterCount: template.parameters.length,
         templateName: template.name,
         variableCount: variablesResult.variables.length,
       },

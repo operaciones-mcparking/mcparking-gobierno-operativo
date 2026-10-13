@@ -101,7 +101,7 @@ test("14. spaces-only variable is blocked", () => {
 });
 
 test("15. extra variable is blocked", () => {
-  assert.match(route, /expectedPositions\.includes\(position\)/);
+  assert.match(route, /expectedByInputKey\.get\(rawKey\.trim\(\)\)/);
   assert.match(route, /unknown_variable/);
 });
 
@@ -112,8 +112,8 @@ test("16. variable over 500 chars is blocked", () => {
 });
 
 test("17. variables are ordered by numeric position", () => {
-  assert.match(route, /sort\(\(left, right\) => left - right\)/);
-  assert.match(route, /expectedPositions\.map\(\(position\) => \(\{ position, text:/);
+  assert.match(route, /expectedParameters[\s\S]*\.map\(\(parameter, index\) =>/);
+  assert.match(route, /return left\.position - right\.position/);
 });
 
 test("18. BODY components are built server-side", () => {
@@ -124,13 +124,14 @@ test("18. BODY components are built server-side", () => {
 });
 
 test("19. template without variables omits components", () => {
-  assert.match(metaPayload, /if \(orderedVariables\.length > 0\)/);
+  assert.match(metaPayload, /if \(components\.length > 0\)/);
   assert.match(route, /Esta plantilla no acepta variables/);
 });
 
 test("20. preview final replaces placeholders", () => {
   assert.match(route, /function renderPreviewText/);
-  assert.match(route, /value\.replace\(\/\\\{\\\{\\s\*\(\\d\+\)\\s\*\\\}\\\}\//);
+  assert.match(route, /\[A-Za-z_\]\[A-Za-z0-9_\]/);
+  assert.match(route, /valuesByPlaceholder\.set\(variable\.placeholder, variable\.text\)/);
   assert.match(route, /previewBody = renderPreviewText\(template\.preview\.body, variablesResult\.variables\)/);
 });
 

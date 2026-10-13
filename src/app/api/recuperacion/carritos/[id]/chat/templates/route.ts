@@ -139,11 +139,14 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       .map((template) => decorateRecoveryTemplateForBusiness(businessKey, template))
       .map((template) => ({
         category: template.category,
+        compatibility: template.compatibility,
         isFavorite: favoriteKeys.has(template.key),
         key: template.key,
         label: template.label,
         language: template.language,
         name: template.name,
+        parameterFormat: template.parameterFormat,
+        parameters: template.parameters,
         preview: template.preview,
         status: template.status,
         variables: template.variables,

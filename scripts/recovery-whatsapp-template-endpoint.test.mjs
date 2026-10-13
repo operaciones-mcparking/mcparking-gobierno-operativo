@@ -55,7 +55,9 @@ test("6. endpoint returns all Meta APPROVED templates for the resolved business"
   assert.match(route, /\.map\(\(template\) => decorateRecoveryTemplateForBusiness\(businessKey, template\)\)/);
   assert.doesNotMatch(route, /\.filter\(\(template\) => isRecoveryTemplateAllowed|allowedByMetaName|getAllowedRecoveryTemplatesForBusiness\(businessKey\)/);
   assert.match(meta, /status !== "APPROVED"/);
-  assert.match(meta, /fields", "name,language,status,category,components"/);
+  assert.match(meta, /fields", "name,language,status,category,parameter_format,components"/);
+  assert.match(meta, /payload\.paging\?\.next/);
+  assert.match(meta, /url\.searchParams\.set\("limit", "100"\)/);
 });
 
 test("7. MPV and EAP remain separated by server-side business key", () => {
@@ -69,6 +71,8 @@ test("8. DTO is safe and includes normalized preview only", () => {
   assert.match(route, /business:\s*{[\s\S]*key: businessKey,[\s\S]*label: businessLabel\(businessKey\)/);
   assert.match(route, /preview: template\.preview/);
   assert.match(route, /variables: template\.variables/);
+  assert.match(route, /parameters: template\.parameters/);
+  assert.match(route, /compatibility: template\.compatibility/);
   assert.match(route, /status: template\.status/);
   assert.doesNotMatch(route, /META_WHATSAPP_ACCESS_TOKEN|Authorization|Bearer|phone_number_id|PHONE_NUMBER_ID|WABA|payload|graph\.facebook\.com/);
   assert.doesNotMatch(route, /components:|template\.components|whatsapp_message_id|wamid|access_token|token/i);

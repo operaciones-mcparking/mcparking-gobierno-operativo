@@ -31,7 +31,7 @@ function responseBlock() {
   const markerIndex = route.indexOf(marker);
   assert.notEqual(markerIndex, -1, "dry-run response block missing");
   const start = route.lastIndexOf("return NextResponse.json({", markerIndex);
-  const end = route.indexOf("  const n8nResult", markerIndex);
+  const end = route.indexOf("  let serviceSupabase", markerIndex);
   assert.notEqual(start, -1, "dry-run response block start missing");
   assert.notEqual(end, -1, "dry-run response block end missing");
   return route.slice(start, end);
@@ -85,8 +85,16 @@ test("9. language comes from the validated Meta template", () => {
 
 test("10. components are created server-side from validated variables", () => {
   assert.match(route, /variables: variablesResult\.variables/);
-  assert.match(metaPayload, /parameters: orderedVariables\.map/);
+  assert.match(metaPayload, /parameters: bodyVariables\.map/);
+  assert.match(route, /headerMedia: template\.preview\.headerMedia\?\.link/);
+  assert.match(metaPayload, /mediaHeaderParameter\(headerMedia\)/);
   assert.doesNotMatch(validateFunctionBlock(), /components/);
+});
+
+test("10b. unsupported Meta components fail closed before live persistence", () => {
+  assert.match(route, /template\.compatibility\.status !== "supported"/);
+  assert.match(route, /unsupported_template_components/);
+  assert.ok(route.indexOf("unsupported_template_components") < route.indexOf('.from("recovery_whatsapp_live_messages")'));
 });
 
 test("11. component order is numeric and stable", () => {
@@ -185,7 +193,7 @@ test("24. helper and route do not call n8n", () => {
 });
 
 test("25. helper and route do not call Graph messages", () => {
-  assert.doesNotMatch(n8nPayload + route, /\/messages|whatsappMessageId|messaging_product[\s\S]*fetch\(/);
+  assert.doesNotMatch(n8nPayload + route, /graph\.facebook\.com[\s\S]*\/messages|\/messages[\s\S]*fetch\(/);
 });
 
 test("26. payload helper stays write-free and route persists only after dry-run returns", () => {

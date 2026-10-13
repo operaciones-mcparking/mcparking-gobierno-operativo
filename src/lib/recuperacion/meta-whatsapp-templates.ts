@@ -11,19 +11,51 @@ export type SafeWhatsappTemplatePreview = {
   body: string | null;
   footer: string | null;
   header: string | null;
+  headerMedia: {
+    format: "DOCUMENT" | "IMAGE" | "VIDEO";
+    link: string | null;
+  } | null;
+};
+
+export type SafeWhatsappTemplateParameterComponent = "BODY" | "BUTTON" | "HEADER";
+export type SafeWhatsappTemplateParameterType = "document" | "image" | "text" | "video";
+
+export type SafeWhatsappTemplateParameter = {
+  component: SafeWhatsappTemplateParameterComponent;
+  id: string;
+  label: string;
+  name: string | null;
+  needsInput: boolean;
+  placeholder: string;
+  position: number | null;
+  predefinedValue: string | null;
+  required: boolean;
+  supported: boolean;
+  type: SafeWhatsappTemplateParameterType;
+};
+
+export type SafeWhatsappTemplateCompatibility = {
+  reasons: string[];
+  status: "blocked" | "supported";
 };
 
 export type SafeWhatsappTemplateVariable = {
+  component: "BODY" | "HEADER";
+  id: string;
+  name: string | null;
   placeholder: string;
   position: number;
 };
 
 export type SafeMetaWhatsappTemplate = {
   category: string | null;
+  compatibility: SafeWhatsappTemplateCompatibility;
   key: string;
   label: string;
   language: string;
   name: string;
+  parameterFormat: "NAMED" | "POSITIONAL" | "UNKNOWN";
+  parameters: SafeWhatsappTemplateParameter[];
   preview: SafeWhatsappTemplatePreview;
   status: "APPROVED";
   variables: SafeWhatsappTemplateVariable[];
@@ -31,6 +63,9 @@ export type SafeMetaWhatsappTemplate = {
 
 type MetaTemplateResponse = {
   data?: unknown;
+  paging?: {
+    next?: unknown;
+  };
 };
 
 type MetaTemplateButton = {
@@ -40,6 +75,7 @@ type MetaTemplateButton = {
 
 type MetaTemplateComponent = {
   buttons?: unknown;
+  example?: unknown;
   format?: unknown;
   text?: unknown;
   type?: unknown;
@@ -50,6 +86,7 @@ type MetaTemplateRow = {
   components?: unknown;
   language?: unknown;
   name?: unknown;
+  parameter_format?: unknown;
   status?: unknown;
 };
 
@@ -84,6 +121,14 @@ function safeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeParameterFormat(value: unknown): SafeMetaWhatsappTemplate["parameterFormat"] {
+  const format = safeText(value).toUpperCase();
+
+  if (format === "NAMED" || format === "POSITIONAL") return format;
+
+  return "UNKNOWN";
+}
+
 function labelForTemplateName(name: string) {
   return name
     .split("_")
@@ -114,6 +159,7 @@ function normalizeTemplatePreview(components: unknown): SafeWhatsappTemplatePrev
     buttons: [],
     footer: null,
     header: null,
+    headerMedia: null,
   };
 
   if (!Array.isArray(components)) return preview;
@@ -124,7 +170,17 @@ function normalizeTemplatePreview(components: unknown): SafeWhatsappTemplatePrev
     const text = safeText(component.text);
 
     if (type === "HEADER") {
-      preview.header = text || null;
+      const format = safeText(component.format).toUpperCase();
+
+      if (format === "IMAGE" || format === "VIDEO" || format === "DOCUMENT") {
+        const example = component.example && typeof component.example === "object" ? component.example as { header_handle?: unknown } : null;
+        const handles = Array.isArray(example?.header_handle) ? example.header_handle : [];
+        const link = safeText(handles[0]);
+
+        preview.headerMedia = { format, link: link || null };
+      } else {
+        preview.header = text || null;
+      }
       continue;
     }
 
@@ -146,21 +202,145 @@ function normalizeTemplatePreview(components: unknown): SafeWhatsappTemplatePrev
   return preview;
 }
 
-function extractVariables(preview: SafeWhatsappTemplatePreview): SafeWhatsappTemplateVariable[] {
-  const text = [preview.header, preview.body, preview.footer, ...preview.buttons.map((button) => button.text)]
-    .filter(Boolean)
-    .join("\n");
-  const positions = new Set<number>();
+function extractTextPlaceholders(text: string | null) {
+  if (!text) return [];
 
-  for (const match of text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)) {
-    const position = Number.parseInt(match[1] ?? "", 10);
+  return [...text.matchAll(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*|\d+)\s*\}\}/g)]
+    .map((match, index) => {
+      const raw = safeText(match[1]);
+      const numericPosition = /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : Number.NaN;
 
-    if (Number.isFinite(position) && position > 0) positions.add(position);
+      return {
+        index,
+        name: Number.isFinite(numericPosition) ? null : raw,
+        placeholder: `{{${raw}}}`,
+        position: Number.isFinite(numericPosition) && numericPosition > 0 ? numericPosition : null,
+      };
+    })
+    .filter((placeholder) => placeholder.position !== null || placeholder.name !== null);
+}
+
+function uniqueTextParameters(
+  component: "BODY" | "HEADER",
+  text: string | null,
+  parameterFormat: SafeMetaWhatsappTemplate["parameterFormat"],
+): SafeWhatsappTemplateParameter[] {
+  const seen = new Set<string>();
+  const parameters: SafeWhatsappTemplateParameter[] = [];
+
+  for (const placeholder of extractTextPlaceholders(text)) {
+    const parameterKey = placeholder.name ?? String(placeholder.position);
+
+    if (seen.has(parameterKey)) continue;
+
+    seen.add(parameterKey);
+    parameters.push({
+      component,
+      id: `${component}:${parameterKey}`,
+      label: `${component === "HEADER" ? "Encabezado" : "Cuerpo"} ${placeholder.placeholder}`,
+      name: placeholder.name,
+      needsInput: true,
+      placeholder: placeholder.placeholder,
+      position: placeholder.position ?? placeholder.index + 1,
+      predefinedValue: null,
+      required: true,
+      supported: component === "BODY" || component === "HEADER",
+      type: "text",
+    });
   }
 
-  return [...positions]
-    .sort((left, right) => left - right)
-    .map((position) => ({ placeholder: `{{${position}}}`, position }));
+  return parameters.sort((left, right) => {
+    if (parameterFormat === "NAMED") return left.id.localeCompare(right.id);
+
+    return (left.position ?? 0) - (right.position ?? 0) || left.id.localeCompare(right.id);
+  });
+}
+
+function normalizeTemplateParameters(
+  components: unknown,
+  preview: SafeWhatsappTemplatePreview,
+  parameterFormat: SafeMetaWhatsappTemplate["parameterFormat"],
+) {
+  const parameters: SafeWhatsappTemplateParameter[] = [];
+  const reasons: string[] = [];
+
+  if (!Array.isArray(components)) {
+    return { compatibility: { reasons, status: "supported" as const }, parameters };
+  }
+
+  for (const item of components) {
+    const component = (item ?? {}) as MetaTemplateComponent;
+    const type = safeText(component.type).toUpperCase();
+    const format = safeText(component.format).toUpperCase();
+
+    if (type === "HEADER") {
+      if (format === "IMAGE" || format === "VIDEO" || format === "DOCUMENT") {
+        const mediaType = format.toLowerCase() as "document" | "image" | "video";
+        const link = preview.headerMedia?.link ?? null;
+
+        parameters.push({
+          component: "HEADER",
+          id: "HEADER:media",
+          label: `Encabezado ${format.toLowerCase()}`,
+          name: null,
+          needsInput: false,
+          placeholder: format,
+          position: null,
+          predefinedValue: link,
+          required: true,
+          supported: Boolean(link),
+          type: mediaType,
+        });
+
+        if (!link) reasons.push("HEADER media sin handle aprobado de Meta.");
+        continue;
+      }
+
+      if (format && format !== "TEXT") {
+        reasons.push(`HEADER ${format} no soportado.`);
+        continue;
+      }
+
+      parameters.push(...uniqueTextParameters("HEADER", safeText(component.text) || null, parameterFormat));
+      continue;
+    }
+
+    if (type === "BODY") {
+      parameters.push(...uniqueTextParameters("BODY", safeText(component.text) || null, parameterFormat));
+      continue;
+    }
+
+    if (type === "FOOTER") {
+      if (extractTextPlaceholders(safeText(component.text) || null).length > 0) {
+        reasons.push("FOOTER con variables no soportado.");
+      }
+      continue;
+    }
+
+    if (type === "BUTTONS") {
+      for (const button of normalizeTemplateButtons(component.buttons)) {
+        if (button.type === "COPY_CODE") {
+          reasons.push("Botón COPY_CODE requiere soporte específico antes de enviar.");
+          continue;
+        }
+
+        if (extractTextPlaceholders(button.text).length > 0) {
+          reasons.push(`Botón ${button.type} con variables no soportado.`);
+        }
+      }
+      continue;
+    }
+
+    reasons.push(`Componente ${type || "desconocido"} no soportado.`);
+  }
+
+  return {
+    compatibility: {
+      reasons: [...new Set(reasons)],
+      status: reasons.length > 0 ? "blocked" as const : "supported" as const,
+    },
+    parameters,
+  };
 }
 
 function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | null {
@@ -171,16 +351,36 @@ function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | nul
   if (!name || !language || status !== "APPROVED") return null;
 
   const preview = normalizeTemplatePreview(row.components);
+  const parameterFormat = normalizeParameterFormat(row.parameter_format);
+  const { compatibility, parameters } = normalizeTemplateParameters(row.components, preview, parameterFormat);
+  const variables = parameters
+    .filter((parameter): parameter is SafeWhatsappTemplateParameter & { component: "BODY" | "HEADER"; position: number } => (
+      parameter.type === "text"
+        && parameter.needsInput
+        && parameter.supported
+        && (parameter.component === "BODY" || parameter.component === "HEADER")
+        && parameter.position !== null
+    ))
+    .map((parameter) => ({
+      component: parameter.component,
+      id: parameter.id,
+      name: parameter.name,
+      placeholder: parameter.placeholder,
+      position: parameter.position,
+    }));
 
   return {
     category: safeText(row.category).toUpperCase() || null,
+    compatibility,
     key: `${name}:${language}`,
     label: labelForTemplateName(name),
     language,
     name,
+    parameterFormat,
+    parameters,
     preview,
     status: "APPROVED",
-    variables: extractVariables(preview),
+    variables,
   };
 }
 
@@ -212,29 +412,48 @@ export async function fetchMetaWhatsappTemplatesForBusiness(
     throw new Error("Meta WhatsApp templates are not configured.");
   }
 
-  const url = new URL(`https://graph.facebook.com/${META_GRAPH_API_VERSION}/${phoneNumberId}/message_templates`);
-  url.searchParams.set("fields", "name,language,status,category,components");
+  const rows: unknown[] = [];
+  let nextUrl: string | null = `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${phoneNumberId}/message_templates`;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    method: "GET",
-  });
+  while (nextUrl) {
+    const url = new URL(nextUrl);
 
-  if (!response.ok) {
-    throw new Error("No se pudieron cargar templates de WhatsApp.");
+    if (!url.searchParams.has("fields")) {
+      url.searchParams.set("fields", "name,language,status,category,parameter_format,components");
+    }
+
+    if (!url.searchParams.has("limit")) {
+      url.searchParams.set("limit", "100");
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      method: "GET",
+    });
+
+    if (!response.ok) {
+      throw new Error("No se pudieron cargar templates de WhatsApp.");
+    }
+
+    let payload: MetaTemplateResponse;
+
+    try {
+      payload = (await response.json()) as MetaTemplateResponse;
+    } catch {
+      throw new Error("No se pudieron interpretar los templates de WhatsApp.");
+    }
+
+    if (Array.isArray(payload.data)) {
+      rows.push(...payload.data);
+    }
+
+    const next = safeText(payload.paging?.next);
+    nextUrl = next || null;
   }
 
-  let payload: MetaTemplateResponse;
-
-  try {
-    payload = (await response.json()) as MetaTemplateResponse;
-  } catch {
-    throw new Error("No se pudieron interpretar los templates de WhatsApp.");
-  }
-
-  const templates = normalizeTemplatesResponse(payload);
+  const templates = normalizeTemplatesResponse({ data: rows });
 
   templateCache.set(businessKey, {
     expiresAt: now + META_WHATSAPP_TEMPLATES_TTL_MS,

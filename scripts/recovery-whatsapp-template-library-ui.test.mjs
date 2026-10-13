@@ -72,7 +72,7 @@ test("7. cards show real preview and placeholders without filling variables", ()
   assert.match(modal, /template\.preview\.footer/);
   assert.match(modal, /template\.preview\.buttons\.map/);
   assert.match(modal, /template\.variables\.map/);
-  assert.match(meta, /placeholder: `\{\{\$\{position\}\}\}`/);
+  assert.match(meta, /placeholder: `\{\{\$\{raw\}\}\}`/);
   assert.doesNotMatch(modal, /email|phone_number_id|WABA|access_token|components:/i);
 });
 
@@ -113,9 +113,36 @@ test("10. template cards contain long content without forcing grid width", () =>
 });
 
 test("11. endpoint and Meta helper expose safe approved previews", () => {
-  assert.match(meta, /fields", "name,language,status,category,components"/);
+  assert.match(meta, /fields", "name,language,status,category,parameter_format,components"/);
+  assert.match(meta, /payload\.paging\?\.next/);
+  assert.match(meta, /url\.searchParams\.set\("limit", "100"\)/);
   assert.match(meta, /status !== "APPROVED"/);
   assert.match(route, /preview: template\.preview/);
   assert.match(route, /variables: template\.variables/);
+  assert.match(route, /parameters: template\.parameters/);
+  assert.match(route, /compatibility: template\.compatibility/);
   assert.doesNotMatch(route, /phone_number_id|Authorization|Bearer|components:/i);
+});
+
+test("12. Meta helper preserves approved media header handles for send payloads", () => {
+  assert.match(meta, /headerMedia/);
+  assert.match(meta, /component\.example/);
+  assert.match(meta, /header_handle/);
+  assert.match(meta, /format === "IMAGE" \|\| format === "VIDEO" \|\| format === "DOCUMENT"/);
+});
+
+test("13. UI shows media previews and blocks incompatible templates before selection", () => {
+  assert.match(modal, /template\.preview\.headerMedia/);
+  assert.match(modal, /Header \{template\.preview\.headerMedia\.format\.toLowerCase\(\)\} aprobado por Meta/);
+  assert.match(modal, /selectedTemplate\.compatibility\?\.status === "blocked"/);
+  assert.match(drawer, /isSelectedTemplateBlocked/);
+  assert.match(drawer, /Esta plantilla no está disponible todavía/);
+});
+
+test("14. UI supports named and component-scoped template parameters", () => {
+  assert.match(modal, /type RecoveryTemplateParameter/);
+  assert.match(drawer, /selectedTemplate\.parameters\?\.filter/);
+  assert.match(drawer, /templateVariableKey\(variable\)/);
+  assert.match(drawer, /templateVariableLabel\(variable\)/);
+  assert.match(drawer, /Record<string, string>/);
 });

@@ -1,8 +1,34 @@
 import "server-only";
 
 export type MetaTemplateTextParameter = {
+  parameter_name?: string;
   text: string;
   type: "text";
+};
+
+export type MetaTemplateMediaHeaderParameter =
+  | {
+      image: {
+        link: string;
+      };
+      type: "image";
+    }
+  | {
+      document: {
+        link: string;
+      };
+      type: "document";
+    }
+  | {
+      type: "video";
+      video: {
+        link: string;
+      };
+    };
+
+export type MetaTemplateHeaderComponent = {
+  parameters: [MetaTemplateMediaHeaderParameter] | MetaTemplateTextParameter[];
+  type: "header";
 };
 
 export type MetaTemplateBodyComponent = {
@@ -15,7 +41,7 @@ export type MetaTemplateMessagePayload = {
   to: string;
   type: "template";
   template: {
-    components?: MetaTemplateBodyComponent[];
+    components?: Array<MetaTemplateBodyComponent | MetaTemplateHeaderComponent>;
     language: {
       code: string;
     };
@@ -23,25 +49,49 @@ export type MetaTemplateMessagePayload = {
   };
 };
 
+export type RecoveryWhatsappTemplateHeaderMedia = {
+  format: "DOCUMENT" | "IMAGE" | "VIDEO";
+  link: string;
+};
+
 export type RecoveryWhatsappTemplateVariableValue = {
+  component?: "BODY" | "HEADER";
+  parameterName?: string | null;
   position: number;
   text: string;
 };
 
 export type BuildRecoveryWhatsappMetaTemplatePayloadInput = {
+  headerMedia?: RecoveryWhatsappTemplateHeaderMedia | null;
   language: string;
   templateName: string;
   to: string;
   variables: RecoveryWhatsappTemplateVariableValue[];
 };
 
+function mediaHeaderParameter(media: RecoveryWhatsappTemplateHeaderMedia): MetaTemplateMediaHeaderParameter {
+  if (media.format === "DOCUMENT") {
+    return { document: { link: media.link }, type: "document" };
+  }
+
+  if (media.format === "VIDEO") {
+    return { type: "video", video: { link: media.link } };
+  }
+
+  return { image: { link: media.link }, type: "image" };
+}
+
 export function buildRecoveryWhatsappMetaTemplatePayload({
+  headerMedia,
   language,
   templateName,
   to,
   variables,
 }: BuildRecoveryWhatsappMetaTemplatePayloadInput): MetaTemplateMessagePayload {
   const orderedVariables = [...variables].sort((left, right) => left.position - right.position);
+  const headerVariables = orderedVariables.filter((variable) => variable.component === "HEADER");
+  const bodyVariables = orderedVariables.filter((variable) => !variable.component || variable.component === "BODY");
+  const components: Array<MetaTemplateBodyComponent | MetaTemplateHeaderComponent> = [];
   const payload: MetaTemplateMessagePayload = {
     messaging_product: "whatsapp",
     template: {
@@ -54,16 +104,35 @@ export function buildRecoveryWhatsappMetaTemplatePayload({
     type: "template",
   };
 
-  if (orderedVariables.length > 0) {
-    payload.template.components = [
-      {
-        parameters: orderedVariables.map((variable) => ({
-          text: variable.text,
-          type: "text",
-        })),
-        type: "body",
-      },
-    ];
+  if (headerMedia) {
+    components.push({
+      parameters: [mediaHeaderParameter(headerMedia)],
+      type: "header",
+    });
+  } else if (headerVariables.length > 0) {
+    components.push({
+      parameters: headerVariables.map((variable) => ({
+        ...(variable.parameterName ? { parameter_name: variable.parameterName } : {}),
+        text: variable.text,
+        type: "text",
+      })),
+      type: "header",
+    });
+  }
+
+  if (bodyVariables.length > 0) {
+    components.push({
+      parameters: bodyVariables.map((variable) => ({
+        ...(variable.parameterName ? { parameter_name: variable.parameterName } : {}),
+        text: variable.text,
+        type: "text",
+      })),
+      type: "body",
+    });
+  }
+
+  if (components.length > 0) {
+    payload.template.components = components;
   }
 
   return payload;

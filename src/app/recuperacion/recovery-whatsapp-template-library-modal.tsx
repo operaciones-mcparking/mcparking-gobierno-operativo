@@ -13,18 +13,45 @@ export type RecoveryTemplatePreview = {
   body: string | null;
   footer: string | null;
   header: string | null;
+  headerMedia: {
+    format: "DOCUMENT" | "IMAGE" | "VIDEO";
+    link: string | null;
+  } | null;
+};
+
+export type RecoveryTemplateParameter = {
+  component: "BODY" | "BUTTON" | "HEADER";
+  id: string;
+  label: string;
+  name: string | null;
+  needsInput: boolean;
+  placeholder: string;
+  position: number | null;
+  predefinedValue: string | null;
+  required: boolean;
+  supported: boolean;
+  type: "document" | "image" | "text" | "video";
 };
 
 export type RecoveryTemplateOption = {
   category: string | null;
+  compatibility?: {
+    reasons: string[];
+    status: "blocked" | "supported";
+  };
   isFavorite: boolean;
   key: string;
   label: string;
   language: string;
   name: string;
+  parameterFormat?: "NAMED" | "POSITIONAL" | "UNKNOWN";
+  parameters?: RecoveryTemplateParameter[];
   preview: RecoveryTemplatePreview;
   status: "APPROVED";
   variables: Array<{
+    component?: "BODY" | "HEADER";
+    id?: string;
+    name?: string | null;
     placeholder: string;
     position: number;
   }>;
@@ -62,12 +89,16 @@ export function categoryLabel(category: string | null) {
   return normalized ? normalized.charAt(0) + normalized.slice(1).toLowerCase() : "Otra";
 }
 
-export function renderTemplatePreviewText(text: string | null, values: Record<number, string>) {
+export function renderTemplatePreviewText(text: string | null, values: Record<string, string>) {
   if (!text) return null;
 
   return text.replace(/\{\{\s*(\d+)\s*\}\}/g, (placeholder, positionValue) => {
     const position = Number.parseInt(positionValue, 10);
-    const value = values[position];
+    const value = values[position] ?? values[String(position)];
+
+    return typeof value === "string" && value.trim().length > 0 ? value : placeholder;
+  }).replace(/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g, (placeholder, name) => {
+    const value = values[name];
 
     return typeof value === "string" && value.trim().length > 0 ? value : placeholder;
   });
@@ -79,6 +110,7 @@ function previewText(template: RecoveryTemplateOption) {
     template.category ?? "",
     template.language,
     template.preview.header ?? "",
+    template.preview.headerMedia?.format ?? "",
     template.preview.body ?? "",
     template.preview.footer ?? "",
     ...template.preview.buttons.map((button) => button.text),
@@ -99,6 +131,7 @@ function TemplatePreviewCard({
   template: RecoveryTemplateOption;
 }) {
   const hasPreview = Boolean(template.preview.header || template.preview.body || template.preview.footer || template.preview.buttons.length > 0);
+  const isBlocked = template.compatibility?.status === "blocked";
   const favoriteLabel = template.isFavorite ? "Quitar de favoritas" : "Agregar a favoritas";
 
   return (
@@ -126,8 +159,21 @@ function TemplatePreviewCard({
 
         <div className="min-w-0 max-w-full overflow-hidden rounded-2xl bg-[#eef7f4] p-3">
           <div className="grid min-w-0 max-w-full gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
-            {hasPreview ? (
+            {hasPreview || template.preview.headerMedia ? (
               <>
+                {template.preview.headerMedia ? (
+                  template.preview.headerMedia.format === "IMAGE" && template.preview.headerMedia.link ? (
+                    <img
+                      alt=""
+                      className="max-h-40 w-full rounded-xl object-cover"
+                      src={template.preview.headerMedia.link}
+                    />
+                  ) : (
+                    <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                      Header {template.preview.headerMedia.format.toLowerCase()} aprobado por Meta
+                    </p>
+                  )
+                ) : null}
                 {template.preview.header ? <p className="min-w-0 max-w-full break-words font-semibold text-navy [overflow-wrap:anywhere]">{template.preview.header}</p> : null}
                 {template.preview.body ? <p className="min-w-0 max-w-full whitespace-pre-wrap break-words leading-5 [overflow-wrap:anywhere]">{template.preview.body}</p> : null}
                 {template.preview.footer ? <p className="min-w-0 max-w-full break-words text-xs text-slate-500 [overflow-wrap:anywhere]">{template.preview.footer}</p> : null}
@@ -156,6 +202,11 @@ function TemplatePreviewCard({
               </span>
             ))}
           </div>
+        ) : null}
+        {isBlocked ? (
+          <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]">
+            No disponible: {template.compatibility?.reasons[0] ?? "componente no soportado"}.
+          </p>
         ) : null}
       </button>
 
@@ -530,9 +581,9 @@ export function RecoveryWhatsappTemplateLibraryModal({
                 </button>
                 <button
                   className="rounded-xl bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600"
-                  disabled={!selectedTemplate}
+                  disabled={!selectedTemplate || selectedTemplate.compatibility?.status === "blocked"}
                   onClick={() => {
-                    if (!selectedTemplate) return;
+                    if (!selectedTemplate || selectedTemplate.compatibility?.status === "blocked") return;
                     onSelectTemplate(selectedTemplate);
                     onClose();
                   }}
