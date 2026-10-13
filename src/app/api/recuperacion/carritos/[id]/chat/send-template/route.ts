@@ -7,7 +7,10 @@ import {
   buildRecoveryWhatsappTemplateN8nPayload,
   buildRecoveryWhatsappTemplateN8nPayloadPreview,
 } from "@/lib/recuperacion/whatsapp-template-n8n-payload";
-import { sendRecoveryWhatsappTemplateViaN8n } from "@/lib/recuperacion/whatsapp-template-n8n-transport";
+import {
+  sendRecoveryWhatsappTemplateViaN8n,
+  type RecoveryWhatsappTemplateN8nSendFailure,
+} from "@/lib/recuperacion/whatsapp-template-n8n-transport";
 import { buildRecoveryWhatsappMetaTemplatePayload, buildRecoveryWhatsappMetaTemplatePayloadPreview } from "@/lib/recuperacion/whatsapp-template-send-payload";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
@@ -62,6 +65,7 @@ type TemplateVariableValue = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const VARIABLE_KEY_RE = /^(?:\{\{\s*)?(\d+)(?:\s*\}\})?$/;
 const MAX_TEMPLATE_VARIABLE_LENGTH = 500;
+const TEMPLATE_SEND_UNCONFIRMED_STATUS = "unconfirmed";
 const ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set(["dryRun", "language", "templateKey", "variables"]);
 const FORBIDDEN_DRY_RUN_PAYLOAD_KEYS = new Set([
   "accessToken",
@@ -164,6 +168,24 @@ function safeMessagePayload(message: {
     whatsappMessageId: message.whatsapp_message_id ?? null,
     whatsappStatus: message.whatsapp_status,
   };
+}
+
+function shortErrorMessage(value: unknown) {
+  if (value instanceof Error) return value.message.slice(0, 1000);
+
+  const text = safeString(value);
+
+  return text ? text.slice(0, 1000) : "Error al enviar plantilla.";
+}
+
+function localStatusForN8nFailure(result: RecoveryWhatsappTemplateN8nSendFailure) {
+  return result.outcome === "ambiguous" ? TEMPLATE_SEND_UNCONFIRMED_STATUS : "failed";
+}
+
+function publicErrorForN8nFailure(result: RecoveryWhatsappTemplateN8nSendFailure) {
+  return result.outcome === "ambiguous"
+    ? "No fue posible confirmar si la plantilla fue enviada. No reintentes automaticamente; requiere reconciliacion."
+    : "No se pudo enviar la plantilla de WhatsApp.";
 }
 
 function isSupportedBusinessKey(value: unknown): value is RecoveryWhatsappBusinessKey {
@@ -501,19 +523,78 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("No se pudo registrar la plantilla para envio.", 500, "message_insert_failed");
   }
 
-  const n8nResult = await sendRecoveryWhatsappTemplateViaN8n(n8nTransportPayload);
+  let n8nResult;
+
+  try {
+    n8nResult = await sendRecoveryWhatsappTemplateViaN8n(n8nTransportPayload);
+  } catch (error) {
+    const localStatus = TEMPLATE_SEND_UNCONFIRMED_STATUS;
+
+    await serviceSupabase
+      .from("recovery_whatsapp_live_messages")
+      .update({
+        error_message: shortErrorMessage(error),
+        updated_at: new Date().toISOString(),
+        whatsapp_status: localStatus,
+      })
+      .eq("id", insertedMessage.id);
+
+    const safeUnconfirmedMessage = safeMessagePayload({
+      ...insertedMessage,
+      whatsapp_status: localStatus,
+    } as {
+      id: string;
+      message_at: string;
+      message_text: string;
+      whatsapp_message_id: string | null;
+      whatsapp_status: string | null;
+    });
+
+    return NextResponse.json(
+      {
+        code: "n8n_unhandled_exception",
+        error: "No fue posible confirmar si la plantilla fue enviada. No reintentes automaticamente; requiere reconciliacion.",
+        message: safeUnconfirmedMessage,
+        ok: false,
+        stage: "n8n",
+      },
+      { status: 502 },
+    );
+  }
 
   if (!n8nResult.ok) {
+    const localStatus = localStatusForN8nFailure(n8nResult);
+
     await serviceSupabase
       .from("recovery_whatsapp_live_messages")
       .update({
         error_message: n8nResult.message.slice(0, 1000),
         updated_at: new Date().toISOString(),
-        whatsapp_status: "failed",
+        whatsapp_status: localStatus,
       })
       .eq("id", insertedMessage.id);
 
-    return jsonError("No se pudo enviar la plantilla de WhatsApp.", n8nResult.status, n8nResult.code);
+    const safeFailedMessage = safeMessagePayload({
+      ...insertedMessage,
+      whatsapp_status: localStatus,
+    } as {
+      id: string;
+      message_at: string;
+      message_text: string;
+      whatsapp_message_id: string | null;
+      whatsapp_status: string | null;
+    });
+
+    return NextResponse.json(
+      {
+        code: n8nResult.code,
+        error: publicErrorForN8nFailure(n8nResult),
+        message: safeFailedMessage,
+        ok: false,
+        stage: "n8n",
+      },
+      { status: n8nResult.status },
+    );
   }
 
   const finalStatus = n8nResult.messageStatus ?? "sent";
@@ -529,7 +610,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     .single();
 
   const safeMessage = safeMessagePayload(
-    (updateError || !updatedMessage ? { ...insertedMessage, whatsapp_status: finalStatus } : updatedMessage) as {
+    (updateError || !updatedMessage
+      ? { ...insertedMessage, whatsapp_message_id: n8nResult.messageId, whatsapp_status: finalStatus }
+      : updatedMessage) as {
       id: string;
       message_at: string;
       message_text: string;
@@ -542,6 +625,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     dryRun: false,
     message: safeMessage,
     ok: true,
+    ...(updateError ? { warning: "Plantilla aceptada por n8n, pero no se pudo actualizar su estado local." } : {}),
     send: {
       businessKey: n8nResult.senderKey,
       messageId: n8nResult.messageId,

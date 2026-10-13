@@ -29,6 +29,7 @@ function loadTransport({ env = {}, fetchImpl }) {
     AbortController,
     Error,
     Response,
+    URL,
     clearTimeout,
     exports: module.exports,
     fetch: fetchImpl,
@@ -91,7 +92,7 @@ function okResponse(senderKey = "MPV", overrides = {}) {
 function env() {
   return {
     N8N_RECOVERY_WEBHOOK_SECRET: "secret-test",
-    N8N_RECOVERY_WHATSAPP_WEBHOOK_URL: "https://n8n.test/webhook/recovery",
+    N8N_RECOVERY_WHATSAPP_WEBHOOK_URL: "https://n8n.mcparking.cl/webhook/recovery-whatsapp-send-v2",
   };
 }
 
@@ -119,6 +120,22 @@ test("2. MPV sends the exact internal contract to n8n", async () => {
   assert.equal(calls[0].init.headers["Content-Type"], "application/json");
   assert.equal(calls[0].init.headers["x-mcparking-recovery-secret"], env().N8N_RECOVERY_WEBHOOK_SECRET);
   assert.deepEqual(JSON.parse(calls[0].init.body), payload);
+});
+
+test("2b. template transport routes legacy Wazend configuration to the new n8n webhook", async () => {
+  const calls = [];
+  const result = await sendWithFetch(async (url, init) => {
+    calls.push({ init, url });
+    return okResponse("MPV");
+  }, templatePayload("MPV"), {
+    N8N_RECOVERY_WEBHOOK_SECRET: "secret-test",
+    N8N_RECOVERY_WHATSAPP_WEBHOOK_URL: "https://mcparking.wazend.net/webhook/e96398a8-3b21-487a-a3a0-f463379a0668",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://n8n.mcparking.cl/webhook/recovery-whatsapp-send-v2");
+  assert.equal(calls[0].init.headers["x-mcparking-recovery-secret"], "secret-test");
 });
 
 test("3. EAP sends the same contract with senderKey EAP", async () => {
@@ -150,7 +167,7 @@ test("4. successful response is normalized", async () => {
 test("5. route allows dryRun false after the same validation path", () => {
   assert.match(route, /typeof payload\.dryRun !== "boolean"/);
   assert.match(route, /if \(payload\.dryRun\) \{/);
-  assert.match(route, /const n8nResult = await sendRecoveryWhatsappTemplateViaN8n\(n8nTransportPayload\)/);
+  assert.match(route, /n8nResult = await sendRecoveryWhatsappTemplateViaN8n\(n8nTransportPayload\)/);
   assert.ok(route.indexOf("validateBodyVariables") < route.indexOf("sendRecoveryWhatsappTemplateViaN8n(n8nTransportPayload)"));
 });
 
@@ -197,18 +214,21 @@ test("11. missing webhook URL fails safely", async () => {
   const result = await sendWithFetch(async () => okResponse("MPV"), templatePayload("MPV"), { N8N_RECOVERY_WEBHOOK_SECRET: "secret-test" });
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_configuration_error");
+  assert.equal(result.outcome, "definitive_failure");
 });
 
 test("12. missing webhook secret fails safely", async () => {
   const result = await sendWithFetch(async () => okResponse("MPV"), templatePayload("MPV"), { N8N_RECOVERY_WHATSAPP_WEBHOOK_URL: "https://n8n.test/webhook/recovery" });
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_configuration_error");
+  assert.equal(result.outcome, "definitive_failure");
 });
 
 test("13. fetch network error is safe", async () => {
   const result = await sendWithFetch(async () => { throw new Error("network down"); });
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_network_error");
+  assert.equal(result.outcome, "ambiguous");
 });
 
 test("14. timeout is safe", async () => {
@@ -216,6 +236,7 @@ test("14. timeout is safe", async () => {
   const result = await sendWithFetch(async () => { throw abort; });
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_timeout");
+  assert.equal(result.outcome, "ambiguous");
 });
 
 test("15. HTTP errors are safe and do not expose response body", async () => {
@@ -223,6 +244,7 @@ test("15. HTTP errors are safe and do not expose response body", async () => {
     const result = await sendWithFetch(async () => new Response(JSON.stringify({ secret: "raw body" }), { status }));
     assert.equal(result.ok, false);
     assert.equal(result.code, "n8n_http_error");
+    assert.equal(result.outcome, "definitive_failure");
     assert.doesNotMatch(JSON.stringify(result), /raw body|secret-test|n8n\.test/);
     assert.equal(result.stage, "http");
   }
@@ -232,30 +254,35 @@ test("16. non JSON response is safe", async () => {
   const result = await sendWithFetch(async () => new Response("not-json", { status: 200 }));
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_invalid_json");
+  assert.equal(result.outcome, "ambiguous");
 });
 
 test("17. ok false is rejected", async () => {
   const result = await sendWithFetch(async () => okResponse("MPV", { ok: false }));
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_rejected");
+  assert.equal(result.outcome, "definitive_failure");
 });
 
 test("18. unexpected mode is rejected", async () => {
   const result = await sendWithFetch(async () => okResponse("MPV", { mode: "freeform" }));
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_invalid_mode");
+  assert.equal(result.outcome, "ambiguous");
 });
 
 test("19. unexpected senderKey is rejected", async () => {
   const result = await sendWithFetch(async () => okResponse("EAP"), templatePayload("MPV"));
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_sender_mismatch");
+  assert.equal(result.outcome, "ambiguous");
 });
 
 test("20. missing messageId is rejected", async () => {
   const result = await sendWithFetch(async () => okResponse("MPV", { messageId: "" }));
   assert.equal(result.ok, false);
   assert.equal(result.code, "n8n_missing_message_id");
+  assert.equal(result.outcome, "ambiguous");
 });
 
 test("21. dryRun false calls n8n exactly once with no retries", async () => {
@@ -314,6 +341,34 @@ test("27. route returns only the safe rendered outbound message", () => {
 test("28. failed template sends are marked failed and are not returned as successful messages", () => {
   const failureStart = route.indexOf("if (!n8nResult.ok)");
   const failureBlock = route.slice(failureStart, route.indexOf("const finalStatus", failureStart));
-  assert.match(failureBlock, /whatsapp_status: "failed"/);
+  assert.match(route, /function localStatusForN8nFailure/);
+  assert.match(route, /result\.outcome === "ambiguous" \? TEMPLATE_SEND_UNCONFIRMED_STATUS : "failed"/);
+  assert.match(failureBlock, /whatsapp_status: localStatus/);
   assert.doesNotMatch(failureBlock, /message: safeMessage/);
+});
+
+test("29. ambiguous template outcomes are persisted as unconfirmed with reconciliation copy", () => {
+  assert.match(route, /const TEMPLATE_SEND_UNCONFIRMED_STATUS = "unconfirmed"/);
+  assert.match(route, /No fue posible confirmar si la plantilla fue enviada/);
+  assert.match(route, /requiere reconciliacion/);
+  assert.match(route, /message: safeFailedMessage/);
+  assert.doesNotMatch(route, /retry|reintentar\s*\(/i);
+});
+
+test("30. unhandled transport exceptions do not leave pending silently", () => {
+  const catchStart = route.indexOf("} catch (error) {", route.indexOf("sendRecoveryWhatsappTemplateViaN8n"));
+  const catchBlock = route.slice(catchStart, route.indexOf("if (!n8nResult.ok)", catchStart));
+
+  assert.match(catchBlock, /TEMPLATE_SEND_UNCONFIRMED_STATUS/);
+  assert.match(catchBlock, /error_message: shortErrorMessage\(error\)/);
+  assert.match(catchBlock, /whatsapp_status: localStatus/);
+  assert.match(catchBlock, /code: "n8n_unhandled_exception"/);
+});
+
+test("31. accepted sends return WAMID even if local live update fails", () => {
+  const successStart = route.indexOf("const safeMessage = safeMessagePayload", route.indexOf("const finalStatus"));
+  const successBlock = route.slice(successStart, route.lastIndexOf("return NextResponse.json({"));
+
+  assert.match(successBlock, /whatsapp_message_id: n8nResult\.messageId/);
+  assert.match(route, /warning: "Plantilla aceptada por n8n, pero no se pudo actualizar su estado local\."/);
 });

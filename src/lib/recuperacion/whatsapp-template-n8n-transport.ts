@@ -4,6 +4,7 @@ import type { RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-fr
 import type { RecoveryWhatsappTemplateN8nPayload } from "@/lib/recuperacion/whatsapp-template-n8n-payload";
 
 const RECOVERY_TEMPLATE_N8N_TIMEOUT_MS = 15000;
+const RECOVERY_TEMPLATE_N8N_SEND_V2_WEBHOOK_URL = "https://n8n.mcparking.cl/webhook/recovery-whatsapp-send-v2";
 
 export type RecoveryWhatsappTemplateN8nSendSuccess = {
   message: string | null;
@@ -38,6 +39,7 @@ export type RecoveryWhatsappTemplateN8nSendFailure = {
   code: RecoveryWhatsappTemplateN8nSendFailureCode;
   message: string;
   ok: false;
+  outcome: "ambiguous" | "definitive_failure";
   stage: RecoveryWhatsappTemplateN8nSendFailureStage;
   status: number;
 };
@@ -79,6 +81,7 @@ function safeFailure(
   message: string,
   status: number,
   stage: RecoveryWhatsappTemplateN8nSendFailureStage,
+  outcome: RecoveryWhatsappTemplateN8nSendFailure["outcome"],
   n8nStatus?: number,
 ): RecoveryWhatsappTemplateN8nSendFailure {
   logSafeFailure({ code, n8nStatus, stage, status });
@@ -87,6 +90,7 @@ function safeFailure(
     code,
     message,
     ok: false,
+    outcome,
     stage,
     status,
   };
@@ -96,9 +100,21 @@ function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function resolveRecoveryTemplateWebhookUrl(configuredUrl: string) {
+  try {
+    const url = new URL(configuredUrl);
+
+    if (url.hostname === "mcparking.wazend.net") return RECOVERY_TEMPLATE_N8N_SEND_V2_WEBHOOK_URL;
+  } catch {
+    return configuredUrl;
+  }
+
+  return configuredUrl;
+}
+
 function validateN8nTemplateResponse(value: unknown, expectedSenderKey: RecoveryWhatsappBusinessKey): RecoveryWhatsappTemplateN8nSendResult {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return safeFailure("n8n_invalid_response", "n8n devolvio una respuesta invalida.", 502, "response_contract");
+    return safeFailure("n8n_invalid_response", "n8n devolvio una respuesta invalida.", 502, "response_contract", "ambiguous");
   }
 
   const payload = value as RecoveryTemplateN8nResponse;
@@ -107,19 +123,19 @@ function validateN8nTemplateResponse(value: unknown, expectedSenderKey: Recovery
   const messageId = safeString(payload.messageId);
 
   if (payload.ok !== true) {
-    return safeFailure("n8n_rejected", "n8n no confirmo el envio de la plantilla.", 502, "response_contract");
+    return safeFailure("n8n_rejected", "n8n no confirmo el envio de la plantilla.", 502, "response_contract", "definitive_failure");
   }
 
   if (mode !== "template") {
-    return safeFailure("n8n_invalid_mode", "n8n devolvio un modo inesperado.", 502, "response_contract");
+    return safeFailure("n8n_invalid_mode", "n8n devolvio un modo inesperado.", 502, "response_contract", "ambiguous");
   }
 
   if (senderKey !== expectedSenderKey) {
-    return safeFailure("n8n_sender_mismatch", "n8n devolvio un negocio inesperado.", 502, "response_contract");
+    return safeFailure("n8n_sender_mismatch", "n8n devolvio un negocio inesperado.", 502, "response_contract", "ambiguous");
   }
 
   if (!messageId) {
-    return safeFailure("n8n_missing_message_id", "n8n no devolvio identificador de mensaje.", 502, "response_contract");
+    return safeFailure("n8n_missing_message_id", "n8n no devolvio identificador de mensaje.", 502, "response_contract", "ambiguous");
   }
 
   return {
@@ -139,11 +155,11 @@ export async function sendRecoveryWhatsappTemplateViaN8n(
   const webhookSecret = process.env.N8N_RECOVERY_WEBHOOK_SECRET;
 
   if (!webhookUrl) {
-    return safeFailure("n8n_configuration_error", "Falta configurar N8N_RECOVERY_WHATSAPP_WEBHOOK_URL.", 500, "configuration");
+    return safeFailure("n8n_configuration_error", "Falta configurar N8N_RECOVERY_WHATSAPP_WEBHOOK_URL.", 500, "configuration", "definitive_failure");
   }
 
   if (!webhookSecret) {
-    return safeFailure("n8n_configuration_error", "Falta configurar N8N_RECOVERY_WEBHOOK_SECRET.", 500, "configuration");
+    return safeFailure("n8n_configuration_error", "Falta configurar N8N_RECOVERY_WEBHOOK_SECRET.", 500, "configuration", "definitive_failure");
   }
 
   const controller = new AbortController();
@@ -151,7 +167,7 @@ export async function sendRecoveryWhatsappTemplateViaN8n(
   let response: Response;
 
   try {
-    response = await fetch(webhookUrl, {
+    response = await fetch(resolveRecoveryTemplateWebhookUrl(webhookUrl), {
       body: JSON.stringify(payload),
       headers: {
         "Content-Type": "application/json",
@@ -166,21 +182,29 @@ export async function sendRecoveryWhatsappTemplateViaN8n(
       isAbortError(error) ? "n8n no respondio a tiempo." : "No se pudo conectar con n8n.",
       502,
       isAbortError(error) ? "timeout" : "network",
+      "ambiguous",
     );
   } finally {
     clearTimeout(timeout);
   }
 
   let responsePayload: unknown;
+  let responseText = "";
 
   try {
-    responsePayload = await response.json();
+    responseText = await response.text();
   } catch {
-    return safeFailure("n8n_invalid_json", "n8n devolvio una respuesta no JSON.", 502, "invalid_json", response.status);
+    responseText = "";
   }
 
   if (!response.ok) {
-    return safeFailure("n8n_http_error", `n8n respondio HTTP ${response.status}.`, 502, "http", response.status);
+    return safeFailure("n8n_http_error", `n8n respondio HTTP ${response.status}.`, 502, "http", "definitive_failure", response.status);
+  }
+
+  try {
+    responsePayload = JSON.parse(responseText);
+  } catch {
+    return safeFailure("n8n_invalid_json", "n8n devolvio una respuesta no JSON.", 502, "invalid_json", "ambiguous", response.status);
   }
 
   return validateN8nTemplateResponse(responsePayload, payload.senderKey);
