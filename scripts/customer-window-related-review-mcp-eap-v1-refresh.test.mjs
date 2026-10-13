@@ -640,10 +640,15 @@ test("activation failure is safe and reports no automatic rollback", async () =>
   const { state, options } = fixture({ activateError: new Error("sensitive") });
   let failure;
   try { await runRefresh(options); } catch (error) { failure = error; }
-  assert.deepEqual(formatRefreshError(failure), {
-    ok: false, code: "activate_failed", phase: "activate", activated: false,
-    newSnapshotId,
-  });
+  const formatted = formatRefreshError(failure);
+  assert.equal(formatted.ok, false);
+  assert.equal(formatted.code, "activate_failed");
+  assert.equal(formatted.phase, "activate");
+  assert.equal(formatted.activated, false);
+  assert.equal(formatted.newSnapshotId, newSnapshotId);
+  assert.equal(formatted.buildCode, "builder_failed");
+  assert.equal(typeof formatted.buildPhase, "string");
+  assert.doesNotMatch(JSON.stringify(formatted), /sensitive|stack/i);
   assert.deepEqual(state.calls, ["connect", "build", "audit", "activate", "end"]);
 });
 
@@ -863,8 +868,19 @@ test("concurrent refresh is rejected before build", async () => {
   assert.deepEqual(state.calls, ["connect", "end"]);
 });
 
-test("existing READY fails closed before build", async () => {
+test("existing single READY auto-resumes after the operational lock is acquired", async () => {
   const { state, options } = fixture({ readyCount: 1 });
+  const result = await runRefresh(options);
+  assert.equal(result.ok, true);
+  assert.equal(result.resumedReady, true);
+  assert.equal(result.autoResumedReady, true);
+  assert.equal(result.buildInvoked, false);
+  assert.equal(result.newSnapshotId, newSnapshotId);
+  assert.deepEqual(state.calls, ["connect", "audit", "activate", "end"]);
+});
+
+test("multiple READY snapshots still fail closed before build", async () => {
+  const { state, options } = fixture({ readyCount: 2 });
   let failure;
   try { await runRefresh(options); } catch (error) { failure = error; }
   assert.deepEqual(formatRefreshError(failure), {

@@ -152,6 +152,7 @@ export function formatRefreshError(error) {
   }
   if (context?.readyAudit) Object.assign(result, context.readyAudit);
   if (context?.buildFailure) Object.assign(result, context.buildFailure);
+  if (context?.activateFailure) Object.assign(result, context.activateFailure);
   if (context?.preflightResult && context.phase === "upstream-preflight") {
     Object.assign(result, context.preflightResult);
   }
@@ -747,7 +748,9 @@ export async function runRefresh({
   let committed = false;
   let readyAudit = null;
   let buildFailure = null;
+  let activateFailure = null;
   let upstreamPreflight = null;
+  let autoResumedReady = false;
   let readyAuditAttempts = 0;
   let readyAuditRetried = false;
   let firstAuditDbCode = null;
@@ -828,7 +831,12 @@ export async function runRefresh({
         && preflight.ready_snapshot_id === resumeReadySnapshotId,
       "resume_ready_snapshot_mismatch");
     } else {
-      check(preflight.ready_count === 0, "ready_snapshot_already_exists");
+      if (preflight.ready_count === 1 && UUID.test(preflight.ready_snapshot_id || "")) {
+        resumeReadySnapshotId = preflight.ready_snapshot_id.toLowerCase();
+        autoResumedReady = true;
+      } else {
+        check(preflight.ready_count === 0, "ready_snapshot_already_exists");
+      }
     }
     const previousSnapshotId = preflight.active_snapshot_id;
     const previousActivatedAt = String(preflight.active_activated_at);
@@ -981,8 +989,8 @@ export async function runRefresh({
     try {
       activation = await activateFn({ snapshotId: newSnapshotId, env, ClientClass });
     } catch (error) {
-      const safe = formatBuilderError(error);
-      committed = safe.committed === true;
+      activateFailure = safeBuildFailure(error, buildErrorFormatter);
+      committed = activateFailure.committed === true;
       activated = committed;
       throw new RefreshError("activate_failed");
     }
@@ -1070,9 +1078,10 @@ export async function runRefresh({
       mode: "refresh",
       previousSnapshotId,
       newSnapshotId,
-      buildInvoked: true,
+      buildInvoked: autoResumedReady === false && resumeReadySnapshotId === null,
       buildReadyOk: true,
       resumedReady: resumeReadySnapshotId !== null,
+      autoResumedReady,
       ...(upstreamPreflight ? upstreamPreflight : {}),
       readyAuditOk: true,
       ...auditTelemetry(),
@@ -1136,6 +1145,7 @@ export async function runRefresh({
         activated,
         committed,
         buildFailure: phase === "build-ready" ? buildFailure : null,
+        activateFailure: phase === "activate" ? activateFailure : null,
         readyAudit: phase === "ready-audit" ? readyAudit : null,
         postcheckPhaseStarted,
         postcheckPhaseFinished,
