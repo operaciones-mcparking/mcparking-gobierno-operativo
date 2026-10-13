@@ -119,9 +119,11 @@ export function MobileDashboardNavigation({
             <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
               {groups.map((group) => (
                 <div key={group.label}>
-                  <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                    {group.label}
-                  </p>
+                  {group.label ? (
+                    <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                      {group.label}
+                    </p>
+                  ) : null}
                   <div className="space-y-1">
                     {group.items.map((item) => {
                       const Icon = iconByKey[item.iconKey];

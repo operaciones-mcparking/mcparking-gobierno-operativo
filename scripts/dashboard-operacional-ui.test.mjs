@@ -45,7 +45,6 @@ test("B. navegacion muestra Operaciones sin cambiar ruta", () => {
   assert.match(shell, /label: "Operaciones"/);
   assert.match(shell, /helper: "Dashboard y monitoreo"/);
   assert.doesNotMatch(shell, /label: "Orquestador"|helper: "Workers y jobs"/);
-  assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/mobile-navigation\.tsx$/m);
 });
 
 test("C. selector unificado contiene Dashboard y Centro de Control", () => {

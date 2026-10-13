@@ -2,9 +2,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import {
-  AlertTriangle,
-  Building2,
-  Database,
   LogOut,
   MessageCircle,
   Network,
@@ -24,24 +21,11 @@ export { Panel } from "@/components/dashboard/panel";
 const modules: Array<{ items: Array<{ adminOnly?: boolean; helper: string; href: string; icon: LucideIcon; iconKey: MobileNavigationIcon; label: string }>; label: string }> = [
   {
     items: [
-      { href: "/estructura", icon: Network, iconKey: "network", label: "Estructura", helper: "Gobierno operativo" },
-      { href: "/empresas", icon: Building2, iconKey: "building", label: "Empresas", helper: "McParking y clientes" },
-    ],
-    label: "Estructura",
-  },
-  {
-    items: [
-      { href: "/sistemas", icon: Database, iconKey: "database", label: "Sistemas", helper: "Herramientas" },
+      { href: "/orquestador", icon: Workflow, iconKey: "workflow", label: "Operaciones", helper: "Dashboard y monitoreo" },
       { href: "/recuperacion", icon: MessageCircle, iconKey: "message-circle", label: "Carritos perdidos", helper: "Recuperación WhatsApp" },
+      { href: "/estructura", icon: Network, iconKey: "network", label: "Estructura", helper: "Gobierno operativo" },
     ],
-    label: "Operacion",
-  },
-  {
-    items: [
-      { href: "/brechas", icon: AlertTriangle, iconKey: "alert-triangle", label: "Brechas", helper: "Alertas y riesgos" },
-      { adminOnly: true, href: "/orquestador", icon: Workflow, iconKey: "workflow", label: "Operaciones", helper: "Dashboard y monitoreo" },
-    ],
-    label: "Control",
+    label: "",
   },
 ];
 
@@ -129,9 +113,11 @@ export async function DashboardShell({
           <nav className="flex-1 space-y-5 overflow-y-auto p-5">
             {visibleModules.map((group) => (
               <div key={group.label}>
-                <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                  {group.label}
-                </p>
+                {group.label ? (
+                  <p className="mb-2 px-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                    {group.label}
+                  </p>
+                ) : null}
                 <div className="space-y-1">
                   {group.items.map((module) => {
                     const Icon = module.icon;

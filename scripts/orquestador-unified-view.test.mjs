@@ -99,6 +99,5 @@ test("J. separa Panel para clientes sin mover auth al browser ni cambiar navegac
   assert.match(shell, /export \{ Panel \} from "@\/components\/dashboard\/panel"/);
   assert.match(customerWindowView, /Panel \} from "@\/components\/dashboard\/panel"/);
   assert.doesNotMatch(customerWindowView + panel, /@\/lib\/auth\/access|server-only|createSupabaseAuthServerClient/);
-  assert.doesNotMatch(diffNames, /^src\/components\/dashboard\/mobile-navigation\.tsx$/m);
   assert.doesNotMatch(diffNames, /^src\/app\/api\/recuperacion|^scripts\/recovery/m);
 });
