@@ -334,6 +334,16 @@ test("endpoint uses normalized phone keys from compat views for chat association
   assert.match(chatIndicatorHelper, /businessKeyForBusinessPhone\(row\.api_phone_normalized\)/);
 });
 
+test("endpoint does not open the WhatsApp window from a different known business", () => {
+  assert.match(indicatorRoute, /businessKeyForBusinessPhone/);
+  assert.match(indicatorRoute, /function memoryRowsForCartBusiness/);
+  assert.match(indicatorRoute, /const parkingBusinessKey = businessKeyForParking\(cart\.parking_code\)/);
+  assert.match(indicatorRoute, /const rowBusinessKey = businessKeyForBusinessPhone\(row\.api_phone_normalized\)/);
+  assert.match(indicatorRoute, /return !rowBusinessKey \|\| rowBusinessKey === parkingBusinessKey/);
+  assert.match(indicatorRoute, /const cartWindowMemoryRows = memoryRowsForCartBusiness/);
+  assert.match(indicatorRoute, /memoryRows: cartWindowMemoryRows/);
+});
+
 test("chat indicator rejects messages outside the cart relation window", () => {
   const indicator = chatConversationIndicatorFromMemoryRows(
     { form_datetime: "2026-08-20T08:00:00.000Z", id: "cart-1", parking_code: "MPV" },

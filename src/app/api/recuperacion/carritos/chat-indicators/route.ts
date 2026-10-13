@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 import {
+  businessKeyForBusinessPhone,
   businessKeyForParking,
   publicWhatsappFreeformWindow,
   resolveWhatsappConversationBusinessKey,
@@ -282,6 +283,18 @@ function whatsappWindowForCart(params: {
   );
 }
 
+function memoryRowsForCartBusiness(cart: CartIndicatorSourceRow, rows: WhatsappMemoryConversationRow[]) {
+  const parkingBusinessKey = businessKeyForParking(cart.parking_code);
+
+  if (!parkingBusinessKey) return rows;
+
+  return rows.filter((row) => {
+    const rowBusinessKey = businessKeyForBusinessPhone(row.api_phone_normalized);
+
+    return !rowBusinessKey || rowBusinessKey === parkingBusinessKey;
+  });
+}
+
 export async function GET(request: NextRequest) {
   const admin = await requireAdminForApi();
 
@@ -392,6 +405,10 @@ export async function GET(request: NextRequest) {
   const nowMs = Date.now();
 
   for (const cart of cartsWithPhone) {
+    const cartWindowMemoryRows = memoryRowsForCartBusiness(
+      cart,
+      allMemoryRowsByPhone.get(cart.phone_normalized as string) ?? [],
+    );
     const indicator = {
       ...emptyIndicator(cart.id),
       ...chatConversationIndicatorFromMemoryRows(cart, normalMemoryRowsByPhone.get(cart.phone_normalized as string) ?? []),
@@ -402,7 +419,7 @@ export async function GET(request: NextRequest) {
       whatsappWindow: whatsappWindowForCart({
         cart,
         liveRows: liveRowsByCartId.get(cart.id) ?? [],
-        memoryRows: allMemoryRowsByPhone.get(cart.phone_normalized as string) ?? [],
+        memoryRows: cartWindowMemoryRows,
         nowMs,
       }),
     });
