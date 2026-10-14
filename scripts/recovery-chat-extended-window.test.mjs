@@ -10,6 +10,7 @@ const rangeHelperPath = "src/lib/recuperacion/recovery-chat-read-range.ts";
 const whatsappWindowPath = "src/lib/recuperacion/whatsapp-freeform-window.ts";
 const sendRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/send/route.ts";
 const drawerPath = "src/app/recuperacion/recovery-cart-chat-drawer.tsx";
+const messageMergeHelperPath = "src/lib/recuperacion/recovery-chat-message-merge.ts";
 const templatesRoutePath = "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts";
 const templateModalPath = "src/app/recuperacion/recovery-whatsapp-template-library-modal.tsx";
 const routeSource = readFileSync(routePath, "utf8");
@@ -17,6 +18,7 @@ const rangeHelperSource = readFileSync(rangeHelperPath, "utf8");
 const whatsappWindowSource = readFileSync(whatsappWindowPath, "utf8");
 const sendRouteSource = readFileSync(sendRoutePath, "utf8");
 const drawerSource = readFileSync(drawerPath, "utf8");
+const messageMergeHelperSource = readFileSync(messageMergeHelperPath, "utf8");
 const templatesRouteSource = readFileSync(templatesRoutePath, "utf8");
 const templateModalSource = readFileSync(templateModalPath, "utf8");
 
@@ -173,7 +175,7 @@ test("chat GET carries WAMID identity for canonical/live cross-dedupe", () => {
   assert.match(routeSource, /whatsappMessageId:\s*normalizedWhatsappMessageId\(message\.conversation_id\)/);
   assert.match(routeSource, /whatsappMessageId:\s*normalizedWhatsappMessageId\(message\.whatsapp_message_id\)/);
   assert.match(routeSource, /sourceMessageId:\s*message\.id/);
-  assert.match(drawerSource, /if \(message\.sourceMessageId\) return `source:\$\{message\.source\}:\$\{message\.sourceMessageId\}`/);
+  assert.match(messageMergeHelperSource, /if \(message\.sourceMessageId\) return `source:\$\{message\.source\}:\$\{message\.sourceMessageId\}`/);
 });
 
 test("live versus canonical dedupe uses WAMID only and keeps pending live messages", () => {

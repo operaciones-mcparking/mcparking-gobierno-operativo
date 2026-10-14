@@ -4,6 +4,7 @@ import { AlertCircle, Check, CheckCheck, CircleHelp, Clock3, Copy, ExternalLink,
 import { useEffect, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { mergeRecoveryChatMessages, recoveryChatMessageIdentity } from "@/lib/recuperacion/recovery-chat-message-merge";
 import { RecoveryWhatsappTemplateLibraryModal, categoryLabel, renderTemplatePreviewText, type RecoveryTemplateOption } from "./recovery-whatsapp-template-library-modal";
 
 const RECOVERY_TIME_ZONE = "America/Santiago";
@@ -50,6 +51,7 @@ type CartChatResponse = {
     nextBeforeSourceId?: number | null;
   };
   reason?: string;
+  reconciledLiveMessageIds?: string[];
   whatsappWindow?: WhatsappFreeformWindowPayload;
   summary?: {
     hasConversation: boolean;
@@ -453,7 +455,11 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
 
           return {
             ...payload,
-            messages: mergeMessages(current?.messages ?? [], payload.messages ?? []),
+            messages: mergeMessages(
+              current?.messages ?? [],
+              payload.messages ?? [],
+              payload.reconciledLiveMessageIds ?? [],
+            ),
             pagination: current?.pagination ?? payload.pagination,
             whatsappWindow: current?.whatsappWindow ?? payload.whatsappWindow,
           };
@@ -475,39 +481,11 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
   }
 
   function messageIdentity(message: CartChatMessage) {
-    if (message.whatsappMessageId) return `wamid:${message.whatsappMessageId}`;
-    if (message.sourceMessageId) return `source:${message.source}:${message.sourceMessageId}`;
-
-    return [
-      "fallback",
-      message.source,
-      message.direction,
-      message.messageAt,
-      message.messageText ?? "",
-      message.messageSource ?? "",
-    ].join(":");
+    return recoveryChatMessageIdentity(message);
   }
 
-  function mergeMessages(existing: CartChatMessage[], incoming: CartChatMessage[]) {
-    const seen = new Set<string>();
-    const merged: CartChatMessage[] = [];
-
-    for (const message of [...existing, ...incoming]) {
-      const key = messageIdentity(message);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(message);
-    }
-
-    return merged.sort((left, right) => {
-      const leftTime = new Date(left.messageAt).getTime();
-      const rightTime = new Date(right.messageAt).getTime();
-
-      if (leftTime !== rightTime) return leftTime - rightTime;
-      if (left.direction !== right.direction) return left.direction === "inbound" ? -1 : 1;
-
-      return messageIdentity(left).localeCompare(messageIdentity(right));
-    });
+  function mergeMessages(existing: CartChatMessage[], incoming: CartChatMessage[], reconciledLiveMessageIds: string[] = []) {
+    return mergeRecoveryChatMessages(existing, incoming, reconciledLiveMessageIds);
   }
 
   async function loadOlderMessages() {

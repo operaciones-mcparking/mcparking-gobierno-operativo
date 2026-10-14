@@ -284,6 +284,25 @@ function dedupeLiveMessagesAgainstCanonical(
   });
 }
 
+function reconciledLiveMessageIds(
+  liveMessages: SafeChatMessagePayload[],
+  canonicalMessages: SafeChatMessagePayload[],
+) {
+  const canonicalWamids = new Set(
+    canonicalMessages
+      .map((message) => normalizedWhatsappMessageId(message.whatsappMessageId))
+      .filter((wamid): wamid is string => wamid !== null),
+  );
+
+  return liveMessages.flatMap((message) => {
+    const liveWamid = normalizedWhatsappMessageId(message.whatsappMessageId);
+
+    return liveWamid && message.sourceMessageId && canonicalWamids.has(liveWamid)
+      ? [message.sourceMessageId]
+      : [];
+  });
+}
+
 async function loadLiveMessages(params: {
   cartId: string;
   legacyCartId: string | null;
@@ -518,6 +537,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         messages,
         ok: true,
         pagination: paginationForScopedRows(scopedMessages.rows, pageSize),
+        reconciledLiveMessageIds: beforeCursor ? [] : reconciledLiveMessageIds(safeLiveMessages, safeCanonicalMessages),
         summary: buildSummary(messages, canonicalRows.length > 0 ? "raw" : "live"),
         whatsappWindow,
       });
@@ -565,6 +585,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       messages,
       ok: true,
       pagination: paginationForMessages(messages, pageSize, (rawMessagesData ?? []).length),
+      reconciledLiveMessageIds: beforeCursor ? [] : reconciledLiveMessageIds(safeLiveMessages, safeRawMessages),
       summary: buildSummary(messages, "raw"),
       whatsappWindow,
     });
@@ -605,6 +626,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     messages: safeMessages,
     ok: true,
     pagination: paginationForMessages(safeMessages, pageSize, (messagesData ?? []).length),
+    reconciledLiveMessageIds: beforeCursor ? [] : reconciledLiveMessageIds(safeLiveMessages, safeCanonicalMessages),
     summary: buildSummary(safeMessages, messages.length > 0 ? "metadata" : "live"),
     whatsappWindow,
   });
