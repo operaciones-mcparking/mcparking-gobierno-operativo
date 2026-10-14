@@ -6,11 +6,13 @@ const modalPath = "src/app/recuperacion/recovery-whatsapp-template-library-modal
 const drawerPath = "src/app/recuperacion/recovery-cart-chat-drawer.tsx";
 const routePath = "src/app/api/recuperacion/carritos/[id]/chat/templates/route.ts";
 const metaPath = "src/lib/recuperacion/meta-whatsapp-templates.ts";
+const mediaLibraryPath = "src/lib/recuperacion/whatsapp-template-media-library.ts";
 
 const modal = readFileSync(modalPath, "utf8");
 const drawer = readFileSync(drawerPath, "utf8");
 const route = readFileSync(routePath, "utf8");
 const meta = readFileSync(metaPath, "utf8");
+const mediaLibrary = readFileSync(mediaLibraryPath, "utf8");
 const longTemplateFixtures = Array.from({ length: 10 }, (_, index) => ({
   body: `https://example.com/${"segment-without-spaces".repeat(12)}-${index}`,
   name: `template_${index}`,
@@ -78,7 +80,7 @@ test("7. cards show real preview and placeholders without filling variables", ()
 
 test("8. selection is visual only and does not send", () => {
   assert.match(modal, /Usar plantilla/);
-  assert.match(modal, /onSelectTemplate\(selectedTemplate\)/);
+  assert.match(modal, /onSelectTemplate\(selectedMedia \? \{ \.\.\.selectedTemplate, mediaSelection: selectedMedia \} : selectedTemplate\)/);
   assert.match(drawer, /Plantilla seleccionada/);
   assert.doesNotMatch(modal + route, /sendTemplate|\/chat\/send-template|callN8nWebhook/);
   assert.match(drawer, /Preparar envío/);
@@ -120,23 +122,78 @@ test("11. endpoint and Meta helper expose safe approved previews", () => {
   assert.match(route, /preview: template\.preview/);
   assert.match(route, /variables: template\.variables/);
   assert.match(route, /parameters: template\.parameters/);
-  assert.match(route, /compatibility: template\.compatibility/);
+  assert.match(route, /compatibility: validSavedMedia && template\.compatibility\.status === "blocked"/);
+  assert.match(route, /mediaSelection: validSavedMedia/);
   assert.doesNotMatch(route, /phone_number_id|Authorization|Bearer|components:/i);
 });
 
-test("12. Meta helper preserves approved media header handles for send payloads", () => {
-  assert.match(meta, /headerMedia/);
+test("12. Meta helper separates preview media from configured send media", () => {
+  assert.match(meta, /previewMedia/);
+  assert.match(meta, /sendMedia/);
   assert.match(meta, /component\.example/);
   assert.match(meta, /header_handle/);
+  assert.match(meta, /RECOVERY_WHATSAPP_TEMPLATE_SEND_MEDIA_JSON/);
+  assert.match(meta, /configuredSendMediaKey\(businessKey, name, language\)/);
+  assert.match(meta, /businessMap\[name\]/);
+  assert.match(meta, /format !== expectedFormat/);
+  assert.match(meta, /source: "meta_example"/);
+  assert.match(meta, /source: "meta_media_id"/);
+  assert.match(meta, /source: "https_url"/);
   assert.match(meta, /format === "IMAGE" \|\| format === "VIDEO" \|\| format === "DOCUMENT"/);
 });
 
 test("13. UI shows media previews and blocks incompatible templates before selection", () => {
-  assert.match(modal, /template\.preview\.headerMedia/);
-  assert.match(modal, /Header \{template\.preview\.headerMedia\.format\.toLowerCase\(\)\} aprobado por Meta/);
-  assert.match(modal, /selectedTemplate\.compatibility\?\.status === "blocked"/);
+  assert.match(modal, /template\.preview\.previewMedia/);
+  assert.match(modal, /Este template requiere una imagen\. Selecciona una de tu biblioteca o ingresa una URL\./);
+  assert.match(modal, /validateMediaSelection/);
   assert.match(drawer, /isSelectedTemplateBlocked/);
   assert.match(drawer, /Esta plantilla no está disponible todavía/);
+  assert.match(drawer, /displayedTemplatePreview\.previewMedia \?\? displayedTemplatePreview\.headerMedia/);
+  assert.match(drawer, /template requiere una imagen válida antes de enviar/);
+});
+
+test("15. UI supports validated visual media selection for image headers", () => {
+  assert.match(modal, /media-library/);
+  assert.match(modal, /media\/validate/);
+  assert.match(modal, /Seleccionar imagen|URL HTTPS de imagen/);
+  assert.match(modal, /mediaSelection/);
+  assert.match(drawer, /media: selectedTemplate\.mediaSelection/);
+  assert.match(drawer, /source: "selected_media"/);
+});
+
+test("15b. selected images can be saved and recovered without localStorage", () => {
+  assert.match(modal, /Guardar selección/);
+  assert.match(modal, /saveMediaSelection/);
+  assert.match(modal, /media-config/);
+  assert.match(modal, /mediaSelectionDirty/);
+  assert.match(route, /mediaSelection: validSavedMedia/);
+  assert.match(route, /previewUrl: validSavedMedia\.media_source === "google_drive"/);
+  assert.doesNotMatch(modal, /localStorage|sessionStorage/);
+});
+
+test("15c. Drive thumbnails use authenticated preview routes instead of raw download links", () => {
+  assert.match(modal, /previewUrl \?\? item\.sendUrl/);
+  assert.match(modal, /mediaSelection\.previewUrl \?\? mediaSelection\.link/);
+});
+
+test("16. media library validates Drive images without trusting example header handles", () => {
+  assert.match(mediaLibrary, /1vEGvf5_SVamZek5xQ2FlfCMcatzQSxW9/);
+  assert.match(mediaLibrary, /UTILIZAR_TARJETA\.png/);
+  assert.match(mediaLibrary, /drive\.google\.com\/uc\?export=download&id=/);
+  assert.match(mediaLibrary, /driveFileIdFromUrl/);
+  assert.match(mediaLibrary, /drive_file_not_allowed/);
+  assert.doesNotMatch(mediaLibrary, /header_handle/);
+});
+
+test("17. media validation is fail-closed for SSRF, non-images, and oversized assets", () => {
+  assert.match(mediaLibrary, /isPrivateHostname/);
+  assert.match(mediaLibrary, /template_media_unsafe_url/);
+  assert.match(mediaLibrary, /ALLOWED_MEDIA_HOSTS/);
+  assert.match(mediaLibrary, /template_media_host_not_allowed/);
+  assert.match(mediaLibrary, /contentTypeMatchesFormat/);
+  assert.match(mediaLibrary, /template_media_wrong_content_type/);
+  assert.match(mediaLibrary, /MAX_REMOTE_MEDIA_BYTES/);
+  assert.match(mediaLibrary, /template_media_too_large/);
 });
 
 test("14. UI supports named and component-scoped template parameters", () => {

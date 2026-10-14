@@ -72,7 +72,8 @@ test("8. DTO is safe and includes normalized preview only", () => {
   assert.match(route, /preview: template\.preview/);
   assert.match(route, /variables: template\.variables/);
   assert.match(route, /parameters: template\.parameters/);
-  assert.match(route, /compatibility: template\.compatibility/);
+  assert.match(route, /compatibility: validSavedMedia && template\.compatibility\.status === "blocked"/);
+  assert.match(route, /mediaSelection: validSavedMedia/);
   assert.match(route, /status: template\.status/);
   assert.doesNotMatch(route, /META_WHATSAPP_ACCESS_TOKEN|Authorization|Bearer|phone_number_id|PHONE_NUMBER_ID|WABA|payload|graph\.facebook\.com/);
   assert.doesNotMatch(route, /components:|template\.components|whatsapp_message_id|wamid|access_token|token/i);
@@ -93,6 +94,7 @@ test("11. endpoint does not write Supabase", () => {
   assert.doesNotMatch(route, /\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(/);
   assert.match(route, /\.from\("user_profiles"\)/);
   assert.match(route, /\.from\("v_recovery_incomplete_bookings_current_compat"\)/);
+  assert.match(route, /\.from\("recovery_whatsapp_template_media_config"\)/);
 });
 
 test("12. endpoint returns the expected public DTO shape", () => {

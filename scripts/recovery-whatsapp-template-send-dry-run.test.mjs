@@ -128,6 +128,14 @@ test("19. template without variables omits components", () => {
   assert.match(route, /Esta plantilla no acepta variables/);
 });
 
+test("19b. required media headers fail before pending persistence when send media is missing", () => {
+  assert.match(route, /requiredMedia/);
+  assert.match(route, /!effectiveHeaderMedia/);
+  assert.match(route, /validateRecoveryWhatsappTemplateMediaSelection/);
+  assert.match(route, /template_media_required/);
+  assert.ok(route.indexOf("template_media_required") < route.indexOf('.from("recovery_whatsapp_live_messages")'));
+});
+
 test("20. preview final replaces placeholders", () => {
   assert.match(route, /function renderPreviewText/);
   assert.match(route, /\[A-Za-z_\]\[A-Za-z0-9_\]/);
@@ -219,6 +227,7 @@ test("33. request DTO is intentionally narrow", () => {
 
   assert.match(dtoBlock, /dryRun\?: unknown/);
   assert.match(dtoBlock, /language\?: unknown/);
+  assert.match(dtoBlock, /media\?: unknown/);
   assert.match(dtoBlock, /templateKey\?: unknown/);
   assert.match(dtoBlock, /variables\?: unknown/);
   assert.doesNotMatch(dtoBlock, /businessKey|phone|phone_number_id|components|previewText|templateName/);
@@ -226,7 +235,7 @@ test("33. request DTO is intentionally narrow", () => {
 
 test("34. unknown request fields are blocked before validation", () => {
   assert.match(route, /function hasOnlyAllowedPayloadKeys/);
-  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
+  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "media", "templateKey", "variables"\]\)/);
   assert.match(route, /FORBIDDEN_DRY_RUN_PAYLOAD_KEYS/);
   assert.match(route, /unknown_payload_field/);
 });

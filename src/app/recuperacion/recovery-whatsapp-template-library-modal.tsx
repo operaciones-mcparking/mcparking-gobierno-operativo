@@ -17,6 +17,11 @@ export type RecoveryTemplatePreview = {
     format: "DOCUMENT" | "IMAGE" | "VIDEO";
     link: string | null;
   } | null;
+  previewMedia?: {
+    format: "DOCUMENT" | "IMAGE" | "VIDEO";
+    link: string | null;
+    source: "meta_example" | "selected_media";
+  } | null;
 };
 
 export type RecoveryTemplateParameter = {
@@ -43,6 +48,15 @@ export type RecoveryTemplateOption = {
   key: string;
   label: string;
   language: string;
+  media?: {
+    configured: boolean;
+    format: "DOCUMENT" | "IMAGE" | "VIDEO" | null;
+    previewOnly: boolean;
+    required: boolean;
+    source: "google_drive" | "https_url" | "meta_media_id" | null;
+    validationError?: string | null;
+  };
+  mediaSelection?: RecoveryTemplateMediaSelection;
   name: string;
   parameterFormat?: "NAMED" | "POSITIONAL" | "UNKNOWN";
   parameters?: RecoveryTemplateParameter[];
@@ -55,6 +69,40 @@ export type RecoveryTemplateOption = {
     placeholder: string;
     position: number;
   }>;
+};
+
+export type RecoveryTemplateMediaSelection = {
+  format: "DOCUMENT" | "IMAGE" | "VIDEO";
+  id: string | null;
+  label: string | null;
+  link: string | null;
+  previewUrl?: string | null;
+  source: "google_drive" | "https_url" | "meta_media_id";
+};
+
+type RecoveryTemplateMediaLibraryItem = {
+  contentType: string;
+  driveFileId: string;
+  format: "DOCUMENT" | "IMAGE" | "VIDEO";
+  label: string;
+  name: string;
+  previewUrl?: string;
+  sendUrl: string;
+  sizeBytes: number;
+  source: "google_drive";
+};
+
+type RecoveryTemplateMediaLibraryResponse = {
+  error?: string;
+  items?: RecoveryTemplateMediaLibraryItem[];
+  ok: boolean;
+};
+
+type RecoveryTemplateMediaValidationResponse = {
+  code?: string;
+  error?: string;
+  media?: RecoveryTemplateMediaSelection;
+  ok: boolean;
 };
 
 type RecoveryTemplatesResponse = {
@@ -110,7 +158,7 @@ function previewText(template: RecoveryTemplateOption) {
     template.category ?? "",
     template.language,
     template.preview.header ?? "",
-    template.preview.headerMedia?.format ?? "",
+    template.preview.previewMedia?.format ?? template.preview.headerMedia?.format ?? "",
     template.preview.body ?? "",
     template.preview.footer ?? "",
     ...template.preview.buttons.map((button) => button.text),
@@ -120,19 +168,47 @@ function previewText(template: RecoveryTemplateOption) {
 function TemplatePreviewCard({
   isFavoritePending,
   isSelected,
+  manualUrl,
+  mediaLibrary,
+  mediaSelection,
+  mediaSelectionDirty,
+  mediaValidationError,
+  mediaValidationPending,
+  onManualUrlChange,
   onFavoriteClick,
+  onMediaLibrarySelect,
+  onMediaSelectionSave,
+  onMediaUrlValidate,
   onSelect,
   template,
 }: {
   isFavoritePending: boolean;
   isSelected: boolean;
+  manualUrl: string;
+  mediaLibrary: RecoveryTemplateMediaLibraryItem[];
+  mediaSelection: RecoveryTemplateMediaSelection | null;
+  mediaSelectionDirty: boolean;
+  mediaValidationError: string | null;
+  mediaValidationPending: boolean;
+  onManualUrlChange: (value: string) => void;
   onFavoriteClick: () => void;
+  onMediaLibrarySelect: (item: RecoveryTemplateMediaLibraryItem) => void;
+  onMediaSelectionSave: () => void;
+  onMediaUrlValidate: () => void;
   onSelect: () => void;
   template: RecoveryTemplateOption;
 }) {
   const hasPreview = Boolean(template.preview.header || template.preview.body || template.preview.footer || template.preview.buttons.length > 0);
-  const isBlocked = template.compatibility?.status === "blocked";
+  const isMissingMediaBlocked = template.compatibility?.status === "blocked"
+    && template.compatibility.reasons.every((reason) => reason.toLowerCase().includes("requiere") && reason.toLowerCase().includes("para enviarse"));
+  const isBlocked = template.compatibility?.status === "blocked" && !isMissingMediaBlocked;
   const favoriteLabel = template.isFavorite ? "Quitar de favoritas" : "Agregar a favoritas";
+  const displayMedia = mediaSelection?.link
+    ? { format: mediaSelection.format, link: mediaSelection.previewUrl ?? mediaSelection.link, source: "selected_media" as const }
+    : template.preview.previewMedia ?? (template.preview.headerMedia ? { ...template.preview.headerMedia, source: "meta_example" as const } : null);
+  const effectiveMediaValidationError = mediaValidationError ?? template.media?.validationError ?? null;
+  const requiresMedia = Boolean(template.media?.required);
+  const expectedMediaFormat = template.media?.format;
 
   return (
     <article
@@ -159,18 +235,18 @@ function TemplatePreviewCard({
 
         <div className="min-w-0 max-w-full overflow-hidden rounded-2xl bg-[#eef7f4] p-3">
           <div className="grid min-w-0 max-w-full gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
-            {hasPreview || template.preview.headerMedia ? (
+            {hasPreview || displayMedia ? (
               <>
-                {template.preview.headerMedia ? (
-                  template.preview.headerMedia.format === "IMAGE" && template.preview.headerMedia.link ? (
+                {displayMedia ? (
+                  displayMedia.format === "IMAGE" && displayMedia.link ? (
                     <img
                       alt=""
                       className="max-h-40 w-full rounded-xl object-cover"
-                      src={template.preview.headerMedia.link}
+                      src={displayMedia.link}
                     />
                   ) : (
                     <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                      Header {template.preview.headerMedia.format.toLowerCase()} aprobado por Meta
+                      Header {displayMedia.format.toLowerCase()} aprobado por Meta
                     </p>
                   )
                 ) : null}
@@ -208,7 +284,74 @@ function TemplatePreviewCard({
             No disponible: {template.compatibility?.reasons[0] ?? "componente no soportado"}.
           </p>
         ) : null}
+        {template.media?.required ? (
+          !mediaSelection && !template.media.configured ? (
+            <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]">
+              Este template requiere una imagen. Selecciona una de tu biblioteca o ingresa una URL.
+            </p>
+          ) : null
+        ) : null}
       </button>
+
+      {requiresMedia && expectedMediaFormat === "IMAGE" ? (
+        <div className="grid gap-2 border-t border-slate-100 px-3 pb-3 pt-2">
+          <p className="text-xs font-semibold text-slate-600">Seleccionar imagen de biblioteca</p>
+          <div className="flex min-w-0 flex-wrap gap-2">
+            {mediaLibrary.slice(0, 6).map((item) => (
+              <button
+                className={"grid w-20 gap-1 rounded-xl border p-1 text-left text-[10px] font-semibold transition focus:outline-none focus:ring-2 focus:ring-teal-500 " + (
+                  mediaSelection?.link === item.sendUrl ? "border-teal-500 bg-teal-50 text-teal-800" : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
+                )}
+                key={item.driveFileId}
+                onClick={() => onMediaLibrarySelect(item)}
+                title={item.name}
+                type="button"
+              >
+                <img alt="" className="h-12 w-full rounded-lg object-cover" src={item.previewUrl ?? item.sendUrl} />
+                <span className="truncate">{item.name}</span>
+              </button>
+            ))}
+          </div>
+          <label className="grid gap-1 text-xs font-semibold text-slate-600">
+            URL HTTPS de imagen
+            <span className="flex min-w-0 gap-2">
+              <input
+                className="h-9 min-w-0 flex-1 rounded-xl border border-[#d8e7e1] px-3 text-xs font-medium text-slate-900 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                onChange={(event) => onManualUrlChange(event.target.value)}
+                placeholder="https://drive.google.com/uc?export=download&id=..."
+                type="url"
+                value={manualUrl}
+              />
+              <button
+                className="rounded-xl border border-teal-200 px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50 disabled:cursor-wait disabled:text-slate-400"
+                disabled={mediaValidationPending || !manualUrl.trim()}
+                onClick={onMediaUrlValidate}
+                type="button"
+              >
+                {mediaValidationPending ? "Validando..." : "Validar"}
+              </button>
+            </span>
+          </label>
+          {effectiveMediaValidationError ? (
+            <p className="rounded-xl border border-[#f2d6a2] bg-[#fff8e8] px-3 py-2 text-xs font-semibold text-[#92400e]">
+              {effectiveMediaValidationError}
+            </p>
+          ) : null}
+          {mediaValidationPending ? (
+            <p className="text-xs font-semibold text-slate-500">Validando imagen...</p>
+          ) : null}
+          {mediaSelection && mediaSelectionDirty ? (
+            <button
+              className="justify-self-start rounded-xl bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:bg-slate-300 disabled:text-slate-600"
+              disabled={mediaValidationPending}
+              onClick={onMediaSelectionSave}
+              type="button"
+            >
+              Guardar selección
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       <button
         aria-label={favoriteLabel + ": " + template.label}
@@ -239,6 +382,12 @@ export function RecoveryWhatsappTemplateLibraryModal({
   const [favoriteError, setFavoriteError] = useState<string | null>(null);
   const [favoriteToRemove, setFavoriteToRemove] = useState<RecoveryTemplateOption | null>(null);
   const [languageFilter, setLanguageFilter] = useState(ALL_LANGUAGES);
+  const [manualMediaUrls, setManualMediaUrls] = useState<Record<string, string>>({});
+  const [mediaLibrary, setMediaLibrary] = useState<RecoveryTemplateMediaLibraryItem[]>([]);
+  const [mediaSelections, setMediaSelections] = useState<Record<string, RecoveryTemplateMediaSelection>>({});
+  const [mediaSavePendingKey, setMediaSavePendingKey] = useState<string | null>(null);
+  const [mediaValidationErrors, setMediaValidationErrors] = useState<Record<string, string>>({});
+  const [mediaValidationPendingKey, setMediaValidationPendingKey] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pendingFavoriteKey, setPendingFavoriteKey] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -285,6 +434,12 @@ export function RecoveryWhatsappTemplateLibraryModal({
       setFavoriteError(null);
       setFavoriteToRemove(null);
       setLanguageFilter(ALL_LANGUAGES);
+      setManualMediaUrls({});
+      setMediaLibrary([]);
+      setMediaSavePendingKey(null);
+      setMediaSelections({});
+      setMediaValidationErrors({});
+      setMediaValidationPendingKey(null);
       setQuery("");
       setPendingFavoriteKey(null);
       setSelectedKey(selectedTemplateKey);
@@ -313,6 +468,19 @@ export function RecoveryWhatsappTemplateLibraryModal({
           setTemplates(nextTemplates);
           setSelectedKey(selectedTemplateKey ?? nextTemplates[0]?.key ?? null);
           setStatus("loaded");
+        }
+
+        const needsMediaLibrary = (payload.templates ?? []).some((template) => template.media?.required && template.media.format === "IMAGE");
+        if (needsMediaLibrary) {
+          const mediaResponse = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(activeCartId)}/chat/templates/media-library`, {
+            method: "GET",
+            signal: controller.signal,
+          });
+          const mediaPayload = (await mediaResponse.json()) as RecoveryTemplateMediaLibraryResponse;
+
+          if (isActive && mediaResponse.ok && mediaPayload.ok) {
+            setMediaLibrary(mediaPayload.items ?? []);
+          }
         }
       } catch (fetchError) {
         if (fetchError instanceof DOMException && fetchError.name === "AbortError") return;
@@ -382,6 +550,110 @@ export function RecoveryWhatsappTemplateLibraryModal({
       setFavoriteError("No se pudo quitar la plantilla de Favoritas.");
     } finally {
       setPendingFavoriteKey(null);
+    }
+  }
+
+  async function validateMediaSelection(template: RecoveryTemplateOption, media: {
+    format: "DOCUMENT" | "IMAGE" | "VIDEO";
+    label?: string | null;
+    link: string;
+    source: "google_drive" | "manual_url";
+  }) {
+    if (!cartId || !template.media?.format || mediaValidationPendingKey) return;
+
+    setMediaValidationPendingKey(template.key);
+    setMediaValidationErrors((current) => ({ ...current, [template.key]: "" }));
+
+    try {
+      const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(cartId)}/chat/templates/media/validate`, {
+        body: JSON.stringify({
+          expectedFormat: template.media.format,
+          media,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as RecoveryTemplateMediaValidationResponse;
+
+      if (!response.ok || !payload.ok || !payload.media) {
+        setMediaValidationErrors((current) => ({
+          ...current,
+          [template.key]: payload.error ?? "No se pudo validar la imagen seleccionada.",
+        }));
+        return;
+      }
+
+      const validatedMedia = payload.media as RecoveryTemplateMediaSelection;
+      setMediaSelections((current) => ({ ...current, [template.key]: validatedMedia }));
+      setTemplates((current) => current.map((item) => item.key === template.key
+        ? {
+            ...item,
+            compatibility: item.compatibility?.status === "blocked"
+              ? { reasons: [], status: "supported" }
+              : item.compatibility,
+            media: item.media ? { ...item.media, configured: true, previewOnly: false, source: validatedMedia.source } : item.media,
+          }
+        : item));
+    } catch {
+      setMediaValidationErrors((current) => ({
+        ...current,
+        [template.key]: "No se pudo validar la imagen seleccionada.",
+      }));
+    } finally {
+      setMediaValidationPendingKey(null);
+    }
+  }
+
+  async function saveMediaSelection(template: RecoveryTemplateOption) {
+    const media = mediaSelections[template.key];
+    if (!cartId || !media || mediaSavePendingKey) return;
+
+    setMediaSavePendingKey(template.key);
+    setMediaValidationErrors((current) => ({ ...current, [template.key]: "" }));
+
+    try {
+      const response = await fetch(`/api/recuperacion/carritos/${encodeURIComponent(cartId)}/chat/templates/media-config`, {
+        body: JSON.stringify({
+          language: template.language,
+          media,
+          template_name: template.name,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as RecoveryTemplateMediaValidationResponse;
+
+      if (!response.ok || !payload.ok || !payload.media) {
+        setMediaValidationErrors((current) => ({
+          ...current,
+          [template.key]: payload.error ?? "No se pudo guardar la imagen seleccionada.",
+        }));
+        return;
+      }
+
+      const savedMedia = payload.media as RecoveryTemplateMediaSelection;
+      setTemplates((current) => current.map((item) => item.key === template.key
+        ? {
+            ...item,
+            compatibility: item.compatibility?.status === "blocked"
+              ? { reasons: [], status: "supported" }
+              : item.compatibility,
+            media: item.media ? { ...item.media, configured: true, previewOnly: false, source: savedMedia.source } : item.media,
+            mediaSelection: savedMedia,
+          }
+        : item));
+      setMediaSelections((current) => {
+        const next = { ...current };
+        delete next[template.key];
+        return next;
+      });
+    } catch {
+      setMediaValidationErrors((current) => ({
+        ...current,
+        [template.key]: "No se pudo guardar la imagen seleccionada.",
+      }));
+    } finally {
+      setMediaSavePendingKey(null);
     }
   }
 
@@ -556,6 +828,16 @@ export function RecoveryWhatsappTemplateLibraryModal({
                       isFavoritePending={pendingFavoriteKey === template.key}
                       isSelected={selectedKey === template.key}
                       key={template.key}
+                      manualUrl={manualMediaUrls[template.key] ?? ""}
+                      mediaLibrary={mediaLibrary}
+                      mediaSelection={mediaSelections[template.key] ?? template.mediaSelection ?? null}
+                      mediaSelectionDirty={Boolean(mediaSelections[template.key])}
+                      mediaValidationError={mediaValidationErrors[template.key] || null}
+                      mediaValidationPending={mediaValidationPendingKey === template.key || mediaSavePendingKey === template.key}
+                      onManualUrlChange={(value) => {
+                        setManualMediaUrls((current) => ({ ...current, [template.key]: value }));
+                        setMediaValidationErrors((current) => ({ ...current, [template.key]: "" }));
+                      }}
                       onFavoriteClick={() => {
                         if (template.isFavorite) {
                           setFavoriteToRemove(template);
@@ -563,8 +845,27 @@ export function RecoveryWhatsappTemplateLibraryModal({
                           void addFavorite(template);
                         }
                       }}
+                      onMediaLibrarySelect={(item) => {
+                        void validateMediaSelection(template, {
+                          format: item.format,
+                          label: item.name,
+                          link: item.sendUrl,
+                          source: "google_drive",
+                        });
+                      }}
+                      onMediaSelectionSave={() => void saveMediaSelection(template)}
+                      onMediaUrlValidate={() => {
+                        const link = manualMediaUrls[template.key]?.trim() ?? "";
+                        if (!link || !template.media?.format) return;
+                        void validateMediaSelection(template, {
+                          format: template.media.format,
+                          label: "URL manual",
+                          link,
+                          source: "manual_url",
+                        });
+                      }}
                       onSelect={() => setSelectedKey(template.key)}
-                      template={template}
+                      template={mediaSelections[template.key] ? { ...template, mediaSelection: mediaSelections[template.key] } : template}
                     />
                   ))}
                 </div>
@@ -584,7 +885,8 @@ export function RecoveryWhatsappTemplateLibraryModal({
                   disabled={!selectedTemplate || selectedTemplate.compatibility?.status === "blocked"}
                   onClick={() => {
                     if (!selectedTemplate || selectedTemplate.compatibility?.status === "blocked") return;
-                    onSelectTemplate(selectedTemplate);
+                    const selectedMedia = mediaSelections[selectedTemplate.key] ?? selectedTemplate.mediaSelection ?? null;
+                    onSelectTemplate(selectedMedia ? { ...selectedTemplate, mediaSelection: selectedMedia } : selectedTemplate);
                     onClose();
                   }}
                   type="button"

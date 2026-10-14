@@ -9,20 +9,23 @@ export type MetaTemplateTextParameter = {
 export type MetaTemplateMediaHeaderParameter =
   | {
       image: {
-        link: string;
+        id?: string;
+        link?: string;
       };
       type: "image";
     }
   | {
       document: {
-        link: string;
+        id?: string;
+        link?: string;
       };
       type: "document";
     }
   | {
       type: "video";
       video: {
-        link: string;
+        id?: string;
+        link?: string;
       };
     };
 
@@ -51,7 +54,8 @@ export type MetaTemplateMessagePayload = {
 
 export type RecoveryWhatsappTemplateHeaderMedia = {
   format: "DOCUMENT" | "IMAGE" | "VIDEO";
-  link: string;
+  id?: string | null;
+  link?: string | null;
 };
 
 export type RecoveryWhatsappTemplateVariableValue = {
@@ -70,15 +74,17 @@ export type BuildRecoveryWhatsappMetaTemplatePayloadInput = {
 };
 
 function mediaHeaderParameter(media: RecoveryWhatsappTemplateHeaderMedia): MetaTemplateMediaHeaderParameter {
+  const reference = media.id ? { id: media.id } : { link: media.link ?? "" };
+
   if (media.format === "DOCUMENT") {
-    return { document: { link: media.link }, type: "document" };
+    return { document: reference, type: "document" };
   }
 
   if (media.format === "VIDEO") {
-    return { type: "video", video: { link: media.link } };
+    return { type: "video", video: reference };
   }
 
-  return { image: { link: media.link }, type: "image" };
+  return { image: reference, type: "image" };
 }
 
 export function buildRecoveryWhatsappMetaTemplatePayload({

@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, ExternalLink, FileText, MessageCircle, Plus, Send, X } from "lucide-react";
+import { AlertCircle, Check, CheckCheck, CircleHelp, Clock3, Copy, ExternalLink, FileText, MessageCircle, Plus, Send, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
@@ -85,6 +85,11 @@ type TemplateDryRunResponse = {
       format: "DOCUMENT" | "IMAGE" | "VIDEO";
       link: string | null;
     } | null;
+    previewMedia?: {
+      format: "DOCUMENT" | "IMAGE" | "VIDEO";
+      link: string | null;
+      source: "meta_example" | "selected_media";
+    } | null;
   };
   validation?: {
     businessKey: "MPV" | "EAP";
@@ -102,6 +107,12 @@ type TemplateSendStatus = "idle" | "sending" | "sent" | "error";
 type TemplatePreparedSnapshot = {
   cartId: string;
   language: string;
+  media?: {
+    format: string;
+    id?: string | null;
+    link?: string | null;
+    source?: string | null;
+  } | null;
   templateKey: string;
   variables: Record<string, string>;
 };
@@ -165,20 +176,76 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("es-CL").format(value);
 }
 
-function sentimentTone(sentiment: string | null): BadgeTone {
-  if (sentiment === "positivo" || sentiment === "muy positivo") return "success";
-  if (sentiment === "negativo" || sentiment === "muy negativo") return "danger";
-  if (sentiment === "neutral") return "info";
-
-  return "neutral";
-}
-
-function directionTone(direction: "inbound" | "outbound"): BadgeTone {
-  return direction === "inbound" ? "info" : "success";
-}
-
 function genericMessageText(direction: "inbound" | "outbound") {
   return direction === "inbound" ? "Mensaje del cliente" : "Mensaje nuestro / sistema";
+}
+
+function whatsappDeliveryView(status: string | null | undefined) {
+  const normalized = status?.toLowerCase();
+
+  if (normalized === "pending") {
+    return {
+      Icon: Clock3,
+      className: "text-slate-500",
+      label: "Pendiente de confirmación",
+    };
+  }
+
+  if (normalized === "unconfirmed") {
+    return {
+      Icon: CircleHelp,
+      className: "text-amber-600",
+      label: "Resultado sin confirmar",
+    };
+  }
+
+  if (normalized === "sent") {
+    return {
+      Icon: Check,
+      className: "text-slate-500",
+      label: "Enviado",
+    };
+  }
+
+  if (normalized === "delivered") {
+    return {
+      Icon: CheckCheck,
+      className: "text-slate-500",
+      label: "Entregado",
+    };
+  }
+
+  if (normalized === "read") {
+    return {
+      Icon: CheckCheck,
+      className: "text-sky-600",
+      label: "Leído",
+    };
+  }
+
+  if (normalized === "failed") {
+    return {
+      Icon: AlertCircle,
+      className: "text-red-600",
+      label: "No se pudo enviar",
+    };
+  }
+
+  return null;
+}
+
+function WhatsappDeliveryIndicator({ status }: { status: string | null | undefined }) {
+  const view = whatsappDeliveryView(status);
+
+  if (!view) return null;
+
+  const Icon = view.Icon;
+
+  return (
+    <span aria-label={view.label} className={`inline-flex items-center ${view.className}`} title={view.label}>
+      <Icon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.4} />
+    </span>
+  );
 }
 
 function whatsappUrl(phone: string | null | undefined) {
@@ -769,6 +836,14 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
     ? {
         cartId,
         language: selectedTemplate.language,
+        media: selectedTemplate.mediaSelection
+          ? {
+              format: selectedTemplate.mediaSelection.format,
+              id: selectedTemplate.mediaSelection.id,
+              link: selectedTemplate.mediaSelection.link,
+              source: selectedTemplate.mediaSelection.source,
+            }
+          : null,
         templateKey: selectedTemplate.key,
         variables: selectedTemplateVariablesPayload(),
       }
@@ -798,7 +873,19 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
         })),
         footer: renderTemplatePreviewText(selectedTemplate.preview.footer, templateVariableValues),
         header: renderTemplatePreviewText(selectedTemplate.preview.header, templateVariableValues),
-        headerMedia: selectedTemplate.preview.headerMedia,
+        headerMedia: selectedTemplate.mediaSelection?.link
+          ? {
+              format: selectedTemplate.mediaSelection.format,
+              link: selectedTemplate.mediaSelection.link,
+            }
+          : selectedTemplate.preview.headerMedia,
+        previewMedia: selectedTemplate.mediaSelection?.link
+          ? {
+              format: selectedTemplate.mediaSelection.format,
+              link: selectedTemplate.mediaSelection.link,
+              source: "selected_media" as const,
+            }
+          : selectedTemplate.preview.previewMedia,
       }
     : null;
   const displayedTemplatePreview = isPreparedTemplateCurrent && templateValidationResult?.preview && selectedTemplatePreview
@@ -938,6 +1025,7 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
     return left.cartId === right.cartId
       && left.templateKey === right.templateKey
       && left.language === right.language
+      && JSON.stringify(left.media ?? null) === JSON.stringify(right.media ?? null)
       && JSON.stringify(left.variables) === JSON.stringify(right.variables);
   }
 
@@ -1035,6 +1123,15 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
         body: JSON.stringify({
           dryRun: true,
           language: selectedTemplate.language,
+          media: selectedTemplate.mediaSelection
+            ? {
+                format: selectedTemplate.mediaSelection.format,
+                id: selectedTemplate.mediaSelection.id,
+                label: selectedTemplate.mediaSelection.label,
+                link: selectedTemplate.mediaSelection.link,
+                source: selectedTemplate.mediaSelection.source,
+              }
+            : undefined,
           templateKey: selectedTemplate.key,
           variables,
         }),
@@ -1053,6 +1150,14 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
       setTemplatePreparedSnapshot({
         cartId,
         language: selectedTemplate.language,
+        media: selectedTemplate.mediaSelection
+          ? {
+              format: selectedTemplate.mediaSelection.format,
+              id: selectedTemplate.mediaSelection.id,
+              link: selectedTemplate.mediaSelection.link,
+              source: selectedTemplate.mediaSelection.source,
+            }
+          : null,
         templateKey: selectedTemplate.key,
         variables,
       });
@@ -1079,6 +1184,15 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
         body: JSON.stringify({
           templateKey: selectedTemplate.key,
           language: selectedTemplate.language,
+          media: selectedTemplate.mediaSelection
+            ? {
+                format: selectedTemplate.mediaSelection.format,
+                id: selectedTemplate.mediaSelection.id,
+                label: selectedTemplate.mediaSelection.label,
+                link: selectedTemplate.mediaSelection.link,
+                source: selectedTemplate.mediaSelection.source,
+              }
+            : undefined,
           variables,
           dryRun: false,
         }),
@@ -1341,21 +1455,12 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
                           : "rounded-br-sm border-[#a9dbc3] bg-[#dff6e8] text-[#14352b]",
                       ].join(" ")}
                     >
-                      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                        <ValueBadge tone={directionTone(message.direction)}>{message.label}</ValueBadge>
-                        {message.intentCategory ? <span className="text-[11px] font-medium text-amber-700">Intencion: {message.intentCategory}</span> : null}
-                      </div>
                       <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-5 text-navy">
                         {message.messageText || genericMessageText(message.direction)}
                       </p>
-                      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] leading-4 text-slate-500">
-                        <div className="flex min-w-0 flex-wrap gap-x-2 gap-y-1">
-                          {message.messageSentiment ? <span>Sentimiento: {message.messageSentiment}</span> : null}
-                          {message.chatState ? <span>Estado: {message.chatState}</span> : null}
-                          {message.messageType ? <span>Tipo: {message.messageType}</span> : null}
-                          {message.whatsappStatus ? <span>WhatsApp: {message.whatsappStatus}</span> : null}
-                        </div>
-                        <span className="ml-auto shrink-0 text-right">{formatDateTime(message.messageAt)}</span>
+                      <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[11px] leading-4 text-slate-500">
+                        <span className="shrink-0 text-right">{formatDateTime(message.messageAt)}</span>
+                        {!isInbound ? <WhatsappDeliveryIndicator status={message.whatsappStatus} /> : null}
                       </div>
                     </article>
                   </div>
@@ -1468,16 +1573,16 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
 
               <div className="mt-3 min-w-0 rounded-2xl bg-[#eef7f4] p-2">
                 <div className="grid min-w-0 gap-2 overflow-hidden rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 shadow-sm">
-                  {displayedTemplatePreview.headerMedia ? (
-                    displayedTemplatePreview.headerMedia.format === "IMAGE" && displayedTemplatePreview.headerMedia.link ? (
+                  {(displayedTemplatePreview.previewMedia ?? displayedTemplatePreview.headerMedia) ? (
+                    (displayedTemplatePreview.previewMedia ?? displayedTemplatePreview.headerMedia)?.format === "IMAGE" && (displayedTemplatePreview.previewMedia ?? displayedTemplatePreview.headerMedia)?.link ? (
                       <img
                         alt=""
                         className="max-h-56 w-full rounded-xl object-cover"
-                        src={displayedTemplatePreview.headerMedia.link}
+                        src={(displayedTemplatePreview.previewMedia ?? displayedTemplatePreview.headerMedia)?.link ?? ""}
                       />
                     ) : (
                       <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                        Header {displayedTemplatePreview.headerMedia.format.toLowerCase()} aprobado por Meta
+                        Header {(displayedTemplatePreview.previewMedia ?? displayedTemplatePreview.headerMedia)?.format.toLowerCase()} aprobado por Meta
                       </p>
                     )
                   ) : null}
@@ -1495,6 +1600,16 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
                   ) : null}
                 </div>
               </div>
+
+              {selectedTemplate.media?.required ? (
+                <p className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${selectedTemplate.media.configured || selectedTemplate.mediaSelection ? "border-teal-100 bg-teal-50 text-teal-800" : "border-[#f2d6a2] bg-[#fff8e8] text-[#92400e]"}`}>
+                  {selectedTemplate.mediaSelection
+                    ? `Imagen seleccionada para envío: ${selectedTemplate.mediaSelection.label ?? "URL validada"}.`
+                    : selectedTemplate.media.configured
+                      ? "Multimedia configurada para envío."
+                      : "Este template requiere una imagen válida antes de enviar. La vista previa de Meta no habilita el envío."}
+                </p>
+              ) : null}
 
               {selectedTemplatePreparationVariables.length > 0 ? (
                 <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">

@@ -20,6 +20,21 @@ type CartTemplateSourceRow = {
   phone_normalized: string | null;
 };
 
+type TemplateMediaConfigRow = {
+  business_key: string;
+  component_type: string;
+  drive_file_id: string | null;
+  label: string | null;
+  language: string;
+  media_format: "DOCUMENT" | "IMAGE" | "VIDEO";
+  media_id: string | null;
+  media_source: "google_drive" | "https_url" | "meta_media_id";
+  media_url: string | null;
+  template_name: string;
+  validation_error: string | null;
+  validation_status: "valid" | "invalid";
+};
+
 function jsonError(message: string, status: number, code?: string) {
   return NextResponse.json({ code, error: message, ok: false }, { status });
 }
@@ -57,6 +72,12 @@ function businessLabel(businessKey: RecoveryWhatsappBusinessKey) {
 
 function isSupportedBusinessKey(value: unknown): value is RecoveryWhatsappBusinessKey {
   return value === "MPV" || value === "EAP";
+}
+
+function mediaPreviewUrl(cartId: string, driveFileId: string | null) {
+  return driveFileId
+    ? `/api/recuperacion/carritos/${encodeURIComponent(cartId)}/chat/templates/media-library/${encodeURIComponent(driveFileId)}/preview`
+    : null;
 }
 
 async function loadCart(supabase: Awaited<ReturnType<typeof createSupabaseAuthServerClient>>, cartId: string) {
@@ -135,22 +156,68 @@ export async function GET(_request: NextRequest, context: RouteContext) {
     const favoriteKeys = new Set(
       (favoriteRows ?? []).map((favorite) => favorite.template_name + ":" + favorite.language),
     );
+    const { data: mediaConfigRows, error: mediaConfigError } = await admin.supabase
+      .from("recovery_whatsapp_template_media_config")
+      .select("business_key,template_name,language,component_type,media_format,media_source,drive_file_id,media_url,media_id,label,validation_status,validation_error")
+      .eq("business_key", businessKey)
+      .eq("component_type", "HEADER");
+
+    const mediaConfigByKey = new Map<string, TemplateMediaConfigRow>();
+
+    if (!mediaConfigError) {
+      for (const row of (mediaConfigRows ?? []) as TemplateMediaConfigRow[]) {
+        mediaConfigByKey.set(`${row.template_name}:${row.language}`, row);
+      }
+    }
+
     const templates = metaTemplates
       .map((template) => decorateRecoveryTemplateForBusiness(businessKey, template))
-      .map((template) => ({
-        category: template.category,
-        compatibility: template.compatibility,
-        isFavorite: favoriteKeys.has(template.key),
-        key: template.key,
-        label: template.label,
-        language: template.language,
-        name: template.name,
-        parameterFormat: template.parameterFormat,
-        parameters: template.parameters,
-        preview: template.preview,
-        status: template.status,
-        variables: template.variables,
-      }));
+      .map((template) => {
+        const savedMedia = mediaConfigByKey.get(template.key) ?? null;
+        const validSavedMedia = savedMedia?.validation_status === "valid" ? savedMedia : null;
+
+        return {
+          category: template.category,
+          compatibility: validSavedMedia && template.compatibility.status === "blocked"
+            ? { reasons: [], status: "supported" as const }
+            : template.compatibility,
+          isFavorite: favoriteKeys.has(template.key),
+          key: template.key,
+          label: template.label,
+          language: template.language,
+          mediaSelection: validSavedMedia
+            ? {
+                format: validSavedMedia.media_format,
+                id: validSavedMedia.media_id,
+                label: validSavedMedia.label,
+                link: validSavedMedia.media_url,
+                previewUrl: validSavedMedia.media_source === "google_drive"
+                  ? mediaPreviewUrl(cartId, validSavedMedia.drive_file_id)
+                  : validSavedMedia.media_url,
+                source: validSavedMedia.media_source,
+              }
+            : null,
+          name: template.name,
+          parameterFormat: template.parameterFormat,
+          parameters: template.parameters,
+          preview: template.preview,
+          media: {
+            configured: Boolean(template.sendMedia || validSavedMedia),
+            format: validSavedMedia?.media_format ?? template.preview.previewMedia?.format ?? template.sendMedia?.format ?? null,
+            previewOnly: Boolean(template.preview.previewMedia) && !template.sendMedia && !validSavedMedia,
+            required: template.parameters.some((parameter) => (
+              parameter.component === "HEADER"
+                && parameter.required
+                && !parameter.needsInput
+                && (parameter.type === "image" || parameter.type === "video" || parameter.type === "document")
+            )),
+            source: validSavedMedia?.media_source ?? template.sendMedia?.source ?? null,
+            validationError: savedMedia?.validation_status === "invalid" ? savedMedia.validation_error : null,
+          },
+          status: template.status,
+          variables: template.variables,
+        };
+      });
 
     return NextResponse.json({
       business: {

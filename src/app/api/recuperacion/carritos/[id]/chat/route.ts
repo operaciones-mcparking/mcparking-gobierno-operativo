@@ -44,6 +44,7 @@ type MessageMemoryChatRow = {
   message_sentiment: string | null;
   message_type: string | null;
   time_of_day: string | null;
+  whatsapp_status?: string | null;
 };
 
 type RawMessageMemoryChatRow = {
@@ -57,6 +58,7 @@ type RawMessageMemoryChatRow = {
   message_sentiment: string | null;
   message_text: string | null;
   message_type: string | null;
+  whatsapp_status?: string | null;
 };
 
 type ScopedConversationMessageRow = RawMessageMemoryChatRow & {
@@ -192,7 +194,7 @@ function safeMessagePayload(message: MessageMemoryChatRow | RawMessageMemoryChat
     sourceMessageId: message.id,
     timeOfDay: "time_of_day" in message ? message.time_of_day : null,
     whatsappMessageId: normalizedWhatsappMessageId(message.conversation_id),
-    whatsappStatus: null,
+    whatsappStatus: "whatsapp_status" in message ? message.whatsapp_status ?? null : null,
   };
 }
 

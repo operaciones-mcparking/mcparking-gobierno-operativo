@@ -13,6 +13,10 @@ import {
 } from "@/lib/recuperacion/whatsapp-template-n8n-transport";
 import { buildRecoveryWhatsappMetaTemplatePayload, buildRecoveryWhatsappMetaTemplatePayloadPreview } from "@/lib/recuperacion/whatsapp-template-send-payload";
 import { getWhatsappFreeformWindowForCart, type RecoveryWhatsappBusinessKey } from "@/lib/recuperacion/whatsapp-freeform-window";
+import {
+  validateRecoveryWhatsappTemplateMediaSelection,
+  type RecoveryWhatsappTemplateSelectedMedia,
+} from "@/lib/recuperacion/whatsapp-template-media-library";
 import { createSupabaseAuthServerClient } from "@/lib/supabase/auth-server";
 
 type RouteContext = {
@@ -53,6 +57,7 @@ type SafeSentTemplateMessage = {
 type SendTemplateDryRunRequest = {
   dryRun?: unknown;
   language?: unknown;
+  media?: unknown;
   templateKey?: unknown;
   variables?: unknown;
 };
@@ -68,7 +73,7 @@ type TemplateVariableValue = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_TEMPLATE_VARIABLE_LENGTH = 500;
 const TEMPLATE_SEND_UNCONFIRMED_STATUS = "unconfirmed";
-const ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set(["dryRun", "language", "templateKey", "variables"]);
+const ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set(["dryRun", "language", "media", "templateKey", "variables"]);
 const FORBIDDEN_DRY_RUN_PAYLOAD_KEYS = new Set([
   "accessToken",
   "businessKey",
@@ -252,6 +257,12 @@ async function resolveLegacyCartIdByBookingId(
 
 function findTemplate(templates: SafeMetaWhatsappTemplate[], templateKey: string, language: string) {
   return templates.find((template) => (template.key === templateKey || template.name === templateKey) && template.language === language) ?? null;
+}
+
+function blockedOnlyByMissingMedia(template: SafeMetaWhatsappTemplate) {
+  return template.compatibility.status === "blocked"
+    && template.compatibility.reasons.length > 0
+    && template.compatibility.reasons.every((reason) => reason.toLowerCase().includes("requiere") && reason.toLowerCase().includes("para enviarse"));
 }
 
 function inputKeysForTemplateParameter(parameter: SafeMetaWhatsappTemplate["parameters"][number]) {
@@ -448,8 +459,39 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return jsonError("La plantilla seleccionada no esta aprobada.", 409, "template_not_approved");
   }
 
-  if (template.compatibility.status !== "supported") {
+  const requiredMedia = template.parameters.find((parameter) => (
+    parameter.component === "HEADER"
+      && parameter.required
+      && !parameter.needsInput
+      && (parameter.type === "image" || parameter.type === "video" || parameter.type === "document")
+  ));
+  const selectedMedia = payload.media === undefined ? null : payload.media;
+  let effectiveHeaderMedia: RecoveryWhatsappTemplateSelectedMedia | null = template.sendMedia
+    ? {
+        format: template.sendMedia.format,
+        id: template.sendMedia.id,
+        link: template.sendMedia.link,
+        source: template.sendMedia.source,
+      }
+    : null;
+
+  if (requiredMedia && selectedMedia !== null) {
+    const format = requiredMedia.type.toUpperCase() as "DOCUMENT" | "IMAGE" | "VIDEO";
+    const validation = await validateRecoveryWhatsappTemplateMediaSelection(selectedMedia, format);
+
+    if (!validation.ok) {
+      return jsonError(validation.message, 400, validation.code);
+    }
+
+    effectiveHeaderMedia = validation.media;
+  }
+
+  if (template.compatibility.status !== "supported" && !(effectiveHeaderMedia && blockedOnlyByMissingMedia(template))) {
     return jsonError("La plantilla contiene componentes no soportados en esta etapa.", 409, "unsupported_template_components");
+  }
+
+  if (requiredMedia && !effectiveHeaderMedia) {
+    return jsonError("Este template requiere multimedia configurada para enviarse.", 409, "template_media_required");
   }
 
   const variablesResult = validateTemplateVariables(template, payload.variables);
@@ -459,10 +501,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   }
 
   const metaPayload = buildRecoveryWhatsappMetaTemplatePayload({
-    headerMedia: template.preview.headerMedia?.link
+    headerMedia: effectiveHeaderMedia
       ? {
-          format: template.preview.headerMedia.format,
-          link: template.preview.headerMedia.link,
+          format: effectiveHeaderMedia.format,
+          id: effectiveHeaderMedia.id,
+          link: effectiveHeaderMedia.link,
         }
       : null,
     language: template.language,
@@ -507,6 +550,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         footer: template.preview.footer,
         header: template.preview.header,
         headerMedia: template.preview.headerMedia,
+        previewMedia: effectiveHeaderMedia?.link
+          ? {
+              format: effectiveHeaderMedia.format,
+              link: effectiveHeaderMedia.link,
+              source: "selected_media" as const,
+            }
+          : template.preview.previewMedia,
       },
       validation: {
         businessKey,

@@ -87,12 +87,16 @@ test("8. omits components only when there are no variables or required media hea
   assert.doesNotMatch(helper, /components: \[\]/);
 });
 
-test("8b. builds approved media HEADER components from Meta template metadata", () => {
+test("8b. builds media HEADER components only from validated send media", () => {
   assert.match(helper, /headerMedia\?: RecoveryWhatsappTemplateHeaderMedia \| null/);
   assert.match(helper, /function mediaHeaderParameter/);
   assert.match(helper, /type: "header"/);
   assert.match(helper, /parameters: \[mediaHeaderParameter\(headerMedia\)\]/);
-  assert.match(route, /headerMedia: template\.preview\.headerMedia\?\.link/);
+  assert.match(route, /effectiveHeaderMedia/);
+  assert.match(route, /validateRecoveryWhatsappTemplateMediaSelection/);
+  assert.match(route, /id: effectiveHeaderMedia\.id/);
+  assert.match(route, /link: effectiveHeaderMedia\.link/);
+  assert.match(route, /template_media_required/);
   assert.match(route, /unsupported_template_components/);
 });
 
@@ -111,7 +115,7 @@ test("11. helper does not include WABA", () => {
 });
 
 test("12. route does not accept graph payload from the client", () => {
-  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
+  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "media", "templateKey", "variables"\]\)/);
   assert.doesNotMatch(route, /graphPayload\?: unknown|payload\.graphPayload/);
 });
 
@@ -175,7 +179,7 @@ test("24. utilizar_tarjeta media header contract sends approved IMAGE header wit
   const payload = buildRecoveryWhatsappMetaTemplatePayload({
     headerMedia: {
       format: "IMAGE",
-      link: "https://scontent.whatsapp.net/template-header.png",
+      id: "1234567890",
     },
     language: "es_CL",
     templateName: "utilizar_tarjeta",
@@ -187,8 +191,81 @@ test("24. utilizar_tarjeta media header contract sends approved IMAGE header wit
     {
       parameters: [
         {
-          image: { link: "https://scontent.whatsapp.net/template-header.png" },
+          image: { id: "1234567890" },
           type: "image",
+        },
+      ],
+      type: "header",
+    },
+  ]));
+});
+
+test("24b. direct HTTPS media links are emitted only when explicitly configured", () => {
+  const { buildRecoveryWhatsappMetaTemplatePayload } = loadPayloadHelper();
+  const payload = buildRecoveryWhatsappMetaTemplatePayload({
+    headerMedia: {
+      format: "IMAGE",
+      link: "https://assets.mcparking.cl/template-header.png",
+    },
+    language: "es_CL",
+    templateName: "utilizar_tarjeta",
+    to: "56997068669",
+    variables: [],
+  });
+
+  assert.equal(JSON.stringify(payload.template.components), JSON.stringify([
+    {
+      parameters: [
+        {
+          image: { link: "https://assets.mcparking.cl/template-header.png" },
+          type: "image",
+        },
+      ],
+      type: "header",
+    },
+  ]));
+});
+
+test("24c. video and document media headers use the same validated reference contract", () => {
+  const { buildRecoveryWhatsappMetaTemplatePayload } = loadPayloadHelper();
+  const videoPayload = buildRecoveryWhatsappMetaTemplatePayload({
+    headerMedia: {
+      format: "VIDEO",
+      id: "video-media-id",
+    },
+    language: "es_CL",
+    templateName: "video_template",
+    to: "56997068669",
+    variables: [],
+  });
+  const documentPayload = buildRecoveryWhatsappMetaTemplatePayload({
+    headerMedia: {
+      format: "DOCUMENT",
+      link: "https://assets.mcparking.cl/document.pdf",
+    },
+    language: "es_CL",
+    templateName: "document_template",
+    to: "56997068669",
+    variables: [],
+  });
+
+  assert.equal(JSON.stringify(videoPayload.template.components), JSON.stringify([
+    {
+      parameters: [
+        {
+          type: "video",
+          video: { id: "video-media-id" },
+        },
+      ],
+      type: "header",
+    },
+  ]));
+  assert.equal(JSON.stringify(documentPayload.template.components), JSON.stringify([
+    {
+      parameters: [
+        {
+          document: { link: "https://assets.mcparking.cl/document.pdf" },
+          type: "document",
         },
       ],
       type: "header",

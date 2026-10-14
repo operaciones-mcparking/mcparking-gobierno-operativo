@@ -86,7 +86,11 @@ test("9. language comes from the validated Meta template", () => {
 test("10. components are created server-side from validated variables", () => {
   assert.match(route, /variables: variablesResult\.variables/);
   assert.match(metaPayload, /parameters: bodyVariables\.map/);
-  assert.match(route, /headerMedia: template\.preview\.headerMedia\?\.link/);
+  assert.match(route, /effectiveHeaderMedia/);
+  assert.match(route, /validateRecoveryWhatsappTemplateMediaSelection/);
+  assert.match(route, /id: effectiveHeaderMedia\.id/);
+  assert.match(route, /link: effectiveHeaderMedia\.link/);
+  assert.match(route, /template_media_required/);
   assert.match(metaPayload, /mediaHeaderParameter\(headerMedia\)/);
   assert.doesNotMatch(validateFunctionBlock(), /components/);
 });
@@ -118,7 +122,7 @@ test("14. sentAt is generated server-side", () => {
 
 test("15. source is fixed server-side", () => {
   assert.match(n8nPayload, /source: "recovery_web"/);
-  assert.doesNotMatch(validateFunctionBlock(), /source/);
+  assert.doesNotMatch(validateFunctionBlock(), /senderKey|businessKey|mode:|previewText|operatorEmail|sentAt/);
 });
 
 test("16. public preview includes only safe transport fields", () => {
@@ -142,8 +146,8 @@ test("18. response keeps backwards-compatible previews", () => {
   assert.match(block, /validation/);
 });
 
-test("19. client can only send dryRun, templateKey, language, and variables", () => {
-  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "templateKey", "variables"\]\)/);
+test("19. client can only send dryRun, templateKey, language, variables, and selected media", () => {
+  assert.match(route, /ALLOWED_DRY_RUN_PAYLOAD_KEYS = new Set\(\["dryRun", "language", "media", "templateKey", "variables"\]\)/);
   assert.match(route, /hasOnlyAllowedPayloadKeys\(payload\)/);
 });
 
@@ -175,6 +179,7 @@ test("21. browser does not send authority fields", () => {
   assert.match(block, /dryRun: true/);
   assert.match(block, /templateKey/);
   assert.match(block, /language/);
+  assert.match(block, /media: selectedTemplate\.mediaSelection/);
   assert.match(block, /variables/);
   assert.doesNotMatch(block, /mode|senderKey|businessKey|metaPayload|graphPayload|phone|components|previewText|operatorEmail|sentAt|phone_number_id|accessToken/);
 });

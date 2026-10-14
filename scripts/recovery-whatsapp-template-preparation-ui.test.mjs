@@ -56,31 +56,32 @@ test("6. cart changes reset template preparation but freeform reopening does not
   assert.doesNotMatch(drawer, /currentWindow\?\.canSendFreeform/);
 });
 
-test("7. all template variables are considered required", () => {
-  assert.match(drawer, /selectedTemplatePreparationVariables = selectedTemplate \? selectedTemplate\.variables : \[\]/);
+test("7. only required editable text parameters are shown as operator variables", () => {
+  assert.match(drawer, /selectedTemplatePreparationVariables = selectedTemplate/);
+  assert.match(drawer, /parameter\.needsInput && parameter\.required && parameter\.supported && parameter\.type === "text"/);
   assert.doesNotMatch(drawer, /selectedTemplateBodyVariablePositions/);
 });
 
 test("8. empty or spaces-only variables are pending", () => {
-  assert.match(drawer, /!templateVariableValues\[variable\.position\]\?\.trim\(\)/);
+  assert.match(drawer, /!templateVariableValues\[templateVariableKey\(variable\)\]\?\.trim\(\)/);
   assert.match(drawer, /aria-invalid=\{hasError\}/);
 });
 
 test("9. an accessible compact input is created per variable", () => {
   assert.match(drawer, /selectedTemplatePreparationVariables\.map/);
-  assert.match(drawer, /<label className="grid min-w-0" htmlFor=\{inputId\}/);
-  assert.match(drawer, /<span className="sr-only">Variable \{variable\.placeholder\}<\/span>/);
+  assert.match(drawer, /<label className="grid min-w-0 gap-1" htmlFor=\{inputId\}/);
+  assert.match(drawer, /templateVariableLabel\(variable\)/);
   assert.match(drawer, /id=\{inputId\}/);
   assert.match(drawer, /placeholder=\{variable\.placeholder\}/);
   assert.match(drawer, /maxLength=\{500\}/);
 });
 
 test("10. missing variable message supports a single missing variable", () => {
-  assert.match(drawer, /Falta completar la variable \$\{positions\[0\]\}\./);
+  assert.match(drawer, /Falta completar \$\{labels\[0\]\}\./);
 });
 
 test("11. missing variable message supports multiple missing variables", () => {
-  assert.match(drawer, /Falta completar las variables \$\{firstPositions\} y \$\{lastPosition\}\./);
+  assert.match(drawer, /Falta completar \$\{firstLabels\} y \$\{lastLabel\}\./);
 });
 
 test("12. pending alert is inline and accessible", () => {

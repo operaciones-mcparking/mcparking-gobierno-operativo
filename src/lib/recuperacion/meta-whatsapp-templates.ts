@@ -15,6 +15,11 @@ export type SafeWhatsappTemplatePreview = {
     format: "DOCUMENT" | "IMAGE" | "VIDEO";
     link: string | null;
   } | null;
+  previewMedia: {
+    format: "DOCUMENT" | "IMAGE" | "VIDEO";
+    link: string | null;
+    source: "meta_example";
+  } | null;
 };
 
 export type SafeWhatsappTemplateParameterComponent = "BODY" | "BUTTON" | "HEADER";
@@ -39,6 +44,13 @@ export type SafeWhatsappTemplateCompatibility = {
   status: "blocked" | "supported";
 };
 
+export type SafeWhatsappTemplateSendMedia = {
+  format: "DOCUMENT" | "IMAGE" | "VIDEO";
+  id: string | null;
+  link: string | null;
+  source: "https_url" | "meta_media_id";
+};
+
 export type SafeWhatsappTemplateVariable = {
   component: "BODY" | "HEADER";
   id: string;
@@ -57,6 +69,7 @@ export type SafeMetaWhatsappTemplate = {
   parameterFormat: "NAMED" | "POSITIONAL" | "UNKNOWN";
   parameters: SafeWhatsappTemplateParameter[];
   preview: SafeWhatsappTemplatePreview;
+  sendMedia: SafeWhatsappTemplateSendMedia | null;
   status: "APPROVED";
   variables: SafeWhatsappTemplateVariable[];
 };
@@ -92,6 +105,7 @@ type MetaTemplateRow = {
 
 const META_GRAPH_API_VERSION = "v25.0";
 const META_WHATSAPP_TEMPLATES_TTL_MS = 10 * 60 * 1000;
+const MEDIA_FORMATS = new Set(["DOCUMENT", "IMAGE", "VIDEO"]);
 
 const templateCache = new Map<MetaWhatsappTemplateBusinessKey, { expiresAt: number; templates: SafeMetaWhatsappTemplate[] }>();
 
@@ -119,6 +133,20 @@ function normalizeStatus(value: unknown): MetaWhatsappTemplateStatus {
 
 function safeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeMediaFormat(value: unknown): SafeWhatsappTemplateSendMedia["format"] | null {
+  const format = safeText(value).toUpperCase();
+
+  return MEDIA_FORMATS.has(format) ? format as SafeWhatsappTemplateSendMedia["format"] : null;
+}
+
+function isHttpsUrl(value: string) {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function normalizeParameterFormat(value: unknown): SafeMetaWhatsappTemplate["parameterFormat"] {
@@ -160,6 +188,7 @@ function normalizeTemplatePreview(components: unknown): SafeWhatsappTemplatePrev
     footer: null,
     header: null,
     headerMedia: null,
+    previewMedia: null,
   };
 
   if (!Array.isArray(components)) return preview;
@@ -178,6 +207,7 @@ function normalizeTemplatePreview(components: unknown): SafeWhatsappTemplatePrev
         const link = safeText(handles[0]);
 
         preview.headerMedia = { format, link: link || null };
+        preview.previewMedia = { format, link: link || null, source: "meta_example" };
       } else {
         preview.header = text || null;
       }
@@ -256,9 +286,97 @@ function uniqueTextParameters(
   });
 }
 
+function configuredSendMediaKey(
+  businessKey: MetaWhatsappTemplateBusinessKey,
+  name: string,
+  language: string,
+) {
+  return `${businessKey}:${name}:${language}`;
+}
+
+function configuredSendMediaEnvValue() {
+  return envValue("RECOVERY_WHATSAPP_TEMPLATE_SEND_MEDIA_JSON");
+}
+
+function normalizeConfiguredSendMediaEntry(
+  value: unknown,
+  expectedFormat: SafeWhatsappTemplateSendMedia["format"],
+): SafeWhatsappTemplateSendMedia | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const entry = value as { format?: unknown; id?: unknown; link?: unknown; source?: unknown; type?: unknown };
+  const format = normalizeMediaFormat(entry.format ?? entry.type);
+  const id = safeText(entry.id);
+  const link = safeText(entry.link);
+  const source = safeText(entry.source).toLowerCase();
+
+  if (format !== expectedFormat) return null;
+
+  if (id && (!source || source === "meta_media_id" || source === "id")) {
+    return { format, id, link: null, source: "meta_media_id" };
+  }
+
+  if (link && isHttpsUrl(link) && (!source || source === "https_url" || source === "link")) {
+    return { format, id: null, link, source: "https_url" };
+  }
+
+  return null;
+}
+
+function configuredSendMediaForTemplate({
+  businessKey,
+  format,
+  language,
+  name,
+}: {
+  businessKey: MetaWhatsappTemplateBusinessKey;
+  format: SafeWhatsappTemplateSendMedia["format"] | null;
+  language: string;
+  name: string;
+}): SafeWhatsappTemplateSendMedia | null {
+  if (!format) return null;
+
+  const raw = configuredSendMediaEnvValue();
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    const mediaByKey = parsed as Record<string, unknown>;
+    const businessScoped = mediaByKey[businessKey];
+    const businessMap = businessScoped && typeof businessScoped === "object" && !Array.isArray(businessScoped)
+      ? businessScoped as Record<string, unknown>
+      : {};
+    const entry = mediaByKey[configuredSendMediaKey(businessKey, name, language)]
+      ?? mediaByKey[`${name}:${language}`]
+      ?? businessMap[`${name}:${language}`]
+      ?? businessMap[name];
+
+    return normalizeConfiguredSendMediaEntry(entry, format);
+  } catch {
+    return null;
+  }
+}
+
+function headerMediaFormatFromComponents(components: unknown): SafeWhatsappTemplateSendMedia["format"] | null {
+  if (!Array.isArray(components)) return null;
+
+  for (const item of components) {
+    const component = (item ?? {}) as MetaTemplateComponent;
+    const type = safeText(component.type).toUpperCase();
+    if (type !== "HEADER") continue;
+
+    return normalizeMediaFormat(component.format);
+  }
+
+  return null;
+}
+
 function normalizeTemplateParameters(
   components: unknown,
   preview: SafeWhatsappTemplatePreview,
+  sendMedia: SafeWhatsappTemplateSendMedia | null,
   parameterFormat: SafeMetaWhatsappTemplate["parameterFormat"],
 ) {
   const parameters: SafeWhatsappTemplateParameter[] = [];
@@ -276,7 +394,6 @@ function normalizeTemplateParameters(
     if (type === "HEADER") {
       if (format === "IMAGE" || format === "VIDEO" || format === "DOCUMENT") {
         const mediaType = format.toLowerCase() as "document" | "image" | "video";
-        const link = preview.headerMedia?.link ?? null;
 
         parameters.push({
           component: "HEADER",
@@ -286,13 +403,15 @@ function normalizeTemplateParameters(
           needsInput: false,
           placeholder: format,
           position: null,
-          predefinedValue: link,
+          predefinedValue: sendMedia?.id ?? sendMedia?.link ?? null,
           required: true,
-          supported: Boolean(link),
+          supported: Boolean(sendMedia),
           type: mediaType,
         });
 
-        if (!link) reasons.push("HEADER media sin handle aprobado de Meta.");
+        if (!sendMedia) {
+          reasons.push(`Este template requiere ${mediaType === "image" ? "una imagen" : mediaType === "video" ? "un video" : "un documento"} para enviarse.`);
+        }
         continue;
       }
 
@@ -343,7 +462,7 @@ function normalizeTemplateParameters(
   };
 }
 
-function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | null {
+function normalizeTemplate(row: MetaTemplateRow, businessKey: MetaWhatsappTemplateBusinessKey): SafeMetaWhatsappTemplate | null {
   const name = safeText(row.name);
   const language = safeText(row.language);
   const status = normalizeStatus(row.status);
@@ -352,7 +471,13 @@ function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | nul
 
   const preview = normalizeTemplatePreview(row.components);
   const parameterFormat = normalizeParameterFormat(row.parameter_format);
-  const { compatibility, parameters } = normalizeTemplateParameters(row.components, preview, parameterFormat);
+  const sendMedia = configuredSendMediaForTemplate({
+    businessKey,
+    format: headerMediaFormatFromComponents(row.components),
+    language,
+    name,
+  });
+  const { compatibility, parameters } = normalizeTemplateParameters(row.components, preview, sendMedia, parameterFormat);
   const variables = parameters
     .filter((parameter): parameter is SafeWhatsappTemplateParameter & { component: "BODY" | "HEADER"; position: number } => (
       parameter.type === "text"
@@ -379,16 +504,17 @@ function normalizeTemplate(row: MetaTemplateRow): SafeMetaWhatsappTemplate | nul
     parameterFormat,
     parameters,
     preview,
+    sendMedia,
     status: "APPROVED",
     variables,
   };
 }
 
-function normalizeTemplatesResponse(payload: MetaTemplateResponse): SafeMetaWhatsappTemplate[] {
+function normalizeTemplatesResponse(payload: MetaTemplateResponse, businessKey: MetaWhatsappTemplateBusinessKey): SafeMetaWhatsappTemplate[] {
   if (!Array.isArray(payload.data)) return [];
 
   return payload.data
-    .map((row) => normalizeTemplate((row ?? {}) as MetaTemplateRow))
+    .map((row) => normalizeTemplate((row ?? {}) as MetaTemplateRow, businessKey))
     .filter((template): template is SafeMetaWhatsappTemplate => template !== null)
     .sort((left, right) => left.label.localeCompare(right.label) || left.language.localeCompare(right.language));
 }
@@ -453,7 +579,7 @@ export async function fetchMetaWhatsappTemplatesForBusiness(
     nextUrl = next || null;
   }
 
-  const templates = normalizeTemplatesResponse({ data: rows });
+  const templates = normalizeTemplatesResponse({ data: rows }, businessKey);
 
   templateCache.set(businessKey, {
     expiresAt: now + META_WHATSAPP_TEMPLATES_TTL_MS,
