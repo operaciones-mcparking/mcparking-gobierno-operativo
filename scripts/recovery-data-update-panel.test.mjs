@@ -6,10 +6,14 @@ const page = readFileSync("src/app/recuperacion/page.tsx", "utf8");
 const panel = readFileSync("src/app/recuperacion/recovery-data-update-accordion.tsx", "utf8");
 const statusSource = readFileSync("src/lib/recuperacion/recovery-data-updates.ts", "utf8");
 
-test("renders the data update panel before data administration", () => {
-  assert.ok(page.indexOf("<RecoveryDataUpdateBlock />") < page.indexOf("<RecoveryAdminDataAccordion>"));
+test("renders the compact update panel without the legacy data administration surface", () => {
+  assert.match(page, /<RecoveryDataUpdateBlock \/>/);
+  assert.doesNotMatch(
+    page,
+    /RecoveryAdminDataAccordion|RecoveryLatestImportsBlock|RecoveryImportHistoryBlock|PurchasesUploadMock|IncompleteBookingsUploadMock|TrackingUploadCard|MessageMemoryUploadCard/,
+  );
   assert.match(panel, /Actualización de datos/);
-  assert.match(panel, /Control manual y seguimiento de sincronizaciones/);
+  assert.match(panel, /Seguimiento de sincronizaciones automáticas/);
 });
 
 test("uses a fixed server-side process allowlist", () => {
@@ -21,7 +25,8 @@ test("uses a fixed server-side process allowlist", () => {
   ]) {
     assert.match(statusSource, new RegExp(id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
-  assert.doesNotMatch(statusSource, /request|searchParams|params\.workflow/i);
+  assert.match(statusSource, /getRecoveryDataUpdateStatuses\(\)/);
+  assert.doesNotMatch(statusSource, /request\.|params\.workflow/i);
 });
 
 test("renders four compact workflow rows without execution controls or technical ids", () => {
@@ -33,6 +38,10 @@ test("renders four compact workflow rows without execution controls or technical
   assert.doesNotMatch(panel, /process\.id|Ejecución no configurada|Resultado observado|Workflow n8n/);
   assert.doesNotMatch(panel, /fetch\(|axios|onSubmit/);
   assert.equal((statusSource.match(/workflowId: "/g) ?? []).length, 4);
+  assert.match(panel, /Última ejecución/);
+  assert.doesNotMatch(panel, /Última actualización conocida/);
+  assert.match(panel, /whitespace-nowrap/);
+  assert.match(panel, /DD|formatToParts/);
 });
 
 test("builds secure direct links to the verified n8n host", () => {
@@ -40,16 +49,30 @@ test("builds secure direct links to the verified n8n host", () => {
   assert.match(panel, /href=\{process\.workflowUrl\}/);
   assert.match(panel, /target="_blank"/);
   assert.match(panel, /rel="noopener noreferrer"/);
-  assert.doesNotMatch(statusSource, /N8N_API_KEY|N8N_RECOVERY.*SECRET/);
+  assert.doesNotMatch(statusSource, /NEXT_PUBLIC_N8N|N8N_RECOVERY.*SECRET/);
 });
 
-test("reads only certified successful cart batch timestamps", () => {
-  assert.match(statusSource, /\.from\("recovery_import_batches"\)/);
-  assert.match(statusSource, /\.select\("import_type,created_at,confirmed_at"\)/);
-  assert.match(statusSource, /\.eq\("status", "imported"\)/);
-  assert.match(statusSource, /incomplete_bookings_v2_incremental/);
-  assert.match(statusSource, /incomplete_bookings_v2_recent_reconcile/);
+test("reads one successful execution per workflow through a cached server-side request", () => {
+  assert.match(statusSource, /\/api\/v1\/executions/);
+  assert.match(statusSource, /includeData: "false"/);
+  assert.match(statusSource, /limit: "1"/);
+  assert.match(statusSource, /status: "success"/);
+  assert.match(statusSource, /workflowId/);
+  assert.match(statusSource, /"X-N8N-API-KEY": apiKey/);
+  assert.match(statusSource, /unstable_cache/);
+  assert.match(statusSource, /revalidate: 60/);
+  assert.match(statusSource, /N8N_EXECUTIONS_TIMEOUT_MS = 2500/);
+  assert.match(statusSource, /Promise\.all/);
   assert.doesNotMatch(statusSource, /\.insert\(|\.update\(|\.delete\(|\.rpc\(/);
+});
+
+test("fails soft without exposing credentials or blocking the rest of recovery", () => {
+  assert.match(statusSource, /process\.env\.N8N_API_KEY/);
+  assert.match(statusSource, /if \(!apiKey\).*map\(\(\) => null\)/s);
+  assert.match(statusSource, /if \(!response\.ok\) return null/);
+  assert.match(statusSource, /catch \{\s*return null;/);
+  assert.match(page, /<Suspense fallback=\{<RecoveryCompactLoading/);
+  assert.doesNotMatch(panel, /N8N_API_KEY|X-N8N-API-KEY/);
 });
 
 test("keeps targeted attribution documented but outside the workflow list", () => {

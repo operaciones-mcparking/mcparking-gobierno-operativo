@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { unstable_cache } from "next/cache";
 
 export type RecoveryDataUpdateStatus = {
   description: string;
@@ -10,18 +10,19 @@ export type RecoveryDataUpdateStatus = {
   workflowUrl: string;
 };
 
-type RecoveryImportBatchRow = {
-  confirmed_at: string | null;
-  created_at: string;
-  import_type: string;
+type N8nExecution = {
+  finished?: boolean;
+  startedAt?: string;
+  status?: string;
 };
 
 type RecoveryDataUpdateDefinition = Omit<RecoveryDataUpdateStatus, "lastObservedAt" | "workflowUrl"> & {
-  importType: string | null;
   workflowId: string;
 };
 
 const N8N_WORKFLOW_BASE_URL = "https://n8n.mcparking.cl/workflow";
+const N8N_EXECUTIONS_API_URL = "https://n8n.mcparking.cl/api/v1/executions";
+const N8N_EXECUTIONS_TIMEOUT_MS = 2500;
 
 // The targeted attribution RPC remains server-side documentation, not a workflow row or browser action.
 export const RECOVERY_TARGETED_ATTRIBUTION_RPC =
@@ -31,28 +32,24 @@ export const RECOVERY_TARGETED_ATTRIBUTION_RPC =
 export const RECOVERY_DATA_UPDATE_DEFINITIONS: readonly RecoveryDataUpdateDefinition[] = [
   {
     description: "Importa compras nuevas y actualiza sus atribuciones.",
-    importType: null,
     name: "Importar compras",
     schedule: "Cada 15 minutos",
     workflowId: "16OMJ9MvjhyWEeWB",
   },
   {
     description: "Revisa cambios de estado, pago y monto.",
-    importType: null,
     name: "Reconciliar compras",
     schedule: "Cada 15 minutos",
     workflowId: "fi2Q8oXQL0Y7hwY0",
   },
   {
     description: "Sincroniza carritos nuevos o modificados.",
-    importType: "incomplete_bookings_v2_incremental",
     name: "Sincronizar carritos",
     schedule: "Cada 5 minutos",
     workflowId: "f9ExZ4etVzMixUru",
   },
   {
     description: "Revisa cambios de los últimos 10 días.",
-    importType: "incomplete_bookings_v2_recent_reconcile",
     name: "Reconciliar carritos recientes",
     schedule: "Diario a las 03:30 (Chile)",
     workflowId: "wJy3N0v5qUtZKecj",
@@ -61,47 +58,67 @@ export const RECOVERY_DATA_UPDATE_DEFINITIONS: readonly RecoveryDataUpdateDefini
 
 function toStatus(
   definition: RecoveryDataUpdateDefinition,
-  batch?: RecoveryImportBatchRow,
+  lastObservedAt: string | null,
 ): RecoveryDataUpdateStatus {
   return {
     description: definition.description,
-    lastObservedAt: batch ? batch.confirmed_at ?? batch.created_at : null,
+    lastObservedAt,
     name: definition.name,
     schedule: definition.schedule,
     workflowUrl: `${N8N_WORKFLOW_BASE_URL}/${definition.workflowId}`,
   };
 }
 
-export async function getRecoveryDataUpdateStatuses(): Promise<RecoveryDataUpdateStatus[]> {
-  const importTypes = RECOVERY_DATA_UPDATE_DEFINITIONS.flatMap((definition) =>
-    definition.importType ? [definition.importType] : [],
-  );
+function isValidDate(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+async function getLatestSuccessfulExecution(workflowId: string, apiKey: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), N8N_EXECUTIONS_TIMEOUT_MS);
 
   try {
-    const supabase = createSupabaseAdminClient();
-    const { data, error } = await supabase
-      .from("recovery_import_batches")
-      .select("import_type,created_at,confirmed_at")
-      .in("import_type", importTypes)
-      .eq("status", "imported")
-      .order("created_at", { ascending: false })
-      .limit(20);
+    const query = new URLSearchParams({ includeData: "false", limit: "1", status: "success", workflowId });
+    const response = await fetch(`${N8N_EXECUTIONS_API_URL}?${query}`, {
+      cache: "no-store",
+      headers: { "X-N8N-API-KEY": apiKey },
+      signal: controller.signal,
+    });
 
-    if (error) {
-      return RECOVERY_DATA_UPDATE_DEFINITIONS.map((definition) => toStatus(definition));
-    }
+    if (!response.ok) return null;
 
-    const latestByType = new Map<string, RecoveryImportBatchRow>();
-    for (const batch of (data ?? []) as RecoveryImportBatchRow[]) {
-      if (!latestByType.has(batch.import_type)) {
-        latestByType.set(batch.import_type, batch);
-      }
-    }
+    const payload = await response.json() as { data?: N8nExecution[] };
+    const execution = payload.data?.[0];
 
-    return RECOVERY_DATA_UPDATE_DEFINITIONS.map((definition) =>
-      toStatus(definition, definition.importType ? latestByType.get(definition.importType) : undefined),
-    );
+    return execution?.status === "success" && execution.finished !== false && isValidDate(execution.startedAt)
+      ? execution.startedAt
+      : null;
   } catch {
-    return RECOVERY_DATA_UPDATE_DEFINITIONS.map((definition) => toStatus(definition));
+    return null;
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+const getCachedLatestSuccessfulExecutions = unstable_cache(
+  async (): Promise<Array<string | null>> => {
+    const apiKey = process.env.N8N_API_KEY?.trim();
+    if (!apiKey) return RECOVERY_DATA_UPDATE_DEFINITIONS.map(() => null);
+
+    return Promise.all(
+      RECOVERY_DATA_UPDATE_DEFINITIONS.map((definition) =>
+        getLatestSuccessfulExecution(definition.workflowId, apiKey),
+      ),
+    );
+  },
+  ["recovery-data-update-last-successful-executions-v1"],
+  { revalidate: 60 },
+);
+
+export async function getRecoveryDataUpdateStatuses(): Promise<RecoveryDataUpdateStatus[]> {
+  const lastExecutions = await getCachedLatestSuccessfulExecutions();
+
+  return RECOVERY_DATA_UPDATE_DEFINITIONS.map((definition, index) =>
+    toStatus(definition, lastExecutions[index] ?? null),
+  );
 }

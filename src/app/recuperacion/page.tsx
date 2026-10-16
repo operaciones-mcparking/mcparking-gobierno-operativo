@@ -2,23 +2,12 @@ import { Suspense } from "react";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { requireAdminAccess } from "@/lib/auth/admin";
 import { getRecoveryDataUpdateStatuses } from "@/lib/recuperacion/recovery-data-updates";
-import {
-  getRecoveryCartAuditRows,
-  getRecoveryImportHistory,
-  getRecoveryLatestImportsSummary,
-} from "@/lib/dashboard/data";
-import { IncompleteBookingsUploadMock } from "./incomplete-bookings-upload-mock";
-import { MessageMemoryUploadCard } from "./message-memory-upload-card";
-import { PurchasesUploadMock } from "./purchases-upload-mock";
-import { RecoveryAdminDataAccordion } from "./recovery-admin-data-accordion";
+import { getRecoveryCartAuditRows } from "@/lib/dashboard/data";
 import { RecoveryCartAuditTable } from "./recovery-cart-audit-table";
-import { RecoveryImportHistory } from "./recovery-import-history";
-import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
 import { RecoveryLoadingCard } from "./recovery-loading-card";
 import { RecoveryConversationSessions } from "./recovery-conversation-sessions";
 import { RecoveryDataUpdateAccordion } from "./recovery-data-update-accordion";
 import { RecoveryViewTabs, type RecoveryView } from "./recovery-view-tabs";
-import { TrackingUploadCard } from "./tracking-upload-card";
 
 type RecuperacionPageProps = {
   searchParams?: Promise<{
@@ -55,22 +44,6 @@ async function RecoveryCartAuditBlock() {
   return <RecoveryCartAuditTable error={cartAuditRowsError?.message ?? null} rows={cartAuditRows} />;
 }
 
-async function RecoveryLatestImportsBlock() {
-  const startedAt = Date.now();
-  const { data: latestImportsSummary, error: latestImportsSummaryError } = await getRecoveryLatestImportsSummary();
-  logRecoveryTiming("getRecoveryLatestImportsSummary", startedAt);
-
-  return <RecoveryLatestImportsSummary error={latestImportsSummaryError?.message ?? null} summary={latestImportsSummary} />;
-}
-
-async function RecoveryImportHistoryBlock() {
-  const startedAt = Date.now();
-  const { data: importHistory, error: importHistoryError } = await getRecoveryImportHistory();
-  logRecoveryTiming("getRecoveryImportHistory", startedAt);
-
-  return <RecoveryImportHistory error={importHistoryError?.message ?? null} imports={importHistory} />;
-}
-
 async function RecoveryDataUpdateBlock() {
   const processes = await getRecoveryDataUpdateStatuses();
 
@@ -105,20 +78,6 @@ export default async function RecuperacionPage({ searchParams }: RecuperacionPag
             <RecoveryDataUpdateBlock />
           </Suspense>
 
-          <RecoveryAdminDataAccordion>
-            <Suspense fallback={<RecoveryCompactLoading label="Cargando ultima carga..." />}>
-              <RecoveryLatestImportsBlock />
-            </Suspense>
-
-            <PurchasesUploadMock />
-            <IncompleteBookingsUploadMock />
-            <TrackingUploadCard />
-            <MessageMemoryUploadCard />
-
-            <Suspense fallback={<RecoveryCompactLoading label="Cargando historial de importaciones..." />}>
-              <RecoveryImportHistoryBlock />
-            </Suspense>
-          </RecoveryAdminDataAccordion>
         </>
       )}
     </DashboardShell>

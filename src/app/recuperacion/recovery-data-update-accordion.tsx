@@ -10,11 +10,18 @@ const RECOVERY_TIME_ZONE = "America/Santiago";
 function formatDate(value: string | null) {
   if (!value) return "Sin información";
 
-  return new Intl.DateTimeFormat("es-CL", {
-    dateStyle: "short",
-    timeStyle: "short",
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
     timeZone: RECOVERY_TIME_ZONE,
-  }).format(new Date(value));
+    year: "numeric",
+  }).formatToParts(new Date(value));
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+
+  return `${part("day")}/${part("month")}/${part("year")} ${part("hour")}:${part("minute")}`;
 }
 
 function ProcessRow({ process }: { process: RecoveryDataUpdateStatus }) {
@@ -29,7 +36,7 @@ function ProcessRow({ process }: { process: RecoveryDataUpdateStatus }) {
         <p className="mt-0.5 text-sm text-slate-700">{process.schedule}</p>
       </div>
       <div>
-        <p className="text-[11px] font-medium uppercase text-slate-500">Última actualización conocida</p>
+        <p className="whitespace-nowrap text-[11px] font-medium uppercase text-slate-500">Última ejecución</p>
         <p className="mt-0.5 text-sm text-slate-700">{formatDate(process.lastObservedAt)}</p>
       </div>
       <div className="md:justify-self-end">
@@ -64,7 +71,7 @@ export function RecoveryDataUpdateAccordion({ processes }: { processes: Recovery
           </span>
           <div className="min-w-0">
             <h2 className="text-base font-medium tracking-tight text-navy">Actualización de datos</h2>
-            <p className="mt-1 text-sm text-slate-600">Control manual y seguimiento de sincronizaciones.</p>
+            <p className="mt-1 text-sm text-slate-600">Seguimiento de sincronizaciones automáticas.</p>
           </div>
         </div>
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d6e1ea] bg-white text-navy transition">
