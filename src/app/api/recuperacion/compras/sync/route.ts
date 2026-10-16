@@ -61,6 +61,19 @@ type ImportRpcResult = {
   updatedRows?: number;
 };
 
+type RecoveryStatusRefreshResult = {
+  direct?: number;
+  error?: string;
+  errorCode?: string;
+  none?: number;
+  ok?: boolean;
+  related?: number;
+  review?: number;
+  rowsCalculated?: number;
+};
+
+const MAX_PURCHASE_IDS_PER_REFRESH = 2_000;
+
 function jsonError(message: string, status: number, invalidRows?: number) {
   return NextResponse.json({ error: message, ...(invalidRows ? { invalidRows } : {}), ok: false }, { status });
 }
@@ -78,6 +91,60 @@ function emptyResult() {
     skippedDuplicateRows: 0,
     sourceDuplicateRows: 0,
     updatedRows: 0,
+  };
+}
+
+async function refreshRecoveryStatusesForBatch(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  batchId: string,
+) {
+  const { data: changes, error: changesError } = await supabase
+    .from("recovery_import_row_changes")
+    .select("entity_id")
+    .eq("batch_id", batchId)
+    .eq("source", "purchases")
+    .in("operation", ["inserted", "updated"])
+    .limit(MAX_PURCHASE_IDS_PER_REFRESH + 1);
+
+  if (changesError) {
+    return { ok: false as const };
+  }
+
+  const purchaseIds = Array.from(
+    new Set((changes ?? []).map((change) => change.entity_id).filter((id): id is string => Boolean(id))),
+  );
+
+  if (purchaseIds.length > MAX_PURCHASE_IDS_PER_REFRESH) {
+    return { ok: false as const };
+  }
+
+  if (purchaseIds.length === 0) {
+    return {
+      direct: 0,
+      none: 0,
+      ok: true as const,
+      related: 0,
+      review: 0,
+      rowsCalculated: 0,
+    };
+  }
+
+  const { data, error } = await supabase.rpc("refresh_recovery_cart_recovery_status_v2_for_purchases", {
+    p_purchase_ids: purchaseIds,
+  });
+  const result = data as RecoveryStatusRefreshResult | null;
+
+  if (error || result?.ok !== true) {
+    return { ok: false as const };
+  }
+
+  return {
+    direct: result.direct ?? 0,
+    none: result.none ?? 0,
+    ok: true as const,
+    related: result.related ?? 0,
+    review: result.review ?? 0,
+    rowsCalculated: result.rowsCalculated ?? 0,
   };
 }
 
@@ -122,8 +189,23 @@ export async function POST(request: NextRequest) {
   }
 
   const result = data as ImportRpcResult;
+  const batchId = result.batchId ?? null;
+
+  if (!batchId) {
+    return jsonError("La importacion no devolvio un lote valido.", 500);
+  }
+
+  // The import commits before this read-model refresh. Replaying the same
+  // deterministic batch safely retries only the idempotent attribution step.
+  const attributionRefresh = await refreshRecoveryStatusesForBatch(supabase, batchId);
+
+  if (!attributionRefresh.ok) {
+    return jsonError("La compra se importo, pero no se pudo actualizar la atribucion.", 500);
+  }
+
   return NextResponse.json({
-    batchId: result.batchId ?? null,
+    attributionRefresh,
+    batchId,
     bookingDuplicateRows: result.bookingDuplicateRows ?? 0,
     conflictRows: result.conflictRows ?? 0,
     fileAlreadyImported: result.fileAlreadyImported === true,
