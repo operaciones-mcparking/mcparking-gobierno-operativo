@@ -1,9 +1,10 @@
 "use client";
 
 import { AlertCircle, Check, CheckCheck, CircleHelp, Clock3, Copy, ExternalLink, FileText, MessageCircle, Plus, Send, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { ValueBadge, type BadgeTone } from "@/components/dashboard/badge";
+import { formatRecoveryChatDateSeparator, recoveryChatDateKey } from "@/lib/recuperacion/recovery-chat-date";
 import { mergeRecoveryChatMessages, recoveryChatMessageIdentity } from "@/lib/recuperacion/recovery-chat-message-merge";
 import { RecoveryWhatsappTemplateLibraryModal, categoryLabel, renderTemplatePreviewText, type RecoveryTemplateOption } from "./recovery-whatsapp-template-library-modal";
 
@@ -1422,26 +1423,42 @@ export function RecoveryCartChatDrawer({ cartId, onChatIndicatorRefreshNeeded, o
               ) : null}
               {visibleMessages.map((message, index) => {
                 const isInbound = message.direction === "inbound";
+                const messageDateKey = recoveryChatDateKey(message.messageAt);
+                const previousDateKey = index > 0 ? recoveryChatDateKey(visibleMessages[index - 1]?.messageAt) : null;
+                const dateSeparator = messageDateKey !== previousDateKey
+                  ? formatRecoveryChatDateSeparator(message.messageAt, new Date(nowMs))
+                  : null;
 
                 return (
-                  <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`} key={`${message.messageAt}-${index}`}>
-                    <article
-                      className={[
-                        "max-w-[88%] rounded-2xl border px-3 py-2.5 text-sm shadow-sm sm:max-w-[82%] sm:px-4 sm:py-3",
-                        isInbound
-                          ? "rounded-bl-sm border-slate-200 bg-white text-slate-900"
-                          : "rounded-br-sm border-[#a9dbc3] bg-[#dff6e8] text-[#14352b]",
-                      ].join(" ")}
-                    >
-                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-5 text-navy">
-                        {message.messageText || genericMessageText(message.direction)}
-                      </p>
-                      <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[11px] leading-4 text-slate-500">
-                        <span className="shrink-0 text-right">{formatDateTime(message.messageAt)}</span>
-                        {!isInbound ? <WhatsappDeliveryIndicator status={message.whatsappStatus} /> : null}
+                  <Fragment key={messageIdentity(message)}>
+                    {dateSeparator ? (
+                      <div className="flex items-center gap-3 py-2" role="separator">
+                        <span className="h-px flex-1 bg-slate-200" />
+                        <span className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-500 shadow-sm">
+                          {dateSeparator}
+                        </span>
+                        <span className="h-px flex-1 bg-slate-200" />
                       </div>
-                    </article>
-                  </div>
+                    ) : null}
+                    <div className={`flex ${isInbound ? "justify-start" : "justify-end"}`}>
+                      <article
+                        className={[
+                          "max-w-[88%] rounded-2xl border px-3 py-2.5 text-sm shadow-sm sm:max-w-[82%] sm:px-4 sm:py-3",
+                          isInbound
+                            ? "rounded-bl-sm border-slate-200 bg-white text-slate-900"
+                            : "rounded-br-sm border-[#a9dbc3] bg-[#dff6e8] text-[#14352b]",
+                        ].join(" ")}
+                      >
+                        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-medium leading-5 text-navy">
+                          {message.messageText || genericMessageText(message.direction)}
+                        </p>
+                        <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[11px] leading-4 text-slate-500">
+                          <span className="shrink-0 text-right">{formatDateTime(message.messageAt)}</span>
+                          {!isInbound ? <WhatsappDeliveryIndicator status={message.whatsappStatus} /> : null}
+                        </div>
+                      </article>
+                    </div>
+                  </Fragment>
                 );
               })}
             </div>
