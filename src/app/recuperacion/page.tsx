@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { DashboardShell } from "@/components/dashboard/shell";
 import { requireAdminAccess } from "@/lib/auth/admin";
+import { getRecoveryDataUpdateStatuses } from "@/lib/recuperacion/recovery-data-updates";
 import {
   getRecoveryCartAuditRows,
   getRecoveryImportHistory,
@@ -15,6 +16,7 @@ import { RecoveryImportHistory } from "./recovery-import-history";
 import { RecoveryLatestImportsSummary } from "./recovery-latest-imports-summary";
 import { RecoveryLoadingCard } from "./recovery-loading-card";
 import { RecoveryConversationSessions } from "./recovery-conversation-sessions";
+import { RecoveryDataUpdateAccordion } from "./recovery-data-update-accordion";
 import { RecoveryViewTabs, type RecoveryView } from "./recovery-view-tabs";
 import { TrackingUploadCard } from "./tracking-upload-card";
 
@@ -69,6 +71,12 @@ async function RecoveryImportHistoryBlock() {
   return <RecoveryImportHistory error={importHistoryError?.message ?? null} imports={importHistory} />;
 }
 
+async function RecoveryDataUpdateBlock() {
+  const processes = await getRecoveryDataUpdateStatuses();
+
+  return <RecoveryDataUpdateAccordion processes={processes} />;
+}
+
 export default async function RecuperacionPage({ searchParams }: RecuperacionPageProps) {
   const authStartedAt = Date.now();
   await requireAdminAccess();
@@ -91,6 +99,10 @@ export default async function RecuperacionPage({ searchParams }: RecuperacionPag
         <>
           <Suspense fallback={<RecoveryLoadingCard label="Cargando seguimiento y auditoria..." />}>
             <RecoveryCartAuditBlock />
+          </Suspense>
+
+          <Suspense fallback={<RecoveryCompactLoading label="Cargando estado de sincronizaciones..." />}>
+            <RecoveryDataUpdateBlock />
           </Suspense>
 
           <RecoveryAdminDataAccordion>
